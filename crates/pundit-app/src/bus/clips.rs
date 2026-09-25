@@ -192,6 +192,10 @@ impl Bus {
                 open.project.player_highlights = if forward { after } else { before }.clone();
                 self.project_changed();
             }
+            UndoAction::EditSlates { before, after } => {
+                open.project.slates = if forward { after } else { before }.clone();
+                self.project_changed();
+            }
             UndoAction::DeleteClip(_) => unreachable!("deletes aren't replayed"),
         }
         Some(action)

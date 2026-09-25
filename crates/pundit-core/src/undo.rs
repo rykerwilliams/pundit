@@ -24,7 +24,7 @@
 use uuid::Uuid;
 
 use crate::highlight::PlayerHighlight;
-use crate::project::Clip;
+use crate::project::{Clip, Slate};
 use crate::scoreboard::MatchEventRecord;
 
 /// The most actions the undo stack holds. Excess entries drop from the front
@@ -77,6 +77,13 @@ pub enum UndoAction {
     EditHighlights {
         before: Vec<PlayerHighlight>,
         after: Vec<PlayerHighlight>,
+    },
+    /// The whole slate list around a mark, an edit or a delete (the slates
+    /// spec). A snapshot for [`EditMatchEvents`](Self::EditMatchEvents)'s
+    /// reason, and purged for the same one.
+    EditSlates {
+        before: Vec<Slate>,
+        after: Vec<Slate>,
     },
 }
 
@@ -144,24 +151,40 @@ impl UndoController {
     ///   so restored later it would point at the wrong video. A delete on the
     ///   redo stack is left alone: that clip is live, was remapped, and is
     ///   re-snapshotted when redone;
-    /// - **every match-event and player-highlight snapshot, on either stack**
-    ///   (Phase 9 spec S5, match-vision spec H3) — both sides of one are lists
-    ///   of records, neither of them live, so undoing *or* redoing would
-    ///   restore stale indices.
+    /// - **every match-event, player-highlight and slate snapshot, on either
+    ///   stack** (Phase 9 spec S5, match-vision spec H3, the slates spec) —
+    ///   both sides of one are lists of records, neither of them live, so
+    ///   undoing *or* redoing would restore stale indices.
     ///
     /// A source add or relink needs none of this: neither permutes indices.
     #[must_use]
     pub fn purge_for_source_change(&mut self) -> Vec<Clip> {
-        let stale_snapshot = |a: &UndoAction| {
-            matches!(
-                a,
-                UndoAction::EditMatchEvents { .. } | UndoAction::EditHighlights { .. }
-            )
-        };
-        self.redo.retain(|a| !stale_snapshot(a));
+        // **Exhaustive on purpose.** As a `matches!` this admitted every
+        // record type added later in silence: a snapshot that holds source
+        // indices and is not listed here survives a source move, and undoing
+        // it restores indices from before the permutation — every record in
+        // it silently pointing at the wrong file, and saved. A `match` makes
+        // the next one a compile error instead.
+        fn holds_stale_indices(a: &UndoAction) -> bool {
+            match a {
+                UndoAction::EditMatchEvents { .. }
+                | UndoAction::EditHighlights { .. }
+                | UndoAction::EditSlates { .. } => true,
+                // Neither holds a source index: one field of one live clip,
+                // and an order of ids.
+                UndoAction::EditClip { .. } | UndoAction::ReorderClips { .. } => false,
+                // Not "safe": a delete *is* purged from the undo stack, by
+                // the partition below, which shreds its trashed recording.
+                // False here so it reaches that partition rather than being
+                // dropped on the floor — and on the redo stack the clip is
+                // live and was remapped with the rest.
+                UndoAction::DeleteClip(_) => false,
+            }
+        }
+        self.redo.retain(|a| !holds_stale_indices(a));
         let (deletes, kept) = std::mem::take(&mut self.undo)
             .into_iter()
-            .filter(|a| !stale_snapshot(a))
+            .filter(|a| !holds_stale_indices(a))
             .partition(|a| matches!(a, UndoAction::DeleteClip(_)));
         self.undo = kept;
         self.evict(deletes)

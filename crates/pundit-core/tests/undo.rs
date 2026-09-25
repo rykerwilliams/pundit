@@ -9,7 +9,7 @@
 use uuid::Uuid;
 
 use pundit_core::highlight::{HighlightKey, NormRect, PlayerHighlight};
-use pundit_core::project::{Clip, Inset};
+use pundit_core::project::{Clip, Inset, Slate};
 use pundit_core::scoreboard::{MatchEventKind, MatchEventRecord};
 use pundit_core::stroke::Rgba;
 use pundit_core::undo::{ClipEdit, UndoAction, UndoController, STACK_CAP};
@@ -61,6 +61,21 @@ fn match_events(source_index: usize) -> UndoAction {
             source_seconds: 1.0,
             reel_lead_in: None,
             reel_tail: None,
+        }],
+    }
+}
+
+/// A range marked on source `source_index`, as the bus records one.
+fn slates(source_index: usize) -> UndoAction {
+    UndoAction::EditSlates {
+        before: Vec::new(),
+        after: vec![Slate {
+            id: Uuid::new_v4(),
+            source_index,
+            in_seconds: 12.0,
+            out_seconds: Some(47.0),
+            name: "corner routine".into(),
+            tags: vec!["corners".into()],
         }],
     }
 }
@@ -303,13 +318,31 @@ fn a_source_change_leaves_a_redo_delete() {
     assert_eq!(c.redo_stack(), [delete(id)]);
 }
 
+/// A slate snapshot is the third of that shape, and this is the test that
+/// would have caught it being forgotten: `purge_for_source_change` used a
+/// **non-exhaustive** `matches!`, so a new record type joined the stacks in
+/// silence. Mark slates on a source, move that source, press Ctrl+Z once for
+/// something unrelated, and the snapshot restores pre-move indices — every
+/// slate pointing at the wrong file, and saved.
+#[test]
+fn a_source_change_purges_a_slate_snapshot_too() {
+    let mut c = UndoController::default();
+    let kept = edit();
+    let _ = c.push(kept.clone());
+    let _ = c.push(slates(1));
+
+    assert!(c.purge_for_source_change().is_empty());
+    assert_eq!(c.undo_stack(), [kept], "the slate snapshot is gone");
+}
+
 /// Phase 9: a match-event snapshot goes from **both** stacks, unlike a
 /// delete. Neither side of one is live, so undoing or redoing it would
 /// restore indices the permutation didn't reach (spec S5). A player-highlight
-/// snapshot is the same shape and goes the same way (match-vision spec H3).
+/// snapshot is the same shape and goes the same way (match-vision spec H3),
+/// and so is a slate's.
 #[test]
 fn a_source_change_purges_snapshots_from_both_stacks() {
-    for snapshot in [match_events as fn(usize) -> UndoAction, highlights] {
+    for snapshot in [match_events as fn(usize) -> UndoAction, highlights, slates] {
         let mut c = UndoController::default();
         let kept = edit();
         let _ = c.push(kept.clone());

@@ -466,7 +466,8 @@ pub enum UserError {
     #[error("this project was made by a newer version of pundit (format v{found})")]
     TooNewProject { found: u32 },
     #[error(
-        "that video is still used by a clip, a match event or a highlight; delete those first"
+        "that video is still used by a clip, a match event, a highlight or a slate; \
+         delete those first"
     )]
     SourceReferenced { index: usize },
     /// Recording is refused: the project isn't ready for it.

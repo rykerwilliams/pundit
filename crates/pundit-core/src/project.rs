@@ -135,7 +135,7 @@ pub struct SourceRef {
 /// player highlight still points at the source. Silently retargeting them
 /// would produce subtly wrong playback, so the user must delete them first.
 #[derive(thiserror::Error, Debug, Clone, Copy, PartialEq, Eq)]
-#[error("source {index} is still used by a clip, a match event or a highlight")]
+#[error("source {index} is still used by a clip, a match event, a highlight or a slate")]
 pub struct SourceReferenced {
     pub index: usize,
 }
