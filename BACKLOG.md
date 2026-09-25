@@ -31,7 +31,7 @@ product call, or their own data.
 - **79.** What the app does over a forwarded X11 display, and saying so. The…
 - **82.** P4 (showing suggestions) is not justified and is not started. No
 - **80.** The restarts — mostly done; match B's seven are the remainder
-- **81.** Task 3.6 — the detector runtime and formation-feasibility spike (L3,…
+- **81.** Task 3.6 — the *model* spike (rten vs ort, D-FINE-N); P3's own spike is done
 - **53.** 2160p export
 
 ### Open, but gated on something happening
@@ -978,8 +978,22 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   in the repo can do it.
 - **When to revisit:** with P5, if it is ever attempted.
 
-81. **Task 3.6 — the detector runtime and formation-feasibility spike (L3, V-2,
-  V-7) — is deferred with P5 rather than run.** Its entry condition is met (the
+81. **Task 3.6 — the *model* spike (L3, V-2, V-7) — is deferred with P5 rather
+  than run.**
+- **Not the spike that was run, which is the confusion this line exists to
+  stop** (the coach asked, 2026-09-25). P3's measurement pass *was* done and is
+  `docs/superpowers/spikes/2026-09-24-match-vision-measurements.md`: it measured
+  the **classical** analyzer — Goertzel bands, dB over a rolling median,
+  stillness, thumbnails — produced the verdict, and cleared the throughput bar
+  at **71–88 s per file, ~23× realtime** against ≤ 5 minutes. No model, no ONNX
+  runtime, nothing downloaded.
+- **This one is about a neural detector:** `rten` against `ort` on D-FINE-N at
+  640 and 960 input, far-side person recall on 20 hand-checked kick-off frames,
+  how often the stitch-seam ghost appears, a cold start end to end (V-7) — and
+  V-2, whether the virtual camera frames both halves of the pitch at a kick-off
+  at all.
+
+  Its entry condition is met (the
   goal precision bars failed), but it measures `rten` against `ort` for a
   detector nothing has decided to build, and V-2 — does the virtual camera frame
   both halves of the pitch at a kick-off? — only matters once P5 is wanted.
