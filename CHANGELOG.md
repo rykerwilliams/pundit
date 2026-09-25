@@ -13,6 +13,8 @@ which the app was called until 0.8.0 renamed it.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-25
+
 ### Added
 
 - **Mark a range now, record the commentary later.** Watching a match through,
