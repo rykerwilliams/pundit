@@ -8,12 +8,38 @@ releases, so there is nothing to download for them. Their dates are the day each
 one was cut, and 0.1.1's handful of changes are listed under 0.1.0. The first
 published release is 0.6.0, which contains all of them.
 
+Everything up to and including 0.7.0 was released under the name **Coach Cuts**,
+which the app was called until 0.8.0 renamed it.
+
 ## [Unreleased]
+
+## [0.8.0] - 2026-09-25
+
+### Changed
+
+- **The app is now called pundit** — pundit Understands Nothing, Discusses It
+  Thoroughly. It was Coach Cuts, a name it inherited from the macOS app it was
+  ported from, and it is being used for more than football, so it needed one of
+  its own that is not tied to a sport. What this means in practice: the command
+  is `pundit`, the menu entry is **pundit**, the package is `pundit`, and
+  `apt install ./pundit_0.8.0_amd64.deb` removes `coach-cuts` as part of the
+  same command.
+- **Your settings, your basket and your speech model come with it.** On the
+  first run, the app takes over the two directories the old name left behind
+  (`~/.config/coach-cuts` and `~/.cache/coach-cuts`), so the project you last
+  had open, the pen you draw with, the basket you filled and the 488 MB speech
+  model you already downloaded are all still there, and nothing is fetched
+  again. If a directory under the new name already exists, the old one is left
+  alone for you to delete.
+- **`$COACH_CUTS_WHISPER_MODEL` is now `$PUNDIT_WHISPER_MODEL`**, if you had set
+  it by hand.
+- **A basket's film now lands in `pundit` in your videos folder**, not
+  `Coach Cuts`. Films already written keep their old folder.
 
 ### Removed
 
-- **The macOS app is no longer in the tree.** Coach Cuts is a Linux program, and
-  the Swift original it was written against had not been built or maintained for
+- **The macOS app is no longer in the tree.** This is a Linux program, and the
+  Swift original it was written against had not been built or maintained for
   months. It is kept whole at the git tag `macos-reference` for anyone asking
   what the original did. Nothing in the Linux app changes.
 
@@ -45,7 +71,7 @@ published release is 0.6.0, which contains all of them.
 
 The first published release. Every version below this one was built and
 installed by hand, so this release is all of them together — the
-[changelog](https://github.com/rykerwilliams/coach-cutups/blob/main/CHANGELOG.md)
+[changelog](https://github.com/rykerwilliams/pundit/blob/main/CHANGELOG.md)
 says what each one added.
 
 ### Added

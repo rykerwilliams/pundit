@@ -69,7 +69,7 @@ From the spike and the review, on the reference laptop:
 
 ### X1. Core owns the edit: a frame schedule
 
-`video-coach-core/src/export.rs`:
+`pundit-core/src/export.rs`:
 
 ```rust
 pub const OUTPUT_FPS: u32 = 30;
@@ -90,7 +90,7 @@ pub fn frame_schedule(clip: &Clip, source_duration: f64) -> Vec<FrameSpec>;
 
 ### X2. Media owns the pixels: one GL graph everywhere
 
-`video-coach-media/src/export/`:
+`pundit-media/src/export/`:
 
 ```
 decode:  filesrc ! decodebin3 (video pad selected by caps)
@@ -184,10 +184,10 @@ encode:  appsrc (the decode caps rewritten to framerate=30/1, format=time)
 
 | Crate | Phase 5 contents |
 |---|---|
-| `video-coach-core` | `export.rs`: `OUTPUT_FPS`, `FrameSpec`, `frame_schedule`. |
-| `video-coach-media` | `export/`: `Exporter` (the decode pipeline via the shared `gl_bin`, the pump, the encode pipeline, the encoder probe, the surfaceless EGL display and context sharing, the zoom mapping, `.part` handling, cancel, and a non-blocking pump). `gstreamer-gl-egl` (with `v1_24`) moves into media's dependencies. |
-| `video-coach-app` | Bus: `ExportClip`, `CancelExport`, `Input::Export`, `Event::Export`, `UserError::CantExport`, refusing to record during an export, and dropping the exporter on shutdown. UI: the menu item, save dialog, progress bar and Cancel. |
-| `video-coach-harness` | Export end to end, running on llvmpipe in CI. |
+| `pundit-core` | `export.rs`: `OUTPUT_FPS`, `FrameSpec`, `frame_schedule`. |
+| `pundit-media` | `export/`: `Exporter` (the decode pipeline via the shared `gl_bin`, the pump, the encode pipeline, the encoder probe, the surfaceless EGL display and context sharing, the zoom mapping, `.part` handling, cancel, and a non-blocking pump). `gstreamer-gl-egl` (with `v1_24`) moves into media's dependencies. |
+| `pundit-app` | Bus: `ExportClip`, `CancelExport`, `Input::Export`, `Event::Export`, `UserError::CantExport`, refusing to record during an export, and dropping the exporter on shutdown. UI: the menu item, save dialog, progress bar and Cancel. |
+| `pundit-harness` | Export end to end, running on llvmpipe in CI. |
 | CI | No change expected. `gstreamer1.0-gl` and `libgl1` already pull in `libegl-mesa0`, `mesa-libgallium` (llvmpipe) and `libgl1-mesa-dri` as hard dependencies on noble. With no `/dev/dri`, `new_surfaceless` falls back to llvmpipe by itself. `openh264dec` comes from plugins-bad. |
 
 ## Testing

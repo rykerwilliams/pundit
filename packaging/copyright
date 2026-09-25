@@ -1,16 +1,16 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: Coach Cuts
-Source: https://github.com/rykerwilliams/coach-cutups
+Upstream-Name: pundit
+Source: https://github.com/rykerwilliams/pundit
 Comment:
- The Rust crates compiled into /usr/bin/coach-cuts, and the text of each of
- their licences, are listed in /usr/share/doc/coach-cuts/crate-licenses.txt.
- This file covers Coach Cuts itself and what that list cannot show: the C and
+ The Rust crates compiled into /usr/bin/pundit, and the text of each of
+ their licences, are listed in /usr/share/doc/pundit/crate-licenses.txt.
+ This file covers pundit itself and what that list cannot show: the C and
  C++ libraries and the fonts built into the same binary. GStreamer and the
  other shared libraries this package depends on are not part of it; each
  carries its own copyright file.
 
 Files: *
-Copyright: 2026 the Coach Cuts contributors (see the project's git history)
+Copyright: 2026 the pundit contributors (see the project's git history)
 License: AGPL-3.0-or-later
  This program is free software: you can redistribute it and/or modify it
  under the terms of the GNU Affero General Public License as published by the
@@ -22,7 +22,7 @@ License: AGPL-3.0-or-later
  FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License
  for more details.
  .
- The full text of the licence is in /usr/share/doc/coach-cuts/crate-licenses.txt
+ The full text of the licence is in /usr/share/doc/pundit/crate-licenses.txt
  (under "GNU Affero General Public License v3.0 or later") and at
  <https://www.gnu.org/licenses/agpl-3.0.html>.
  .

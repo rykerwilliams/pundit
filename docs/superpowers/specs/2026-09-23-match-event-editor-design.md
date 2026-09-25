@@ -13,9 +13,9 @@ Labels, as in the match vision spec: **[cited]** points at a file in this reposi
 
 The coach asked for *"an additional event view editor? So an easy way to mass enter events in the game. Sometimes I already know the general timestamps."*
 
-Today the only way to put a match event into a project is to be looking at the frame: `z`, `x` and `v` tag at the playhead (`crates/video-coach-app/ui/app.slint:2312-2324`), and the Match panel's three buttons do the same (`app.slint:866-880`). The panel then lists what was tagged, with a seek and a delete per row and the reel buttons on a goal (`app.slint:895-990`) — but **no row is editable**. A goal tagged two seconds late is deleted and re-tagged, and a half whose times the coach already has on paper has to be scrubbed through end to end.
+Today the only way to put a match event into a project is to be looking at the frame: `z`, `x` and `v` tag at the playhead (`crates/pundit-app/ui/app.slint:2312-2324`), and the Match panel's three buttons do the same (`app.slint:866-880`). The panel then lists what was tagged, with a seek and a delete per row and the reel buttons on a goal (`app.slint:895-990`) — but **no row is editable**. A goal tagged two seconds late is deleted and re-tagged, and a half whose times the coach already has on paper has to be scrubbed through end to end.
 
-This adds the two entry routes the coach asked for, both working on **time into a file** — the number the scrubber and the readout show, and the number `MatchEventRecord.source_seconds` already stores (`crates/video-coach-core/src/scoreboard.rs:198-222`):
+This adds the two entry routes the coach asked for, both working on **time into a file** — the number the scrubber and the readout show, and the number `MatchEventRecord.source_seconds` already stores (`crates/pundit-core/src/scoreboard.rs:198-222`):
 
 1. **A list of the project's match events**, where the selected row can be retyped.
 2. **A paste box** that takes a block of lines like `2 14:05 home goal`, shows what it understood line by line, and adds the lot in one go.
@@ -57,7 +57,7 @@ No keyboard shortcut. `e` and `m` are both free (`handle-key` falls through to `
 
 **That same `return reject` is what makes `Ctrl+V` work in the paste box.** The Ctrl branch at `app.slint:2275-2303` is never reached from inside the sheet — the editor's own branch returns first, and a rejected key goes to the focused `LineEdit`, whose widget handles the paste. (There is no clipboard code anywhere in the crate; the widget's own is all there is.)
 
-The addition: **the setup sheet's Esc closes the sheet outright, even from inside a field, and the editor's must not.** The window's own rule everywhere else is that Esc leaves a field first (`app.slint:2437-2445`: "Esc a field didn't take leaves it, which commits it"). The setup sheet gets away with breaking it because its fields are short and re-seeded from the project every time it opens (`crates/video-coach-app/src/main.rs:931-961`). The paste box's text is neither. So the editor's guard reads:
+The addition: **the setup sheet's Esc closes the sheet outright, even from inside a field, and the editor's must not.** The window's own rule everywhere else is that Esc leaves a field first (`app.slint:2437-2445`: "Esc a field didn't take leaves it, which commits it"). The setup sheet gets away with breaking it because its fields are short and re-seeded from the project every time it opens (`crates/pundit-app/src/main.rs:931-961`). The paste box's text is neither. So the editor's guard reads:
 
 ```slint
 if (root.editor-open) {
@@ -87,12 +87,12 @@ That the row's field has focus is a property of its own (`line-focused`, out of 
 
 **P5. Edits apply as they are committed; there is no Save.** The sheet's one button is **Done**. Each committed row edit is one bus command and one undo step; the paste's Add is one command and one undo step. Nothing is staged.
 
-- *Why not Save/Cancel like the setup sheet:* the setup sheet edits a single value (`ScoreboardConfig`) that is deliberately **not** an undo step (`crates/video-coach-app/src/bus/scoreboard.rs:82-86`), so Cancel is its only way back. Match events are the opposite: every mutation of them is already an undo step through one funnel (`bus/scoreboard.rs:103-118`), and the panel's own delete is immediate and undoable today ("Delete this event (undoable)"). Staging a whole list would mean a second copy of it and a merge, to buy a Cancel that `Ctrl+Z` already provides.
+- *Why not Save/Cancel like the setup sheet:* the setup sheet edits a single value (`ScoreboardConfig`) that is deliberately **not** an undo step (`crates/pundit-app/src/bus/scoreboard.rs:82-86`), so Cancel is its only way back. Match events are the opposite: every mutation of them is already an undo step through one funnel (`bus/scoreboard.rs:103-118`), and the panel's own delete is immediate and undoable today ("Delete this event (undoable)"). Staging a whole list would mean a second copy of it and a merge, to buy a Cancel that `Ctrl+Z` already provides.
 - *The cost, stated:* `Ctrl+Z` does **not** work while the sheet is open — the guard rejects it to the focused field, which is already true of the setup sheet. The coach presses Done, then undoes. Q4 asks whether that is enough.
 
 ### T. The event list
 
-**T1. One row per match event, in match order, from the list the panel already builds.** `match_panel::match_rows` returns id, kind, absolute time, the formatted time, the derived label, `role_less` and the reel span, from core's `labelled_events` (`crates/video-coach-app/src/match_panel.rs:49-62`).
+**T1. One row per match event, in match order, from the list the panel already builds.** `match_panel::match_rows` returns id, kind, absolute time, the formatted time, the derived label, `role_less` and the reel span, from core's `labelled_events` (`crates/pundit-app/src/match_panel.rs:49-62`).
 
 **`MatchRowText` gains two fields** — `source_index: usize` and `source_seconds: f64` — filled in `match_rows` from the same record. It does **not** gain a second builder: a parallel `editor_rows` would be a second call to `labelled_events` and a second chance to order events differently from the panel, the scrubber's marks and `[` / `]` (`main.rs:1005-1039`). The panel ignores the two new fields.
 
@@ -163,7 +163,7 @@ Changing home goal ↔ away goal keeps the trims; goal → start/stop clears bot
 
 **T7. There is no "add" control.** Adding an event is one line typed into the paste box and Add pressed — the same grammar, the same parser, the same echo, the same refusals. A separate add row would be a second entry path with its own defaults, its own validation and its own bugs, for a job the box already does.
 
-**T8. Delete is immediate and undoable**, reusing `Command::DeleteMatchEvent(Uuid)` (`crates/video-coach-app/src/bus/mod.rs:117`) — the panel's behaviour today, with no confirmation, because undo is the confirmation.
+**T8. Delete is immediate and undoable**, reusing `Command::DeleteMatchEvent(Uuid)` (`crates/pundit-app/src/bus/mod.rs:117`) — the panel's behaviour today, with no confirmation, because undo is the confirmation.
 
 **T9. Reel trims stay on the panel.** Setting one means *"the reel starts at the frame I am looking at"*, captured from the scan position at the click (match vision spec R3; `bus/mod.rs:118-125`), and there is no frame to look at behind a modal. The panel keeps its four `ReelButton`s, which is where that job belongs. Because trims are relative, re-timing a goal in the sheet carries them along — the behaviour R3 was designed for.
 
@@ -180,7 +180,7 @@ Changing home goal ↔ away goal keeps the trims; goal → start/stop clears bot
   - an optional **video number**, 1-based. **A leading bare integer is always a video number** — never a time, never a word: **T5**'s colon rule is what makes that unambiguous. A number outside `1..=source_videos.len()` gets its own refusal rather than being reinterpreted as anything else.
   - a **time**, in exactly the shapes **T5** accepts — a colon required, tenths optional.
   - the **rest of the line**, which names the kind (**B2**).
-- **A line with no video number uses the sheet's default**, a `ComboBox` above the box reading "Lines with no number are: `1 · <name>`", defaulting to the first source (`SourceRef.display_name`, `crates/video-coach-core/src/project.rs:123`). Every echo row names the video it resolved to, so a wrong default is visible before Add.
+- **A line with no video number uses the sheet's default**, a `ComboBox` above the box reading "Lines with no number are: `1 · <name>`", defaulting to the first source (`SourceRef.display_name`, `crates/pundit-core/src/project.rs:123`). Every echo row names the video it resolved to, so a wrong default is visible before Add.
 - **The kind is required.** A line with a time and nothing else is refused with *"no event word"*. See **B6** for why that is the right answer for `kickoffs.txt` rather than an annoyance.
 
 `900 home goal` is therefore refused as *"there is no video 900 — a time needs a colon (15:00)"*, which is the whole point of the colon rule: the misreading is named, not performed. **The hint rides every video refusal**, not only a number big enough to look like seconds — a coach who types `14` meaning fourteen minutes into a two-video project is exactly the reader it is for, and "there is no video 14" alone tells him nothing about what to do.
@@ -261,7 +261,7 @@ AddMatchEvents(Vec<PendingMatchEvent>),
 
 **C2. Typed times and the caller-captured rule.** CLAUDE.md's bus contract exists to stop **queue delay** moving an event: the bus must never ask the pipeline where it is, because by the time the handler runs the answer has changed. A typed time satisfies that rule trivially and absolutely — **the editor never reads the playhead at all**, so there is no position for a queue delay to stale. The contract is unweakened; it simply has nothing to bite on here. (The one place the editor *does* use a position is `Go`, which is an ordinary seek carrying the absolute time as a field, as `[` / `]` already do.)
 
-**C3. A batch is one undo step, because the funnel snapshots the whole list.** `Bus::edit_match_events` clones `match_events` before and after an arbitrary closure, drops a no-op, then saves, records `UndoAction::EditMatchEvents { before, after }` and publishes — once (`bus/scoreboard.rs:103-118`). Twenty appends inside one closure are therefore **one** save, **one** undo step and **one** `ProjectChanged`. No new `UndoAction` variant, no new purge rule, and no per-event inverse (`crates/video-coach-core/src/undo.rs:70-78`).
+**C3. A batch is one undo step, because the funnel snapshots the whole list.** `Bus::edit_match_events` clones `match_events` before and after an arbitrary closure, drops a no-op, then saves, records `UndoAction::EditMatchEvents { before, after }` and publishes — once (`bus/scoreboard.rs:103-118`). Twenty appends inside one closure are therefore **one** save, **one** undo step and **one** `ProjectChanged`. No new `UndoAction` variant, no new purge rule, and no per-event inverse (`crates/pundit-core/src/undo.rs:70-78`).
 
 That one `ProjectChanged` also rebuilds the panel's rows, the scrubber's marks and `match-list-lines` together, since `show_match` builds all three from one `match_rows` call (`main.rs:1005-1039`, called from `show_project` at `main.rs:2066`). A twenty-event paste costs one rebuild, not twenty.
 
@@ -277,7 +277,7 @@ Refusals are aggregated into one message per command (*"3 of 7 added: 2 are past
 
 ### V. Validation and feedback
 
-**V1. The bounds: `0.0 <= source_seconds <= source_videos[i].duration_seconds`, and `i` in range.** `duration_seconds` is *"**the** duration authority"* (`crates/video-coach-core/src/project.rs:111-117`), so the check is exact and needs no probe. Out of range is **refused, naming the length** — not clamped. A clamped goal is a wrong timestamp that looks right, and an event past the end can never be seeked to or seen. An out-of-range source index is refused as `tag_match_event` already refuses one (`bus/scoreboard.rs:41-43`).
+**V1. The bounds: `0.0 <= source_seconds <= source_videos[i].duration_seconds`, and `i` in range.** `duration_seconds` is *"**the** duration authority"* (`crates/pundit-core/src/project.rs:111-117`), so the check is exact and needs no probe. Out of range is **refused, naming the length** — not clamped. A clamped goal is a wrong timestamp that looks right, and an event past the end can never be seeked to or seen. An out-of-range source index is refused as `tag_match_event` already refuses one (`bus/scoreboard.rs:41-43`).
 
 **V2. The editor never refuses on match logic. It shows what `interpret` made of the list.** Two period starts in a row, a goal before any kick-off, a half that ends before it begins — `interpret` is positional and has an answer for all of them (`scoreboard.rs:317-352`). There is no "invalid" arrangement for it to reject, and inventing one here would mean a second set of match rules that could disagree with the scoreboard's.
 
@@ -329,12 +329,12 @@ So with `auto_back_anchor_p1` set, the last stored start/stop is **under the cap
 
 | Crate | Contents |
 |---|---|
-| `video-coach-core` | A new module `match_entry.rs`: `parse_time` / `format_time`, `parse_line` / `format_line(kind, source_index, source_seconds)` / `edit_from_line`, the kind vocabulary (with the refused kick-off words), `PendingMatchEvent`, `Batch { events, lines, leftover }` and `parse_batch(&Project, default_source, text)` — including the duration bound, the duplicate rule and the incremental cap count, so the echo and the command reach the same verdict from the same code. In `scoreboard.rs`: `Project::edit_match_event`, `#[must_use]`. `SAME_EVENT_SECONDS`. No new dependency: the audit still lists exactly `serde`, `serde_json`, `thiserror`, `uuid`. |
-| `video-coach-media` | Nothing. |
-| `video-coach-app` | Bus: `EditMatchEvent` and `AddMatchEvents` in `bus/scoreboard.rs`, both through `edit_match_events`, with the aggregate `UserError::Scoreboard` notice and `Event::MatchPasteLeftover`. `bus::editor_line` reads one row line — the grammar plus the cap — for the command *and* for the field's mark (**T2**). `match_panel.rs`: the two new `MatchRowText` fields, the echo-line wording and the summary line, tested headless as the rest of that module is. UI: the shared `Scrim` / `Sheet` (**P1**), `MatchEditorSheet`, the `editor-open` guard in `handle-key`, the `editing` and `line-focused` folds, and the "Edit events…" button. |
-| `video-coach-harness` | Batch add as one undo step, a partly-refused batch, and an edit that moves an event and moves the clock with it. |
+| `pundit-core` | A new module `match_entry.rs`: `parse_time` / `format_time`, `parse_line` / `format_line(kind, source_index, source_seconds)` / `edit_from_line`, the kind vocabulary (with the refused kick-off words), `PendingMatchEvent`, `Batch { events, lines, leftover }` and `parse_batch(&Project, default_source, text)` — including the duration bound, the duplicate rule and the incremental cap count, so the echo and the command reach the same verdict from the same code. In `scoreboard.rs`: `Project::edit_match_event`, `#[must_use]`. `SAME_EVENT_SECONDS`. No new dependency: the audit still lists exactly `serde`, `serde_json`, `thiserror`, `uuid`. |
+| `pundit-media` | Nothing. |
+| `pundit-app` | Bus: `EditMatchEvent` and `AddMatchEvents` in `bus/scoreboard.rs`, both through `edit_match_events`, with the aggregate `UserError::Scoreboard` notice and `Event::MatchPasteLeftover`. `bus::editor_line` reads one row line — the grammar plus the cap — for the command *and* for the field's mark (**T2**). `match_panel.rs`: the two new `MatchRowText` fields, the echo-line wording and the summary line, tested headless as the rest of that module is. UI: the shared `Scrim` / `Sheet` (**P1**), `MatchEditorSheet`, the `editor-open` guard in `handle-key`, the `editing` and `line-focused` folds, and the "Edit events…" button. |
+| `pundit-harness` | Batch add as one undo step, a partly-refused batch, and an edit that moves an event and moves the clock with it. |
 
-**`format_time` is core's, and `format::format_hms_tenths` stays where it is.** The app already has the renderer this sheet wants — `format_hms_tenths` produces `M:SS.t` and `H:MM:SS.t`, floored (`crates/video-coach-app/src/format.rs:21-30`) — but `format.rs` imports `gstreamer::glib` for `finish_at` (`format.rs:3`), and core declares no media dependency, so the module cannot move. Core needs its own because `parse_batch` builds echo text. So there are two, both flooring, with one test in the app crate asserting they agree over a table of values. Two five-line functions that a test pins together is a smaller thing than a crate split, and a smaller thing than sending formatted strings from the app into core's parser.
+**`format_time` is core's, and `format::format_hms_tenths` stays where it is.** The app already has the renderer this sheet wants — `format_hms_tenths` produces `M:SS.t` and `H:MM:SS.t`, floored (`crates/pundit-app/src/format.rs:21-30`) — but `format.rs` imports `gstreamer::glib` for `finish_at` (`format.rs:3`), and core declares no media dependency, so the module cannot move. Core needs its own because `parse_batch` builds echo text. So there are two, both flooring, with one test in the app crate asserting they agree over a table of values. Two five-line functions that a test pins together is a smaller thing than a crate split, and a smaller thing than sending formatted strings from the app into core's parser.
 
 The parser is pure and lives in core, so every line of the grammar is tested on CI with no GStreamer, and the app is left with rendering.
 

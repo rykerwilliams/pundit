@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Smoke-test the Coach Cuts .deb in a clean Ubuntu 24.04 container: the one
+# Smoke-test the pundit .deb in a clean Ubuntu 24.04 container: the one
 # definition, run by hand and by CI.
 #
-#   packaging/smoke-test.sh target/debian/coach-cuts_<version>_amd64.deb
+#   packaging/smoke-test.sh target/debian/pundit_<version>_amd64.deb
 #
 # Needs docker. A clean container, not the build machine, because the build
 # machine already has every library installed and so can't prove the package's
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 if [[ "${1:-}" != --inside ]]; then
-    deb=$(realpath "${1:?usage: $0 path/to/coach-cuts_<version>_amd64.deb}")
+    deb=$(realpath "${1:?usage: $0 path/to/pundit_<version>_amd64.deb}")
     [[ -f $deb ]] || { echo "no such package: $deb" >&2; exit 1; }
     exec docker run --rm \
         -v "$deb:/smoke/${deb##*/}:ro" \
@@ -45,7 +45,7 @@ echo "$depends"
 step "2. apt installs the package and its dependencies"
 apt-get update -qq
 apt_install "$deb"
-dpkg -s coach-cuts | grep -E '^(Package|Version|Status):'
+dpkg -s pundit | grep -E '^(Package|Version|Status):'
 
 step "3. Every software-path element exists"
 # gst-inspect-1.0 is for this check only: nothing in Depends pulls it.
@@ -80,13 +80,13 @@ project=$(mktemp -d)
 config=$(mktemp -d)
 log=$(mktemp)
 status=0
-XDG_CONFIG_HOME=$config timeout 20 xvfb-run -a coach-cuts "$project" >"$log" 2>&1 ||
+XDG_CONFIG_HOME=$config timeout 20 xvfb-run -a pundit "$project" >"$log" 2>&1 ||
     status=$?
 cat "$log"
 ((status == 124)) ||
-    fail "coach-cuts exited with status $status within 20 s; it should still be running (124 = killed by timeout)"
-! grep -q 'panicked' "$log" || fail "coach-cuts panicked (log above)"
-[[ -f $project/project.json ]] || fail "coach-cuts did not create $project/project.json"
+    fail "pundit exited with status $status within 20 s; it should still be running (124 = killed by timeout)"
+! grep -q 'panicked' "$log" || fail "pundit panicked (log above)"
+[[ -f $project/project.json ]] || fail "pundit did not create $project/project.json"
 echo "still running at 20 s, no panic, project.json created"
 
 step "PASSED"

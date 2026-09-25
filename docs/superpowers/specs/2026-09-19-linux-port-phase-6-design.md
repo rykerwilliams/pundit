@@ -97,10 +97,10 @@ The UI thread captures, on the recording's clock (`now_ns()`).
 
 | Crate | Phase 6 contents |
 |---|---|
-| `video-coach-core` | `stroke_replay`: `visible_strokes(&[CommentaryEvent], at)` and the pen-up auto-clear rule. `RecordingLog::stroke` / `clear_all`. |
-| `video-coach-media` | Nothing. |
-| `video-coach-app` | `drawing.rs`: the in-progress buffer (content px), the thinning rule, normalization at pen-up, and the SVG path builder. Bus: the `Stroke` and `ClearAll` commands. UI: the drawing TouchArea, the live `Path` layer and its expiry list, Auto-clear, Clear, C, the crosshair. |
-| `video-coach-harness` | Strokes and clears land in the log with the right record times. |
+| `pundit-core` | `stroke_replay`: `visible_strokes(&[CommentaryEvent], at)` and the pen-up auto-clear rule. `RecordingLog::stroke` / `clear_all`. |
+| `pundit-media` | Nothing. |
+| `pundit-app` | `drawing.rs`: the in-progress buffer (content px), the thinning rule, normalization at pen-up, and the SVG path builder. Bus: the `Stroke` and `ClearAll` commands. UI: the drawing TouchArea, the live `Path` layer and its expiry list, Auto-clear, Clear, C, the crosshair. |
+| `pundit-harness` | Strokes and clears land in the log with the right record times. |
 
 ## Testing
 

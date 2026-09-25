@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 2 gate check for the Coach Cuts Linux port.
+# Phase 2 gate check for the pundit Linux port.
 #
 # Answers the questions that decide a LOCKED architectural decision and that
 # cannot be answered in a headless container with no GPU:

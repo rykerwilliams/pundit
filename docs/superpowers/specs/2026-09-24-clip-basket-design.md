@@ -13,7 +13,7 @@ The coach's clubs, opponents and players are not named anywhere below. `Rovers` 
 
 ## Goal
 
-The coach wants *"clips of the 'same thing' across different game projects"* — every corner of the season, one player's goals across three matches, every time a press worked. Today a clip belongs to a project and an export is built from exactly one project: `compilation_plan(project, target)` takes one `&Project` (`crates/video-coach-core/src/plan.rs:193`), and `Bus::start_run` refuses outright without one (`crates/video-coach-app/src/bus/export.rs:323-325`). The only answer available is "export three reels and join them in another program".
+The coach wants *"clips of the 'same thing' across different game projects"* — every corner of the season, one player's goals across three matches, every time a press worked. Today a clip belongs to a project and an export is built from exactly one project: `compilation_plan(project, target)` takes one `&Project` (`crates/pundit-core/src/plan.rs:193`), and `Bus::start_run` refuses outright without one (`crates/pundit-app/src/bus/export.rs:323-325`). The only answer available is "export three reels and join them in another program".
 
 The **basket** is a list of clips the app holds *across* projects. The coach makes a clip in the project they are in, adds it to the basket, moves to the next project, and at the end presses Start once: one MP4 of every piece, in the order added, each piece drawing the board and clock of the match it came from.
 
@@ -57,13 +57,13 @@ The alternative is honest and was weighed: a snapshot cannot go stale. But:
 - **A snapshot silently ships a stale edit.** The coach's own flow is to make the clip and add it *immediately* — which is exactly when the edit is least finished. They then watch it back, fix a stroke, trim a pause, rename it, tag the match's second half. A snapshot ignores every one of those, and nothing on screen says so. A reference's failure mode is the opposite: it is **detectable and nameable**, and the export's existing rule is already built for it — refuse before writing a byte, name the piece (`bus/export.rs:646-674`).
 - **The codebase's own taste prefers a loud refusal to a quiet wrong answer.** The match editor refuses an out-of-range time rather than clamping it, because *"a clamped goal is a wrong timestamp that looks right"*. A snapshot of a clip the coach has since fixed is the same class of thing.
 - **A snapshot is a copy of project data living outside every project.** To survive a restart (**H1**) it would need a serialized form of `Clip` (its whole event log), the recording path, the source paths, the `ScoreboardConfig`, the absolute match events, the highlights and the avatar — a second format for project data, with its own version discipline, in the app's own config directory. That is a large thing to invent for a feature whose refusals are cheap.
-- **Undo would disagree with it.** `Ctrl+Z` after deleting a clip restores it from `.trash` (`crates/video-coach-app/src/bus/clips.rs:220-247`); a snapshot would hold a copy that undo neither sees nor can correct.
+- **Undo would disagree with it.** `Ctrl+Z` after deleting a clip restores it from `.trash` (`crates/pundit-app/src/bus/clips.rs:220-247`); a snapshot would hold a copy that undo neither sees nor can correct.
 
 **What the reference costs, stated plainly:** the clip can be deleted (refused by name, **V1**); the footage can be moved or the project folder renamed (refused, **V1**, **V3**); the match can be re-tagged, which changes the clock burned into that piece. The last one is not a cost — it is the point. A coach who fixes a mis-tagged kick-off wants the fix in the film.
 
 **And one genuinely silent wrong render, which the argument above does not cover.** If the coach **relinks** a source to *different* footage — a re-download that starts at a different moment, the wrong half, a different camera's file — the reference resolves cleanly, the probe writes the new duration back, and the piece renders footage the coach did not mean, with no refusal anywhere. `Command::RelinkSource` exists precisely so a project can point at a moved file, and nothing compares the new file's content with the old. A snapshot would not save us either (it would ship the *old* path, which is gone), so this is not an argument between the two designs — but the claim "a reference's failure mode is detectable" is not universally true, and pretending otherwise would be the kind of overclaim this spec is supposed to avoid. Relinking to different footage already corrupts every ordinary export of that project the same way; a basket only widens the blast radius to a film the coach may not be looking at while it renders.
 
-**E2. `(folder, clip id)` is the key, and the folder is canonical.** Clip ids are `Uuid::new_v4()` and unique *within* a project by construction, not across projects, so the pair is the key. `Open::folder` is already *"absolute and canonical, so source paths resolve against it directly"* (`crates/video-coach-app/src/bus/mod.rs:545-549`; canonicalized in `commit`, `bus/project.rs:93-97`), so two references to the same project compare equal whatever path the coach opened it by.
+**E2. `(folder, clip id)` is the key, and the folder is canonical.** Clip ids are `Uuid::new_v4()` and unique *within* a project by construction, not across projects, so the pair is the key. `Open::folder` is already *"absolute and canonical, so source paths resolve against it directly"* (`crates/pundit-app/src/bus/mod.rs:545-549`; canonicalized in `commit`, `bus/project.rs:93-97`), so two references to the same project compare equal whatever path the coach opened it by.
 
 **E3. Nothing is cached for display.** A row's labels — the match, the clip's name, its length — are read from the project each time the basket is shown (**U3**), never stored beside the reference. A cached name goes stale the moment the coach renames a clip, and a stale name in a list whose whole job is "which piece is this" is worse than a file read.
 
@@ -79,11 +79,11 @@ fn project_for(&self, folder: &Path) -> Result<Cow<'_, Project>, UserError>;
 
 ### H. Where the basket lives
 
-**H1. Machine-wide, beside `state.json` — but in its own file, `$XDG_CONFIG_HOME/coach-cuts/basket.json`.** (`AppFiles` was called `StateFile` while this was built; it was renamed in the same day's review, because it is now *where the app's own files are* — the state file, its siblings and the user's videos folder — rather than any one of them.) Not a *key in* `state.json`, which was the first draft and is wrong: `AppFiles::read` **discards the whole document on any parse error** (`state.rs:158-169`, returning `State::default()` with a log line) and **every setter rewrites it whole** (*"Every write reads first, so a field one setter doesn't know about survives the other's write: the document is rewritten whole"*, `state.rs:154-157`). So one unparseable basket value — a resolution label from a later build, a hand-edited path — would silently take the last project, the pen, the speech model and the window size down with it, and the next `set_pen` would write the loss to disk. That same hazard is *why* that file already stores the model and the pen as **string labels rather than enums** (`state.rs:34-42`: *"a label this version doesn't know reads as the default rather than throwing the whole document away"*).
+**H1. Machine-wide, beside `state.json` — but in its own file, `$XDG_CONFIG_HOME/pundit/basket.json`.** (`AppFiles` was called `StateFile` while this was built; it was renamed in the same day's review, because it is now *where the app's own files are* — the state file, its siblings and the user's videos folder — rather than any one of them.) Not a *key in* `state.json`, which was the first draft and is wrong: `AppFiles::read` **discards the whole document on any parse error** (`state.rs:158-169`, returning `State::default()` with a log line) and **every setter rewrites it whole** (*"Every write reads first, so a field one setter doesn't know about survives the other's write: the document is rewritten whole"*, `state.rs:154-157`). So one unparseable basket value — a resolution label from a later build, a hand-edited path — would silently take the last project, the pen, the speech model and the window size down with it, and the next `set_pen` would write the loss to disk. That same hazard is *why* that file already stores the model and the pen as **string labels rather than enums** (`state.rs:34-42`: *"a label this version doesn't know reads as the default rather than throwing the whole document away"*).
 
 A separate file makes the blast radius the basket's own, which is the only thing whose loss is a re-gather.
 
-**`project.json` would be wrong by construction.** The basket belongs to no project: half its pieces are in projects that are closed. Putting it in one project's `Preferences` would also mean a `CURRENT_FORMAT_VERSION` bump (11 today, `crates/video-coach-core/src/store.rs:21`) for data that project has no business holding. Its sibling rule — *"**None is a project's.** … `Preferences` lives in `project.json`, where a new field is a format change that `store::read`'s exact-version guard would make every existing project unreadable for"* (`state.rs:1-12`) — is the one this follows.
+**`project.json` would be wrong by construction.** The basket belongs to no project: half its pieces are in projects that are closed. Putting it in one project's `Preferences` would also mean a `CURRENT_FORMAT_VERSION` bump (11 today, `crates/pundit-core/src/store.rs:21`) for data that project has no business holding. Its sibling rule — *"**None is a project's.** … `Preferences` lives in `project.json`, where a new field is a format change that `store::read`'s exact-version guard would make every existing project unreadable for"* (`state.rs:1-12`) — is the one this follows.
 
 **Why persist at all, rather than hold it in memory for the session.** The coach's flow crosses projects, and plausibly crosses an evening — three matches is three opens, and an app restart (or a crash) in the middle would lose a list the coach cannot see the ingredients of any more. Persisting costs nothing in correctness *because* the entries are references: a stale reference on disk behaves exactly as a stale reference in memory does — greyed out in the sheet, refused by name at Start.
 
@@ -98,16 +98,16 @@ A separate file makes the blast radius the basket's own, which is the only thing
 }
 ```
 
-- **No `outputDir`.** The film goes to `<XDG Videos>/Coach Cuts/` and that is all (**O1**).
+- **No `outputDir`.** The film goes to `<XDG Videos>/pundit/` and that is all (**O1**).
 - **`resolution` and `quality` are read as labels, not as `Resolution` / `Quality` directly**, and a label this build doesn't know reads as the **default** rather than throwing the pieces away. That is `state.rs`'s discipline applied one level in: the pickers are worth nothing and the pieces are worth an evening, so the pickers must not be able to take them down. It costs two `label` / `from_label` pairs, private to `bus/basket.rs`; core keeps its serde as it is.
 - **`pieces` is the document.** A malformed piece list is the one thing that does cost a re-gather, logged the way `AppFiles` logs its own failures (`state.rs:158-169`).
 - Every field `#[serde(default)]`, so a file from before a field, or without one, reads.
 
-**H3. The bus owns it, outside `Open`.** A new `crates/video-coach-app/src/bus/basket.rs` holding both the list and its file, with the list on `Bus` itself, loaded at `Bus::spawn` and written back on every change (the bus is already the one writer of the app's own state — `Command::SetPen`'s doc says so, `bus/mod.rs:257-260`). It must not live on `Open`, which is cleared and replaced on every open (`bus/project.rs:93-126`); the basket is precisely the thing that has to survive that. The file's location follows `AppFiles`'s: `AppFiles::in_config_dir`'s shape, so tests point `XDG_CONFIG_HOME` at a scratch directory exactly as they do today.
+**H3. The bus owns it, outside `Open`.** A new `crates/pundit-app/src/bus/basket.rs` holding both the list and its file, with the list on `Bus` itself, loaded at `Bus::spawn` and written back on every change (the bus is already the one writer of the app's own state — `Command::SetPen`'s doc says so, `bus/mod.rs:257-260`). It must not live on `Open`, which is cleared and replaced on every open (`bus/project.rs:93-126`); the basket is precisely the thing that has to survive that. The file's location follows `AppFiles`'s: `AppFiles::in_config_dir`'s shape, so tests point `XDG_CONFIG_HOME` at a scratch directory exactly as they do today.
 
 ### J. How one job is built from several matches — the crux
 
-An `ExportJob` is **nearly** self-contained already, which is what makes this feature small. It carries the whole compilation (every output frame and the plan), the output path, the cues, the renderer and the file tags (`crates/video-coach-media/src/composite/export.rs:120-147`); each entry carries its recording and a **clone of its `Clip`** (`EntryMedia`, `:151-158`); the job is explicitly documented as *"A snapshot: later edits to the project don't reach a running export"* (`bus/export.rs:618-621`). Nothing in the render path reads a `Project`.
+An `ExportJob` is **nearly** self-contained already, which is what makes this feature small. It carries the whole compilation (every output frame and the plan), the output path, the cues, the renderer and the file tags (`crates/pundit-media/src/composite/export.rs:120-147`); each entry carries its recording and a **clone of its `Clip`** (`EntryMedia`, `:151-158`); the job is explicitly documented as *"A snapshot: later edits to the project don't reach a running export"* (`bus/export.rs:618-621`). Nothing in the render path reads a `Project`.
 
 **Five things in it are one-per-job where a cross-match cut needs one-per-entry** [cited]:
 
@@ -115,13 +115,13 @@ An `ExportJob` is **nearly** self-contained already, which is what makes this fe
 |---|---|---|
 | `ExportJob::sources: Vec<PathBuf>` | `export.rs:126-130`, read at `:561-566`, `composite/audio.rs:104-108`, `composite/copy.rs:232-244` | one flat list indexed by `PlanEntry::source_index`; two matches' indices collide |
 | `Encode::scoreboard: Option<ScoreboardContext>` | `export.rs:105-109`, read at `:594-597` | one board and one match timeline for the whole film |
-| `Encode::highlights: Vec<PlayerHighlight>` | `export.rs:110-113`, read at `:601-608` | keyed by `source_index` too (`crates/video-coach-core/src/highlight.rs:85-89`): match A's ring would land on match B's footage |
+| `Encode::highlights: Vec<PlayerHighlight>` | `export.rs:110-113`, read at `:601-608` | keyed by `source_index` too (`crates/pundit-core/src/highlight.rs:85-89`): match A's ring would land on match B's footage |
 | `Encode::avatar: Option<PathBuf>` | `export.rs:114-117`, opened once at `:522-532`, gated at `:533-536` | one image per run |
-| the audio volumes | `audio_regions(compilation, &prefs)`, `crates/video-coach-core/src/audio.rs:113-133`, called at `bus/export.rs:696` | `Preferences::preview_source_volume` / `preview_commentary_volume` are per project |
+| the audio volumes | `audio_regions(compilation, &prefs)`, `crates/pundit-core/src/audio.rs:113-133`, called at `bus/export.rs:696` | `Preferences::preview_source_volume` / `preview_commentary_volume` are per project |
 
 The last of those is **not** fixed here — see **J6**.
 
-**J1. The match's record hangs off the entry, and `core` is untouched.** An earlier draft added `PlanEntry::match_index` and a `Vec<MatchMedia>` on `Encode` indexed by it. That is a worse design than it looks: it puts a media-only coordinate into `core`'s pure plan type, forces a mechanical `match_index: 0` into **four** `PlanEntry` construction sites (`plan.rs:227`, `crates/video-coach-core/src/reel.rs:178`, `crates/video-coach-core/src/whole_match.rs:33`, `crates/video-coach-core/tests/audio.rs:125`), makes every ordinary export carry a one-element `Vec` and an index into it, and leaves an **unenforced invariant** — "`matches[entry.match_index]` is the project `entry.source_index` belongs to" — that nothing type-checks.
+**J1. The match's record hangs off the entry, and `core` is untouched.** An earlier draft added `PlanEntry::match_index` and a `Vec<MatchMedia>` on `Encode` indexed by it. That is a worse design than it looks: it puts a media-only coordinate into `core`'s pure plan type, forces a mechanical `match_index: 0` into **four** `PlanEntry` construction sites (`plan.rs:227`, `crates/pundit-core/src/reel.rs:178`, `crates/pundit-core/src/whole_match.rs:33`, `crates/pundit-core/tests/audio.rs:125`), makes every ordinary export carry a one-element `Vec` and an index into it, and leaves an **unenforced invariant** — "`matches[entry.match_index]` is the project `entry.source_index` belongs to" — that nothing type-checks.
 
 So the record goes on the entry's media instead, where media already keeps per-entry things:
 
@@ -205,7 +205,7 @@ let scoreboard = media.match_media.scoreboard.as_ref().and_then(|context| {
 
 One line of indirection, and everything Phase 9 pinned still holds: the clock is **the displayed frame's source time**, asked per frame, never a per-clip constant plus record time (`plan.rs:97-113` and the loop's own comment, `export.rs:591-593`). Each match's `ScoreboardContext` is built by `ScoreboardContext::for_project` from *its own* project, so its `source_offsets` and its `AbsoluteMatchEvent`s are its own match's concat timeline (`scoreboard.rs:640-656`, `:742-751`) — the caching warning on both (*"never cache one across a source add, move, remove or relink"*) is satisfied by the existing rule: the contexts are derived when the run starts and the job is a snapshot. A piece from a match with no scoreboard configured draws no board, per entry, which is what `None` already means.
 
-**The config travels with the state.** `frame.scoreboard` is `Option<(&ScoreboardConfig, ScoreboardState)>` already (`crates/video-coach-media/src/overlay.rs:354-356`), so the teams, colours and format redraw per entry with no change in the overlay: piece 1 is `Rovers 2 - 1 Athletic`, piece 2 is a different pair of names in different kit colours. The overlay's fitted labels are what make that safe — *"every label is fitted … nothing here clips and a centred line that overflows spills out of both ends of its cell"* (`overlay.rs:215-220`) — so a longer club name in the second match shrinks in its cell rather than spilling.
+**The config travels with the state.** `frame.scoreboard` is `Option<(&ScoreboardConfig, ScoreboardState)>` already (`crates/pundit-media/src/overlay.rs:354-356`), so the teams, colours and format redraw per entry with no change in the overlay: piece 1 is `Rovers 2 - 1 Athletic`, piece 2 is a different pair of names in different kit colours. The overlay's fitted labels are what make that safe — *"every label is fitted … nothing here clips and a centred line that overflows spills out of both ends of its cell"* (`overlay.rs:215-220`) — so a longer club name in the second match shrinks in its cell rather than spilling.
 
 **J4. Per-match highlights come through the same field.** `highlight_shapes(&media.match_media.highlights, entry.source_index, frame.source_time, …)` (`highlight.rs:424-431`).
 
@@ -250,7 +250,7 @@ pub fn basket_plan(pieces: &[BasketPiece]) -> CompilationPlan;
 pub fn basket_schedule(pieces: &[BasketPiece]) -> Compilation;
 ```
 
-**One extracted helper, and no generification of `compilation_schedule`.** An earlier draft turned the walker into `fn schedule(plan, events_for: impl Fn(&PlanEntry) -> &[CommentaryEvent])`. That is unnecessary — `walk` (`crates/video-coach-core/src/export.rs:143-152`) is *already* the shared unit, and both schedulers are in the same module, so each writes its own four-line loop around it. More importantly, a basket's entries are **1:1 with its pieces, in order**, so `basket_schedule` reads `pieces[i].clip.events` **directly**, where `compilation_schedule` looks its clip up by `clip_id` (`export.rs:130-137`). That closes the invariant the `match_index` draft left unenforced — "find the clip in `matches[entry.match_index]`", which on a miss **degrades silently to identity zoom** via `map_or(&[][..], …)` — rather than restating it in a closure.
+**One extracted helper, and no generification of `compilation_schedule`.** An earlier draft turned the walker into `fn schedule(plan, events_for: impl Fn(&PlanEntry) -> &[CommentaryEvent])`. That is unnecessary — `walk` (`crates/pundit-core/src/export.rs:143-152`) is *already* the shared unit, and both schedulers are in the same module, so each writes its own four-line loop around it. More importantly, a basket's entries are **1:1 with its pieces, in order**, so `basket_schedule` reads `pieces[i].clip.events` **directly**, where `compilation_schedule` looks its clip up by `clip_id` (`export.rs:130-137`). That closes the invariant the `match_index` draft left unenforced — "find the clip in `matches[entry.match_index]`", which on a miss **degrades silently to identity zoom** via `map_or(&[][..], …)` — rather than restating it in a closure.
 
 So the only thing extracted is the per-clip entry itself: `playback_segments`, the quantized `frame_count`, and the fields around them (`plan.rs:216-236`) become one private function that `compilation_plan`'s loop and `basket_plan`'s both call, with the text bar's line passed in (**T1**). Everything downstream — `total_frames`, `start_frame` quantization, `record_time`, `entry_chapters` — is untouched, and `CompilationPlan::total_frames` stays **the** denominator (`plan.rs:137-146`).
 
@@ -260,7 +260,7 @@ So the only thing extracted is the per-clip entry itself: `playback_segments`, t
 
 **O1. One file, named by the basket, in a folder that is nobody's project.**
 
-- **Where: `<XDG Videos>/Coach Cuts/`, full stop.** `glib::user_special_dir(UserDirectory::Videos)` (glib 0.22, returns `Option<PathBuf>`), falling back to `$HOME/Videos/Coach Cuts` and then to the current directory when there is no home at all. Created on demand, after the refusals, exactly as `exports/` is (`bus/export.rs:349-354`).
+- **Where: `<XDG Videos>/pundit/`, full stop.** `glib::user_special_dir(UserDirectory::Videos)` (glib 0.22, returns `Option<PathBuf>`), falling back to `$HOME/Videos/pundit` and then to the current directory when there is no home at all. Created on demand, after the refusals, exactly as `exports/` is (`bus/export.rs:349-354`).
 
   **Not** a project's `exports/`: a basket written into whichever project happened to be open would move depending on the order the coach worked in, and would sit in a folder whose `project.json` does not describe it.
 
@@ -275,12 +275,12 @@ So the only thing extracted is the per-clip entry itself: `playback_segments`, t
 
 **O2. Resolution and quality are the basket's, not a project's.** The sheet has those two pickers and no Scoreboard picker (**O5**). They are remembered in `basket.json` beside the pieces, as labels (**H2**). The basket must **not** write into the open project's `Preferences` the way `start_run` does for a normal run (`bus/export.rs:356-365`): those fields are that project's memory of its own last export.
 
-**O3. Chapters: one per piece, unchanged.** `entry_chapters` titles each chapter with the entry's text bar line and skips a plan with fewer than two entries (`plan.rs:148-158`) — for a basket that is exactly right: jump to each corner. The `chpl` box, the `.chapters.txt` beside the file and the YouTube rules `chapter_list` enforces (first line `0:00`, at least three, ten seconds apart — `crates/video-coach-core/src/chapters.rs:10-31`) all apply as they stand, including its removal of a stale list (`export.rs:465-499`). A basket of two 8-second pieces gets no pasteable list, for the same reason a two-clip compilation doesn't.
+**O3. Chapters: one per piece, unchanged.** `entry_chapters` titles each chapter with the entry's text bar line and skips a plan with fewer than two entries (`plan.rs:148-158`) — for a basket that is exactly right: jump to each corner. The `chpl` box, the `.chapters.txt` beside the file and the YouTube rules `chapter_list` enforces (first line `0:00`, at least three, ten seconds apart — `crates/pundit-core/src/chapters.rs:10-31`) all apply as they stand, including its removal of a stale list (`export.rs:465-499`). A basket of two 8-second pieces gets no pasteable list, for the same reason a two-clip compilation doesn't.
 
 **O4. Tags: a sibling of `file_tags`, telling the truth about a film that spans matches.** `file_tags(project, target, date)` is per project (`metadata.rs:103-131`), and the module's own rule is the one to follow: *"**Where a tag can't be told the truth it is left out** rather than guessed"* (`metadata.rs:16-19`). So `metadata::basket_tags(name: &str, matches: &[&Project]) -> FileTags`:
 
 - `title` — the basket's name.
-- `description` — `"A Coach Cuts basket of 7 pieces from 3 matches."`
+- `description` — `"A pundit basket of 7 pieces from 3 matches."`
 - `comment` — **empty**. `final_score` states one match's result (`metadata.rs:168-176`); a film of three matches has no result to state.
 - `keywords` — every contributing match's team names. `team_keywords` (`metadata.rs:181-193`) dedupes **within one project**: it drops blanks and collapses a pair of identical names. Across matches, *"Rovers"* appearing in three of them is a new duplicate that function has never seen, so the cross-match dedupe is **new code, not reuse** — a second pass over the concatenated lists, applying the same two rules one level up. Small, but it is a behaviour to write and to test, not a function to call. This is the one tag that is *more* useful across matches: a library can group the film under all six clubs.
 - `encoder` — `APP_NAME` and the version, unchanged.
@@ -288,9 +288,9 @@ So the only thing extracted is the per-clip entry itself: `playback_segments`, t
 
 `match_name` becomes `pub` (`metadata.rs:139-147`) since the text bar needs it too (**T2**).
 
-**O5. The scoreboard is burned in, and there is no cue sidecar.** `carry_scoreboard` already settles this for everything but the whole match: a clip *"is drawn on, zoomed and captioned, so it re-encodes either way, and a subtitle line repeating its own text bar would be clutter"*, and its cue slot is `None` so that a `.srt` beside the output — the coach's own file — is neither written nor removed (`bus/export.rs:538-550`). A basket is clips. So: `cues: None`, `scoreboard` burned per entry (**J3**), and `scoreboard_cues` is untouched — which matters, because it reads one context per compilation (`crates/video-coach-core/src/cues.rs:50-60`) and would be the second thing needing a per-match rewrite if a basket ever offered a cue track. See **Deferred**.
+**O5. The scoreboard is burned in, and there is no cue sidecar.** `carry_scoreboard` already settles this for everything but the whole match: a clip *"is drawn on, zoomed and captioned, so it re-encodes either way, and a subtitle line repeating its own text bar would be clutter"*, and its cue slot is `None` so that a `.srt` beside the output — the coach's own file — is neither written nor removed (`bus/export.rs:538-550`). A basket is clips. So: `cues: None`, `scoreboard` burned per entry (**J3**), and `scoreboard_cues` is untouched — which matters, because it reads one context per compilation (`crates/pundit-core/src/cues.rs:50-60`) and would be the second thing needing a per-match rewrite if a basket ever offered a cue track. See **Deferred**.
 
-**O6. Mixed resolutions, aspect ratios and frame rates need no rule, because the graph already handles them** [cited]. The mixer is pinned to 1920×1080@30 and every entry is letterboxed into it by `fit_rect`, recomputed when the entry changes, with the `appsrc`'s caps reset on the same frame — *"Caps are safe to set from the pushing thread: the change lands on exactly the frame pushed after it (measured)"* (`export.rs:572-587`, `:668-677`). Source frame rate never mattered: the pump answers *"last decoded frame with PTS ≤ `source_time`"*, and *"that one rule covers freezes, 25→30 fps duplication and 60→30 fps drops"* (`crates/video-coach-core/src/export.rs:4-7`). So a 4:3 phone clip between two 1440p pieces letterboxes; it is not refused. The project-level `AspectMismatch` refusal (`bus/mod.rs:411-415`) is about one project's sources sharing a chrome coordinate space and does not apply across matches.
+**O6. Mixed resolutions, aspect ratios and frame rates need no rule, because the graph already handles them** [cited]. The mixer is pinned to 1920×1080@30 and every entry is letterboxed into it by `fit_rect`, recomputed when the entry changes, with the `appsrc`'s caps reset on the same frame — *"Caps are safe to set from the pushing thread: the change lands on exactly the frame pushed after it (measured)"* (`export.rs:572-587`, `:668-677`). Source frame rate never mattered: the pump answers *"last decoded frame with PTS ≤ `source_time`"*, and *"that one rule covers freezes, 25→30 fps duplication and 60→30 fps drops"* (`crates/pundit-core/src/export.rs:4-7`). So a 4:3 phone clip between two 1440p pieces letterboxes; it is not refused. The project-level `AspectMismatch` refusal (`bus/mod.rs:411-415`) is about one project's sources sharing a chrome coordinate space and does not apply across matches.
 
 ### T. What the text bar and the chapter titles say
 
@@ -306,7 +306,7 @@ So the only thing extracted is the per-clip entry itself: `playback_segments`, t
 
 ### U. The UI
 
-**U1. Added from the clip row's own menu: "Add to basket".** That menu already holds *Jump to clip start / Preview clip / Export video… / Delete clip* (`crates/video-coach-app/ui/app.slint:3509-3523`), and "Export video…" is its nearest neighbour in meaning. It acts on the row it was opened on, not on the selection, like every other item there. A basket item is added for the open project, so it needs no gate beyond the menu's own `enabled: !root.recording`.
+**U1. Added from the clip row's own menu: "Add to basket".** That menu already holds *Jump to clip start / Preview clip / Export video… / Delete clip* (`crates/pundit-app/ui/app.slint:3509-3523`), and "Export video…" is its nearest neighbour in meaning. It acts on the row it was opened on, not on the selection, like every other item there. A basket item is added for the open project, so it needs no gate beyond the menu's own `enabled: !root.recording`.
 
 **No key in v1.** `b` is free (`app.slint:3176-3264` binds `r`, space, `a`/`d`, `,`/`.`, `[`/`]`, `j`/`l`, `1`, `2`/`3`, plus `z`/`x`/`v` and the Ctrl set), so one can be added later at no cost. See **Open questions**.
 
@@ -356,11 +356,11 @@ Named refusals, in the order they can be hit:
 
 **V5. Adding a clip already in the basket is a no-op with a notice.** `Transcribe`'s doc sets the precedent: *"Does nothing if it is queued or running already"* (`bus/mod.rs:296-303`). The notice says `already in the basket`.
 
-**V6. Every basket refusal about a project is one shape, and it names the folder.** `From<StoreError> for UserError` maps a format mismatch to `TooNewProject` / `LegacyProject`, whose wording is *"this project was made by a newer version of Coach Cuts (format v12)"* — **it names no path** (`bus/mod.rs:430-431`, `:497-510`). That is fine when the project in question is the one the coach just asked to open, and misleading when it is one of three the basket is reaching into: *which* project? So `project_for` (**E3a**) wraps whatever comes back from `store::read` into the one shape, keeping the store error's own sentence as the reason:
+**V6. Every basket refusal about a project is one shape, and it names the folder.** `From<StoreError> for UserError` maps a format mismatch to `TooNewProject` / `LegacyProject`, whose wording is *"this project was made by a newer version of pundit (format v12)"* — **it names no path** (`bus/mod.rs:430-431`, `:497-510`). That is fine when the project in question is the one the coach just asked to open, and misleading when it is one of three the basket is reaching into: *which* project? So `project_for` (**E3a**) wraps whatever comes back from `store::read` into the one shape, keeping the store error's own sentence as the reason:
 
 ```text
 can't export: the project at /home/coach/matches/20260917 can't be read:
-this project was made by a newer version of Coach Cuts (format v12)
+this project was made by a newer version of pundit (format v12)
 ```
 
 One shape for a missing folder, a malformed file, a legacy format and a future one — because from the basket's point of view they are one fact ("this piece's match can't be read") plus a reason, and the folder is the only thing the coach can act on.
@@ -486,16 +486,16 @@ Published at `Bus::spawn`, on every basket mutation, and on `ShowBasket`. **Not*
 
 | Crate | What it gains | What it must not gain |
 |---|---|---|
-| `video-coach-core` | `BasketPiece`; `clip_source_duration`; `basket_plan`; `basket_schedule`; the extracted per-clip-entry helper; `metadata::basket_tags` with its own cross-match keyword dedupe; `metadata::match_name` made public | `PlanEntry::match_index` or any other media coordinate; a change to `audio_regions`; a generified frame walker; any notion of "the basket" as state; any path to a *folder* it must read; any media dependency |
-| `video-coach-media` | `Render::Copy(Vec<PathBuf>)`; `EntryMedia { source, clip: Option<ClipMedia>, match_media: Arc<MatchMedia> }` replacing `ExportJob::sources` and `Encode`'s `scoreboard` / `highlights` / `avatar`; the board, highlights and avatar read per entry; the decoder cache keyed by path **and bounded**; the avatar cache keyed by path; the diagnostics taken at open | any knowledge of projects, folders or the app's state files; a second renderer; a per-job avatar gate |
-| `video-coach-app` | `bus/basket.rs` (the list, `basket.json` read/write with its label discipline, `project_for`, the refusals, the job builder); six commands; `Event::Basket`; `start_run` split into `begin(jobs)` + `refuse_if_busy()`; the shared `entry_media` resolver; `BasketSheet` and the bottom-bar button | the basket on `Open`; a write into any project's `Preferences`; a key in `state.json`; a second refusal path; a second run loop |
-| `video-coach-harness` | `tests/basket.rs` — two projects, pieces from both, over the bus | — |
+| `pundit-core` | `BasketPiece`; `clip_source_duration`; `basket_plan`; `basket_schedule`; the extracted per-clip-entry helper; `metadata::basket_tags` with its own cross-match keyword dedupe; `metadata::match_name` made public | `PlanEntry::match_index` or any other media coordinate; a change to `audio_regions`; a generified frame walker; any notion of "the basket" as state; any path to a *folder* it must read; any media dependency |
+| `pundit-media` | `Render::Copy(Vec<PathBuf>)`; `EntryMedia { source, clip: Option<ClipMedia>, match_media: Arc<MatchMedia> }` replacing `ExportJob::sources` and `Encode`'s `scoreboard` / `highlights` / `avatar`; the board, highlights and avatar read per entry; the decoder cache keyed by path **and bounded**; the avatar cache keyed by path; the diagnostics taken at open | any knowledge of projects, folders or the app's state files; a second renderer; a per-job avatar gate |
+| `pundit-app` | `bus/basket.rs` (the list, `basket.json` read/write with its label discipline, `project_for`, the refusals, the job builder); six commands; `Event::Basket`; `start_run` split into `begin(jobs)` + `refuse_if_busy()`; the shared `entry_media` resolver; `BasketSheet` and the bottom-bar button | the basket on `Open`; a write into any project's `Preferences`; a key in `state.json`; a second refusal path; a second run loop |
+| `pundit-harness` | `tests/basket.rs` — two projects, pieces from both, over the bus | — |
 
 ---
 
 ## Testing
 
-**`video-coach-core` (no GStreamer):**
+**`pundit-core` (no GStreamer):**
 
 1. `basket_plan` over pieces from two projects: entry order is the piece order; each entry's `source_index` is its own clip's; `start_frame`s are the running quantized sum; `total_frames` is the last entry's end.
 2. A piece from match B keeps B's `source_index` even when A has more sources than B has — the regression a flat merged source list would cause, and the reason `source_index` stays project-local (**J1**).
@@ -507,7 +507,7 @@ Published at `Bus::spawn`, on every basket mutation, and on `ShowBasket`. **Not*
 8. **The clock test, which is the point of the feature:** two projects whose kick-offs are tagged differently; `ScoreboardContext::for_project` each; assert that a frame of piece 1 and a frame of piece 2 at the same *output* time read their own match's clock and score. The existing pause test (`core`'s Phase 9 one) is the model, and it must keep passing.
 9. **`audio_regions` is unchanged**, which its existing tests already pin (`core/tests/audio.rs`). No new test, and no new signature (**J6**).
 
-**`video-coach-media` (GStreamer, llvmpipe on CI):**
+**`pundit-media` (GStreamer, llvmpipe on CI):**
 
 10. An `ExportJob` whose entries carry **two different `MatchMedia`**, two fixture sources of **different resolutions**, and a board on each: the file is 1920×1080@30, the entry boundary re-letterboxes, and the burned board changes team names across it. Read back by decoding a frame either side of the boundary (the Phase 9 scoreboard-pixel tests are the model).
 11. One match with an avatar and one without, alternating: the no-avatar piece gets the **GL** filler, the run completes, no pad stalls, and one `AvatarInset` is opened for two entries that share an image.
@@ -516,12 +516,12 @@ Published at `Bus::spawn`, on every basket mutation, and on `ShowBasket`. **Not*
 14. `Render::Copy(files)` still joins a whole match — the reshape's regression test, and the one that proves `files()`'s removal lost nothing.
 15. An entry whose `source` file does not exist fails the run with the entry named, and leaves no `.part`.
 
-**`video-coach-app` (unit, no GStreamer needed):**
+**`pundit-app` (unit, no GStreamer needed):**
 
 16. `basket.json` round-trips; an **unknown resolution or quality label reads as the default and the pieces survive** (**H2**) — the test that pins the reason this is not a key in `state.json`; a corrupt file reads as an empty basket and logs; and writing the basket **does not touch `state.json`**, asserted by setting the pen and the last project first and reading them back after.
 17. The output name: trimmed; empty becomes `Basket`; `/` and `:` replaced; an existing `Corners.mp4` gives `Corners (2).mp4` and then `(3)` (**O1**).
 
-**`video-coach-harness` (over the bus):**
+**`pundit-harness` (over the bus):**
 
 18. Two projects in one temp dir, each with a fixture video and one clip. Open A, `AddToBasket`; open B, `AddToBasket`; `ExportBasket`. Assert: one `ExportRun` with one target, progress events, `TargetState::Done`, the file in the output folder, its `.chapters.txt`, and **no `.srt`** (**O5**).
 19. The basket survives a project open: `Event::Basket` after opening B still lists A's piece with A's match label.
@@ -532,7 +532,7 @@ Published at `Bus::spawn`, on every basket mutation, and on `ShowBasket`. **Not*
 24. `MoveBasketEntry` and `RemoveFromBasket` reorder and shorten the run's entries in the expected order.
 25. A basket run cancels like any other (`CancelExport` → `TargetState::Cancelled`, no file).
 26. `AddToBasket` for a clip already in it changes nothing and emits the notice.
-27. **Every existing export test passes unchanged.** The reshape's real proof is `crates/video-coach-harness/tests/` and `crates/video-coach-media/tests/export.rs` going green with no behavioural edit.
+27. **Every existing export test passes unchanged.** The reshape's real proof is `crates/pundit-harness/tests/` and `crates/pundit-media/tests/export.rs` going green with no behavioural edit.
 
 **What needs the coach's eyes** (batched with the other hands-on checks, per the port's working order):
 
@@ -541,7 +541,7 @@ Published at `Bus::spawn`, on every basket mutation, and on `ShowBasket`. **Not*
 - **The board changing between pieces** — whether two clubs' kit colours flipping mid-film reads as intentional or as a glitch.
 - **The join between two matches recorded differently** (exposure, white balance, a different camera position). No cut, no fade — is that acceptable, or does a basket want a 6-frame dip to black between pieces? (See **Open questions**.)
 - **The level of a piece from a project whose volumes were turned down** (**J6**) — the basket mixes at 1.0/1.0, so a coach who scans that match quietly gets a louder film than the preview they remember. Expected to be right; worth one listen.
-- **The output folder** — `<Videos>/Coach Cuts` is a guess about where the coach wants films that belong to no match, and there is no way to change it until #78. **[unmeasured]**
+- **The output folder** — `<Videos>/pundit` is a guess about where the coach wants films that belong to no match, and there is no way to change it until #78. **[unmeasured]**
 - **The suffixed file name** (**O1**) — whether `Corners (2).mp4` after a re-run at another resolution is helpful or just litter.
 
 ---
@@ -585,7 +585,7 @@ Each has a recommended default, which is what will be built if nothing is said. 
 
 **Settled, not asked:**
 
-- **Where the file goes** — `<Videos>/Coach Cuts/`, fixed, no picker; the preference goes to #78 (**O1**).
+- **Where the file goes** — `<Videos>/pundit/`, fixed, no picker; the preference goes to #78 (**O1**).
 - **Whether the text bar keeps `"n / total"`** — it does not. The bar ellipsizes rather than shrinks, so a four-part bar spends the safe end of the line on the part the coach himself said means nothing across matches; the position lives in the chapters instead (**T3**).
 - **Whether volumes are per match** — they are not; the basket mixes at the defaults, and per-*piece* gain is deferred (**J6**).
 - **Where the basket is stored** — its own file, not a key in `state.json`, because that file is discarded whole on any parse error (**H1**).

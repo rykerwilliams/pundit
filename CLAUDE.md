@@ -1,4 +1,4 @@
-# Coach Cuts — Project Conventions
+# pundit — Project Conventions
 
 ## Workflow for non-trivial features
 
@@ -55,7 +55,7 @@ After both reviews return:
 
 | Skill | Use it to |
 |---|---|
-| `port-swift-module` | Read a module out of the `macos-reference` tag into `video-coach-core` without repeating past mistakes |
+| `port-swift-module` | Read a module out of the `macos-reference` tag into `pundit-core` without repeating past mistakes |
 | `verify` | Run fmt, clippy, tests and the core dependency audit before committing |
 | `measure-media` | Benchmark GStreamer decode/seek on real hardware without fooling yourself |
 | `adversarial-review` | Run the review pattern below on a spec, plan, or diff |
@@ -69,16 +69,16 @@ After both reviews return:
 The Linux port is the active codebase. Spec: `docs/superpowers/specs/2026-09-19-linux-port-design.md`.
 
 ```bash
-cargo test -p video-coach-core     # pure logic -- needs NO GStreamer
+cargo test -p pundit-core     # pure logic -- needs NO GStreamer
 cargo test --workspace             # everything -- needs GStreamer dev libraries
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 ```
 
 **Speech recognition needs `cmake` and `libclang-dev`** (`sudo apt install
-cmake libclang-dev`). `video-coach-media` depends on `whisper-rs`
+cmake libclang-dev`). `pundit-media` depends on `whisper-rs`
 unconditionally — there is no feature gate, by decision — so without them
-nothing builds but `video-coach-core`. With them, the first build spends
+nothing builds but `pundit-core`. With them, the first build spends
 **about three minutes** compiling the vendored whisper.cpp, and nothing
 afterwards.
 
@@ -99,19 +99,19 @@ row has a picker (`base.en` / `small.en`, default `small.en`), remembered in
 format change every existing project fails `store::read`'s version guard on.
 Switching models leaves a job *transcribing* alone (a whisper cancel costs
 ~12 s of CPU) but preempts one still *downloading* (that stops within 100 ms),
-which restarts on the new model; the queue behind it picks the new one up. `$COACH_CUTS_WHISPER_MODEL`
+which restarts on the new model; the queue behind it picks the new one up. `$PUNDIT_WHISPER_MODEL`
 still beats the picker, which says so by going grey and showing the file that
-variable names. `WhisperModel` in `video-coach-media/src/transcribe.rs`
+variable names. `WhisperModel` in `pundit-media/src/transcribe.rs`
 carries each model's file name, size and **measured** sha256.
 
 **The model downloads on first use, and only when the bus says it may.** It
-lives in `$XDG_CACHE_HOME/coach-cuts/models/`; a job whose model is absent
+lives in `$XDG_CACHE_HOME/pundit/models/`; a job whose model is absent
 downloads it first (`souphttpsrc ! filesink` to a `.part`, glib's sha256 of
 the file, rename), as `TranscribeMessage::Downloading` and its own
 inspector line. **Permission is `TranscribeKind::Whisper`'s `fetch`, never
 the path** (the reasoning lives on that variant): `bus::whisper` sets it only
 under the cache directory, and a model switch moves only a path that has one.
-**No test may reach Hugging Face** — serve from `video_coach_media::fixtures::serve`.
+**No test may reach Hugging Face** — serve from `pundit_media::fixtures::serve`.
 The URL is pinned to a Hugging Face commit, not `main`.
 The Transcribe button is the prompt ("Download 488 MB and transcribe"). A
 cancel leaves the `.part`; every other failure deletes it; a failed download
@@ -137,13 +137,13 @@ so a 20 s clip yields exactly one callback reading 0. The inspector shows an
 elapsed clock and appends the percentage only once it moves off zero.
 
 The whisper tests are **`#[ignore]`d**, because they need a model CI has
-no copy of. Run them by pointing `$COACH_CUTS_WHISPER_MODEL` — the same
+no copy of. Run them by pointing `$PUNDIT_WHISPER_MODEL` — the same
 variable the app finds its model with — at one, and read the throughput line
 off `--nocapture`:
 
 ```bash
-COACH_CUTS_WHISPER_MODEL=~/.cache/coach-cuts/models/ggml-small.en.bin \
-  cargo test -p video-coach-media transcribe -- --ignored --nocapture --test-threads=1
+PUNDIT_WHISPER_MODEL=~/.cache/pundit/models/ggml-small.en.bin \
+  cargo test -p pundit-media transcribe -- --ignored --nocapture --test-threads=1
 ```
 
 `--test-threads=1` is **not optional**: `--ignored` runs *only* the ignored
@@ -155,15 +155,31 @@ throughput line describes.
 `gstreamer1.0-gl`):
 
 ```bash
-cargo run --release -p video-coach-app               # restores the last project
-cargo run --release -p video-coach-app -- <folder>   # opens (or creates) a project there
+cargo run --release -p pundit-app               # restores the last project
+cargo run --release -p pundit-app -- <folder>   # opens (or creates) a project there
 ```
 
-The application ID is **`coach-cuts`** everywhere: the binary
-(`target/*/coach-cuts`, via `[[bin]]` — the package is still
-`video-coach-app`), the config directory, `packaging/coach-cuts.desktop` and
-its icons, and the window's `WM_CLASS` / Wayland `app_id`, set by
-`slint::set_xdg_app_id` in `main.rs` (only valid after `BackendSelector::select()`).
+The name is **`pundit`**, lower case, everywhere: the binary
+(`target/*/pundit`, via `[[bin]]` — the package is `pundit-app`), the `.deb`,
+the config and cache directories, `packaging/pundit.desktop` and its icons, the
+window's `WM_CLASS` / Wayland `app_id` (`slint::set_xdg_app_id` in `main.rs`,
+only valid after `BackendSelector::select()`), and `core::metadata::APP_NAME`,
+which is what tags an export — read that constant rather than spelling the name
+again. The backronym (*pundit Understands Nothing, Discusses It Thoroughly*)
+belongs in the README and the package description, not in the UI.
+
+**It was `coach-cuts` until 0.8.0**, a name inherited from the macOS app, and
+0.8.0 also left the fork: the repository is `rykerwilliams/pundit`, with
+`rykerwilliams/coach-cutups` deliberately left in place. Two consequences that
+outlive the rename:
+- **`state::adopt_old_name` runs once at startup**, before anything reads either
+  directory, and renames `<base>/coach-cuts` to `<base>/pundit` under both the
+  config and cache bases — the cache holds a 488 MB model nobody should fetch
+  twice. It does nothing once the new name exists, so only the first run after
+  the upgrade works, and every failure is logged and ignored.
+- **The `.deb` carries `conflicts`/`replaces`/`provides = "coach-cuts"`**, which
+  is what makes one `apt install` swap the old package for this one. Removing
+  those three lines would leave two packages owning `/usr/bin`.
 
 The app must run on Slint's **Skia OpenGL** renderer (it selects it and fails
 loudly otherwise): that renderer is EGL on X11 and Wayland, and EGL is what
@@ -172,7 +188,7 @@ the caps entering `glupload` and the GL platform on every source load (`bus:
 loaded …` on stderr); that line is the zero-copy diagnostic, and on the
 reference laptop it reads `vah265dec` / `memory:DMABuf` / `egl`.
 `scripts/linux-gate-check.sh` measures decode throughput. The last project
-and the chosen speech model live in `$XDG_CONFIG_HOME/coach-cuts/state.json`;
+and the chosen speech model live in `$XDG_CONFIG_HOME/pundit/state.json`;
 point `XDG_CONFIG_HOME` elsewhere when testing so the real one isn't
 touched. With
 the monitor off (DPMS), playback slows unless run with `vblank_mode=0`
@@ -182,8 +198,8 @@ the monitor off (DPMS), playback slows unless run with `vblank_mode=0`
 cargo-deb`, `cargo install cargo-about --features cli`, `dpkg-dev` and docker):
 
 ```bash
-packaging/build-deb.sh                                           # → target/debian/coach-cuts_<version>_amd64.deb
-packaging/smoke-test.sh target/debian/coach-cuts_<version>_amd64.deb
+packaging/build-deb.sh                                           # → target/debian/pundit_<version>_amd64.deb
+packaging/smoke-test.sh target/debian/pundit_<version>_amd64.deb
 ```
 
 - **Build with the script, never bare `cargo deb`.** It first generates the crate
@@ -223,12 +239,12 @@ packaging/smoke-test.sh target/debian/coach-cuts_<version>_amd64.deb
 
 | Crate | Holds |
 |---|---|
-| `video-coach-core` | Pure logic: project format, playback timeline, zoom, stroke replay. |
-| `video-coach-media` | GStreamer: source player, capture, export frame driver, overlay rasterizer. |
-| `video-coach-app` | Slint UI, command bus, event layer. |
-| `video-coach-harness` | Headless integration tests driven over the bus. |
+| `pundit-core` | Pure logic: project format, playback timeline, zoom, stroke replay. |
+| `pundit-media` | GStreamer: source player, capture, export frame driver, overlay rasterizer. |
+| `pundit-app` | Slint UI, command bus, event layer. |
+| `pundit-harness` | Headless integration tests driven over the bus. |
 
-**`video-coach-core` declares no media dependency** — not GStreamer, not an image
+**`pundit-core` declares no media dependency** — not GStreamer, not an image
 or font crate, not a feature that pulls one in. CI runs its tests on a runner
 with no GStreamer installed, so adding one fails the build rather than passing
 silently. If you need a media type in core, you need a different design.
@@ -323,7 +339,7 @@ Verify on real hardware with `scripts/linux-gate-check.sh <file>`; see
 - **Sources:** the camera is `v4l2src`, for kernel timestamps and the `exposure_dynamic_framerate=0` control that stops low-light drops to 7.5 fps. The mic is `pipewiresrc`.
 - **Clock:** the recorder always forces `SystemClock` (CLOCK_MONOTONIC). `pulsesrc`'s clock was measured days off.
 - **Time 0:** `matroskamux` writes running time as-is, so recording time 0 is the pipeline's `base_time`, read when `set_state(PLAYING)` returns. **Never wait for PLAYING:** the mux holds preroll until the camera's first frame.
-- **Event times:** `host_ns` comes from `video_coach_media::now_ns()`.
+- **Event times:** `host_ns` comes from `pundit_media::now_ns()`.
 - **An avatar project records audio only.** `Project.avatar.is_some()` is the mode, so no camera is opened, no `video_%u` pad is requested on the mux, no H.264 encoder is chosen (a machine with neither VA-API nor `x264enc` still records commentary) and there is no self-view pipeline. `CaptureSources`' video side is `Option` on **both** arms, and `capture_sources`' early return for `CaptureKind::Test` honours the mode too — a branch written only into the `Devices` arm would leave every test recording with video whatever the project said.
 - **`RecorderMessage::FirstBuffer` is the first-buffer gate** (not `FirstVideo`): a buffer reached the muxer, so there is a file worth keeping. It comes from the one pad there is — video where there is one, audio otherwise — and the start timeout says which was missing.
 - **The `level` element carries two numbers and the recorder passes both on.** The meter draws `peak_db`; the avatar pulses on `rms_db`, because speech's 10–14 dB crest factor would peg a peak-driven inset while the export barely moved.
@@ -350,13 +366,13 @@ Verify on real hardware with `scripts/linux-gate-check.sh <file>`; see
 - **Never block a push or pull without a bound.** A blocking `appsrc` push hangs forever after a downstream error.
 - **To test CI's path locally,** hide the GPU with `GST_REGISTRY=<scratch>/reg.bin bwrap --dev-bind / / --tmpfs /dev/dri cargo test …`. See `docs/superpowers/specs/2026-09-19-linux-port-phase-5-design.md`.
 
-**The speakers are `autoaudiosink` with `pulsesink` demoted.** `keep_pulsesink_out()` drops `pulsesink`'s rank process-wide at `Bus::spawn`, so `autoaudiosink` picks `alsasink`, which reaches PipeWire through `pipewire-alsa`. Against Ubuntu 24.04's `pipewire-pulse` (PipeWire 1.0.5), `pulsesink` wedged the stream permanently after a quick burst of flushing seeks while playing — a dragged scrubber or a held skip key — and since it supplies the pipeline clock, picture and position froze with it (journal: `pipewire-pulse … [coach-cuts]: stream … OVERFLOW`). Measured A/V offset is unchanged (~+1 ms, audio leading). **The test harness's `Harness::production()` runs the app's exact path** — the GL sink on a surfaceless display plus the real `autoaudiosink` — because the default harness (`fakesink` audio, silent WebM fixtures) can never reach the sound server, which is why this escaped. Real-footage checks are `#[ignore]`d: `COACH_FOOTAGE=/path/to/game.mp4 cargo test -p video-coach-harness --test real_footage -- --ignored --nocapture`.
+**The speakers are `autoaudiosink` with `pulsesink` demoted.** `keep_pulsesink_out()` drops `pulsesink`'s rank process-wide at `Bus::spawn`, so `autoaudiosink` picks `alsasink`, which reaches PipeWire through `pipewire-alsa`. Against Ubuntu 24.04's `pipewire-pulse` (PipeWire 1.0.5), `pulsesink` wedged the stream permanently after a quick burst of flushing seeks while playing — a dragged scrubber or a held skip key — and since it supplies the pipeline clock, picture and position froze with it (journal: `pipewire-pulse … [pundit]: stream … OVERFLOW`). Measured A/V offset is unchanged (~+1 ms, audio leading). **The test harness's `Harness::production()` runs the app's exact path** — the GL sink on a surfaceless display plus the real `autoaudiosink` — because the default harness (`fakesink` audio, silent WebM fixtures) can never reach the sound server, which is why this escaped. Real-footage checks are `#[ignore]`d: `COACH_FOOTAGE=/path/to/game.mp4 cargo test -p pundit-harness --test real_footage -- --ignored --nocapture`.
 
 **Transport keys: the arrows skip, `,` and `.` step one frame while paused** (`Command::StepFrame`, refused while playing, recording or previewing). A step works from the shown frame's *end*, which a seek never clips: forward seeks to it, back to half a nominal frame before the frame's nominal start, or its own start where that is earlier (a frame held long). The readout shows tenths while paused, whole seconds while playing.
 
 **`J`/`L` set the scan speed** (`Command::ScanSpeed(ScanStep)`: the bus steps 1×–32×, while scanning only; any pause returns to 1×, so a recording starts at 1×). The player owns the rate, and **every scan seek carries it** (`pipeline.seek(rate, …)`, never `seek_simple`, whose 1.0 would drop it on the next scrub or skip). `set_rate` issues no seek: the bus does, through `load`, unless a seek still to be issued will carry it; after a pause it seeks to the frame on screen, not the position the picture trails at speed. Opening a preview returns to 1× with no seek. Every frame is decoded even at 32× and the scan sink's QoS (`max-lateness` 20 ms) drops what's late: measured on 1080p30 H.264, that showed 88 fps at 32× against key frames only's 16, with a tenth of the lag.
 
-**Preview and export share one composite** (`video-coach-media/src/composite/`).
+**Preview and export share one composite** (`pundit-media/src/composite/`).
 - **Common:** `decode.rs` (`Decoder::frame_at`: reuse, pull ≤0.5 s, else `KEY_UNIT|SNAP_BEFORE` and walk forward), the pump, `frame_time`/`stamp`, `install_zoom`'s PTS-keyed probe, and the mixer geometry.
 - **Tails:** `export.rs` encodes as fast as it can on a private surfaceless display; `preview.rs` ends in a `sync=true` appsink filling the shared `FrameMailbox`, on **Slint's** GL context (chosen by sink kind: the app never falls back to a private display, and tests pass `Gl::shared()`).
 - **Preview's pads:** the pumped source through `gltransformation`, the recording played **natively** for PiP and commentary audio (record time *is* output time, so it needs no pump), and a second appsrc carrying the overlay.
@@ -377,7 +393,7 @@ Verify on real hardware with `scripts/linux-gate-check.sh <file>`; see
 - **`ffprobe` is the chapter test's reader** (`qtdemux` doesn't read `chpl`), so `ffmpeg` is a **test-only** build dependency: the test fails without it, never skips, and the `.deb` doesn't depend on it.
 
 **Every exported MP4 says what it is, in its header** (`core::metadata::file_tags` → `media/src/composite/tags.rs`). The words live in **core**, beside the chapter and caption wording, as one pure function of the project, the export target and a date; media only sets them on `mp4mux`'s `GstTagSetter` before `PLAYING`, on **both** renderers. `ExportJob::tags` carries them, and `FileTags::default()` is an untagged file.
-- **What actually reaches the file, measured on GStreamer 1.24.2** (mux, then `ffprobe -show_format`): `title`, `comment` (the final score), `keywords` (both team names, which GStreamer joins `", "`) and `encoder` (`Coach Cuts <version>`) land in `moov/udta` and read back by name; `date` lands in `©day`, unpadded, as `2026-9-21`; **`description` lands only in the XMP `uuid` box** as `<dc:description>` — `mp4mux` writes no `desc` atom, and nothing else on this muxer carries a description. **`datetime` is ignored**: it sets neither a tag nor `mvhd`'s creation time, so the date is a `glib::Date`.
+- **What actually reaches the file, measured on GStreamer 1.24.2** (mux, then `ffprobe -show_format`): `title`, `comment` (the final score), `keywords` (both team names, which GStreamer joins `", "`) and `encoder` (`pundit <version>`) land in `moov/udta` and read back by name; `date` lands in `©day`, unpadded, as `2026-9-21`; **`description` lands only in the XMP `uuid` box** as `<dc:description>` — `mp4mux` writes no `desc` atom, and nothing else on this muxer carries a description. **`datetime` is ignored**: it sets neither a tag nor `mvhd`'s creation time, so the date is a `glib::Date`.
 - **The date is the footage's, not the export's** (a user decision): the first source file's mtime, read in the bus (`source_date`) because the bus knows the paths and media has no business stat-ing files. Resolved in the local zone there and handed to core as a `CalendarDate`; no date available writes no date.
 - **The tag merge mode is `Keep`.** The encoder pushes an `ENCODER` tag of its own ("x264") into the same muxer; `Keep` is what leaves ours standing.
 - **Tags cost the copy no losslessness and the chapters no room** (measured). They are header boxes beside the tracks, so not a sample changes; and `mp4mux` grows the reserved `moov` to fit them rather than spending the sample-table headroom — with tags, without them, and with a 40 KB payload, `reserved-duration-remaining` came back identical and the `free` box after `moov` that `chapters::splice` eats into stayed exactly 842 bytes.
@@ -385,7 +401,7 @@ Verify on real hardware with `scripts/linux-gate-check.sh <file>`; see
 - **The export target's labels live in core too** (`metadata::{ALL_CLIPS_LABEL, REEL_LABEL, WHOLE_MATCH_LABEL, UNTITLED, clip_label, reel_label}`), because the sheet row, the file name and the title are the same words: renaming a target renames it in all three.
 
 **The whole match in track mode is a stream copy, not an encode** (`media/src/composite/copy.rs`). `ExportJob::render` picks the renderer — `Render::Encode` carries everything only the encoder reads, so a copy can't be handed a resolution or a cue-drawing scoreboard — and `composite::export::run` branches on it once, at the top; the `.part`, the chapters, the rename and the delete-on-failure stay in `run`, shared. **There is no `concat`:** Rust owns the ordering, one source at a time, as the encode path's pump does — two `concat`s, one per track, switch source independently and deadlocked one run in three under load. How the copy does it — the re-based segments, the `async=false` sinks, the header-reading caps gate, the single wait and its memory bound — is in that module's header, which is the one place it belongs.
-- **The gate is also `video_coach_media::can_copy`,** a header read per file that the bus asks before it chooses a renderer. Every refusal names the file and says to choose **Scoreboard: burned in**.
+- **The gate is also `pundit_media::can_copy`,** a header read per file that the bus asks before it chooses a renderer. Every refusal names the file and says to choose **Scoreboard: burned in**.
 - **The scoreboard sidecar is `job.path.with_extension("srt")`** — `ExportJob::cues` as `core::cues::cues_to_srt`, written in `composite::export`'s `finish` **after** the rename, so it inherits the run's name cleaning and its `" (2)"` de-duplication and is the matching basename a player auto-loads. A failure is logged and reported as `ExportDone::sidecar: None`; a good `.mp4` is never thrown away over a text file, and a cancel, which never reaches the rename, leaves the last good export's `.srt` alone.
 - **`cues` says what belongs beside the output, including nothing.** `Some(cues)` writes them, `Some(empty)` writes none **and removes a stale one**, and `None` is a target that carries no sidecar at all, whose `.srt` is the coach's own file and no export's business. `write_sidecar`'s doc says why the removal is not optional.
 - **The chapters also go beside the file as pasteable text**, `job.path.with_extension("chapters.txt")` — `core::chapters::chapter_list` of `CompilationPlan::chapters`, written in the same `finish` as the `.srt` and so with the same name cleaning, `" (2)"` de-duplication, after-the-rename timing and never-fatal failure (`ExportDone::chapter_list`). **A YouTube upload can't read `chpl`**, so the list a coach pastes into the description is the only way those chapters reach a video anyone watches there. **Every target that has chapters gets one**, not just the whole match. There is no "leave the path alone" case as `cues` has: `.chapters.txt` is a name of ours, so a run with no list to write **removes** the stale one.
@@ -428,7 +444,7 @@ Verify on real hardware with `scripts/linux-gate-check.sh <file>`; see
 **The basket is one film whose pieces come from several matches.** A piece is a
 reference — `(project folder, clip id)` — added from the clip row's menu in
 whatever project is open, and resolved at Start.
-- **It lives in its own file**, `$XDG_CONFIG_HOME/coach-cuts/basket.json`, and
+- **It lives in its own file**, `$XDG_CONFIG_HOME/pundit/basket.json`, and
   **not as a key in `state.json`**: `AppFiles`' own read discards that whole
   document on any parse error and every setter rewrites it, so one basket value
   a build couldn't read would take the last project, the pen and the speech
@@ -496,7 +512,7 @@ field and in its paste box alike, both read by `core::match_entry`
   `!text-editing`, so without the fold the first Esc closes the sheet and
   throws away a half-typed paste.
 
-**The goals reel** (`video-coach-core/src/reel.rs`, spec R).
+**The goals reel** (`pundit-core/src/reel.rs`, spec R).
 - **It is an `ExportTarget` (`Reel`), never a clip.** Its entries have
   `clip_id: None`, so its PiP is the GL filler and its audio is the game's alone.
 - **It holds confirmed goals only** (every goal match event), in match order.
@@ -507,7 +523,7 @@ field and in its paste box alike, both read by `core::match_entry`
   side by the goal's trim. Never replace them with a guess that could be
   shorter: a cut-off assist is the one failure the reel must not have.
 
-**Player highlights** (`video-coach-core/src/highlight.rs`, spec H).
+**Player highlights** (`pundit-core/src/highlight.rs`, spec H).
 - **A highlight belongs to the footage, not to a clip.** It is stored on the
   project (`Project.player_highlights`, v9) and keyed by `source_index` and the
   **displayed frame's stream time** (`Frame.stream_time`), never by record time,
@@ -578,7 +594,7 @@ measurement phase: it stores nothing, suggests nothing and adds no command).
   unoptimised Goertzel bank is about forty times slower:
   ```bash
   COACH_GROUND_TRUTH=B=<folder>:A=<folder>:C=<folder> \
-    cargo test --release -p video-coach-harness --test ground_truth -- \
+    cargo test --release -p pundit-harness --test ground_truth -- \
       --ignored --nocapture --test-threads=1
   ```
   **One run, not two** — sound and picture are scored together, off one

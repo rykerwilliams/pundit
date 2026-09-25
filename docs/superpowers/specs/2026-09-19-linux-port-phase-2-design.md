@@ -16,7 +16,7 @@ Clips, recording, drawing, scoreboard and export are out of scope; later phases 
 
 ## Done when
 
-1. `cargo run -p video-coach-app` opens a window. With no project it offers **Open Project…**; opening a folder without `project.json` creates a project; opening a folder with an unreadable `project.json` refuses and changes nothing — not the file, not the currently open project.
+1. `cargo run -p pundit-app` opens a window. With no project it offers **Open Project…**; opening a folder without `project.json` creates a project; opening a folder with an unreadable `project.json` refuses and changes nothing — not the file, not the currently open project.
 2. **Add Source Video…** probes the file, rejects an aspect mismatch, a rotated video or a file without video, and appends it. Sources can be removed and reordered from the sidebar.
 3. Multiple sources behave as one timeline: the readout, scrubber and skips operate on concatenated time, and playback continues into the next source at the end of each.
 4. Space, arrows (±3 s, Shift ±10 s) and A/D work even after the scrubber or volume slider has been touched. Scrubbing previews live while dragging and lands frame-accurate on release.
@@ -102,7 +102,7 @@ macOS set `self.folder` **before** reading (`Workspace.swift:164`). After a fail
   - `MissingProjectJson`: create `Project::new(<folder name>)`, write it, then commit.
   - Any other error: change **nothing** and report it.
 - **Restore last project on launch** (macOS parity):
-  - The last successfully opened folder is stored in `$XDG_CONFIG_HOME/coach-cuts/state.json`, never in the project.
+  - The last successfully opened folder is stored in `$XDG_CONFIG_HOME/pundit/state.json`, never in the project.
   - Restore opens an **existing** project only. It never creates one, because `store::write` would recreate a deleted or unmounted folder.
   - If the folder or its `project.json` is gone, or the read fails, forget the path and show the no-project state.
 - **Entry points** (macOS parity):
@@ -217,7 +217,7 @@ A root `FocusScope` with `capture-key-pressed` handles shortcuts **before** focu
 
 ### D11. Window layout
 
-Minimum size 1100 × 700; title "Coach Cuts".
+Minimum size 1100 × 700; title "pundit".
 
 - **Left sidebar (240 px):**
   - editable project name, saved on submit;
@@ -241,10 +241,10 @@ Minimum size 1100 × 700; title "Coach Cuts".
 
 | Crate | Phase 2 contents |
 |---|---|
-| `video-coach-core` | `Project::locate`; remove/permute remaps over clips, match events and the current index; `SourceRef::display_aspect`; the aspect predicate. Still no media dependency. |
-| `video-coach-media` | The `playbin3` player (load sequence, seek slot, EOS handling, volume), sink injection, Discoverer probe, the sync handler, the frame mailbox, diagnostics. |
-| `video-coach-app` | Slint UI, the bus thread with its `Input`/`Command`/`Event` types, the rendering-notifier bridge, input handling, the last-project state file. |
-| `video-coach-harness` | Headless tests over the bus with injected non-GL sinks. |
+| `pundit-core` | `Project::locate`; remove/permute remaps over clips, match events and the current index; `SourceRef::display_aspect`; the aspect predicate. Still no media dependency. |
+| `pundit-media` | The `playbin3` player (load sequence, seek slot, EOS handling, volume), sink injection, Discoverer probe, the sync handler, the frame mailbox, diagnostics. |
+| `pundit-app` | Slint UI, the bus thread with its `Input`/`Command`/`Event` types, the rendering-notifier bridge, input handling, the last-project state file. |
+| `pundit-harness` | Headless tests over the bus with injected non-GL sinks. |
 
 **Dependencies**
 - `slint` 1.18 with `backend-winit` and `renderer-skia-opengl`.

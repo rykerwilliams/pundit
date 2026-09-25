@@ -43,18 +43,18 @@ One thing is explicitly out of scope: any change to how clips, drawings, zoom, t
 
 **A1. It is one file in the project folder, named in `project.json`.**
 
-- The file is `<project>/avatar.<ext>`, beside `project.json` and `recordings/` (`crates/video-coach-core/src/project.rs:1-4`).
+- The file is `<project>/avatar.<ext>`, beside `project.json` and `recordings/` (`crates/pundit-core/src/project.rs:1-4`).
 - `Project.avatar: Option<String>` holds its **file name**, not a path. `None` means no image has been picked, which is also what "record on camera" means (B1). Storing the name rather than a fixed constant keeps the original extension, which is what lets the file be opened by a file manager and named back to the decoder without a sniff.
 - **Why a copy and not a reference:** a project already refuses to lose data to a moved file for its own writable assets. Sources are referenced and have a relink flow (`SourceRef.relative_path`, `project.rs:96-109`); the avatar has no relink flow and does not deserve one. Copying makes the project folder self-contained, which is also what makes it safe to move between machines.
-- **Formats: PNG and JPEG, and nothing else.** Not "whatever GStreamer happens to have": the set has to be one the pick-time check, the render and the corner all agree on, and `pngdec` and `jpegdec` are already runtime dependencies (`jpegdec` is in the self-view chain, `crates/video-coach-media/src/capture/self_view.rs:135-140`), so nothing joins `packaging/build-deps.txt` or the smoke test's element list. The pick is refused by **what decoded**, not by the extension: a `.png` that is really a TIFF is refused because the decode says so.
-- **Transparency is kept.** The inset's mixer pad blends premultiplied RGBA (E4), the way the overlay's already does (`crates/video-coach-media/src/overlay.rs:26-31`), so a cut-out PNG floats over the picture with no plate behind it. See A3 on what that means for the copy into the pixmap.
+- **Formats: PNG and JPEG, and nothing else.** Not "whatever GStreamer happens to have": the set has to be one the pick-time check, the render and the corner all agree on, and `pngdec` and `jpegdec` are already runtime dependencies (`jpegdec` is in the self-view chain, `crates/pundit-media/src/capture/self_view.rs:135-140`), so nothing joins `packaging/build-deps.txt` or the smoke test's element list. The pick is refused by **what decoded**, not by the extension: a `.png` that is really a TIFF is refused because the decode says so.
+- **Transparency is kept.** The inset's mixer pad blends premultiplied RGBA (E4), the way the overlay's already does (`crates/pundit-media/src/overlay.rs:26-31`), so a cut-out PNG floats over the picture with no plate behind it. See A3 on what that means for the copy into the pixmap.
 
 **A2. Picking one is: decode, copy, save. Removing one is: clear, delete.**
 
 **Choose…** decodes, copies and saves:
 
 1. The coach picks a file. The app decodes it through the **same loader the render uses** (A3). A file that will not decode is **refused before anything is copied**, with the decoder's message. This is the whole validation: a decode that produces pixels is proof the render will produce them too.
-2. The bytes are copied verbatim to `<project>/avatar.<ext>` through a temporary file and a rename in the same directory, exactly as `store::write` writes `project.json` (`crates/video-coach-core/src/store.rs:200-204`). A copy cut short leaves no avatar.
+2. The bytes are copied verbatim to `<project>/avatar.<ext>` through a temporary file and a rename in the same directory, exactly as `store::write` writes `project.json` (`crates/pundit-core/src/store.rs:200-204`). A copy cut short leaves no avatar.
 3. **Replacing one deletes exactly the file `Project.avatar` names**, before the new name is stored — never a `avatar.*` glob over the directory. The project knows the old file's name; globbing a folder the coach can also put files in is a way to delete something else.
 4. `Project.avatar` is set and the project is saved.
 
@@ -66,7 +66,7 @@ Replacing the image replaces it for the whole project, including clips already r
 
 **A3. It is decoded once per job, in media, through GStreamer.**
 
-`video-coach-media/src/composite/avatar.rs` gains:
+`pundit-media/src/composite/avatar.rs` gains:
 
 ```rust
 pub(super) struct Avatar {
@@ -101,16 +101,16 @@ pub fn drawn(path: &Path, size: u32) -> Result<Drawn, String>;  // { size, rgba 
 ```
 
 - The pipeline is `filesrc ! decodebin3 ! videoflip video-direction=auto ! videoconvert ! video/x-raw,format=RGBA,pixel-aspect-ratio=1/1 ! appsink`, with a bounded wait, **one sample pulled** and the pipeline set to NULL. `decodebin3`, never `decodebin` (CLAUDE.md).
-  - **`videoflip video-direction=auto`** reads the `image-orientation` tag, which is where a phone's EXIF rotation ends up. Without it a portrait photo taken on a phone draws sideways. Note that `probe.rs` *refuses* rotated video for sources (`ProbeError::Rotated`, `crates/video-coach-media/src/probe.rs:32-33`); an avatar is a still, there is no timeline to worry about, and rotating it is right.
+  - **`videoflip video-direction=auto`** reads the `image-orientation` tag, which is where a phone's EXIF rotation ends up. Without it a portrait photo taken on a phone draws sideways. Note that `probe.rs` *refuses* rotated video for sources (`ProbeError::Rotated`, `crates/pundit-media/src/probe.rs:32-33`); an avatar is a still, there is no timeline to worry about, and rotating it is right.
   - **One sample pulled** is also the rule for a multi-frame file: an animated PNG, or a file that decodes to several frames, yields its **first** frame and the pipeline stops. No animation, and no error either.
 - **The copy into the pixmap premultiplies.** tiny-skia stores premultiplied pixels; GStreamer's `RGBA` means straight alpha (`overlay.rs:26-31` says exactly this about the overlay layer). A memcpy would leave a cut-out PNG's soft edges too bright and haloed — every partly transparent pixel drawn at its full colour. The copy multiplies each of R, G and B by A/255. Nothing demultiplies on the way out either: the inset's mixer pad is told to blend premultiplied instead (E4).
 - The sample is copied into a `Pixmap` at native size, then drawn **once** into a `Pixmap` of the avatar's box — `avatar_box(pip_rect(out_w, out_h, 1.0))` — rounded up, cover-cropped (A5). Everything after that reads the small one.
-- **Why not add an image crate to media:** media is the GStreamer crate and the decoders are already there. `video-coach-core` of course gets nothing: it declares no media dependency, not even an image crate (CLAUDE.md, `crates/video-coach-core/Cargo.toml:9-13`).
-- **The box is square, and the image is cropped into it** (A5). `avatar_box(pip_rect(out_w, out_h, 1.0))` — the same function a webcam's inset is placed by (`crates/video-coach-core/src/layout.rs:76-86`), at aspect 1, cut down about its bottom-right corner, so the circle keeps the webcam inset's own right and bottom margins and is simply smaller than it.
+- **Why not add an image crate to media:** media is the GStreamer crate and the decoders are already there. `pundit-core` of course gets nothing: it declares no media dependency, not even an image crate (CLAUDE.md, `crates/pundit-core/Cargo.toml:9-13`).
+- **The box is square, and the image is cropped into it** (A5). `avatar_box(pip_rect(out_w, out_h, 1.0))` — the same function a webcam's inset is placed by (`crates/pundit-core/src/layout.rs:76-86`), at aspect 1, cut down about its bottom-right corner, so the circle keeps the webcam inset's own right and bottom margins and is simply smaller than it.
 
 **A4. A missing or unreadable image costs the inset, never the run.**
 
-- **At export or preview time:** the load fails, one line goes to stderr, and the entry draws no inset — the same rule and the same tone as `Pip::open`'s, whose comment is "A missing PiP is a smaller loss than a failed export of an hour of video" (`crates/video-coach-media/src/composite/export.rs:447-449`). The export produces a file.
+- **At export or preview time:** the load fails, one line goes to stderr, and the entry draws no inset — the same rule and the same tone as `Pip::open`'s, whose comment is "A missing PiP is a smaller loss than a failed export of an hour of video" (`crates/pundit-media/src/composite/export.rs:447-449`). The export produces a file.
 - **At record time:** nothing to refuse. `Project.avatar` is the mode, so "avatar mode with no image" is not a state that exists (B1). A project whose avatar *file* has gone under it still records — it is an avatar take with a missing picture, which is the export-time case above, and the Devices popover has already said so.
 - **In the UI:** the Devices popover shows the picked image, and says "avatar.png is missing" when the file has gone, so the coach finds out before a take rather than after an export.
 
@@ -164,7 +164,7 @@ pub inset: Inset,
 
 **B3. `show_pip` keeps its meaning and its command, and one predicate reads both fields.**
 
-`show_pip` already means "draw the inset for this clip". An avatar clip with `show_pip` off draws no inset, the same as a webcam clip with it off. `ClipEdit::ShowPip`, its undo, the inspector checkbox (`crates/video-coach-app/ui/app.slint:466-468, 2909, 2925`) and its command are all unchanged. Only the checkbox's **label** follows the clip's `inset` (G3).
+`show_pip` already means "draw the inset for this clip". An avatar clip with `show_pip` off draws no inset, the same as a webcam clip with it off. `ClipEdit::ShowPip`, its undo, the inspector checkbox (`crates/pundit-app/ui/app.slint:466-468, 2909, 2925`) and its command are all unchanged. Only the checkbox's **label** follows the clip's `inset` (G3).
 
 The product of `show_pip` and `inset` is interpreted in **one place**, `core::project`:
 
@@ -194,7 +194,7 @@ An earlier draft called this "the one line where the two tails differ". It is th
 
 **C1. The recorder builds the audio branch only.**
 
-`CaptureSources` (`crates/video-coach-media/src/capture/recorder.rs:38-45`) makes the video side optional in **both** arms rather than growing two new variants:
+`CaptureSources` (`crates/pundit-media/src/capture/recorder.rs:38-45`) makes the video side optional in **both** arms rather than growing two new variants:
 
 ```rust
 pub enum CaptureSources {
@@ -214,7 +214,7 @@ Consequences worth stating:
 - **`AUDIO_QUEUE_NS` (6 s of encoded audio, `recorder.rs:31-34`) exists because the mux holds audio until the first video frame.** With no video pad the mux holds nothing, so the queue never fills. It is left in place: it costs nothing and removing it would mean two audio branches.
 - **`level` stays**, and now has a second reader (D1). The live meter in the recording bar keeps working, because it is the microphone's, not the camera's.
 
-**The `Test` arm is not an afterthought.** `capture_sources` returns early for `CaptureKind::Test` **before** any device resolution (`crates/video-coach-app/src/bus/recording.rs:275-277`), so an avatar branch written only into the `Devices` path would leave every harness test recording with video however the project was set up — and the tests below would pass while proving nothing. The early return becomes:
+**The `Test` arm is not an afterthought.** `capture_sources` returns early for `CaptureKind::Test` **before** any device resolution (`crates/pundit-app/src/bus/recording.rs:275-277`), so an avatar branch written only into the `Devices` path would leave every harness test recording with video however the project was set up — and the tests below would pass while proving nothing. The early return becomes:
 
 ```rust
 if let CaptureKind::Test { video_delay } = self.capture {
@@ -290,14 +290,14 @@ The live one is not exact and does not need to be: it tells the coach their voic
 
 **D2. The signal for the rendered path is the recorded commentary, read once per entry.**
 
-- Media opens the entry's recording with `Reader::start(recording, PULSE_RATE, 1, cancel)` — the same reader transcription uses at the same rate (`crates/video-coach-media/src/composite/audio.rs:289`; `crates/video-coach-media/src/transcribe.rs:629`), `PULSE_RATE = 16_000`, mono — and reads it with `Reader::read(samples, cancel)`, which is **bounded by what the entry shows**: the entry's frames' worth of samples, zero-padded past the end of the file. An entry that shows two seconds of an hour-long take decodes two seconds, and a recording shorter than its entry goes quiet rather than short.
+- Media opens the entry's recording with `Reader::start(recording, PULSE_RATE, 1, cancel)` — the same reader transcription uses at the same rate (`crates/pundit-media/src/composite/audio.rs:289`; `crates/pundit-media/src/transcribe.rs:629`), `PULSE_RATE = 16_000`, mono — and reads it with `Reader::read(samples, cancel)`, which is **bounded by what the entry shows**: the entry's frames' worth of samples, zero-padded past the end of the file. An entry that shows two seconds of an hour-long take decodes two seconds, and a recording shorter than its entry goes quiet rather than short.
 - A file with no audio track comes back as `Ok(None)` and the pulse is flat.
 - **It is a second read of the file, not the export mixer's.** The mixer streams forward at 48 kHz stereo and seeks per region (`composite/audio.rs:74-92`); the pulse needs the whole thing up front, at a different rate, before the first frame is pushed. Audio decode runs about 90× realtime (Phase 8 E3), so one extra pass over a one-minute take is milliseconds.
 - **Only the commentary drives it.** The game's audio does not, so a clip where the coach says nothing over a roaring crowd shows a still avatar. That is the correct answer: the inset is the coach.
 
 **D3. The derivation is pure functions in core.**
 
-`video-coach-core/src/avatar.rs`:
+`pundit-core/src/avatar.rs`:
 
 ```rust
 pub const PULSE_RATE: u32 = 16_000;
@@ -336,7 +336,7 @@ For output frame `n` of the entry, `pulse` computes:
 
 **Why an output frame is the window.** The pulse is consumed one value per output frame, so a window that is not the frame is a second sampling grid to keep aligned with the first. One frame of 16 kHz audio is 33 ms, which is already several pitch periods of a voice, so the RMS is stable before any smoothing is applied.
 
-**Why record time is the right clock.** `PlanEntry::record_time(frame)` is `(frame − start_frame) / 30` (`crates/video-coach-core/src/plan.rs:67-80`), and the commentary region runs from the recording's own zero for the whole entry, freezes included (`crates/video-coach-core/src/audio.rs:118-131`). So the pulse table is indexed by `frame − entry.start_frame` and needs no interpolation, and during a freeze the picture holds while the avatar keeps talking — which is what the sound is doing.
+**Why record time is the right clock.** `PlanEntry::record_time(frame)` is `(frame − start_frame) / 30` (`crates/pundit-core/src/plan.rs:67-80`), and the commentary region runs from the recording's own zero for the whole entry, freezes included (`crates/pundit-core/src/audio.rs:118-131`). So the pulse table is indexed by `frame − entry.start_frame` and needs no interpolation, and during a freeze the picture holds while the avatar keeps talking — which is what the sound is doing.
 
 **D4. Why nothing is persisted.**
 
@@ -371,7 +371,7 @@ This reverses an earlier draft of this section, which put the avatar in the over
 
 The blit alone costs **more than the entire overlay layer**, and preview runs at 30.005 fps with no margin (CLAUDE.md). The cost is not the copy: the same blit unscaled reads ~2.0 ms and nearest-neighbour under the scale ~1.7 ms. `tiny_skia` has no sprite fast path — every `draw_pixmap` is a pattern-shaded `fill_rect`, so a scaled inset is a quarter-megapixel of general shading on the CPU, every frame. No amount of tuning the pulse's range changes that.
 
-The measurement is committed as the `#[ignore]`d `the_avatar_blit_costs` in `crates/video-coach-media/tests/avatar.rs`, with a whole-frame `Pixmap::fill` beside it as the calibration against the compositing spike's machine (0.75 ms here against the spike's 0.61, so the 3.2 ms yardstick is the right one). Re-running it on a busier machine while this section was rewritten read 4.30 and 4.92 ms, with the calibration at 0.83 — the same answer, which is the point of taking it twice.
+The measurement is committed as the `#[ignore]`d `the_avatar_blit_costs` in `crates/pundit-media/tests/avatar.rs`, with a whole-frame `Pixmap::fill` beside it as the calibration against the compositing spike's machine (0.75 ms here against the spike's 0.61, so the 3.2 ms yardstick is the right one). Re-running it on a busier machine while this section was rewritten read 4.30 and 4.92 ms, with the calibration at 0.83 — the same answer, which is the point of taking it twice.
 
 **So the fallback this section named becomes the design.** It is also what CLAUDE.md asks for without the measurement: "GStreamer owns every full-frame pixel operation, on the GPU. Rust owns the edit … and the vector overlay layer only." An inset raster is a pixel operation; the pad that scales and blends it on the GPU is where it belongs. What the earlier draft bought — one shared draw step — the composite already has in a different place: **one mixer pad, laid out by one function, fed by both tails.**
 
@@ -499,10 +499,10 @@ Two fields, not three: `Preferences.avatar_for_new_recordings` is deleted (B1).
 
 | Crate | Contents |
 |---|---|
-| `video-coach-core` | `Inset`, `Clip::shows_camera_pip` / `shows_avatar`, `Project.avatar`, the v10 bump, the amended `project.rs` module comment. `avatar.rs`: `level_from_db`, `smooth`, `pulse` (samples in, one level per output frame out), `avatar_rect`, and the constants. **No new dependency** — the audit still lists exactly `serde`, `serde_json`, `thiserror`, `uuid`. |
-| `video-coach-media` | The camera-less recorder branch and `CaptureSources`' optional video, on both arms. `level_dbs` (peak **and** rms). `decode_still`, the one avatar decoder, and `drawn`, the one rasterizer (the UI takes both). `composite/avatar.rs`: the pre-scaled, cover-cropped, circle-masked, premultiplied `Pixmap`, and the pulse table via the existing `Reader`, bounded by the entry's frames. The inset pad in both tails: export's upload and `Pip` branch, preview's appsrc branch, the per-frame level in `Schedule`, the pad's premultiplied blend. `Pip::open`'s predicates; preview's three PiP sites and its probe. A still-image fixture. **The overlay is untouched.** |
-| `video-coach-app` | Bus: avatar mode in `capture_sources` (both capture kinds), the camera refusal's new wording, picking, copying and removing the image, `avatar` on both jobs. UI: the Devices popover's Inset section (which is where the image is decoded, once per change of the file), the pulsing corner during a take, the inspector's label. |
-| `video-coach-harness` | An avatar take end to end: record with test sources, get a clip, export it. |
+| `pundit-core` | `Inset`, `Clip::shows_camera_pip` / `shows_avatar`, `Project.avatar`, the v10 bump, the amended `project.rs` module comment. `avatar.rs`: `level_from_db`, `smooth`, `pulse` (samples in, one level per output frame out), `avatar_rect`, and the constants. **No new dependency** — the audit still lists exactly `serde`, `serde_json`, `thiserror`, `uuid`. |
+| `pundit-media` | The camera-less recorder branch and `CaptureSources`' optional video, on both arms. `level_dbs` (peak **and** rms). `decode_still`, the one avatar decoder, and `drawn`, the one rasterizer (the UI takes both). `composite/avatar.rs`: the pre-scaled, cover-cropped, circle-masked, premultiplied `Pixmap`, and the pulse table via the existing `Reader`, bounded by the entry's frames. The inset pad in both tails: export's upload and `Pip` branch, preview's appsrc branch, the per-frame level in `Schedule`, the pad's premultiplied blend. `Pip::open`'s predicates; preview's three PiP sites and its probe. A still-image fixture. **The overlay is untouched.** |
+| `pundit-app` | Bus: avatar mode in `capture_sources` (both capture kinds), the camera refusal's new wording, picking, copying and removing the image, `avatar` on both jobs. UI: the Devices popover's Inset section (which is where the image is decoded, once per change of the file), the pulsing corner during a take, the inspector's label. |
+| `pundit-harness` | An avatar take end to end: record with test sources, get a clip, export it. |
 
 Core touches no pixel and no file. Media hands it a slice of `f32` and a `Rect`; everything that decides the motion is tested on CI with synthetic input.
 
@@ -514,7 +514,7 @@ Core touches no pixel and no file. Media hands it a slice of `f32` and a `Rect`;
   - `level_from_db`: the floor is 0, the ceiling is 1, below and above clamp.
   - `avatar_rect`: equals `pip` at `level == 1`, is centred on `pip` and `1/PULSE_GROWTH` of it at `level == 0`, is monotone in `level`, and **never exceeds `pip`** as a property over random levels.
   - `shows_camera_pip` / `shows_avatar`: the four combinations, and never both true.
-  - Format: **one** test, `v7_to_v9_files_load_under_v10`, extending the existing `v7_and_v8_files_load_under_v9` (`crates/video-coach-core/tests/project_format.rs:265`) — a v7, a v8 and a v9 file each load with `avatar: None` and every clip `Inset::Camera`, and a v10 file round-trips. `store.rs`'s version guard is already covered by `swift_era_v6_is_refused`, `newer_format_is_refused_as_too_new` (which reads `CURRENT_FORMAT_VERSION + 1`) and `write_stamps_the_current_format_version`; cloning those four for v10 would test serde's version number, not this feature.
+  - Format: **one** test, `v7_to_v9_files_load_under_v10`, extending the existing `v7_and_v8_files_load_under_v9` (`crates/pundit-core/tests/project_format.rs:265`) — a v7, a v8 and a v9 file each load with `avatar: None` and every clip `Inset::Camera`, and a v10 file round-trips. `store.rs`'s version guard is already covered by `swift_era_v6_is_refused`, `newer_format_is_refused_as_too_new` (which reads `CURRENT_FORMAT_VERSION + 1`) and `write_stamps_the_current_format_version`; cloning those four for v10 would test serde's version number, not this feature.
   - `add_recorded_clip` takes `inset` from `project.avatar.is_some()`, as it takes `show_pip` from the preference.
 - **Media** (generated fixtures only — no real camera, microphone or network, ever):
   - `fixtures::still_image(dir, w, h, format)` writes a PNG and a JPEG with `videotestsrc num-buffers=1 ! pngenc|jpegenc ! filesink`. `decode_still` reads both, keeps a non-square aspect, and errors on a non-image and on a missing file.

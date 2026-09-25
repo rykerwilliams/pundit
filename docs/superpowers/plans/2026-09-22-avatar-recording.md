@@ -78,8 +78,8 @@ Each was checked in the code while writing this plan.
 Core first, so every later task has the types and the numbers. No pixels and no files here.
 
 **Files:**
-- `crates/video-coach-core/src/{avatar.rs (new),lib.rs,project.rs,store.rs}`
-- `crates/video-coach-core/tests/{avatar.rs (new),project_format.rs}`
+- `crates/pundit-core/src/{avatar.rs (new),lib.rs,project.rs,store.rs}`
+- `crates/pundit-core/tests/{avatar.rs (new),project_format.rs}`
 - every `Clip { … }` literal: `grep -rn "Clip {" crates` (fixtures, harness, tests in all four crates)
 
 **What to build:**
@@ -117,11 +117,11 @@ Commit: `feat(core): the avatar's mode, per-clip inset and pulse (format v10)`.
 ## Task 2: Recording without a camera
 
 **Files:**
-- `crates/video-coach-media/src/capture/recorder.rs`
-- `crates/video-coach-media/tests/` (the recorder's test file)
-- `crates/video-coach-app/src/bus/recording.rs`, `crates/video-coach-app/src/main.rs` (the `Event::Level` handler)
-- `crates/video-coach-app/ui/app.slint` (the meter's property, if the event's shape reaches it)
-- `crates/video-coach-harness/tests/` (a new `avatar.rs`)
+- `crates/pundit-media/src/capture/recorder.rs`
+- `crates/pundit-media/tests/` (the recorder's test file)
+- `crates/pundit-app/src/bus/recording.rs`, `crates/pundit-app/src/main.rs` (the `Event::Level` handler)
+- `crates/pundit-app/ui/app.slint` (the meter's property, if the event's shape reaches it)
+- `crates/pundit-harness/tests/` (a new `avatar.rs`)
 
 **What to build:**
 1. **`CaptureSources` takes an optional video side on both arms** (spec C1): `Devices { camera: Option<Camera>, mic }` and `Test { video: Option<Duration> }`.
@@ -152,11 +152,11 @@ Commit: `feat(record): record commentary with no camera`.
 ## Task 3: The image — one decoder, picked, copied, removed
 
 **Files:**
-- `crates/video-coach-media/src/{lib.rs,fixtures.rs,composite/avatar.rs (new),composite/mod.rs}`
-- `crates/video-coach-media/tests/avatar.rs` (new)
-- `crates/video-coach-app/src/bus/{mod.rs,project.rs or wherever project edits live}`
-- `crates/video-coach-app/src/main.rs`, `crates/video-coach-app/ui/app.slint`
-- `crates/video-coach-harness/tests/avatar.rs`
+- `crates/pundit-media/src/{lib.rs,fixtures.rs,composite/avatar.rs (new),composite/mod.rs}`
+- `crates/pundit-media/tests/avatar.rs` (new)
+- `crates/pundit-app/src/bus/{mod.rs,project.rs or wherever project edits live}`
+- `crates/pundit-app/src/main.rs`, `crates/pundit-app/ui/app.slint`
+- `crates/pundit-harness/tests/avatar.rs`
 - `packaging/smoke-test.sh`
 
 **What to build:**
@@ -193,9 +193,9 @@ Commit: `feat(app): pick one avatar image per project`.
 **The entry gate was taken and it refused the overlay.** The measurement this task used to open with is committed as the `#[ignore]`d `the_avatar_blit_costs` (`media/tests/avatar.rs`): one `draw_pixmap` of a pre-scaled 423×317 inset into 1080p costs **4.20 ms at rest and 4.84 ms at full**, against the **3.2 ms** the whole overlay costs — more than all of it, on a preview with no margin. Spec section E was rewritten to the GL route on the strength of it; **read spec E1–E5 before building.** Do not re-take the measurement and do not re-open the choice.
 
 **Files:**
-- `crates/video-coach-media/src/{fixtures.rs,composite/{mod.rs,avatar.rs,export.rs,preview.rs}}`
-- `crates/video-coach-media/tests/{export.rs,preview.rs}`
-- `crates/video-coach-app/src/bus/{export.rs,preview.rs}`
+- `crates/pundit-media/src/{fixtures.rs,composite/{mod.rs,avatar.rs,export.rs,preview.rs}}`
+- `crates/pundit-media/tests/{export.rs,preview.rs}`
+- `crates/pundit-app/src/bus/{export.rs,preview.rs}`
 - **not** `overlay.rs`: the overlay draws nothing here.
 
 **What to build:**
@@ -229,9 +229,9 @@ Commit: `feat(media): the avatar inset, pulsing with the commentary`.
 ## Task 5: The corner pulses while recording
 
 **Files:**
-- `crates/video-coach-app/src/main.rs`
-- `crates/video-coach-app/ui/app.slint`
-- `crates/video-coach-app/tests/` (the placement unit test)
+- `crates/pundit-app/src/main.rs`
+- `crates/pundit-app/ui/app.slint`
+- `crates/pundit-app/tests/` (the placement unit test)
 
 **What to build:**
 1. **The picture.** At the start of a take in an avatar project, `media::decode_still(avatar_path)` → `slint::Image::from_rgba8` → `set_self_view`, once (`video.rs:199-211` is the shape). **Never `Image::load_from_path`:** slint is built with `default-features = false` (`Cargo.toml:20`) and has no decoder. Cleared at the end of the take, as `main.rs:1733` already does.

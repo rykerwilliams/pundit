@@ -11,7 +11,7 @@ first failure; collect everything, then report.
 ```bash
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test -p video-coach-core
+cargo test -p pundit-core
 ```
 
 **Workspace tests need GStreamer dev headers.** Check first:
@@ -25,11 +25,11 @@ If present, also run `cargo test --workspace`. If absent, say so explicitly —
 reporting the workspace as green. Installing the headers needs `sudo`; ask
 before doing it.
 
-**Core dependency audit.** `video-coach-core` must have no media dependency
+**Core dependency audit.** `pundit-core` must have no media dependency
 and no date crate:
 
 ```bash
-cargo tree -p video-coach-core --edges normal --depth 1
+cargo tree -p pundit-core --edges normal --depth 1
 ```
 
 Expected direct dependencies: `serde`, `serde_json`, `thiserror`, `uuid`.

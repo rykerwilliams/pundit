@@ -25,10 +25,10 @@ Labels used below: **[verified]** = checked on this machine or in source. **[cit
 
 **Repo facts that shape the design** [verified]
 - **Decode throughput:** decode alone is 739 fps (`decodebin3`, DMABuf) and 651 fps through EGL (`spikes/2026-09-19-seek-latency.md`). GL readback is about 232 fps at 1080p (`spikes/2026-09-19-export-graph.md`). Decode plus a GPU downscale plus a small `gldownload` is **not** the bottleneck of any vision pass. Inference is.
-- **Match events** (Phase 9): `MatchEventKind { StartStop, HomeGoal, AwayGoal }`, positioned by `source_index + source_seconds` (`crates/video-coach-core/src/scoreboard.rs:137-160`).
+- **Match events** (Phase 9): `MatchEventKind { StartStop, HomeGoal, AwayGoal }`, positioned by `source_index + source_seconds` (`crates/pundit-core/src/scoreboard.rs:137-160`).
   - **A post-goal kick-off is not an event in this model.** Only period starts and stops are. "Detect kick-offs" therefore means period boundaries (2–4 per match), plus kick-offs used as *evidence* for goals.
   - **Goals must be attributed Home/Away.** Audio can never do that. Scoreboard OCR can.
-- **Coordinate spaces:** strokes are normalized to the **picture (content) rect in output space** (`crates/video-coach-media/src/overlay.rs:7-14`) and keyed by **record time** (`stroke_replay::visible_strokes(clip, at_record_time)`). A player highlight is a different kind of object: its position is in **source-frame space** and keyed by **source time**. It must go through the zoom transform (`core::zoom`) to reach the picture. Keying by the displayed frame's source time (`FrameSpec::source_time`, which `scoreboard.rs` already uses) makes a highlight freeze correctly when the source freezes during a commentary pause.
+- **Coordinate spaces:** strokes are normalized to the **picture (content) rect in output space** (`crates/pundit-media/src/overlay.rs:7-14`) and keyed by **record time** (`stroke_replay::visible_strokes(clip, at_record_time)`). A player highlight is a different kind of object: its position is in **source-frame space** and keyed by **source time**. It must go through the zoom transform (`core::zoom`) to reach the picture. Keying by the displayed frame's source time (`FrameSpec::source_time`, which `scoreboard.rs` already uses) makes a highlight freeze correctly when the source freezes during a commentary pause.
 - **Phase 10 precedent:**
   - whisper-rs vendors whisper.cpp and has no feature gate.
   - One worker thread per job and a serial FIFO queue on the bus thread.
@@ -38,7 +38,7 @@ Labels used below: **[verified]** = checked on this machine or in source. **[cit
 - **Phase 11 S3 precedent:**
   - The model downloads on first use, after a prompt, via `souphttpsrc ! filesink`.
   - The sha256 comes from `glib::Checksum` in a pad probe, with `.part` then rename.
-  - The files land in `$XDG_CACHE_HOME/coach-cuts/models/`, and a sha mismatch deletes the file and fails.
+  - The files land in `$XDG_CACHE_HOME/pundit/models/`, and a sha mismatch deletes the file and fails.
   - A vision model can reuse this unchanged. Only the model table and the hashes are new.
 - **Phase 10's 16 kHz mono audio Reader** (`composite/audio.rs` `Reader`, extended for transcription) covers the whistle band (2–4.5 kHz, below the 8 kHz Nyquist limit). Audio detection needs no new decode path.
 
@@ -79,7 +79,7 @@ Labels used below: **[verified]** = checked on this machine or in source. **[cit
 The feature tracks **one clicked player per highlight**. Full multi-object tracking (ByteTrack/BoT-SORT) solves a bigger problem than we have. Options:
 
 1. **Detector on ROI + Kalman + association: recommended.** Predict the box with a constant-velocity Kalman filter, detect in the crop, and pick the detection with the best IoU/distance to the prediction. Optionally break ties with a jersey-colour histogram so the tracker keeps to the right team. This is SORT reduced to one track, about **150–250 lines of pure logic**: a 7- or 8-state Kalman filter plus a gating rule.
-   - It can live in **`video-coach-core`**, because it operates on boxes, not pixels, and can be tested on CI with synthetic box sequences.
+   - It can live in **`pundit-core`**, because it operates on boxes, not pixels, and can be tested on CI with synthetic box sequences.
    - Crates exist if wanted: `jamtrack-rs` (ByteTrack, BoT-SORT, OC-SORT, pure Rust), `trackforge`, `similari-trackers-rs`, `edgefirst-tracker`, `mot-rs` [cited: crates.io/lib.rs]. Their licences weren't checked individually; check them before adopting. Writing the one-track version is simpler than adopting a multi-object tracking framework.
 2. **Single-object tracker (SOT), no detector:** CSRT/KCF (OpenCV contrib), or NanoTrack/VitTrack (tiny ONNX models of ~1–2 MB, cheap per frame).
    - Ubuntu 24.04's OpenCV is **4.6.0**, which predates `TrackerNano` (4.7) and `TrackerVit` (4.9). The OpenCV route means a heavy C++ dependency, and still an old tracker.
@@ -105,13 +105,13 @@ The feature tracks **one clicked player per highlight**. Full multi-object track
 | `candle` / `burn` | MIT/Apache-2.0 | candle has a YOLOv8 example. burn's `wgpu` backend could reach the iGPU through **Vulkan (ANV is present)** without OpenCL. Neither has credible conv-throughput numbers for this hardware; unverified. |
 | OpenCV `dnn` (`opencv` crate) | Apache-2.0 (OpenCV), MIT (crate) | Distro packages exist (4.6), but it's a big C++ dependency plus bindgen. Only worth it if CSRT is also wanted. Not recommended. |
 
-**Recommendation:** measure **`rten` against `ort` (CPU EP)** on one permissive model in an S0 spike, then pick. Either way it is a plain dependency in `video-coach-media` (or a new `video-coach-vision` crate), **never in core**. The model is downloaded on first use via the Phase 11 S3 downloader. At these sizes (4–40 MB) **bundling in the .deb is also viable**, which settles BACKLOG #22's question more cheaply for vision than for whisper.
+**Recommendation:** measure **`rten` against `ort` (CPU EP)** on one permissive model in an S0 spike, then pick. Either way it is a plain dependency in `pundit-media` (or a new `pundit-vision` crate), **never in core**. The model is downloaded on first use via the Phase 11 S3 downloader. At these sizes (4–40 MB) **bundling in the .deb is also viable**, which settles BACKLOG #22's question more cheaply for vision than for whisper.
 
 ### 1d. Model licences
 
 | Model | Licence | Params | COCO AP | Verdict |
 |---|---|---|---|---|
-| Ultralytics YOLOv8 / YOLO11 / YOLO26 | **AGPL-3.0**, code **and** weights; Enterprise licence otherwise [cited: ultralytics.com/license] | 11n: 2.6 M | 11n: 39.5 | **Legally compatible** with AGPL-3.0-or-later: the combined work ships as AGPL-3.0, and Ultralytics' condition (open the whole project, including weights) is already met. The cost is **lock-in**: Coach Cuts could never be relicensed or dual-licensed without buying an Enterprise licence, and fine-tuned weights inherit AGPL. `ultralytics/inference` (a Rust ORT wrapper with an OpenVINO feature) is AGPL too. **Usable, but not preferred.** |
+| Ultralytics YOLOv8 / YOLO11 / YOLO26 | **AGPL-3.0**, code **and** weights; Enterprise licence otherwise [cited: ultralytics.com/license] | 11n: 2.6 M | 11n: 39.5 | **Legally compatible** with AGPL-3.0-or-later: the combined work ships as AGPL-3.0, and Ultralytics' condition (open the whole project, including weights) is already met. The cost is **lock-in**: pundit could never be relicensed or dual-licensed without buying an Enterprise licence, and fine-tuned weights inherit AGPL. `ultralytics/inference` (a Rust ORT wrapper with an OpenVINO feature) is AGPL too. **Usable, but not preferred.** |
 | **D-FINE-N / DEIM-D-FINE-N** | Apache-2.0 (per repo; re-verify at pin) | ~4 M | ~43 | **Preferred:** permissive, CNN backbone, similar FLOPs to YOLO11n with better AP. |
 | RT-DETR (lyuwenyu) R18 | Apache-2.0 | 20 M | 46.5 | Heavier; OK as a fallback. |
 | RF-DETR N/S/M/L | Apache-2.0; **XL/2XL are "PML 1.0"**, not open [cited: roboflow/rf-detr] | **30.5 M** even for Nano (DINOv2 ViT) | 48.4 (Nano @384) | Permissive, but a ViT backbone is expensive on a 4-core CPU. Avoid XL/2XL. |
@@ -165,7 +165,7 @@ The feature tracks **one clicked player per highlight**. Full multi-object track
   - Spectral-energy methods produce **"significant false detections"** when cheering is near the band [cited].
   - A classic Goertzel/FIR detector reported **324 detected, 42 false positives, 26 misses** (~88% precision, ~93% recall) on broadcast audio [cited: IJCA 2010]. A later STFT + ML paper claims F1 ≈ 0.98 [cited via search snippet; the abstract has no numbers, unverified].
 - **Design that fits the repo:**
-  - A **pure function in `video-coach-core`**: `fn whistles(samples_16k_mono: &[f32]) -> Vec<Whistle { start, duration, freq }>`.
+  - A **pure function in `pundit-core`**: `fn whistles(samples_16k_mono: &[f32]) -> Vec<Whistle { start, duration, freq }>`.
   - Per STFT frame (512-pt, 16 ms hop), find the peak in 2–5 kHz. Require **tonality** (peak ≥ ~15–20 dB over the band median) and **pitch stability** (±150 Hz) sustained for ≥ ~150 ms.
   - Classify by duration: a short tweet < 0.5 s, long ≥ ~0.8 s. Three long whistles in a row is the full-time pattern.
   - Needs only `rustfft` (MIT/Apache, pure Rust, **not** a media dep) or a hand-written Goertzel bank.
@@ -228,7 +228,7 @@ The feature tracks **one clicked player per highlight**. Full multi-object track
   - The **QuickTime `chap` tref + text track** is what Apple players read. It needs sample data, so it is much more work.
 - **YouTube doesn't read file chapters officially:** its help page documents chapters only from **description timestamps** (first 00:00, ≥ 3 entries, each ≥ 10 s) or auto-chapters. The page never mentions chapters embedded in the file [cited: support.google.com/youtube/answer/9884579]. One project claims YouTube's auto-chapter detection reads the atoms [cited: splitsmith PR #1004]; unverified. **To get chapters on YouTube, export a copyable "YouTube chapters" text block** alongside the file. Trivial, pure core.
 - **Simplest writer, [verified here with a prototype]:**
-  - Export already puts **`moov` first in a reserved region** (`reserved-max-duration`, `crates/video-coach-media/src/composite/export.rs:721-729`). On a test file, `mp4mux` produced `ftyp, free, moov(…, udta(meta)), free(2294), free(8), mdat`.
+  - Export already puts **`moov` first in a reserved region** (`reserved-max-duration`, `crates/pundit-media/src/composite/export.rs:721-729`). On a test file, `mp4mux` produced `ftyp, free, moov(…, udta(meta)), free(2294), free(8), mdat`.
   - The post-process appends a `chpl` box into `moov/udta`, bumps the `udta` and `moov` sizes, and **shrinks the following `free` box by the same amount**. That is **in place, same file size, `mdat` untouched, no `stco` offsets change**.
   - Result: `ffprobe -show_chapters` listed both chapters with correct titles and times, and all 30 frames still decoded.
   - `chpl` v1 layout: FullBox(v=1, flags 0) + 4 reserved bytes + `u8` count + per entry { `u64` start in **100 ns units**, `u8` title length, UTF-8 title } (confirmed against `mp4-atom`'s `chpl.rs`, merged 2026-09-05, v0.16; MIT/Apache).
@@ -276,7 +276,7 @@ The feature tracks **one clicked player per highlight**. Full multi-object track
 ---
 
 ## Sources
-- Repo: `CLAUDE.md`; `docs/superpowers/specs/2026-09-20-linux-port-phase-10-design.md` (S1, S3, S5, S8); `…/2026-09-21-linux-port-phase-11-design.md` S3; `docs/superpowers/spikes/2026-09-19-{compositing-throughput,seek-latency,export-graph}.md`, `2026-09-21-whisper-throughput.md`; `crates/video-coach-core/src/{scoreboard,zoom,stroke_replay}.rs`; `crates/video-coach-media/src/{overlay.rs,composite/export.rs}`.
+- Repo: `CLAUDE.md`; `docs/superpowers/specs/2026-09-20-linux-port-phase-10-design.md` (S1, S3, S5, S8); `…/2026-09-21-linux-port-phase-11-design.md` S3; `docs/superpowers/spikes/2026-09-19-{compositing-throughput,seek-latency,export-graph}.md`, `2026-09-21-whisper-throughput.md`; `crates/pundit-core/src/{scoreboard,zoom,stroke_replay}.rs`; `crates/pundit-media/src/{overlay.rs,composite/export.rs}`.
 - [Ultralytics YOLO11 metrics](https://docs.ultralytics.com/models/yolo11/) · [Ultralytics OpenVINO benchmarks](https://docs.ultralytics.com/integrations/openvino/) · [Ultralytics licence](https://www.ultralytics.com/license) · [ultralytics/inference (Rust, AGPL)](https://github.com/ultralytics/inference)
 - [Frigate hardware / OpenVINO inference table](https://docs.frigate.video/frigate/hardware)
 - [OpenVINO GPU device docs](https://docs.openvino.ai/2025/openvino-workflow/running-inference/inference-devices-and-modes/gpu-device.html) · [intel/compute-runtime LEGACY_PLATFORMS](https://github.com/intel/compute-runtime/blob/master/LEGACY_PLATFORMS.md) · [OVMS CometLake GT2 crash #3635](https://github.com/openvinotoolkit/model_server/issues/3635)

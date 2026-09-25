@@ -53,7 +53,7 @@ Commit: `feat(core): export audio regions, ramps and the rate window`.
 
 This task migrates media and the bus to the compilation, so it compiles and tests on its own.
 
-1. **Vendor the font:** `DejaVuSans.ttf` plus its licence into `video-coach-media`, and add `cosmic-text` (media only).
+1. **Vendor the font:** `DejaVuSans.ttf` plus its licence into `pundit-media`, and add `cosmic-text` (media only).
 2. **`overlay.rs` renders at the output size:** strokes mapped into the entry's fit rect (line width from the picture's height), plus the bar's background and glyphs, `Wrap::None` with a tail ellipsis.
    - **Switch preview's overlay to output space in this task too** (its appsrc caps and `sink_2` rect), or `tests/preview.rs::the_composite_places_the_pip_and_the_overlay_on_the_picture` fails here rather than in Task 5.
 3. **`layout.rs`:** the bar's rect, and the PiP's raised margin (`bar height + margin`).

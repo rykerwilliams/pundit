@@ -63,7 +63,7 @@
 
 ## Task 0 — Pause keeps the frame on screen (R10, Phase 2 fix)
 
-1. **`crates/video-coach-media/src/player/sink.rs`:**
+1. **`crates/pundit-media/src/player/sink.rs`:**
    - Add the `fresh` flag and probe from Known facts, on the **appsink's** sink pad.
    - `new_sample` delivers, then clears the flag.
    - `new_preroll` delivers only while it is set.
@@ -76,7 +76,7 @@ Commit: `fix(media): pausing keeps the frame on screen`.
 
 No GStreamer. Use the `port-swift-module` skill. Read `apple/App/Recording/RecordingController.swift` and `apple/Tests/AppTests/RecordingZoomCaptureTests.swift` first.
 
-1. **`crates/video-coach-core/src/recording.rs`** (R8):
+1. **`crates/pundit-core/src/recording.rs`** (R8):
    ```rust
    pub struct PendingClip { pub id: Uuid, pub source_index: usize, pub start_source_seconds: f64 }
    pub struct RecordingLog { /* t0_ns, events, last zoom, last zoom capture ns */ }
@@ -124,7 +124,7 @@ Commit: `feat(core): recording log, recorded-clip construction, skip range`.
 
 ## Task 2 — Media: devices and chain choice
 
-Add `crates/video-coach-media/src/capture/{mod.rs,devices.rs}`.
+Add `crates/pundit-media/src/capture/{mod.rs,devices.rs}`.
 
 1. **Pure functions,** tested without hardware:
    - `choose_camera_mode(&gst::Caps) -> Option<CameraMode>` (R3). `CameraMode { width, height, input: Input::{Mjpeg, Raw} }`:
@@ -160,7 +160,7 @@ Commit: `feat(media): capture device enumeration, format and encoder choice`.
 
 ## Task 3 — Media: the Recorder
 
-Add `crates/video-coach-media/src/capture/recorder.rs` (R1, R4, R5, R6).
+Add `crates/pundit-media/src/capture/recorder.rs` (R1, R4, R5, R6).
 
 1. **API.**
    ```rust
@@ -196,7 +196,7 @@ Add `crates/video-coach-media/src/capture/recorder.rs` (R1, R4, R5, R6).
    - A sync handler forwards `ERROR` (as `Error`) and `level` element messages (`Level`, with the max of `peak` over channels) through `on_message` with the generation.
    - It returns `BusSyncReply::Pass` for EOS and ERROR, so `stop()` can `timed_pop_filtered` them, and `Drop` for everything else.
    - `stop()` returns `duration = last_end` seconds, and `clean` if EOS came before the timeout. An ERROR already queued makes it return at once, unclean.
-5. **Tests** (`crates/video-coach-media/tests/recorder.rs`, Test sources, a temp dir):
+5. **Tests** (`crates/pundit-media/tests/recorder.rs`, Test sources, a temp dir):
    - (a) Record 2 s and stop. The file has H.264 and Opus (Discoverer). `|duration − Discoverer| ≤ 1/30 s`, and `clean`.
    - (b) With a 0.5 s video delay: the first video PTS in the file (demux + probe) is 0.5 s ±40 ms, the first audio PTS is < 40 ms, `FirstVideo` arrived, and `start` returned in < 200 ms (it didn't wait for PLAYING).
    - (c) A `Level` message within 1 s, carrying the generation passed to `start`.
@@ -290,7 +290,7 @@ Put the state machine in `bus/recording.rs`. `bus/mod.rs` gets the variants and 
     - **Zoom:** `log.zoom(host_ns, zoom)`.
     - **EOS:** pause without advancing, and log nothing.
 14. **SetDevices** writes the preferences and saves.
-15. **Harness tests** (`crates/video-coach-harness/tests/recording.rs`):
+15. **Harness tests** (`crates/pundit-harness/tests/recording.rs`):
     - start → `Recording` → stop → a clip with the right `source_index`, `start_source_seconds`, duration ≈ elapsed, and events starting `[zoom, pause]`; the file exists;
     - stop while starting (`Test { video_delay: 2 s }`) → no clip, no file;
     - TogglePlay during the warm-up (same delay, then let video arrive) is logged as `play`;

@@ -141,7 +141,7 @@ A plan with fewer than two entries gets no chapters.
   - The splice finds `moov` and the `free` after it by walking top-level boxes, and assumes nothing about their order beyond `moov` preceding `mdat`. If `moov` follows `mdat` (the reserve was not honoured), it writes nothing.
 - **Layout:** `chpl` version 1, with start times in 100 ns units and titles as UTF-8 of at most 255 bytes (truncated on a character boundary). There are at most 255 chapters (`MAX_CHAPTERS`). A plan with more keeps the first 255 and notes it in the export's diagnostics. Only a clip export of more than 255 clips can reach it.
 - **If `free` is too small, the file keeps no chapters, and the export's diagnostics say so.** That can only happen to a very short export with many long titles: the reserve scales with duration. Relocating `moov` and rewriting `stco` is not worth that case.
-- **Where the code lives:** the box walker and the splice are about 60 lines in `video-coach-media` (`chapters.rs`). The chapter list itself (times and titles) is pure and lives in core. Its test reads the output back with `ffprobe`, so `ffmpeg` joins `packaging/build-deps.txt` as a **test-only** dependency, commented as such. GStreamer's `qtdemux` doesn't read `chpl`, and no released Rust MP4 crate parses it (`mp4-atom` 0.15.0), so `ffprobe` is the only independent reader. It is also the one mpv uses. The test fails, never skips, without it.
+- **Where the code lives:** the box walker and the splice are about 60 lines in `pundit-media` (`chapters.rs`). The chapter list itself (times and titles) is pure and lives in core. Its test reads the output back with `ffprobe`, so `ffmpeg` joins `packaging/build-deps.txt` as a **test-only** dependency, commented as such. GStreamer's `qtdemux` doesn't read `chpl`, and no released Rust MP4 crate parses it (`mp4-atom` 0.15.0), so `ffprobe` is the only independent reader. It is also the one mpv uses. The test fails, never skips, without it.
 
 **C4. Who reads `chpl`:** VLC, and ffmpeg and ffprobe (so mpv too) [cited, spike §5]. Apple's players read only the QuickTime `chap` text track, and YouTube reads only timestamps in the video's description. Which of these the coach's audience uses is **open question Q5**. Nothing here depends on the answer, since `chpl` is the cheap baseline.
 
@@ -288,7 +288,7 @@ The mapping from source-normalized coordinates to picture pixels is the existing
 **H6. P0's round trip is a hard prerequisite for P2 and for tagging.** A key (like a Z/X tag) is stored at the position the scan player reports, and export draws it on the frame `Decoder::frame_at` picks for that position. The two must be the same frame. They can differ when the player and the decoder disagree on stream time: CLAUDE.md's MP4 edit-list class, which BACKLOG #67's symptoms point at (on a Trace half, a scrub to 812 reports 811.70).
 
 - **The seams:** `mailbox::Frame` gains `stream_time` (the sample's `segment.to_stream_time(pts)`), and media gains `frame_times(source, targets)`, which answers with the stream time of the frame `Decoder::frame_at` picks for each target, without an export. Neither is reachable from the harness today. `Frame.stream_time` is also what P2's highlight keys are placed at (H3).
-- **The test:** extend `video-coach-harness/tests/real_footage.rs` (`#[ignore]`d behind `COACH_FOOTAGE`, as it is today). On an HLS-remuxed Trace file, scrub to about 20 targets across the half, paused. For each, take the displayed frame from the mailbox (`SinkKind::System`) and assert that its stream time equals that of the frame `Decoder::frame_at(reported position)` returns, and that the reported position is within one frame of the target.
+- **The test:** extend `pundit-harness/tests/real_footage.rs` (`#[ignore]`d behind `COACH_FOOTAGE`, as it is today). On an HLS-remuxed Trace file, scrub to about 20 targets across the half, paused. For each, take the displayed frame from the mailbox (`SinkKind::System`) and assert that its stream time equals that of the frame `Decoder::frame_at(reported position)` returns, and that the reported position is within one frame of the target.
 - **#67 is also checked on the production path.** Only the System sink's frames can be read back, but the app runs `Harness::production()`'s sinks (`autoaudiosink` among them, which can supply the clock), so the same scrubs repeat there and assert the reported position is within one frame of the target.
 - **Real footage is never committed:** the repository is public and the footage shows children.
 - **If #67's root cause can be reproduced in a generated fixture** (for example an edit list or a non-zero first PTS), the fix also lands with a CI test on that fixture. If it can't, the ignored test is the only proof, and the spec says so in the fix's commit.
@@ -318,7 +318,7 @@ A coach tagging a 27-minute half, or looking for the next goal, wants to run the
   - Core receives only the time series.
 - **Cost:** about 48,500 frames per half, at about 650 fps of decode, is about 75 s [estimate from the measured decode rate]. P3 measures it (V-6).
 
-**D2. The signals are pure functions in `video-coach-core`, on sample and number slices.**
+**D2. The signals are pure functions in `pundit-core`, on sample and number slices.**
 
 - **Whistles** (`whistles(samples_16k) -> Vec<Whistle { start, duration, freq }>`):
   - a hand-written Goertzel bank over 2–5 kHz in 75 Hz bins, on 32 ms windows with a 16 ms hop;
@@ -534,12 +534,12 @@ The Koshkina & Elder pipeline is CC BY-NC and rejected [spike §3].
   - **Otherwise pick `ort`.**
   - **Never GPU:** the Gen9 iGPU isn't faster than the CPU here, and it would need `intel-opencl-icd` on a frozen driver branch [spike §1a].
   - **Never GStreamer inference elements:** none is packaged for 1.24.2 [spike §2].
-- **The runtime is an unconditional dependency of `video-coach-media`,** like `whisper-rs`, with no feature gate. The decision is the same, and so is the reason: one build.
+- **The runtime is an unconditional dependency of `pundit-media`,** like `whisper-rs`, with no feature gate. The decision is the same, and so is the reason: one build.
 
 **L4. Models download on first use** through Phase 11's downloader:
 
 - pinned URL, per-model sha256, `.part` then rename;
-- stored in `$XDG_CACHE_HOME/coach-cuts/models/`;
+- stored in `$XDG_CACHE_HOME/pundit/models/`;
 - `fetch` is the permission, as for whisper;
 - no test reaches the network (`fixtures::serve`).
 
@@ -563,15 +563,15 @@ The Koshkina & Elder pipeline is CC BY-NC and rejected [spike §3].
 **G3. How the tags are read and scored.**
 
 - **Reading:** the scoring tool reads each tagged project read-only with `store::read`, from the local folders listed in `COACH_GROUND_TRUTH` (separated by `:`, with the **first as the tuning match** and the rest held out, per G2), plus each folder's `kickoffs.txt`. It runs the **same `Analyzer` the app runs** on each source. It never writes a project.
-- **The tool is an `#[ignore]`d harness test,** `video-coach-harness/tests/ground_truth.rs`, like `real_footage.rs`:
+- **The tool is an `#[ignore]`d harness test,** `pundit-harness/tests/ground_truth.rs`, like `real_footage.rs`:
 
   ```bash
-  COACH_GROUND_TRUTH=/local/match-a:/local/match-b cargo test -p video-coach-harness \
+  COACH_GROUND_TRUTH=/local/match-a:/local/match-b cargo test -p pundit-harness \
     --test ground_truth -- --ignored --nocapture --test-threads=1
   ```
 
   It decodes whole halves, so it runs on a local copy of each project folder, never on a network mount.
-- **The scoring is pure,** in the harness's library (`video-coach-harness/src/score.rs`), not in core, because only the ground-truth test calls it: `score(truth, suggestions) -> ScoreReport`, pairing each truth with at most one suggestion: a goal with the suggestion whose window holds it (one run's windows are disjoint, D4), and a period event greedily by nearest time.
+- **The scoring is pure,** in the harness's library (`pundit-harness/src/score.rs`), not in core, because only the ground-truth test calls it: `score(truth, suggestions) -> ScoreReport`, pairing each truth with at most one suggestion: a goal with the suggestion whose window holds it (one run's windows are disjoint, D4), and a period event greedily by nearest time.
 
   | Event | A suggestion matches a truth when |
   |---|---|
@@ -618,12 +618,12 @@ The Koshkina & Elder pipeline is CC BY-NC and rejected [spike §3].
 
 | Crate | Contents |
 |---|---|
-| `video-coach-core` | The format bumps (F3): the new types, `MIN_READABLE_FORMAT_VERSION`, remapping on source edits, the mutators. `PlanEntry.clip_id: Option`, `ExportTarget::Reel` and the reel's plan. The chapter list. `PlayerHighlight`, `NormRect`, interpolation, `highlights_at`, the tracked-key thinning. The signals (whistles, cheers, still intervals), kick-off patterns, the confirmation rule, kit clustering, the formation test, and the single-track Kalman tracker and its gate. No new dependency: the core audit still lists exactly `serde`, `serde_json`, `thiserror` and `uuid`. |
-| `video-coach-media` | The motion sampler and the crop sampler (GL scale and crop, then `gldownload`). Torso colour sampling. The inference runtime and the model table. `Analyzer` and `Tracker`, and the one-`Finished` job helper (B1). Highlights in `overlay.rs`. `ExportJob`'s optional per-entry media. `chapters.rs` (the `chpl` splice). |
-| `video-coach-app` | Bus: the commands (tag and trim a reel, set a highlight key, edit, delete, track, analyse, dismiss or restore a suggestion), the heavy-job scheduler (B2), `EditHighlights` undo and its purge. UI: scrubber markers, `[` and `]`, the H tool, the highlight inspector, the suggestion rows, the reel row in the export sheet. |
-| `video-coach-harness` | A reel export end to end, highlights reaching an export, preemption by recording and by tracking, a track waiting for transcription, and a panicking job. The P0 round trip in `real_footage.rs` and `ground_truth.rs` (both `#[ignore]`d), and the scorer (`score.rs`) it uses. |
+| `pundit-core` | The format bumps (F3): the new types, `MIN_READABLE_FORMAT_VERSION`, remapping on source edits, the mutators. `PlanEntry.clip_id: Option`, `ExportTarget::Reel` and the reel's plan. The chapter list. `PlayerHighlight`, `NormRect`, interpolation, `highlights_at`, the tracked-key thinning. The signals (whistles, cheers, still intervals), kick-off patterns, the confirmation rule, kit clustering, the formation test, and the single-track Kalman tracker and its gate. No new dependency: the core audit still lists exactly `serde`, `serde_json`, `thiserror` and `uuid`. |
+| `pundit-media` | The motion sampler and the crop sampler (GL scale and crop, then `gldownload`). Torso colour sampling. The inference runtime and the model table. `Analyzer` and `Tracker`, and the one-`Finished` job helper (B1). Highlights in `overlay.rs`. `ExportJob`'s optional per-entry media. `chapters.rs` (the `chpl` splice). |
+| `pundit-app` | Bus: the commands (tag and trim a reel, set a highlight key, edit, delete, track, analyse, dismiss or restore a suggestion), the heavy-job scheduler (B2), `EditHighlights` undo and its purge. UI: scrubber markers, `[` and `]`, the H tool, the highlight inspector, the suggestion rows, the reel row in the export sheet. |
+| `pundit-harness` | A reel export end to end, highlights reaching an export, preemption by recording and by tracking, a track waiting for transcription, and a panicking job. The P0 round trip in `real_footage.rs` and `ground_truth.rs` (both `#[ignore]`d), and the scorer (`score.rs`) it uses. |
 
-`video-coach-core` touches no pixel and no model. Media hands it numbers: motion values, whistle samples, torso colours and person boxes. So everything that decides is tested on CI with synthetic input.
+`pundit-core` touches no pixel and no model. Media hands it numbers: motion values, whistle samples, torso colours and person boxes. So everything that decides is tested on CI with synthetic input.
 
 ## Testing
 

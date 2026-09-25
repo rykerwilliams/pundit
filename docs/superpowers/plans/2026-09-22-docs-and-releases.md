@@ -79,7 +79,7 @@ The plan was written against `origin/main` = `1213305`, when the workspace said 
 
 - **README "Install":**
   - Remove "there are none published yet…".
-  - Replace it with: download `coach-cuts_<version>_amd64.deb` from the [latest release](https://github.com/rykerwilliams/coach-cutups/releases/latest), then run `sudo apt install ./coach-cuts_*_amd64.deb`.
+  - Replace it with: download `pundit_<version>_amd64.deb` from the [latest release](https://github.com/rykerwilliams/pundit/releases/latest), then run `sudo apt install ./pundit_*_amd64.deb`.
   - Leave the rest of the README alone; D2 reshapes it.
 - **CLAUDE.md's Releasing bullet** is rewritten tight, since agents read it every session. **It is not edited on this branch** — CLAUDE.md is the Linux session's, whose agents edit it several times a day. Draft the replacement text into `/tmp/claude-1000/.../scratchpad/claude-md-releasing.md`; the orchestrator sends it to that session to apply. It covers:
   - **Choosing the number by semver.** While pre-1.0, a feature or a `formatVersion` bump means a minor bump.
@@ -101,7 +101,7 @@ The plan was written against `origin/main` = `1213305`, when the workspace said 
 1. **Show the user** the whole changelog and the output of `scripts/release-notes.sh <version>`, and get their go on both decisions above.
 2. Check that `rust.yml` is green on the SHA being tagged. The last green `release.yml` run is 35703153862, at `4ef65bf` — **five versions old**, so it proves the pipeline, not this code.
 3. **Fast-forward `main`** once the user says so, coordinating with the Linux session (it owns that branch's content): `git push origin claude/docs:main`, which carries its commits and these.
-4. **Tag the known SHA**, never a moving branch: `sha=$(git rev-parse claude/docs)`, then `git tag -a v<version> -m "Coach Cuts <version>" $sha && git push origin v<version>`. The SHA's `[workspace.package] version` must equal the tag without its `v`, or the `version` job fails by design.
+4. **Tag the known SHA**, never a moving branch: `sha=$(git rev-parse claude/docs)`, then `git tag -a v<version> -m "pundit <version>" $sha && git push origin v<version>`. The SHA's `[workspace.package] version` must equal the tag without its `v`, or the `version` job fails by design.
 5. **Watch the run.**
    - If it fails before `release`, nothing is published: delete the tag (locally and on origin), fix it, and tag again.
    - On success, check that the Release page shows the `.deb` and the notes, with no stray headings.
@@ -119,16 +119,16 @@ The plan was written against `origin/main` = `1213305`, when the workspace said 
 ### Task 4: The mdBook skeleton
 
 - **`docs/book/book.toml`:**
-  - the title "Coach Cuts";
+  - the title "pundit";
   - `[build] create-missing = false`;
-  - `[output.html]`: `site-url = "/coach-cutups/"`, `git-repository-url`, and `edit-url-template = "https://github.com/rykerwilliams/coach-cutups/edit/main/docs/book/{path}"`.
+  - `[output.html]`: `site-url = "/pundit/"`, `git-repository-url`, and `edit-url-template = "https://github.com/rykerwilliams/pundit/edit/main/docs/book/{path}"`.
 - **`src/SUMMARY.md`:** Introduction, a Guide section (one placeholder chapter until D2), Changelog, Developers.
-- **`index.md`:** what Coach Cuts is, in two paragraphs, and a link to the latest release.
+- **`index.md`:** what pundit is, in two paragraphs, and a link to the latest release.
 - **`changelog.md`:** only `{{#include ../../../CHANGELOG.md}}`. Check that the file's own `# Changelog` heading doesn't collide with the chapter title.
 - **`developers.md`:**
   - the four crates, one sentence each;
-  - links to the Linux port spec, `README.md#build-from-source`, `CLAUDE.md` and the `docs/superpowers` tree, as **`https://github.com/rykerwilliams/coach-cutups/blob|tree/main/…` URLs** (relative repo links would be rewritten to `.html` and 404);
-  - rustdoc links: `api/video_coach_core/index.html`, `api/video_coach_media/index.html`, `api/video_coach_app/index.html`.
+  - links to the Linux port spec, `README.md#build-from-source`, `CLAUDE.md` and the `docs/superpowers` tree, as **`https://github.com/rykerwilliams/pundit/blob|tree/main/…` URLs** (relative repo links would be rewritten to `.html` and 404);
+  - rustdoc links: `api/pundit_core/index.html`, `api/pundit_media/index.html`, `api/pundit_app/index.html`.
 - **`.gitignore`:** `docs/book/book/`.
 
 **Done when** `mdbook build docs/book` succeeds with the scratchpad binary, and the output's pages and links look right.
@@ -151,9 +151,9 @@ The plan was written against `origin/main` = `1213305`, when the workspace said 
   - `sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1-dev`;
   - `dtolnay/rust-toolchain@1.92` and `Swatinem/rust-cache@v2`;
   - `mdbook build docs/book`;
-  - `DOCS_RS=1 WHISPER_DONT_GENERATE_BINDINGS=1 RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --workspace --no-deps --document-private-items --exclude video-coach-harness`;
+  - `DOCS_RS=1 WHISPER_DONT_GENERATE_BINDINGS=1 RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --workspace --no-deps --document-private-items --exclude pundit-harness`;
   - copy `target/doc` into `docs/book/book/api`;
-  - `test -f` on each of the three `api/video_coach_*/index.html` files, which is what proves `developers.md`'s rustdoc links;
+  - `test -f` on each of the three `api/pundit_*/index.html` files, which is what proves `developers.md`'s rustdoc links;
   - `actions/upload-pages-artifact` (`path: docs/book/book`) when `github.ref == 'refs/heads/main' && github.event_name != 'pull_request'`;
   - `timeout-minutes`.
 - **Job `deploy`:**
@@ -162,7 +162,7 @@ The plan was written against `origin/main` = `1213305`, when the workspace said 
   - `environment: {name: github-pages, url: ${{ steps.deployment.outputs.page_url }}}`;
   - `concurrency: {group: pages, cancel-in-progress: false}`;
   - `actions/deploy-pages` with `id: deployment`.
-- **Fallbacks, if a build script ignores `DOCS_RS` on the runner:** add the one `-dev` package it wants. Otherwise, `-p video-coach-core` only, noted on `developers.md`.
+- **Fallbacks, if a build script ignores `DOCS_RS` on the runner:** add the one `-dev` package it wants. Otherwise, `-p pundit-core` only, noted on `developers.md`.
 - **Fix every broken intra-doc link** rustdoc reports in `crates/`. These are doc-comment edits only.
 
 **Local run:** once, the same `cargo doc` command under the flock wrapper. This proves the intra-doc lint and its fixes. It can't prove the build-script claim, because this machine has every dev package. CI's first run on `main` proves that.
@@ -173,8 +173,8 @@ The plan was written against `origin/main` = `1213305`, when the workspace said 
 
 1. **The `check` job** in `docs.yml`, alongside `build` rather than before `deploy`: a checkout, then the pinned lychee over `README.md`, `CLAUDE.md`, `CHANGELOG.md` and `docs/book/src/**/*.md`:
    - `--offline --include-fragments`;
-   - `--exclude '/api/video_coach_'`, which `build` covers with `test -f`;
-   - `--remap 'https://github.com/rykerwilliams/coach-cutups/(blob|tree)/main/(.*) file://<workspace>/$2'`, so links into the repo and their anchors are checked offline;
+   - `--exclude '/api/pundit_'`, which `build` covers with `test -f`;
+   - `--remap 'https://github.com/rykerwilliams/pundit/(blob|tree)/main/(.*) file://<workspace>/$2'`, so links into the repo and their anchors are checked offline;
    - no HTML pass.
 2. **`scripts/check-doc-paths.sh`,** run by the `check` job, and **added to `.claude/skills/verify/SKILL.md`** so it runs before every commit, not only after `main` moves.
    - It collects backticked tokens in the same Markdown files that start with `crates/`, `docs/`, `packaging/`, `scripts/`, `apple/`, `.github/` or `.claude/skills/`.
@@ -187,7 +187,7 @@ The plan was written against `origin/main` = `1213305`, when the workspace said 
 
 ### Task 7: Go live (orchestrator)
 
-1. `gh api -X POST repos/rykerwilliams/coach-cutups/pages -f build_type=workflow`. This is a one-time public step.
+1. `gh api -X POST repos/rykerwilliams/pundit/pages -f build_type=workflow`. This is a one-time public step.
 2. Fast-forward `main`, and watch `docs.yml`: `build`, `check` and `deploy`. If the first run fails, fix forward; nothing is published until `build` passes.
 3. **Open `https://rykerwilliams.github.io/coach-cutups/` and check:**
    - the changelog page;
@@ -206,7 +206,7 @@ The plan was written against `origin/main` = `1213305`, when the workspace said 
 `docs/book/src/guide/` holds `install.md`, `first-project.md`, `recording.md`, `clips.md`, `scoreboard.md`, `transcripts.md`, `export.md`, `keyboard.md` and `troubleshooting.md`, all listed in SUMMARY.
 
 - **Audience:** a coach who has never opened the app. Lead with tasks ("To tag a goal, press Z"). Short pages. No internals.
-- **Sources:** the README's user sections, `docs/hands-on-checklist.md`, and the app code (`.slint` files and key handling in `crates/video-coach-app/`).
+- **Sources:** the README's user sections, `docs/hands-on-checklist.md`, and the app code (`.slint` files and key handling in `crates/pundit-app/`).
 - **Check every key and button label against the code.** CLAUDE.md is not a source for user behaviour; parts are stale. Example: models **are** downloaded, per the README and `transcribe.rs`.
 - **`keyboard.md`:** one table built from the code on `main`. **Don't document J/L or the `,`/`.` frame step.** They aren't on `main`, and the Linux session adds them to the guide with its own changes.
 - **`troubleshooting.md`:** the README's "When something goes wrong", plus the hardware-decode log check, written for a coach.

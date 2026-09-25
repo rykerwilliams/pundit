@@ -127,10 +127,10 @@ An **Export…** button opens a sheet:
 
 | Crate | Phase 8 contents |
 |---|---|
-| `video-coach-core` | `compilation_schedule` / `Compilation` / `Entry` on top of `compilation_plan`; the text line; the audio splice, gain and ramp maths; `ExportRun` (the rate window and projection); the bar's layout ratios and the PiP's raised margin. |
-| `video-coach-media` | The three-pad export tail with PTS-keyed geometry; the PiP decoder and its transparent filler; the bar and glyph rendering (cosmic-text plus a vendored TTF, `Wrap::None` with a tail ellipsis); the audio pipelines, the mixer plumbing, the AAC branch and its priming shift; resolution and quality parameters. |
-| `video-coach-app` | Bus: compilation exports, the target list, frame-count progress, cancel. UI: the export sheet and run list. |
-| `video-coach-harness` | A compilation export end to end. |
+| `pundit-core` | `compilation_schedule` / `Compilation` / `Entry` on top of `compilation_plan`; the text line; the audio splice, gain and ramp maths; `ExportRun` (the rate window and projection); the bar's layout ratios and the PiP's raised margin. |
+| `pundit-media` | The three-pad export tail with PTS-keyed geometry; the PiP decoder and its transparent filler; the bar and glyph rendering (cosmic-text plus a vendored TTF, `Wrap::None` with a tail ellipsis); the audio pipelines, the mixer plumbing, the AAC branch and its priming shift; resolution and quality parameters. |
+| `pundit-app` | Bus: compilation exports, the target list, frame-count progress, cancel. UI: the export sheet and run list. |
+| `pundit-harness` | A compilation export end to end. |
 | CI | Add **`gstreamer1.0-libav`** for `avenc_aac`. |
 
 ## Testing

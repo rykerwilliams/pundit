@@ -80,10 +80,10 @@ Measured on one whole 1516 s half of match A, which has 3 goals at 412 s, 697 s 
 - `scoreboard::interpret(events, config)` takes **absolute** events, filters to `StartStop`, sorts, optionally back-anchors, truncates to `expected_start_stop_events()` and assigns `PeriodRole::Start(p)` / `End(p)` by position. It is the only correct way to learn which tag is a start and which is a stop. The tool maps each interpreted event back to `(source_index, seconds)` with `Project::locate`, so a match whose halves share one file still works.
 - `Project::abs_seconds` / `Project::locate` are the source↔absolute mapping.
 - `probe::probe` gives `duration_seconds` per source; the census needs it for the tail figure.
-- `video-coach-harness` already depends on `video-coach-media` (with `fixtures`) and `video-coach-core`, so the ground-truth test needs no new dependency.
+- `pundit-harness` already depends on `pundit-media` (with `fixtures`) and `pundit-core`, so the ground-truth test needs no new dependency.
 - `CURRENT_FORMAT_VERSION` is **11**, `MIN_READABLE_FORMAT_VERSION` is 7. The three tagged projects are v11 and must stay readable and unwritten.
 - `Gl::shared()` is the process-wide surfaceless EGL display the export uses. The motion pass runs there (B1), never on Slint's context.
-- `video-coach-core` declares **no media dependency** and the audit expects exactly `serde`, `serde_json`, `thiserror`, `uuid`. The Goertzel bank is hand-written for that reason; no FFT crate.
+- `pundit-core` declares **no media dependency** and the audit expects exactly `serde`, `serde_json`, `thiserror`, `uuid`. The Goertzel bank is hand-written for that reason; no FFT crate.
 
 ---
 
@@ -91,17 +91,17 @@ Measured on one whole 1516 s half of match A, which has 3 goals at 412 s, 697 s 
 
 | Crate | What P3 adds |
 |---|---|
-| `video-coach-core` | `signals.rs`: `whistles`, `cheers`, `still_intervals` and their constants. `kickoff.rs`: the kick-off pattern, the confirmation rule and the 10 s de-duplication. Pure functions on `&[f32]` and `&[f32]` number series. No new dependency. |
-| `video-coach-media` | `job.rs`: the one-`Finished` job helper (B1). `analyze/`: the audio pass (a third `Reader` caller), the motion pass (`decodebin3` → `videorate` 5 fps → GL scale to 160×90 → `gldownload` → appsink, on `Gl::shared()`), and `Analyzer`. |
-| `video-coach-harness` | `src/truth.rs` (read a tagged project and its optional notes), `src/score.rs` (pure scoring), `tests/ground_truth.rs` (`#[ignore]`d). |
-| `video-coach-app` | **Nothing.** |
+| `pundit-core` | `signals.rs`: `whistles`, `cheers`, `still_intervals` and their constants. `kickoff.rs`: the kick-off pattern, the confirmation rule and the 10 s de-duplication. Pure functions on `&[f32]` and `&[f32]` number series. No new dependency. |
+| `pundit-media` | `job.rs`: the one-`Finished` job helper (B1). `analyze/`: the audio pass (a third `Reader` caller), the motion pass (`decodebin3` → `videorate` 5 fps → GL scale to 160×90 → `gldownload` → appsink, on `Gl::shared()`), and `Analyzer`. |
+| `pundit-harness` | `src/truth.rs` (read a tagged project and its optional notes), `src/score.rs` (pure scoring), `tests/ground_truth.rs` (`#[ignore]`d). |
+| `pundit-app` | **Nothing.** |
 
 **How a developer runs it:**
 
 ```bash
 COACH_GROUND_TRUTH=/local/match-b:/local/match-a:/local/match-c \
   flock /tmp/claude-1000/cargo.lock nice -n 19 \
-  cargo test -p video-coach-harness --test ground_truth -- --ignored --nocapture --test-threads=1
+  cargo test -p pundit-harness --test ground_truth -- --ignored --nocapture --test-threads=1
 ```
 
 `:`-separated project folders, **first is the tuning match**, the rest held out. The folders are already on local disk, so no copying step is needed — but they are the coach's only copy, so the read-only rule above is not a formality. `--test-threads=1` because each run decodes six whole halves and two analyses at once would fight over the decoder and ruin the timing lines.
@@ -117,8 +117,8 @@ Order: 3.1, 3.2, 3.3, 3.4, 3.5, then 3.6 — and **3.6 runs only if 3.5's number
 The piece everything else is judged by, so it is built and pinned before any detector exists. At the end of this task the ground-truth test runs end to end against the three matches and scores an **empty** detection set — precision undefined, recall 0 — and prints the census.
 
 **Files:**
-- `crates/video-coach-harness/src/{lib.rs,truth.rs,score.rs}` (two new)
-- `crates/video-coach-harness/tests/{score.rs,ground_truth.rs}` (both new)
+- `crates/pundit-harness/src/{lib.rs,truth.rs,score.rs}` (two new)
+- `crates/pundit-harness/tests/{score.rs,ground_truth.rs}` (both new)
 
 **What to build:**
 
@@ -164,7 +164,7 @@ The piece everything else is judged by, so it is built and pinned before any det
 
 4. **`tests/ground_truth.rs`**, `#[ignore]`d, module doc naming the env var and the command. It reads every folder in `COACH_GROUND_TRUTH`, prints `TAGS` and `GAPS`, and calls `score` with an empty detection list. It **panics with a clear message** if the variable is unset. It asserts nothing about rates yet; it asserts that every project read, that every source file named by a project exists, and that the census numbers are finite.
 
-**Test that must fail first:** `crates/video-coach-harness/tests/score.rs`, on hand-built truth and detection sets, running on CI with no footage:
+**Test that must fail first:** `crates/pundit-harness/tests/score.rs`, on hand-built truth and detection sets, running on CI with no footage:
 - a goal inside a window is a true positive and one outside is a false negative plus a false positive;
 - **two truth goals in one window score 1 tp + 1 fn**, not 2 tp — the pairing rule, and the one that silently inflates recall if it is wrong;
 - a period event at exactly 10.0 s error matches and one at 10.1 s does not;
@@ -183,9 +183,9 @@ Commit: `feat(harness): ground-truth reader and the detection scorer`
 Small, independent of every measurement, and it has to exist before `Analyzer` does — a vision job indexes slices on data, which is #64's own trigger.
 
 **Files:**
-- `crates/video-coach-media/src/job.rs` (new), `src/lib.rs`
-- `crates/video-coach-media/src/transcribe.rs`
-- `crates/video-coach-media/tests/` (a new test file, or the existing transcribe test file)
+- `crates/pundit-media/src/job.rs` (new), `src/lib.rs`
+- `crates/pundit-media/src/transcribe.rs`
+- `crates/pundit-media/tests/` (a new test file, or the existing transcribe test file)
 - `BACKLOG.md`
 
 **What to build:**
@@ -204,9 +204,9 @@ Commit: `fix(media): every job thread sends exactly one Finished (closes #64)`
 ### Task 3.3: The audio pass, and the signals it feeds
 
 **Files:**
-- `crates/video-coach-core/src/{signals.rs,lib.rs}`, `crates/video-coach-core/tests/signals.rs` (new)
-- `crates/video-coach-media/src/analyze/{mod.rs,audio.rs}` (new), `src/lib.rs`
-- `crates/video-coach-harness/{src/score.rs,tests/ground_truth.rs}`
+- `crates/pundit-core/src/{signals.rs,lib.rs}`, `crates/pundit-core/tests/signals.rs` (new)
+- `crates/pundit-media/src/analyze/{mod.rs,audio.rs}` (new), `src/lib.rs`
+- `crates/pundit-harness/{src/score.rs,tests/ground_truth.rs}`
 
 **What to build:**
 
@@ -240,9 +240,9 @@ Commit: `feat: whistle and cheer signals, and the analysis audio pass`
 ### Task 3.4: The motion pass, still intervals, and `Analyzer`
 
 **Files:**
-- `crates/video-coach-media/src/analyze/{motion.rs,mod.rs}`
-- `crates/video-coach-core/src/signals.rs`, `crates/video-coach-core/tests/signals.rs`
-- `crates/video-coach-harness/tests/ground_truth.rs`
+- `crates/pundit-media/src/analyze/{motion.rs,mod.rs}`
+- `crates/pundit-core/src/signals.rs`, `crates/pundit-core/tests/signals.rs`
+- `crates/pundit-harness/tests/ground_truth.rs`
 
 **What to build:**
 
@@ -271,9 +271,9 @@ Commit: `feat(media): the analysis motion pass and Analyzer`
 The task the phase exists for. Everything before it produced inputs; this one produces the numbers that decide P4 and P5.
 
 **Files:**
-- `crates/video-coach-core/src/{kickoff.rs,lib.rs}`, `crates/video-coach-core/tests/kickoff.rs` (new)
-- `crates/video-coach-media/src/analyze/mod.rs`
-- `crates/video-coach-harness/tests/ground_truth.rs`
+- `crates/pundit-core/src/{kickoff.rs,lib.rs}`, `crates/pundit-core/tests/kickoff.rs` (new)
+- `crates/pundit-media/src/analyze/mod.rs`
+- `crates/pundit-harness/tests/ground_truth.rs`
 - `docs/superpowers/spikes/2026-09-24-match-vision-measurements.md` (new)
 
 **What to build:**
@@ -310,7 +310,7 @@ If neither holds — the bars pass and the user is not asking for tracking — *
 
 **Files:**
 - `tools/export-onnx.md` or `tools/export_onnx.py` (documented, outside the Rust build)
-- a scratch spike crate or an `#[ignore]`d test — **not** a dependency added to `video-coach-media` until the runtime is chosen
+- a scratch spike crate or an `#[ignore]`d test — **not** a dependency added to `pundit-media` until the runtime is chosen
 - `docs/superpowers/spikes/2026-09-24-match-vision-measurements.md`
 
 **What to measure:**

@@ -1,0 +1,454 @@
+//! Transport (spec D8): play/pause, skips, scrubs and volume, and the
+//! player's events. While recording (Phase 4 R10), play, pause and skips are
+//! logged, and skips and EOS stay inside the clip's source.
+//!
+//! Every seek goes through the player's single-flight slot. Skips go through
+//! the [`SkipCoordinator`](pundit_core::skip::SkipCoordinator) first, over
+//! concat time, and every outcome of a skip's flight reaches it: a completion
+//! drives the burst on, while a displacement or failure resets it, so it can
+//! never be left waiting for a landing that won't come.
+
+use std::ops::RangeInclusive;
+use std::time::Instant;
+
+use pundit_core::skip::SkipDecision;
+use pundit_media::{Origin, PlayerEvent};
+
+use super::sources::END_MARGIN;
+use super::{Bus, Event, ScanStep, UserError};
+
+/// The game video's speeds (spec S1). `J` and `L` step through them, and the
+/// speed button cycles them.
+const SCAN_SPEEDS: [f64; 6] = [1.0, 2.0, 4.0, 8.0, 16.0, 32.0];
+
+/// The speed `step` moves to from `rate`: `Faster` and `Slower` stop at the
+/// ends, `Cycle` wraps from the fastest to 1x.
+fn next_speed(rate: f64, step: ScanStep) -> f64 {
+    let last = SCAN_SPEEDS.len() - 1;
+    let i = SCAN_SPEEDS.iter().position(|&s| s == rate).unwrap_or(0);
+    SCAN_SPEEDS[match step {
+        ScanStep::Faster => (i + 1).min(last),
+        ScanStep::Slower => i.saturating_sub(1),
+        ScanStep::Cycle if i == last => 0,
+        ScanStep::Cycle => i + 1,
+    }]
+}
+
+impl Bus {
+    /// Play is refused (answered with `Playing(false)`) with no sources or
+    /// while any is missing. If the player dropped the current source (after
+    /// an error), play reloads it where it was first. Pausing is always
+    /// allowed.
+    ///
+    /// While recording, a change is logged at `host_ns`, anchored where the
+    /// player is heading, with `ui_secs` as the position the UI saw.
+    pub(super) fn toggle_play(&mut self, host_ns: u64, ui_secs: Option<f64>) {
+        // While a preview is open the transport drives it, and nothing here
+        // applies: there is no source to load, and a preview can't be
+        // recorded over (spec P5).
+        if self.preview.is_some() {
+            return self.set_playing(!self.playing);
+        }
+        let was_playing = self.playing;
+        let play = !self.playing
+            && self.seekable()
+            && (self.loaded()
+                || self.load(self.current, self.current_secs(), true, Origin::System));
+        self.set_playing(play);
+        if play && !was_playing {
+            // A burst's target stood still while paused.
+            self.skip_since = Instant::now();
+        }
+        if self.playing != was_playing {
+            self.log_playing(host_ns, ui_secs);
+        }
+    }
+
+    /// Plays or pauses whichever of the two is on screen. The bus keeps only
+    /// one of them PLAYING, so this is the single play state (spec P5).
+    ///
+    /// Every pause of the game video returns it to 1x (spec S3), after the
+    /// pause, so the seek that does it lands paused. Only when it was fast:
+    /// at 1x a pause adds no seek, which would change its settling and a
+    /// recording's pause anchors.
+    pub(super) fn set_playing(&mut self, playing: bool) {
+        self.playing = playing;
+        match &self.preview {
+            Some(active) => active.preview.set_playing(playing),
+            None => self.player.set_playing(playing),
+        }
+        self.emit(Event::Playing(playing));
+        if !playing && self.preview.is_none() && self.player.rate() != 1.0 {
+            self.change_rate(1.0);
+        }
+    }
+
+    /// Plays the game video a speed faster or slower (spec S1), only while it
+    /// plays, with no preview open. The recording guard in `Bus::command`
+    /// refuses it while recording (S2).
+    pub(super) fn scan_speed(&mut self, step: ScanStep) {
+        if !self.playing || self.preview.is_some() {
+            return;
+        }
+        let rate = next_speed(self.player.rate(), step);
+        if rate != self.player.rate() {
+            self.change_rate(rate);
+        }
+    }
+
+    /// Sets the player's rate and seeks at it, through `load` like every
+    /// seek: while playing, from where it is heading; after a pause, from
+    /// the frame on screen, which at 32x trails the position by up to 0.6 s
+    /// (spec S5), so the coach stays on the frame they paused on. A seek
+    /// still to be issued carries the rate, so none is added then: a pending
+    /// scrub or skip is never displaced.
+    fn change_rate(&mut self, rate: f64) {
+        self.store_rate(rate);
+        if self.player.seek_waiting() || !self.seekable() || !self.loaded() {
+            return;
+        }
+        let secs = match self.player.target_secs() {
+            Some(target) => target,
+            None if !self.playing => self
+                .player
+                .shown_secs()
+                .unwrap_or_else(|| self.current_secs()),
+            None => self.current_secs(),
+        };
+        self.load(self.current, secs, true, Origin::System);
+    }
+
+    /// Stores the player's rate, which it carries into every seek from now,
+    /// and tells the UI, with no seek. A skip burst's live target was worked
+    /// out at the old rate, so the burst is dropped.
+    pub(super) fn store_rate(&mut self, rate: f64) {
+        self.reset_skip();
+        self.player.set_rate(rate);
+        self.emit(Event::ScanSpeed(rate));
+    }
+
+    /// Applies at once; persists to `scan_volume` only on `commit`.
+    pub(super) fn set_volume(&mut self, value: f64, commit: bool) {
+        if !value.is_finite() {
+            return;
+        }
+        let value = value.clamp(0.0, 1.0);
+        self.player.set_volume(value);
+        if !commit {
+            return;
+        }
+        if let Some(open) = &mut self.open {
+            open.project.preferences.scan_volume = value;
+            self.project_changed();
+        }
+    }
+
+    /// Skips by `delta` concat seconds from the burst's accumulated target,
+    /// or from where the player is (or is heading) if no burst is running.
+    /// The coordinator clamps to `total − END_MARGIN` (spec D8), or while
+    /// recording to the clip's source, short of its end by the same margin
+    /// (R10), and the requested delta is logged at `host_ns`.
+    pub(super) fn skip(&mut self, delta: f64, host_ns: u64) {
+        if !delta.is_finite() {
+            return;
+        }
+        if self.preview.is_some() {
+            return self.preview_skip(delta);
+        }
+        if !self.seekable() {
+            return;
+        }
+        let Some(open) = &self.open else {
+            return;
+        };
+        if self.skip.target().is_none() {
+            // A leading press: the burst's base is sampled now.
+            self.skip_since = Instant::now();
+        }
+        let now = open.project.abs_seconds(self.current, self.current_secs());
+        let decision = self.skip.request_skip(delta, now, self.skip_range());
+        self.apply_skip(decision);
+        if let Some(active) = &mut self.recording {
+            active.log.skip(host_ns, delta);
+        }
+    }
+
+    /// Where a skip may land (spec D8, R10): the clip's source while
+    /// recording, short of its end by `END_MARGIN`, else the whole timeline.
+    fn skip_range(&self) -> RangeInclusive<f64> {
+        let Some(open) = &self.open else {
+            return 0.0..=0.0;
+        };
+        match &self.recording {
+            Some(active) => {
+                let src = active.pending.source_index;
+                let start = open.project.cumulative_offset(src);
+                let duration = open
+                    .project
+                    .source_videos
+                    .get(src)
+                    .map_or(0.0, |s| s.duration_seconds);
+                start..=start + (duration - END_MARGIN).max(0.0)
+            }
+            None => 0.0..=(open.project.total_source_duration() - END_MARGIN).max(0.0),
+        }
+    }
+
+    /// Scrub moves are keyframe seeks, latest wins. A release is a new user
+    /// context: it abandons any skip burst, then lands frame-accurate.
+    pub(super) fn scrub(&mut self, abs: f64, release: bool) {
+        // A preview's scrubber is over the clip's own duration, not concat
+        // time, so it bypasses everything below (spec P5).
+        if self.preview.is_some() {
+            return self.preview_scrub(abs, release);
+        }
+        if release {
+            self.reset_skip();
+        }
+        self.seek_abs(abs, release, Origin::Scrub);
+    }
+
+    /// Shows the frame after the one on screen, or before it: only while
+    /// paused and settled, with no preview open, so the frame on screen is
+    /// the player's and is where it reports. It stays in its source, and
+    /// forward stops short of the end as every seek does. A step is a new
+    /// user context, like a scrub release, so it abandons a skip burst.
+    pub(super) fn step_frame(&mut self, forward: bool) {
+        if self.playing
+            || self.preview.is_some()
+            || !self.player.is_idle()
+            || !self.seekable()
+            || !self.loaded()
+        {
+            return;
+        }
+        let Some(target) = self.player.step_target(forward) else {
+            return;
+        };
+        let duration = self
+            .open
+            .as_ref()
+            .and_then(|open| open.project.source_videos.get(self.current))
+            .map_or(0.0, |s| s.duration_seconds);
+        if target > duration - END_MARGIN {
+            return;
+        }
+        self.reset_skip();
+        self.load(self.current, target, true, Origin::Scrub);
+    }
+
+    /// The skip debounce fired: the burst is over.
+    pub(super) fn skip_debounce_passed(&mut self) {
+        let decision = self.skip.burst_ended();
+        self.apply_skip(decision);
+    }
+
+    /// Forgets any skip burst and its debounce. For user context switches
+    /// (scrub release, list mutation, open) and a skip flight that won't
+    /// land — never for a load that fulfils a skip.
+    pub(super) fn reset_skip(&mut self) {
+        self.skip.reset();
+        self.skip_deadline = None;
+    }
+
+    fn apply_skip(&mut self, decision: SkipDecision) {
+        if let Some(debounce) = decision.arm_debounce {
+            self.skip_deadline = Some(Instant::now() + debounce);
+        }
+        if let Some(seek) = decision.seek {
+            // The coordinator's target is where playback was when the burst
+            // began, plus the presses. Replay applies each press's delta at
+            // its own time and keeps playing, so while playing the live
+            // target advances by the play time since then; unadvanced, the
+            // settle landed ~150 ms behind replay and visibly jumped back.
+            // The clamp keeps a recording's clip in one source. The
+            // coordinator keeps its own targets unadvanced: it matches a
+            // landing against them, and would otherwise refire forever.
+            // Playback advances at the rate, which a burst never spans: a
+            // rate change resets it.
+            let mut target = seek.target_seconds;
+            if self.playing {
+                let (lo, hi) = self.skip_range().into_inner();
+                let played = self.skip_since.elapsed().as_secs_f64() * self.player.rate();
+                target = (target + played).min(hi.max(lo)).max(lo);
+            }
+            // A seek that can't be issued would leave the coordinator waiting
+            // for its landing.
+            if !self.seek_abs(target, seek.exact, Origin::Skip) {
+                self.reset_skip();
+            }
+        }
+    }
+
+    /// Where the player is heading, as source index and source seconds (R6,
+    /// R10): a skip burst's target (which live playback reaches advanced by
+    /// the play time since the burst began, while playing, so live matches
+    /// replay's model: base + deltas + elapsed), else the seek in flight, else `ui_secs`
+    /// (the position the UI read at the keypress), else the pipeline's
+    /// position. Both a recording's start and its play and pause anchors.
+    pub(super) fn heading(&self, ui_secs: Option<f64>) -> (usize, f64) {
+        if let (Some(abs), Some(open)) = (self.skip.target(), &self.open) {
+            return open.project.locate(abs);
+        }
+        let secs = self
+            .player
+            .target_secs()
+            .or(ui_secs)
+            .unwrap_or_else(|| self.position.query_position().unwrap_or(0.0));
+        (self.current, secs)
+    }
+
+    /// Whether seeks are allowed: some sources, none missing.
+    pub(super) fn seekable(&self) -> bool {
+        self.open
+            .as_ref()
+            .is_some_and(|open| !open.project.source_videos.is_empty())
+            && !self.any_missing()
+    }
+
+    /// Seeks to concat time `abs`. `locate` clamps it to the timeline and
+    /// `load` short of its source's end, which for the last source is the
+    /// spec's `total − END_MARGIN`. Returns whether a request was issued.
+    fn seek_abs(&mut self, abs: f64, accurate: bool, origin: Origin) -> bool {
+        let Some(open) = &self.open else {
+            return false;
+        };
+        if !abs.is_finite() || !self.seekable() {
+            return false;
+        }
+        let (index, secs) = open.project.locate(abs);
+        self.load(index, secs, accurate, origin)
+    }
+
+    pub(super) fn player_events(&mut self, events: Vec<PlayerEvent>) {
+        for event in events {
+            match event {
+                // The burst's next seek is issued in this same batch, so the
+                // player is never idle between a burst's flights and no
+                // settled position is published there.
+                PlayerEvent::SeekDone {
+                    origin: Origin::Skip,
+                } => {
+                    let decision = self.skip.seek_completed();
+                    self.apply_skip(decision);
+                }
+                PlayerEvent::SeekDisplaced {
+                    origin: Origin::Skip,
+                }
+                | PlayerEvent::SeekFailed {
+                    origin: Origin::Skip,
+                } => self.reset_skip(),
+                PlayerEvent::SeekDone { .. }
+                | PlayerEvent::SeekDisplaced { .. }
+                | PlayerEvent::SeekFailed { .. } => {}
+                PlayerEvent::Loaded { diagnostics } => eprintln!(
+                    "bus: loaded {}: decoder {:?}, glupload caps {:?}, GL platform {:?}",
+                    self.player.loaded_uri().unwrap_or("?"),
+                    diagnostics.decoder,
+                    diagnostics.glupload_caps,
+                    diagnostics.gl_platform
+                ),
+                PlayerEvent::Eos => self.end_of_stream(),
+                PlayerEvent::Error(msg) => {
+                    eprintln!("bus: player error: {msg}");
+                    // The player dropped its flight and its source; play or
+                    // the next seek reloads it. One failure often posts
+                    // several errors.
+                    self.reset_skip();
+                    // While recording this pause isn't logged, as at EOS: it
+                    // would need a bus-side time. Replay keeps playing until
+                    // the next anchor. Rare, and accepted.
+                    if self.playing {
+                        self.set_playing(false);
+                    }
+                    self.emit(Event::Error(UserError::Playback(msg)));
+                    // A file deleted mid-session gets its Relink card.
+                    if self.refresh_missing() {
+                        self.publish_project();
+                    }
+                }
+            }
+        }
+    }
+
+    /// Playback reached the end of `current` (spec D4): continue into the
+    /// next source from its start, or stop at the end of the last one, where
+    /// its final frame stays up. While recording it stops without advancing,
+    /// since a clip points into one source, and logs nothing: replay's play
+    /// tail freezes on the last frame the same way, and a pause here would
+    /// carry a bus-side time (R10).
+    fn end_of_stream(&mut self) {
+        if !self.playing {
+            return;
+        }
+        if self.recording.is_some() {
+            return self.set_playing(false);
+        }
+        let sources = self
+            .open
+            .as_ref()
+            .map_or(0, |open| open.project.source_videos.len());
+        let next = self.current + 1;
+        if next >= sources || !self.load(next, 0.0, true, Origin::System) {
+            self.set_playing(false);
+        }
+    }
+
+    /// Drops the loaded source entirely, so no stale frame stays up: for no
+    /// sources, or a current source that is missing.
+    pub(super) fn unload(&mut self) {
+        // As in `load`: nothing touches the player under an open preview. The
+        // close asks the player for its own frame back, which the unload
+        // below then drops along with the source -- it is the mailbox being
+        // emptied that matters here, not the picture.
+        self.close_preview();
+        self.reset_skip();
+        self.player.unload();
+        if self.playing {
+            self.set_playing(false);
+        }
+    }
+
+    /// Publishes where the player is heading, recomputed from the player
+    /// after every input (so a list change that moves the concat offsets
+    /// moves the target too), or the settled position once it's idle. A
+    /// pause settling with nothing requested publishes nothing.
+    pub(super) fn publish_position(&mut self) {
+        let target = self.player.target_secs();
+        if target.is_some() || self.player.is_idle() {
+            self.publish_position_at(target);
+        }
+    }
+
+    /// Publishes `current` with `target` (source seconds), unless unchanged.
+    pub(super) fn publish_position_at(&mut self, target: Option<f64>) {
+        let target_abs = target.and_then(|secs| {
+            let open = self.open.as_ref()?;
+            Some(open.project.abs_seconds(self.current, secs))
+        });
+        let position = (self.current, target_abs);
+        if position == self.last_position {
+            return;
+        }
+        self.last_position = position;
+        self.emit(Event::Position {
+            source_index: self.current,
+            target_abs,
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scan_speeds_clamp_and_the_button_wraps() {
+        assert_eq!(next_speed(1.0, ScanStep::Slower), 1.0);
+        assert_eq!(next_speed(16.0, ScanStep::Faster), 32.0);
+        assert_eq!(next_speed(32.0, ScanStep::Faster), 32.0);
+        assert_eq!(next_speed(4.0, ScanStep::Slower), 2.0);
+        assert_eq!(next_speed(16.0, ScanStep::Cycle), 32.0);
+        assert_eq!(next_speed(32.0, ScanStep::Cycle), 1.0);
+    }
+}

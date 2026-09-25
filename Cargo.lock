@@ -3588,6 +3588,75 @@ dependencies = [
 ]
 
 [[package]]
+name = "pundit-app"
+version = "0.8.0"
+dependencies = [
+ "glutin_egl_sys",
+ "gstreamer",
+ "gstreamer-gl",
+ "gstreamer-gl-egl",
+ "i-slint-backend-testing",
+ "pundit-core",
+ "pundit-media",
+ "rfd",
+ "serde",
+ "serde_json",
+ "slint",
+ "slint-build",
+ "tempfile",
+ "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
+name = "pundit-core"
+version = "0.8.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
+name = "pundit-harness"
+version = "0.8.0"
+dependencies = [
+ "gstreamer",
+ "gstreamer-gl",
+ "gstreamer-gl-egl",
+ "pundit-app",
+ "pundit-core",
+ "pundit-media",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
+name = "pundit-media"
+version = "0.8.0"
+dependencies = [
+ "cosmic-text",
+ "gstreamer",
+ "gstreamer-app",
+ "gstreamer-gl",
+ "gstreamer-gl-egl",
+ "gstreamer-pbutils",
+ "gstreamer-video",
+ "pundit-core",
+ "pundit-media",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tiny-skia 0.12.0",
+ "uuid",
+ "whisper-rs",
+]
+
+[[package]]
 name = "pxfm"
 version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4867,75 +4936,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "video-coach-app"
-version = "0.7.0"
-dependencies = [
- "glutin_egl_sys",
- "gstreamer",
- "gstreamer-gl",
- "gstreamer-gl-egl",
- "i-slint-backend-testing",
- "rfd",
- "serde",
- "serde_json",
- "slint",
- "slint-build",
- "tempfile",
- "thiserror 2.0.20",
- "uuid",
- "video-coach-core",
- "video-coach-media",
-]
-
-[[package]]
-name = "video-coach-core"
-version = "0.7.0"
-dependencies = [
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "uuid",
-]
-
-[[package]]
-name = "video-coach-harness"
-version = "0.7.0"
-dependencies = [
- "gstreamer",
- "gstreamer-gl",
- "gstreamer-gl-egl",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "uuid",
- "video-coach-app",
- "video-coach-core",
- "video-coach-media",
-]
-
-[[package]]
-name = "video-coach-media"
-version = "0.7.0"
-dependencies = [
- "cosmic-text",
- "gstreamer",
- "gstreamer-app",
- "gstreamer-gl",
- "gstreamer-gl-egl",
- "gstreamer-pbutils",
- "gstreamer-video",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "tiny-skia 0.12.0",
- "uuid",
- "video-coach-core",
- "video-coach-media",
- "whisper-rs",
-]
 
 [[package]]
 name = "vtable"

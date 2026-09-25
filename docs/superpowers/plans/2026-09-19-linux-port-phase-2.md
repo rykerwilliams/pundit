@@ -42,7 +42,7 @@
      - `glutin_egl_sys` 0.7, for `eglGetCurrentContext`/`eglGetCurrentDisplay`, loaded through Slint's `get_proc_address` as in Slint's example;
      - `rfd` at the current 0.17.x with its default xdg-portal backend, which needs no GTK packages.
 
-   `video-coach-core` gets none of these.
+   `pundit-core` gets none of these.
 2. **CI** (`.github/workflows/rust.yml`).
    - `workspace` job:
      - apt-installs `libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good libfontconfig1-dev libfreetype-dev libxkbcommon-dev libegl-dev libgl-dev`;
@@ -50,7 +50,7 @@
      - pins Rust 1.92, since this is the job that compiles Slint and GStreamer, so this is where the pin checks something;
      - runs fmt, clippy and `cargo test --workspace`. No test may open a window.
    - `core` job: unchanged, still with no GStreamer.
-3. **Spike** `crates/video-coach-app/examples/zero_copy_spike.rs`. It stays in the repo as a diagnostic.
+3. **Spike** `crates/pundit-app/examples/zero_copy_spike.rs`. It stays in the repo as a diagnostic.
    - Select the Skia renderer (D2).
    - In `RenderingSetup`, assert `eglGetCurrentContext()` is non-null, wrap the context, and answer `NeedContext` from a sync handler. The handler returns `BusSyncReply::Drop` for everything, forwarding non-context messages.
    - Play a path given as an argument through `playbin3` with the D1 GL sink bin, drawing each frame via `BorrowedOpenGLTextureBuilder`.
@@ -84,12 +84,12 @@ Commit: `chore(app): Phase 2 toolchain, CI and zero-copy spike`.
   - The workspace also passes clippy on Rust 1.92 with `--locked`. `kstring` is held at 2.0.2, as the resolver note predicted.
   - `cargo test --workspace` passed: 152 tests, all in core.
 - **Surprises.**
-  - The deps the spike needs are `[dev-dependencies]` of `video-coach-app` until Task 5 uses them for real. `rfd` and `slint-build` are workspace-only for now.
+  - The deps the spike needs are `[dev-dependencies]` of `pundit-app` until Task 5 uses them for real. `rfd` and `slint-build` are workspace-only for now.
   - Task 5 says to delete this example once the window works, but step 3 above says it stays as a diagnostic. Decide which in Task 5.
 
 ## Task 1 — Core additions (no GStreamer)
 
-Work in `crates/video-coach-core`, following the `port-swift-module` skill.
+Work in `crates/pundit-core`, following the `port-swift-module` skill.
 
 - **`SourceRef.display_aspect: f64`** (D7): required and camelCase. Update fixtures; `formatVersion` stays 7.
 - **`Project::locate(abs) -> (usize, f64)`** (D4), following the spec's four rules. Tests cover each rule, plus a round trip with `abs_seconds` away from boundaries.
@@ -113,7 +113,7 @@ Commit: `feat(core): Phase 2 locate, source remaps, aspect gate, content fractio
 
 ## Task 2 — Media: fixtures and probe
 
-Work in `crates/video-coach-media`.
+Work in `crates/pundit-media`.
 
 - **`pub mod fixtures`**. Every function writes into a `&Path` directory the caller supplies, so `tempfile` stays a dev-dependency. There's no feature flag.
   - `webm(dir, name, secs, w, h, fps, keyint)`: `videotestsrc` and `audiotestsrc ! vp8enc`/`vorbisenc ! webmmux`. Set `samplesperbuffer` so the audio matches the video duration exactly; at 44.1 kHz and 30 fps that's `samplesperbuffer=1470`. Uses the base and good plugins only.
@@ -129,7 +129,7 @@ Commit: `feat(media): test fixtures and source probe`.
 
 ## Task 3 — Media: the player and its seek slot
 
-`crates/video-coach-media/src/player.rs`. The load sequence, the seek slot and EOS handling all live here (spec crate table). The bus sees only concat time.
+`crates/pundit-media/src/player.rs`. The load sequence, the seek slot and EOS handling all live here (spec crate table). The bus sees only concat time.
 
 - **Video sink.** `video_sink(kind: SinkKind) -> (gst::Element, FrameMailbox)`.
   - `SinkKind::Gl` builds the D1 bin, `glupload ! glcolorconvert ! appsink(GLMemory RGBA 2D)`.
@@ -171,7 +171,7 @@ Commit: `feat(media): playbin3 source player with internal seek slot`.
 
 ## Task 4a — Bus: project and sources, with harness tests
 
-`crates/video-coach-app/src/bus/`, which must be constructible **without Slint**: `Bus::spawn(sinks: SinkKind, events: Box<dyn Fn(Event) + Send>) -> BusHandle`.
+`crates/pundit-app/src/bus/`, which must be constructible **without Slint**: `Bus::spawn(sinks: SinkKind, events: Box<dyn Fn(Event) + Send>) -> BusHandle`.
 
 - **Input channel.** One `std::sync::mpsc` channel carries `enum Input { Cmd(Command), Gst(gst::Message) }`. The player's `on_message` wraps each message as `Input::Gst`. The loop uses `recv_timeout` with the skip-debounce deadline.
 - **Commands.**
@@ -189,7 +189,7 @@ Commit: `feat(media): playbin3 source player with internal seek slot`.
 - **Project lifecycle (D6).**
   - Read first, then commit. On `MissingProjectJson`, create a project; on any other error, leave everything unchanged.
   - After any open: apply `scan_volume` to the player, clear the seek slot and reset the coordinator.
-  - The state file `$XDG_CONFIG_HOME/coach-cuts/state.json` is a tiny module. Restore opens existing projects only.
+  - The state file `$XDG_CONFIG_HOME/pundit/state.json` is a tiny module. Restore opens existing projects only.
   - Write `project.json` after each mutating command.
 - **Sources (D7).** Probe, then gate, then remap, using Task 1 and Task 2.
   - Check each source's path for existence after every change and emit `Missing`.
@@ -197,7 +197,7 @@ Commit: `feat(media): playbin3 source player with internal seek slot`.
   - If the current source is relinked: reload at the same source time.
   - Moves and removals of other sources change offsets only, with no reload.
   - While any source is missing, refuse to play or seek.
-- **Harness tests** (`crates/video-coach-harness/tests/`):
+- **Harness tests** (`crates/pundit-harness/tests/`):
   - opening a folder with no project creates one;
   - opening a corrupt project refuses and keeps the previous project and folder;
   - restoring a folder that no longer exists doesn't create it;
@@ -242,7 +242,7 @@ This moves the spike into the app, so every later task can check its work by eye
 - **Startup.**
   - Select the backend as in D2.
   - Spawn the bus with `SinkKind::Gl`.
-  - Open the project given as a command-line argument, if there is one (`cargo run -p video-coach-app -- <folder>`); otherwise send `RestoreLastProject`.
+  - Open the project given as a command-line argument, if there is one (`cargo run -p pundit-app -- <folder>`); otherwise send `RestoreLastProject`.
 - **Rendering notifier.**
   - `RenderingSetup`: assert EGL, wrap the context, send `GlReady { display, context }`.
   - `BeforeRendering`: take the mailbox buffer, wait on its `GLSyncMeta`, map it with `GLVideoFrame::from_buffer_readable`, **keep** it, and set the `Image` source.
@@ -260,7 +260,7 @@ Commit: `feat(app): window with zero-copy video`.
 
 ### Task 5 notes (2026-09-19, reference laptop)
 
-- **Shape.** `src/main.rs` selects the backend (D2), spawns the bus with `SinkKind::Gl`, and sends `OpenProject(<arg>)` or `RestoreLastProject`. Bus events reach the UI thread through `slint::Weak::upgrade_in_event_loop`. `src/video.rs` is the renderer bridge: `RenderingSetup` wraps the EGL context and sends `GlReady`, `BeforeRendering` takes the mailbox frame, waits on its `GLSyncMeta`, maps it and keeps it mapped until the next one, and `RenderingTeardown` calls `BusHandle::shutdown`. `ui/app.slint` holds the player area and a plain `FocusScope` `key-pressed` handler, which Task 6 replaces with the `capture-key-pressed` root scope. Slint and the EGL crates are now normal dependencies of `video-coach-app`, because Cargo can't give a binary its own dependencies. The library doesn't use them, and `cargo test --workspace` passes with `DISPLAY` unset.
+- **Shape.** `src/main.rs` selects the backend (D2), spawns the bus with `SinkKind::Gl`, and sends `OpenProject(<arg>)` or `RestoreLastProject`. Bus events reach the UI thread through `slint::Weak::upgrade_in_event_loop`. `src/video.rs` is the renderer bridge: `RenderingSetup` wraps the EGL context and sends `GlReady`, `BeforeRendering` takes the mailbox frame, waits on its `GLSyncMeta`, maps it and keeps it mapped until the next one, and `RenderingTeardown` calls `BusHandle::shutdown`. `ui/app.slint` holds the player area and a plain `FocusScope` `key-pressed` handler, which Task 6 replaces with the `capture-key-pressed` root scope. Slint and the EGL crates are now normal dependencies of `pundit-app`, because Cargo can't give a binary its own dependencies. The library doesn't use them, and `cargo test --workspace` passes with `DISPLAY` unset.
 - **Manual check.** The test project had two sources, `20260314131843_000042.MP4` (HEVC 1920x1080 at 60 fps, 11.58 s) followed by `20260711105130_000010.MP4` (HEVC 2560x1440, 1242.17 s). Keys were sent to the window by id with python-xlib `XSendEvent`, since xdotool isn't installed.
   - Log for each load: `decoder Some("vah265dec")`, `glupload caps Some("video/x-raw(memory:DMABuf), format=(string)DMA_DRM, … drm-format=(string)NV12:0x0100000000000002")`, `GL platform Some("egl")`. Slint's context was `EGL`/`GLES2`.
   - Screenshots: a frame appears at startup; paused skips of +3 s show new preroll frames; play advances the picture; playback crosses from source 0 to source 1 by EOS advance (`loaded source 1`, position restarting at 0 and running at 1.0×); a paused state stays still (screenshot difference 0.0); a paused skip back (`Left`, then `a`) across the boundary shows source 0 again. Closing the window while playing exits with status 0. Launching with no argument restored the last project.

@@ -5,7 +5,7 @@
 #   sudo apt install $(grep -o '^[^#]*' packaging/build-deps.txt)
 #
 # The .deb's own run-time Depends is a different list, in
-# crates/video-coach-app/Cargo.toml's [package.metadata.deb].
+# crates/pundit-app/Cargo.toml's [package.metadata.deb].
 
 # GStreamer: headers, and the plugin sets the code and the test fixtures use.
 libgstreamer1.0-dev
@@ -28,7 +28,7 @@ libxkbcommon-dev
 libegl-dev
 libgl-dev
 
-# whisper.cpp, which `whisper-rs` vendors and `video-coach-media` depends on
+# whisper.cpp, which `whisper-rs` vendors and `pundit-media` depends on
 # unconditionally (Phase 10 spec S1).
 cmake
 libclang-dev

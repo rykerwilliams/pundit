@@ -5,9 +5,9 @@
 **Status:** Reviewed — two adversarial passes applied
 **Task 0.1 and 0.5 are already executed** (`08c9b4b`, `1a282ca`).
 
-**Goal:** A Rust workspace whose `video-coach-core` crate holds the project format and the contract logic the media layer must satisfy, fully tested, with no GStreamer on the machine.
+**Goal:** A Rust workspace whose `pundit-core` crate holds the project format and the contract logic the media layer must satisfy, fully tested, with no GStreamer on the machine.
 
-**Scope:** Phase 0 (workspace, format, conventions) and Phase 1 (contract logic port). No media, no UI, no bus. Everything here builds and tests with `cargo test -p video-coach-core` on a machine with no GStreamer installed — which is how the core-isolation rule is enforced.
+**Scope:** Phase 0 (workspace, format, conventions) and Phase 1 (contract logic port). No media, no UI, no bus. Everything here builds and tests with `cargo test -p pundit-core` on a machine with no GStreamer installed — which is how the core-isolation rule is enforced.
 
 **Why these two together:** Phase 1's modules are meaningless without the types Phase 0 defines (a `Clip` with an event log), and Phase 0's format is untestable without something that reads it. They are one reviewable unit.
 
@@ -18,7 +18,7 @@
 ```
 Cargo.toml                          workspace root
 crates/
-  video-coach-core/
+  pundit-core/
     Cargo.toml                      serde, serde_json, uuid, thiserror. NO media deps.
                                     (no date crate -- see Task 0.2, created_at)
     src/
@@ -35,9 +35,9 @@ crates/
       stroke_replay.rs              visible_strokes, VisibleStroke
       plan.rs                       CompilationPlan, Entry
       skip.rs                       SkipCoordinator
-  video-coach-media/                stub only in Phase 0-1 (lib.rs + a doc comment)
-  video-coach-app/                  stub only
-  video-coach-harness/              stub only
+  pundit-media/                stub only in Phase 0-1 (lib.rs + a doc comment)
+  pundit-app/                  stub only
+  pundit-harness/              stub only
 ```
 
 Media/app/harness crates exist from Phase 0 so the workspace shape is fixed and CI wires up once, but carry no code until Phase 2.
@@ -53,14 +53,14 @@ Media/app/harness crates exist from Phase 0 so the workspace shape is fixed and 
 **Files:** `Cargo.toml`, `crates/*/Cargo.toml`, `crates/*/src/lib.rs`, `.github/workflows/rust.yml`
 
 1. Workspace root `Cargo.toml` with `members = ["crates/*"]` and a `[workspace.package]` block (version, edition, license = `"AGPL-3.0-or-later"`, rust-version).
-2. `video-coach-core/Cargo.toml` depends on `serde` (derive), `serde_json`, `uuid` (v4, serde), `thiserror`, plus `tempfile` as a **dev**-dependency. No image crate, no font crate, no date crate, no GStreamer, no feature that pulls one in.
+2. `pundit-core/Cargo.toml` depends on `serde` (derive), `serde_json`, `uuid` (v4, serde), `thiserror`, plus `tempfile` as a **dev**-dependency. No image crate, no font crate, no date crate, no GStreamer, no feature that pulls one in.
 
    The rule is **"no media dependency"**, not a dependency count. A count invites contradiction (the first draft of this plan said "exactly four" and then used `DateTime<Utc>`, a fifth) and will break at the first legitimate addition.
 3. The other three crates get a `lib.rs` containing only a module doc comment stating what the crate will hold and that it is empty until Phase 2.
 4. CI workflow:
-   - `core` job: `cargo test -p video-coach-core` on `ubuntu-latest` **with no GStreamer installed**. This is the core-isolation enforcement — if a media dependency is ever added, this job fails to build.
+   - `core` job: `cargo test -p pundit-core` on `ubuntu-latest` **with no GStreamer installed**. This is the core-isolation enforcement — if a media dependency is ever added, this job fails to build.
    - `workspace` job: `cargo build --workspace`, `cargo clippy --workspace -- -D warnings`, `cargo fmt --check`.
-   - `windows` job: `cargo check -p video-coach-core` only, marked `continue-on-error: true`. Advisory, per the spec — a red Windows build does not veto a Linux-right dependency, and the media crate would need GStreamer dev libraries on the runner to typecheck at all, which is not worth setting up for a non-target.
+   - `windows` job: `cargo check -p pundit-core` only, marked `continue-on-error: true`. Advisory, per the spec — a red Windows build does not veto a Linux-right dependency, and the media crate would need GStreamer dev libraries on the runner to typecheck at all, which is not worth setting up for a non-target.
 
 **Verify:** `cargo build --workspace && cargo test --workspace` green. Commit.
 
@@ -183,7 +183,7 @@ JSON field names stay **camelCase** (`#[serde(rename_all = "camelCase")]`).
 - a `Project` JSON missing `clips` is an error, not an empty project
 - `auto_clear_after_seconds` distinguishes absent from null
 
-**Verify:** `cargo test -p video-coach-core`. Commit.
+**Verify:** `cargo test -p pundit-core`. Commit.
 
 ### Task 0.2b — Virtual timeline and tag normalization
 
@@ -215,7 +215,7 @@ pub const CURRENT_FORMAT_VERSION: u32 = 7;
 pub enum StoreError {
     #[error("no project.json in {0}")]
     MissingProjectJson(PathBuf),
-    #[error("this project was created by the macOS version of Coach Cuts (format v{found}) and cannot be opened; v{minimum} or later is required")]
+    #[error("this project was created by the macOS version of pundit (format v{found}) and cannot be opened; v{minimum} or later is required")]
     LegacyProject { found: u32, minimum: u32 },
     #[error("project format v{found} is newer than this build supports (v{supported})")]
     TooNew { found: u32, supported: u32 },
@@ -249,7 +249,7 @@ Guard order — read the version from raw JSON **before** full deserialization, 
 
 **Tests:** round-trip; `formatVersion: 6` → `LegacyProject`; **no `formatVersion` key → `LegacyProject { found: 1 }`** (the case a `bookmark`-sniffing guard would have missed); `formatVersion: 8` → `TooNew`; **`formatVersion: 7.0` → NOT `LegacyProject`**; truncated JSON → `Malformed`; missing file → `MissingProjectJson`; `write` bumps a v1 in-memory project to 7 and the file reads back; `write` creates `recordings/`; second write over an existing file does not corrupt it. Plus a `temp_project()` fixture helper used by later tests.
 
-**Verify:** `cargo test -p video-coach-core`. Commit.
+**Verify:** `cargo test -p pundit-core`. Commit.
 
 ---
 
@@ -392,7 +392,7 @@ Five things the invented API got wrong, each pinned by an existing test:
 4. **`burst_ended` during flight returns nothing and sets `exact_pending`** (`:137-149`), so the exact settle fires from the *next* `seek_completed` (`:106-114`).
 5. **`reset()` exists**, used on player swap (`:155-157`).
 
-**Drop the `Instant`/`now` parameter entirely** — that is the simplification to bank. Swift carried a dead parameter through three signatures; its absence is *why* the Swift tests are already deterministic, and `Instant` never needs to enter `video-coach-core`.
+**Drop the `Instant`/`now` parameter entirely** — that is the simplification to bank. Swift carried a dead parameter through three signatures; its absence is *why* the Swift tests are already deterministic, and `Instant` never needs to enter `pundit-core`.
 
 What makes the next press exact is `flying == None` (the previous seek *landed*), not window expiry.
 
@@ -404,9 +404,9 @@ Keep the header comment explaining why coarse-then-refine was rejected: on long-
 
 ## Done when
 
-- `cargo test -p video-coach-core` green on a machine with **no GStreamer installed**.
+- `cargo test -p pundit-core` green on a machine with **no GStreamer installed**.
 - `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all --check` all green.
-- `video-coach-core/Cargo.toml` lists no media dependency and no date crate.
+- `pundit-core/Cargo.toml` lists no media dependency and no date crate.
 - Every invariant the spec records under "Logic to port verbatim" has a test that fails if it is broken.
 
 ## Deliberately not in these phases

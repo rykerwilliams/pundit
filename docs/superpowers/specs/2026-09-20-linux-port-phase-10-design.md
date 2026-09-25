@@ -37,9 +37,9 @@ So: the transcribe task prints its wall-clock ratio, in the style the codebase a
 
 **Build dependencies are genuinely new.** `whisper-rs-sys`'s build-deps are `cmake`, `bindgen`, `fs_extra`, `cfg-if` and `semver`; it drives whisper.cpp's CMake build. The workspace already compiles C++ — but through skia-safe, which **downloads prebuilt binaries**, so neither `cmake` nor `libclang` is installed on the reference laptop (verified: both absent, and `target/debug/build/skia-bindings-*` exists). Both go on the dev machine, in CI, and into Phase 11's packaging story.
 
-### S1. `whisper-rs 0.16.0` in `video-coach-media`, no feature gate
+### S1. `whisper-rs 0.16.0` in `pundit-media`, no feature gate
 
-The crate placement is forced: `video-coach-core` declares no media dependency (its `Cargo.toml`, a dedicated CI job on a runner with no GStreamer, and the `verify` skill's exact four-dependency audit), and the job needs GStreamer to decode the recording anyway.
+The crate placement is forced: `pundit-core` declares no media dependency (its `Cargo.toml`, a dedicated CI job on a runner with no GStreamer, and the `verify` skill's exact four-dependency audit), and the job needs GStreamer to decode the recording anyway.
 
 **No `feature = "whisper"`.** The `fixtures` precedent is not analogous — `fixtures` is test-only and adds no API the app compiles against. A `whisper` feature would gate a `Transcriber` the app needs, so either the app enables it unconditionally (and `cargo test --workspace` builds it anyway, making the gate worthless) or the command, the event, the bus field and the Slint wiring all become `#[cfg]`-conditional and a second, never-exercised compilation of the UI rots. Transcription is part of the product; it is a plain dependency. The honest cost — cmake and libclang for every contributor and every CI run, plus a multi-minute first build — is stated once here rather than hidden behind a flag. S8's test seam is what keeps the *queue* testable without any of it.
 
@@ -84,12 +84,12 @@ Two corrections that matter before this reaches a plan:
 **User decision (2026-09-20), recorded and unchanged:** download on first use; `small.en`. That is the *decision*. **The implementation moves to Phase 11**, and the reasoning is a dependency the earlier draft priced at zero: the workspace has **no network dependency of any kind** — no `reqwest`, `ureq`, `hyper`, `rustls`, `native-tls`, `openssl`, `curl`, `ring` or `sha2`. Adding "download 466 MB over HTTPS with progress and a sha256 check" means a TLS tree larger than everything Phases 5–9 added combined, in a project whose `Cargo.toml` agonizes over one `cosmic-text` feature. BACKLOG #22 already parks the artifact-size question in the packaging phase, and that is where the cost belongs — **alongside the option of bundling, which would make the dependency moot**.
 
 Phase 10 therefore:
-- takes the model from **`$COACH_CUTS_WHISPER_MODEL`**, else `$XDG_CACHE_HOME/coach-cuts/models/ggml-<name>.bin` (with the `~/.cache` fallback — generalize `state.rs`'s existing `config_dir(xdg, home)`, which already implements this shape with three tests, rather than writing a second copy);
+- takes the model from **`$PUNDIT_WHISPER_MODEL`**, else `$XDG_CACHE_HOME/pundit/models/ggml-<name>.bin` (with the `~/.cache` fallback — generalize `state.rs`'s existing `config_dir(xdg, home)`, which already implements this shape with three tests, rather than writing a second copy);
 - treats a **missing model as `Failed`, with a message naming the exact path and the exact URL** to put there. Two lines and a good error message;
 - **stores no path.** An earlier draft put the *path* in `StateFile`, which has exactly one field and a doc contract that says losing it costs a re-open — losing a model path would cost a 466 MB re-download. And nothing in this phase lets the coach *supply* a model, so the field would only ever hold a derivable default.
 
 **Amended 2026-09-21, at the user's request: `StateFile` stores *which model*, and the inspector picks it.** Not the path — the enum, as its label. The measurement is what changed the answer: `small.en` runs at **0.73× realtime** on the reference laptop (65 s of audio in 89.2 s, 8 threads, on AC), so the speed `base.en` buys is a real trade and not a derivable default. It belongs in `state.json` rather than `project.json` for the same reason the last project does — it describes how fast this machine is, not the match — and because `Preferences` is in the project format, where a new field is a schema change `store::read`'s exact-version guard would make every existing project unreadable for.
-- **Default stays `small.en`**, and `$COACH_CUTS_WHISPER_MODEL` still beats both. The picker is **disabled** under it and shows the file that variable names, rather than a choice that isn't what runs.
+- **Default stays `small.en`**, and `$PUNDIT_WHISPER_MODEL` still beats both. The picker is **disabled** under it and shows the file that variable names, rather than a choice that isn't what runs.
 - **Switching mid-queue never touches the job in flight**: it keeps the model it started with, and the queue behind it picks the new one up. Cancelling would cost ~12 s of CPU for nothing (S1: whisper reads its abort flag once per encode and once per decode pass), for a coach who asked for a different model *next*.
 - **A model that isn't downloaded is the ordinary `Failed`** — the message already names the path and the URL, and now **both** file names count as ours, so the URL is offered for either.
 
@@ -97,7 +97,7 @@ This also buys the thing the earlier draft had no answer for: **an env var makes
 
 For Phase 11, two notes so they aren't rediscovered: the download needs **per-model** sha256 (the earlier draft pinned one constant while leaving the model choice open), and `souphttpsrc ! filesink` is the GStreamer-native option — verified present, rank primary, already in CI's plugin set, follows the Hugging Face redirect, gives byte progress off the sink pad, and adds **zero** Rust dependencies.
 
-**Model facts, so a table isn't written wrong.** Both files were downloaded and hashed here, not quoted from a page; the same two numbers live on `WhisperModel` in `video-coach-media/src/transcribe.rs`, which is where Phase 11's downloader should read them from.
+**Model facts, so a table isn't written wrong.** Both files were downloaded and hashed here, not quoted from a page; the same two numbers live on `WhisperModel` in `pundit-media/src/transcribe.rs`, which is where Phase 11's downloader should read them from.
 
 | File | Bytes | `file_size` prints | sha256 |
 |---|---|---|---|
@@ -164,7 +164,7 @@ macOS's `ClipIntelligence` had **two** reasons to exist, and the parent spec onl
 
 So: **transcription goes through a one-method seam** (`fn(&[f32], progress, abort) -> Result<String, _>`, injected), with a test implementation that returns canned text after a controllable delay. This is not re-adding `ClipIntelligence`; it is the same trick `CaptureKind::Test` already uses for the recorder, which `CLAUDE.md` codifies.
 
-**Then `video-coach-harness` tests the queue on CI with no model and no whisper run:** enqueue while running, idempotent re-enqueue, FIFO order, preemption by a recording and requeue at the front, cancel → `Idle`, failure → `Failed`, project-open clearing. The real whisper call is exercised by one local test behind the env-var model path, and by the closeout's measurement.
+**Then `pundit-harness` tests the queue on CI with no model and no whisper run:** enqueue while running, idempotent re-enqueue, FIFO order, preemption by a recording and requeue at the front, cancel → `Idle`, failure → `Failed`, project-open clearing. The real whisper call is exercised by one local test behind the env-var model path, and by the closeout's measurement.
 
 ---
 

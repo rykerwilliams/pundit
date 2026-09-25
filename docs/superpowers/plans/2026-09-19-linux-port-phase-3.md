@@ -41,8 +41,8 @@
   - `seek_abs` is **private** in `transport.rs`; `load`, `reset_skip`, `set_playing` and `seekable` are there too.
   - `remove_source` returns early when the source is referenced.
 - **Existing tests and helpers.**
-  - `crates/video-coach-core/tests/project_format.rs::sort_index_is_one_past_the_largest_even_after_a_gap` asserts Phase 4's `max + 1` rule, which this phase replaces.
-  - The harness `clip()` helper and the `ReadOnly` drop guard (with its running-as-root skip) are private to `crates/video-coach-harness/tests/project_and_sources.rs`.
+  - `crates/pundit-core/tests/project_format.rs::sort_index_is_one_past_the_largest_even_after_a_gap` asserts Phase 4's `max + 1` rule, which this phase replaces.
+  - The harness `clip()` helper and the `ReadOnly` drop guard (with its running-as-root skip) are private to `crates/pundit-harness/tests/project_and_sources.rs`.
   - `write_project` writes sources only.
   - `main.rs` sorts clip rows by `sort_index` (≈line 555), and `ClipRow` has no id.
 
@@ -74,7 +74,7 @@ No GStreamer. Use `port-swift-module`. Read `UndoController.swift`, `TagAggregat
 3. **Tags** (`tag.rs`):
    - `tag_summaries(&[Clip]) -> Vec<TagSummary>`, alphabetical;
    - `tag_suggestions(summaries: &[TagSummary], text: &str) -> Vec<String>`: a prefix match on the last comma fragment, excluding tags already in `text` (normalized) and exact matches; up to 8, sorted.
-4. **Tests** in `crates/video-coach-core/tests/`. Cover every `ClipEdit` variant through `apply_edit` here, not in the harness.
+4. **Tests** in `crates/pundit-core/tests/`. Cover every `ClipEdit` variant through `apply_edit` here, not in the harness.
 
 Commit: `feat(core): undo history, clip order, tag summaries and suggestions`.
 
@@ -113,7 +113,7 @@ In `bus/clips.rs` (new), plus variants in `bus/mod.rs`. `main.rs` gets a placeho
     2. `set_playing(false)`.
     3. If `seekable()`, `load(clip.source_index, clip.start_source_seconds, true, Origin::Scrub)`. Alternatively make `seek_abs` `pub(super)`; pick one.
 12. **Harness:**
-    - Move `clip()` and `ReadOnly` from `tests/project_and_sources.rs` into `crates/video-coach-harness/src/lib.rs`.
+    - Move `clip()` and `ReadOnly` from `tests/project_and_sources.rs` into `crates/pundit-harness/src/lib.rs`.
     - Add a helper that writes a project with N clips and a small dummy file in `recordings/` per clip.
     - **Tests** (`tests/clips.rs`):
       - one field edit → saved, undo, redo; an unchanged edit → nothing;

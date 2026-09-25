@@ -9,7 +9,7 @@
 
 ## Goal
 
-Coach Cuts runs natively on Linux, with the same workflow it has on macOS: scan match film, tag moments, record webcam + mic commentary with synchronized freehand telestration, and export one clip per tag with scoreboard, PiP, drawings and zoom burned in.
+pundit runs natively on Linux, with the same workflow it has on macOS: scan match film, tag moments, record webcam + mic commentary with synchronized freehand telestration, and export one clip per tag with scoreboard, PiP, drawings and zoom burned in.
 
 The macOS app is not maintained in parallel. This is a replacement.
 
@@ -52,13 +52,13 @@ The `rust/` directory contains one plan document and no code. It references "Pha
 
 ```
 crates/
-  video-coach-core/     pure logic, zero media deps, no I/O beyond serde
-  video-coach-media/    GStreamer: source player, capture, export, compositor
-  video-coach-app/      Slint UI, command bus, event layer
-  video-coach-harness/  headless integration tests driven over the bus
+  pundit-core/     pure logic, zero media deps, no I/O beyond serde
+  pundit-media/    GStreamer: source player, capture, export, compositor
+  pundit-app/      Slint UI, command bus, event layer
+  pundit-harness/  headless integration tests driven over the bus
 ```
 
-**Core isolation.** `video-coach-core` declares no media dependency — not GStreamer, not an image or font crate, not a feature that pulls one in. CI runs `cargo test -p video-coach-core` on a machine with no GStreamer installed, which fails loudly if one is ever added. That is the enforcement; a `--no-default-features` flag would test nothing, because there are no media features to turn off.
+**Core isolation.** `pundit-core` declares no media dependency — not GStreamer, not an image or font crate, not a feature that pulls one in. CI runs `cargo test -p pundit-core` on a machine with no GStreamer installed, which fails loudly if one is ever added. That is the enforcement; a `--no-default-features` flag would test nothing, because there are no media features to turn off.
 
 ### Command bus
 
@@ -154,7 +154,7 @@ Three behaviors carry over from `CompilationExporter.swift:198-205, 357-414`:
 2. **5 ms ramps at segment boundaries.** Without them there is an audible click at every play/freeze transition, and every clip has at least one, because `appendInitialPause` fires at recordTime 0 (`RecordingController.swift:96-98`) so the first segment of every clip is a freeze.
 3. **Per-clip mic audio at a flat `commentaryVolume`.** Both volumes come from `Preferences.previewSourceVolume` / `previewCommentaryVolume` — export reuses the *preview* preferences (`ExportSheet.swift:631-632`). Do not invent a separate export setting.
 
-**Gain is applied in Rust, on the PCM.** Not because control bindings are unsuitable — they handle sparse timed keyframes fine — but for single timeline authority: the mixer already owns the splice, so a gain is one multiply, whereas an element graph is a second timeline that must agree with the video driver's segment list exactly. A 5 ms ramp is ~240 samples; sample-accurate arithmetic is exact. And the ramp curve becomes a pure function in `video-coach-core`, testable with no GStreamer present.
+**Gain is applied in Rust, on the PCM.** Not because control bindings are unsuitable — they handle sparse timed keyframes fine — but for single timeline authority: the mixer already owns the splice, so a gain is one multiply, whereas an element graph is a second timeline that must agree with the video driver's segment list exactly. A 5 ms ramp is ~240 samples; sample-accurate arithmetic is exact. And the ramp curve becomes a pure function in `pundit-core`, testable with no GStreamer present.
 
 **Ramp rule, stated once:** *every contiguous audio region, on either track, gets a 5 ms linear fade-in at its start and a 5 ms linear fade-out at its end, clamped to the output timeline at t=0.* macOS ramps only at interior boundaries *within* an entry (`:372-402`), leaving clip→clip boundaries and every mic start/stop unramped. The uniform rule reproduces macOS where it ramps and additionally removes the clip-boundary click. Same machinery, fewer special cases, strictly fewer clicks.
 
@@ -192,7 +192,7 @@ A freeze consumes **zero source time**, so after play→freeze→play the decode
 
 **The one-tick freeze bias does not port.** `:207-221` biases each freeze slice one tick past its anchor because `insertTimeRange` selects the sample with PTS *strictly* less than the slice start, delivering the frame *before* the one the user saw — drawings then landed one motion step behind the ball. State the intent directly instead: **the frame for anchor `s` is the last frame with `PTS <= s`.** Assert it with a fiducial golden test; the bug is invisible to any test that doesn't check exact frame identity.
 
-**Output frame rate is fixed at 30 fps.** A format decision, not an inherited default. It cannot be "match the source": one compilation can interleave clips from different source files at different frame rates (`CompilationPlan.buildPlan` orders by `sortIndex` across all sources), so there is no single rate to match. Fixing it also makes the frame-index clock and the ETA math exact. A 25 fps source duplicates every fifth frame; 60 fps drops every other. AVFoundation did the same at `frameDuration = 1/30` (`:297`) and it has never been a complaint. Stroke replay and zoom are time-parameterized, so nothing in the overlay stack depends on the value. Put the constant in `video-coach-core` with two consumers — macOS duplicated it in `ExportSheet.swift` with a comment admitting the exporter doesn't expose its own rate.
+**Output frame rate is fixed at 30 fps.** A format decision, not an inherited default. It cannot be "match the source": one compilation can interleave clips from different source files at different frame rates (`CompilationPlan.buildPlan` orders by `sortIndex` across all sources), so there is no single rate to match. Fixing it also makes the frame-index clock and the ETA math exact. A 25 fps source duplicates every fifth frame; 60 fps drops every other. AVFoundation did the same at `frameDuration = 1/30` (`:297`) and it has never been a complaint. Stroke replay and zoom are time-parameterized, so nothing in the overlay stack depends on the value. Put the constant in `pundit-core` with two consumers — macOS duplicated it in `ExportSheet.swift` with a comment admitting the exporter doesn't expose its own rate.
 
 **Progress** is exact and monotonic: `frames_emitted / ceil(total_duration * 30)`, replacing the 5 Hz poll of `AVAssetExportSession.progress` (`:441-458`).
 
@@ -388,10 +388,10 @@ Twelve phases in four milestones. Each gets its own plan document and follows th
 - **Pure logic:** 26 of 42 Swift test files (~2,845 of 6,692 LOC, **43%** — not "the bulk") translate directly to `#[test]`. One exception: `PlaybackTimelineTests.test_segments_subMillisecondEventGap_roundsToZeroCMTime` asserts that 0.5 ms rounds to zero ticks at timescale 600. GStreamer's nanosecond timebase has no such rounding — port it as "sub-millisecond segments are produced and callers must skip degenerate durations" and drop the `CMTime` assertion. `PlaybackTimelineTests` then needs no media import at all.
 - **Media integration:** the other 16 files (~3,847 LOC) are a **rewrite, not a port** — `ClipPlaybackAccuracyTests` (672), `CompilationExporterE2ETests` (463), `CompilationCompositorZoomTests` (417), `CompilationExporterTests` (350), plus **954 LOC of fixture machinery** (`SyntheticAsset` 434, `FiducialAsset` 371, `SplitColorAsset` 149) that must be rebuilt on `videotestsrc` before any media test can be written. Budget the fixture rebuild as its own task.
 - **Compositor:** property assertions first, golden frames only where geometry is the thing under test. The Swift suite proves this works — `ScoreboardRenderTests` asserts "drew inside the bar rect, left the outside untouched" and never compares an image; **the existing suite has zero golden-image tests.** Where a golden is genuinely clearest, three rules make it sound:
-  1. **The overlay font is bundled in `video-coach-core` and loaded into a private `fontdb` by bytes.** System fonts are never consulted. `ScoreboardDraw.fittingFontSize` picks a per-team-name font *size* from measured width (`:50-52`, `:89`), so a different resolved font changes **layout**, not just antialiasing. This also converts the font-metrics risk from a per-machine variable into a one-time cost.
+  1. **The overlay font is bundled in `pundit-core` and loaded into a private `fontdb` by bytes.** System fonts are never consulted. `ScoreboardDraw.fittingFontSize` picks a per-team-name font *size* from measured width (`:50-52`, `:89`), so a different resolved font changes **layout**, not just antialiasing. This also converts the font-metrics risk from a per-machine variable into a one-time cost.
   2. **Golden frames composite overlays over a synthetic solid base, never over decoded video.** VA-API vs software decode and YUV→RGB matrix/range differences make decoded pixels machine-dependent.
   3. **Decoder and encoder ranks are pinned in tests** via `GST_PLUGIN_FEATURE_RANK`.
-- **Harness:** `video-coach-harness` drives the bus headlessly and asserts on emitted events and on-disk state.
+- **Harness:** `pundit-harness` drives the bus headlessly and asserts on emitted events and on-disk state.
 
 ---
 

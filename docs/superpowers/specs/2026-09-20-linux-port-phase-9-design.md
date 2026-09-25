@@ -120,10 +120,10 @@ The scoreboard joins `overlay.rs`'s single layer, drawn **after** the strokes an
 
 | Crate | Phase 9 contents |
 |---|---|
-| `video-coach-core` | `scoreboard.rs`: the on-disk types plus `interpret`, roles, the clock, `scoreboard_state`, `ScoreboardContext::state_at`, the derived back-anchor, and `MatchFormat`'s accessors. The event mutators. `SCOREBOARD_*` ratios in `layout.rs`. The `timeline.rs` doc amendment. |
-| `video-coach-media` | The scoreboard drawn last in `overlay.rs`; a generalized `draw_text` (colour, alignment) and a second memo slot; the vendored bold face; `ScoreboardContext` on both jobs. |
-| `video-coach-app` | Bus: the four commands, `EditMatchEvents` undo and its purge on source edits, building the context. UI: the three keys, the Match panel, and the setup sheet. |
-| `video-coach-harness` | Tagging, deleting, undo across a source move, and the context reaching an export. |
+| `pundit-core` | `scoreboard.rs`: the on-disk types plus `interpret`, roles, the clock, `scoreboard_state`, `ScoreboardContext::state_at`, the derived back-anchor, and `MatchFormat`'s accessors. The event mutators. `SCOREBOARD_*` ratios in `layout.rs`. The `timeline.rs` doc amendment. |
+| `pundit-media` | The scoreboard drawn last in `overlay.rs`; a generalized `draw_text` (colour, alignment) and a second memo slot; the vendored bold face; `ScoreboardContext` on both jobs. |
+| `pundit-app` | Bus: the four commands, `EditMatchEvents` undo and its purge on source edits, building the context. UI: the three keys, the Match panel, and the setup sheet. |
+| `pundit-harness` | Tagging, deleting, undo across a source move, and the context reaching an export. |
 
 ## Testing
 

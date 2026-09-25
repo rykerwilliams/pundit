@@ -26,7 +26,7 @@
 ## Starting state
 
 - **The repo:**
-  - `rykerwilliams/coach-cutups` is **public**, on the free plan, and the user is an admin.
+  - `rykerwilliams/pundit` is **public**, on the free plan, and the user is an admin.
   - Pages is not enabled (`GET /pages` returns 404).
   - There are **no releases, no tags and no PRs**. The `(#N)` suffixes on seven commits come from another repo.
   - `main` has no branch protection.
@@ -46,11 +46,11 @@ mdBook is the Rust ecosystem's docs tool: a single binary, Markdown in, HTML out
 
 ```text
 docs/book/
-  book.toml             # site-url = "/coach-cutups/", create-missing = false,
+  book.toml             # site-url = "/pundit/", create-missing = false,
                         # git-repository-url
   src/
     SUMMARY.md
-    index.md            # what Coach Cuts is; download from releases/latest
+    index.md            # what pundit is; download from releases/latest
     guide/              # user guide, for coaches
       install.md
       first-project.md
@@ -72,7 +72,7 @@ docs/book/
 
 - **The README becomes a front page, with build instructions.** It keeps:
   - the pitch;
-  - how to install: *download the `.deb` from [the latest release](…/releases/latest), then `sudo apt install ./coach-cuts_*_amd64.deb`*. That wording needs no edit per release, and the asset name carries the version;
+  - how to install: *download the `.deb` from [the latest release](…/releases/latest), then `sudo apt install ./pundit_*_amd64.deb`*. That wording needs no edit per release, and the asset name carries the version;
   - the requirements as a short list;
   - **Build from source**, where developers look for it on GitHub, and where `packaging/build-deps.txt:2` points.
 
@@ -80,7 +80,7 @@ docs/book/
 - **The user guide is written fresh for coaches.** The source material is the README's user sections and the hands-on checklist. The checklist itself stays as it is: it is the Linux session's, and it is a test script, not a guide.
 - **`developers.md` is one page, and copies no content from CLAUDE.md.** It has:
   - two paragraphs of orientation: the crate map in a sentence each, and a link to the Linux port spec;
-  - links to `README.md#build-from-source`, `CLAUDE.md` (the conventions, including the release process), the `docs/superpowers/` tree on GitHub (the design history, which already sorts by date because the filenames do), and each crate's rustdoc (`api/video_coach_core/index.html` and the others). `cargo doc` writes no top-level index, so these links are how rustdoc is reached.
+  - links to `README.md#build-from-source`, `CLAUDE.md` (the conventions, including the release process), the `docs/superpowers/` tree on GitHub (the design history, which already sorts by date because the filenames do), and each crate's rustdoc (`api/pundit_core/index.html` and the others). `cargo doc` writes no top-level index, so these links are how rustdoc is reached.
 - **The release process stays in CLAUDE.md.** Agents cut releases and they read CLAUDE.md, and `release.yml` points there. It gains the changelog step (below).
 
 ### Changelog: Keep a Changelog, curated, published by CI
@@ -92,7 +92,7 @@ docs/book/
   - the standard groups inside each: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`;
   - **no link-reference block** (amended 2026-09-24): the versions in the file predate any tag, so every link would be dead, and the Releases page already lists what can be downloaded.
 - **Written for coaches:** what's new, what's fixed, in plain language. It is not a commit log.
-- **v0.1.0 is curated by hand:** the first Linux release, "what Coach Cuts does", grouped under `Added`.
+- **v0.1.0 is curated by hand:** the first Linux release, "what pundit does", grouped under `Added`.
 - **After that, entries accrue under `[Unreleased]`.** A commit that changes what a user sees adds a line there, as Keep a Changelog intends. CLAUDE.md states the rule, so both agent sessions follow it.
 - **A release** renames `[Unreleased]` to `[x.y.z] - <date>`, adds a fresh empty `[Unreleased]` and bumps `[workspace.package] version`, all in one commit.
 - **Choosing the number (semver, pre-1.0):**
@@ -111,7 +111,7 @@ docs/book/
 
 ### Rustdoc, the cheap way
 
-- **The command:** `DOCS_RS=1 WHISPER_DONT_GENERATE_BINDINGS=1 cargo doc --workspace --no-deps --document-private-items --exclude video-coach-harness`. `whisper-rs-sys` runs bindgen, which needs libclang, before it checks `DOCS_RS`; the second variable makes it copy its bundled bindings instead.
+- **The command:** `DOCS_RS=1 WHISPER_DONT_GENERATE_BINDINGS=1 cargo doc --workspace --no-deps --document-private-items --exclude pundit-harness`. `whisper-rs-sys` runs bindgen, which needs libclang, before it checks `DOCS_RS`; the second variable makes it copy its bundled bindings instead.
 - **Why `DOCS_RS=1` makes it cheap:** under it, `whisper-rs-sys` skips its CMake build, the gtk-rs `-sys` crates skip pkg-config, and `skia-bindings` uses its pre-generated bindings. The only system package left is `libfontconfig1-dev`. This is read from the build scripts, and D1's first CI run confirms it. If it doesn't hold, publish core only, which needs no GStreamer, and say so on the page.
 - **`--document-private-items`,** because the useful docs are on internals.
 - **The harness is excluded:** it is test scaffolding.
@@ -134,7 +134,7 @@ docs/book/
   - `permissions: pages: write, id-token: write`, `environment: github-pages`, `concurrency: {group: pages, cancel-in-progress: false}`;
   - runs `actions/deploy-pages`.
   - **Why deploy doesn't wait on `check`:** a stray path in CLAUDE.md shouldn't hold back a fixed user guide. `check` is a red mark to fix; making it a required status check is the user's call later.
-- **A one-time step:** enable Pages with the Actions source, `gh api -X POST repos/rykerwilliams/coach-cutups/pages -f build_type=workflow`, before the first deploy. The workflow's header comment records this, along with the fact that a private repo needs a paid plan for Pages.
+- **A one-time step:** enable Pages with the Actions source, `gh api -X POST repos/rykerwilliams/pundit/pages -f build_type=workflow`, before the first deploy. The workflow's header comment records this, along with the fact that a private repo needs a paid plan for Pages.
 
 ### Releases
 

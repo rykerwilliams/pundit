@@ -17,7 +17,7 @@
 
 **Test-first.** Each task names the test that must fail first. Write it, run it and watch it fail for the stated reason, then build until it passes. A test that fails only because the code doesn't compile yet counts, but the plan names a behavioural failure wherever one exists — and for Tasks 1, 2 and 3 almost every test can be behavioural.
 
-**What tests may touch.** No test reaches the network, the real camera or mic, or the user's footage. The exception is the `#[ignore]`d `COACH_FOOTAGE` tests, which this plan does not add to. Real footage and anything that identifies a team or player is never committed: the repository is public and the footage shows children. That includes file names, team names and shirt numbers, in code, tests, commit messages and docs. **Every test project here uses invented team names** ("Rovers", "Athletic", "City") and `video_coach_media::fixtures`' generated videos. Any test that touches the app's config directory points `XDG_CONFIG_HOME` at a scratch dir (or uses `StateFile::in_config_dir`), never the real one.
+**What tests may touch.** No test reaches the network, the real camera or mic, or the user's footage. The exception is the `#[ignore]`d `COACH_FOOTAGE` tests, which this plan does not add to. Real footage and anything that identifies a team or player is never committed: the repository is public and the footage shows children. That includes file names, team names and shirt numbers, in code, tests, commit messages and docs. **Every test project here uses invented team names** ("Rovers", "Athletic", "City") and `pundit_media::fixtures`' generated videos. Any test that touches the app's config directory points `XDG_CONFIG_HOME` at a scratch dir (or uses `StateFile::in_config_dir`), never the real one.
 
 ---
 
@@ -27,12 +27,12 @@ Each was checked in the code while writing this plan.
 
 **The three readers of `ExportJob::sources` — all of them, and nothing else**
 
-- The field is `crates/video-coach-media/src/composite/export.rs:126-130`.
+- The field is `crates/pundit-media/src/composite/export.rs:126-130`.
 - **The decoder cache**, `export.rs:561-566`: `job.sources.get(entry.source_index).ok_or_else(|| ExportError::Failed(format!("{} has no game video", entry.text)))?`.
 - **The audio mixer's game track**, `composite/audio.rs:104-108`, inside `Mixer::new`.
 - **The copy path**, `composite/copy.rs:232-244` — `fn files(job) -> Result<Vec<&Path>, ExportError>`, whose one caller zips it with the plan's entries at `copy.rs:203`.
 
-A fourth *would-be* reader is the bus's own `copy_files` (`crates/video-coach-app/src/bus/export.rs:608-615`), which builds the same list from the same two values with a **`filter_map`** — a silent drop where `copy.rs:238-243` refuses. It goes away (spec J1).
+A fourth *would-be* reader is the bus's own `copy_files` (`crates/pundit-app/src/bus/export.rs:608-615`), which builds the same list from the same two values with a **`filter_map`** — a silent drop where `copy.rs:238-243` refuses. It goes away (spec J1).
 
 **The frame loop and its per-job values**
 
@@ -50,24 +50,24 @@ A fourth *would-be* reader is the bus's own `copy_files` (`crates/video-coach-ap
 
 **`StateFile`, and why the basket is not in it**
 
-- `StateFile::read` is `crates/video-coach-app/src/bus/state.rs:158-169`: an unreadable or unparseable file returns **`State::default()`** with an `eprintln!` — the *whole document*, not one field.
+- `StateFile::read` is `crates/pundit-app/src/bus/state.rs:158-169`: an unreadable or unparseable file returns **`State::default()`** with an `eprintln!` — the *whole document*, not one field.
 - `save` (`:171-178`) writes the whole document, and the doc at `:154-157` says every write reads first for exactly that reason. `the_settings_are_independent` pins it.
 - `State`'s fields are `:31-44`, every one `#[serde(default)]`. `whisper_model` and `pen` are **`Option<String>` labels**, with the reason written on them at `:34-42`: *"a label this version doesn't know reads as the default rather than throwing the whole document away."*
 - `StateFile { path: Option<PathBuf> }` is `:68-71`; `default_location` `:75-85`; `in_config_dir` `:87-91`; `config_dir`/`base_dir`/`cache_dir` `:183-208`. `path` is private.
-- `Bus::spawn` takes a `StateFile` (see `crates/video-coach-harness/src/lib.rs:103-121`), so **do not change its signature**: add one accessor to `StateFile` for the directory it sits in.
+- `Bus::spawn` takes a `StateFile` (see `crates/pundit-harness/src/lib.rs:103-121`), so **do not change its signature**: add one accessor to `StateFile` for the directory it sits in.
 
 **`PlanEntry`'s four construction sites**
 
-`crates/video-coach-core/src/plan.rs:227`, `crates/video-coach-core/src/reel.rs:178`, `crates/video-coach-core/src/whole_match.rs:33`, `crates/video-coach-core/tests/audio.rs:125`. (The reshape touches none of them — this list is here so nobody "discovers" a fifth and thinks the spec was wrong.)
+`crates/pundit-core/src/plan.rs:227`, `crates/pundit-core/src/reel.rs:178`, `crates/pundit-core/src/whole_match.rs:33`, `crates/pundit-core/tests/audio.rs:125`. (The reshape touches none of them — this list is here so nobody "discovers" a fifth and thinks the spec was wrong.)
 
 **Core's plan and schedule**
 
 - `PlanEntry` is `plan.rs:72-93`; `source_index`'s doc (*"Index into `Project::source_videos`"*) is `:76-78`; `record_time` and its BACKLOG #27 comment are `:97-113`; `total_frames` (*"**the** denominator"*) is `:137-146`; `entry_chapters` is `:148-158`; `entry_text` is `:160-171`.
 - `compilation_plan`'s per-clip loop is `plan.rs:216-237`: the source-duration fallback at `:217-221`, `playback_segments`, `frame_count`, and the `PlanEntry` at `:227-234`.
-- `compilation_schedule` is `crates/video-coach-core/src/export.rs:125-140`; its clip lookup is `:130-137` and **`map_or(&[][..], …)` is the silent-identity-zoom default**. `walk` — already the shared unit — is `:143-152`.
-- `audio_regions(compilation: &Compilation, prefs: &Preferences)` is `crates/video-coach-core/src/audio.rs:113-133`, with **eight** callers: `bus/export.rs:696`, `core/tests/audio.rs:73` and `:151`, `media/tests/export.rs:349`, `:456`, `:1162`, `:1316`, `:1517`. **None of them changes.** `Preferences::default()` is both volumes at 1.0 (`project.rs:95-108`).
+- `compilation_schedule` is `crates/pundit-core/src/export.rs:125-140`; its clip lookup is `:130-137` and **`map_or(&[][..], …)` is the silent-identity-zoom default**. `walk` — already the shared unit — is `:143-152`.
+- `audio_regions(compilation: &Compilation, prefs: &Preferences)` is `crates/pundit-core/src/audio.rs:113-133`, with **eight** callers: `bus/export.rs:696`, `core/tests/audio.rs:73` and `:151`, `media/tests/export.rs:349`, `:456`, `:1162`, `:1316`, `:1517`. **None of them changes.** `Preferences::default()` is both volumes at 1.0 (`project.rs:95-108`).
 - `ScoreboardContext::for_project` is `scoreboard.rs:642`; `config()` `:659`; `state_at(source_index, source_time)` `:669-672`; `source_offsets` `:637`.
-- `highlight_shapes(highlights, source_index, t, zoom, w, h)` is `crates/video-coach-core/src/highlight.rs:424-431`; `PlayerHighlight::source_index` is `:85-89`.
+- `highlight_shapes(highlights, source_index, t, zoom, w, h)` is `crates/pundit-core/src/highlight.rs:424-431`; `PlayerHighlight::source_index` is `:85-89`.
 - `metadata::match_name` is **private** at `metadata.rs:139-147`; `file_tags` `:111-130`; `final_score` `:169-178`; `team_keywords` (dedupes **within one project only**) `:181-193`; `UNTITLED` `:38`. The module's rule — *"Where a tag can't be told the truth it is left out rather than guessed"* — is `:16-19`.
 - `Clip::recording_duration` is `project.rs:166`. `SourceRef::duration_seconds` is *"**the** duration authority"*, `project.rs:111-117`.
 
@@ -99,13 +99,13 @@ A fourth *would-be* reader is the bus's own `copy_files` (`crates/video-coach-ap
 
 **glib**
 
-`glib::user_special_dir(glib::UserDirectory::Videos) -> Option<PathBuf>` exists in glib 0.22.9 (the workspace's). `video-coach-app` already depends on `gstreamer::glib` (`bus/export.rs:33`). `core` must not.
+`glib::user_special_dir(glib::UserDirectory::Videos) -> Option<PathBuf>` exists in glib 0.22.9 (the workspace's). `pundit-app` already depends on `gstreamer::glib` (`bus/export.rs:33`). `core` must not.
 
 **Tests**
 
-- Media: `crates/video-coach-media/tests/{export.rs,copy.rs,job.rs,avatar.rs}`.
-- Harness: `crates/video-coach-harness/tests/{export.rs,whole_match.rs,reel.rs,project_and_sources.rs}`. `Harness::new(config_dir)` is `harness/src/lib.rs:44-52`; `Harness::production` `:86-101`; the `StateFile::in_config_dir(&dirs.config())` pattern is `tests/project_and_sources.rs:109`.
-- Core: `crates/video-coach-core/tests/{plan.rs,export.rs,metadata.rs,scoreboard.rs,chapters.rs,audio.rs}`.
+- Media: `crates/pundit-media/tests/{export.rs,copy.rs,job.rs,avatar.rs}`.
+- Harness: `crates/pundit-harness/tests/{export.rs,whole_match.rs,reel.rs,project_and_sources.rs}`. `Harness::new(config_dir)` is `harness/src/lib.rs:44-52`; `Harness::production` `:86-101`; the `StateFile::in_config_dir(&dirs.config())` pattern is `tests/project_and_sources.rs:109`.
+- Core: `crates/pundit-core/tests/{plan.rs,export.rs,metadata.rs,scoreboard.rs,chapters.rs,audio.rs}`.
 
 ---
 
@@ -114,9 +114,9 @@ A fourth *would-be* reader is the bus's own `copy_files` (`crates/video-coach-ap
 The whole feature's leverage. **It ships no basket**: at the end of this task the app does exactly what it does today, through a different shape, and its own proof is that the existing media and harness export tests pass without a behavioural edit.
 
 **Files:**
-- `crates/video-coach-media/src/composite/{export.rs,audio.rs,copy.rs}`, `crates/video-coach-media/src/lib.rs`
-- `crates/video-coach-app/src/bus/export.rs`
-- `crates/video-coach-media/tests/{export.rs,copy.rs,job.rs,avatar.rs}`
+- `crates/pundit-media/src/composite/{export.rs,audio.rs,copy.rs}`, `crates/pundit-media/src/lib.rs`
+- `crates/pundit-app/src/bus/export.rs`
+- `crates/pundit-media/tests/{export.rs,copy.rs,job.rs,avatar.rs}`
 
 **What to build:**
 
@@ -141,7 +141,7 @@ The whole feature's leverage. **It ships no basket**: at the end of this task th
 6. **The bus's `job()`** builds the new shape (`bus/export.rs:622-716`): one `Arc<MatchMedia>` for the open project, cloned into every entry; the entry list built once; `Render::Copy(entries.iter().map(|e| e.source.clone()).collect())` where it copies. **`copy_files` is deleted** — the list comes from entries a missing source was already refused in, so there is nothing to `filter_map` away. `carry_scoreboard` takes that list.
 7. **Nothing in `core` changes.** If a change to `core` looks necessary, the design is wrong — stop and say so.
 
-**Test that must fail first:** `two_matches_draw_their_own_boards` in `crates/video-coach-media/tests/export.rs` — an `ExportJob` whose two entries carry **two different `Arc<MatchMedia>`**, each with its own `ScoreboardContext` over its own project's kick-off, and two fixture sources of **different resolutions**. Assert the output is 1920×1080@30, that the entry boundary re-letterboxes, and that a frame decoded either side of it reads a **different** burned score (the Phase 9 scoreboard-pixel tests are the model). It cannot compile against today's `Encode`, and once it does it fails behaviourally against a single `scoreboard` field.
+**Test that must fail first:** `two_matches_draw_their_own_boards` in `crates/pundit-media/tests/export.rs` — an `ExportJob` whose two entries carry **two different `Arc<MatchMedia>`**, each with its own `ScoreboardContext` over its own project's kick-off, and two fixture sources of **different resolutions**. Assert the output is 1920×1080@30, that the entry boundary re-letterboxes, and that a frame decoded either side of it reads a **different** burned score (the Phase 9 scoreboard-pixel tests are the model). It cannot compile against today's `Encode`, and once it does it fails behaviourally against a single `scoreboard` field.
 
 Then:
 - `one_avatar_image_shared_by_two_matches_opens_one_inset`, and a piece whose match has no avatar getting the GL filler with no stall (spec J5).
@@ -151,7 +151,7 @@ Then:
 - **`Render::Copy(files)` still joins a whole match** — `tests/copy.rs` green, and one test asserting the list it was handed is the entry order.
 - **Every existing test in `media/tests/{export.rs,copy.rs,job.rs,avatar.rs}` and `harness/tests/{export.rs,whole_match.rs,reel.rs}` passes with fixture construction changed and no assertion changed.** If an assertion has to change, the reshape is not behaviour-preserving and the task stops.
 
-**Verify:** the gate. Plus: `cargo test -p video-coach-core` must pass **untouched**, and the core dependency audit must still list exactly `serde`, `serde_json`, `thiserror`, `uuid`.
+**Verify:** the gate. Plus: `cargo test -p pundit-core` must pass **untouched**, and the core dependency audit must still list exactly `serde`, `serde_json`, `thiserror`, `uuid`.
 
 **CLAUDE.md:** nothing yet — Task 4 writes the paragraph this feature earns. (Task 3 adds the one line the export path needs about `begin`.)
 
@@ -164,8 +164,8 @@ Commit: `refactor(media): the match's record hangs off the entry, not the job`.
 Pure, so it runs on CI with no GStreamer, and it is where most of this feature's tests live.
 
 **Files:**
-- `crates/video-coach-core/src/{plan.rs,export.rs,metadata.rs}`
-- `crates/video-coach-core/tests/{plan.rs,export.rs,metadata.rs,chapters.rs}`
+- `crates/pundit-core/src/{plan.rs,export.rs,metadata.rs}`
+- `crates/pundit-core/tests/{plan.rs,export.rs,metadata.rs,chapters.rs}`
 
 **What to build:**
 
@@ -179,7 +179,7 @@ Pure, so it runs on CI with no GStreamer, and it is where most of this feature's
 8. **`match_name` becomes `pub`** (`metadata.rs:139-147`).
 9. **`audio_regions` is not touched**, and neither is any of its eight callers (spec J6).
 
-**Test that must fail first:** `a_pieces_clip_is_the_only_source_of_its_events` in `crates/video-coach-core/tests/export.rs` — two pieces from two different projects, the first's clip carrying a zoom event and the second's carrying none. Assert the first entry's frames zoom, the second's are identity, and **that swapping the projects' clip ids changes nothing** (the id is never consulted). It fails to compile on an empty module, then fails behaviourally the moment the schedule looks a clip up rather than reading the piece's.
+**Test that must fail first:** `a_pieces_clip_is_the_only_source_of_its_events` in `crates/pundit-core/tests/export.rs` — two pieces from two different projects, the first's clip carrying a zoom event and the second's carrying none. Assert the first entry's frames zoom, the second's are identity, and **that swapping the projects' clip ids changes nothing** (the id is never consulted). It fails to compile on an empty module, then fails behaviourally the moment the schedule looks a clip up rather than reading the piece's.
 
 Then, all behavioural:
 - `basket_plan`: entry order is piece order; each entry's `source_index` is its own clip's; `start_frame`s are the running quantized sum; `total_frames` is the last entry's end.
@@ -190,7 +190,7 @@ Then, all behavioural:
 - `basket_tags`: no comment, no date, the title, the description's counts, and keywords over three projects — `Rovers` appearing twice yields one, a blank name yields none.
 - **The clock test, which is the point of the feature:** two projects whose kick-offs are tagged differently; `ScoreboardContext::for_project` each; assert a frame of piece 1 and a frame of piece 2 at the same *output* time read their own match's clock and score. The existing Phase 9 pause test is the model, and it must keep passing.
 
-**Verify:** the gate. `cargo test -p video-coach-core` alone must pass with no GStreamer, and the dependency audit must still list exactly the four crates.
+**Verify:** the gate. `cargo test -p pundit-core` alone must pass with no GStreamer, and the dependency audit must still list exactly the four crates.
 
 Commit: `feat(core): a plan whose pieces come from several matches`.
 
@@ -199,8 +199,8 @@ Commit: `feat(core): a plan whose pieces come from several matches`.
 ## Task 3: The bus — the list, its file, the commands, and the run split
 
 **Files:**
-- `crates/video-coach-app/src/bus/basket.rs` (new), `crates/video-coach-app/src/bus/{mod.rs,export.rs,state.rs}`
-- `crates/video-coach-harness/tests/basket.rs` (new), `crates/video-coach-harness/tests/export.rs`
+- `crates/pundit-app/src/bus/basket.rs` (new), `crates/pundit-app/src/bus/{mod.rs,export.rs,state.rs}`
+- `crates/pundit-harness/tests/basket.rs` (new), `crates/pundit-harness/tests/export.rs`
 - `CLAUDE.md`
 
 **What to build:**
@@ -219,10 +219,10 @@ Commit: `feat(core): a plan whose pieces come from several matches`.
    - **The project's `Preferences` are written back only after `begin` returns `Ok`** (today the write-back at `:355-365` is correct only by ordering). The basket's own file is written on every change, a refused Start included: it is the sheet's memory, and there is no project to dirty.
 6. **`entry_media(...) -> Result<EntryMedia, UserError>`** (spec C3a): `job()`'s per-entry body (`bus/export.rs:636-675`) factored out and called by **both** builders, with a `whose: &str` prefix — empty for an export, `"Rovers v Athletic — "` for a basket piece. It **stats** the source and the recording rather than reading `Bus::missing`, which says nothing about a closed project (spec V2); `Bus::missing` keeps its UI job. One function, one set of sentences, identical by construction.
 7. **The basket's job builder**: `refuse_if_busy`; refuse an empty basket; `project_for` each distinct folder once; one `Arc<MatchMedia>` per project; `basket_schedule` over the pieces; `entry_media` each; `basket_tags`; `cues: None`; the output path (below); `create_dir_all`; `begin(vec![(label, job)])`.
-8. **The output path** (spec O1): `<XDG Videos>/Coach Cuts/` via `glib::user_special_dir(UserDirectory::Videos)`, falling back to `$HOME/Videos/Coach Cuts` and then the current directory. The name is **trimmed**, empty becomes `Basket`, `/` and `:` replaced as `file_name` does (`bus/export.rs:190-196`), and an existing file gets ` (2)`, ` (3)` — **never a silent overwrite**, because a basket's name is typed over changing contents where an export's is derived. The message line names the file written when it was suffixed.
+8. **The output path** (spec O1): `<XDG Videos>/pundit/` via `glib::user_special_dir(UserDirectory::Videos)`, falling back to `$HOME/Videos/pundit` and then the current directory. The name is **trimmed**, empty becomes `Basket`, `/` and `:` replaced as `file_name` does (`bus/export.rs:190-196`), and an existing file gets ` (2)`, ` (3)` — **never a silent overwrite**, because a basket's name is typed over changing contents where an export's is derived. The message line names the file written when it was suffixed.
 9. **`Event::Basket(BasketView)`** (spec C4), published at `Bus::spawn`, on every mutation and on `ShowBasket`, and **not** on `ProjectChanged`. `BasketRow::seconds` is **`Clip::recording_duration`** (`project.rs:166`) — no plan is built per row.
 
-**Test that must fail first:** `a_refused_start_changes_no_project` in `crates/video-coach-harness/tests/basket.rs` — two projects, a piece from each, the second's game video deleted. `ExportBasket` refuses **naming that match and clip**; then assert the open project's `project.json` is byte-identical to before, **no `ProjectChanged` was published**, and no file exists in the output folder. It fails today because the pickers are written before the per-entry refusals can be reached from a basket path at all.
+**Test that must fail first:** `a_refused_start_changes_no_project` in `crates/pundit-harness/tests/basket.rs` — two projects, a piece from each, the second's game video deleted. `ExportBasket` refuses **naming that match and clip**; then assert the open project's `project.json` is byte-identical to before, **no `ProjectChanged` was published**, and no file exists in the output folder. It fails today because the pickers are written before the per-entry refusals can be reached from a basket path at all.
 
 Then:
 - The happy path: open A, `AddToBasket`; open B, `AddToBasket`; `ExportBasket` → one `ExportRun` with one target, progress events, `TargetState::Done`, the file, its `.chapters.txt`, and **no `.srt`**.
@@ -246,8 +246,8 @@ Commit: `feat(app): the basket, and a run started from jobs the caller built`.
 ## Task 4: The sheet
 
 **Files:**
-- `crates/video-coach-app/ui/app.slint`
-- `crates/video-coach-app/src/main.rs`
+- `crates/pundit-app/ui/app.slint`
+- `crates/pundit-app/src/main.rs`
 - `CLAUDE.md`
 
 **What to build:**
@@ -274,7 +274,7 @@ Capture all four; the first run cannot produce them, which is the failure.
 **Verify:** the gate, plus the screenshot pass.
 
 **CLAUDE.md:** one paragraph after the match-clock rules:
-- **the basket is a list of `(project folder, clip id)` references the app holds across projects**, in `$XDG_CONFIG_HOME/coach-cuts/basket.json` — **its own file, not a key in `state.json`**, because `StateFile::read` discards that whole document on any parse error and every setter rewrites it, so one bad basket value would lose the last project, the pen and the speech model;
+- **the basket is a list of `(project folder, clip id)` references the app holds across projects**, in `$XDG_CONFIG_HOME/pundit/basket.json` — **its own file, not a key in `state.json`**, because `StateFile::read` discards that whole document on any parse error and every setter rewrites it, so one bad basket value would lose the last project, the pen and the speech model;
 - **each piece draws its own match's board and clock**, because the match's record hangs off `EntryMedia` and the clock is still `state_at(entry.source_index, frame.source_time)` per frame — `PlanEntry` knows nothing about matches, and `source_index` is still project-local;
 - **the export's decoders are bounded**: one per distinct file, dropped as soon as no later entry reads it, the audio mixer's own rule — and the zero-copy diagnostic is therefore taken when the first decoder opens, not after the loop;
 - **a basket's text bar is three parts** (`<match> | <clip> | tags`): the bar ellipsizes rather than shrinks, so the position would spend the safe end of the line on the part that means nothing across matches; it lives in the chapters;
@@ -293,7 +293,7 @@ Commit: `feat(app): the basket sheet`.
    - **#78 gains the output folder** (spec O1), as an export setting whose home is decided once for exports and baskets together.
    - **Per-piece gain** (spec J6), marked *after #52*, which is still "no UI for the source and commentary volumes".
 3. **`docs/hands-on-checklist.md`:** a section in the checklist's own voice:
-   - **[must work] Gather across three matches.** A clip in each of three projects, added as you go; the badge reads `Basket (3)…` from the third project; Start; one file in `~/Videos/Coach Cuts`.
+   - **[must work] Gather across three matches.** A clip in each of three projects, added as you go; the badge reads `Basket (3)…` from the third project; Start; one file in `~/Videos/pundit`.
    - **[must work] The clock and the board change with the piece.** Scrub to each cut: the score, the team names and the running clock are that match's, and the clock agrees with the footage either side of a pause in the middle of a piece.
    - **The text bar.** Is `"Rovers v Athletic | Corner, 2nd half | corners"` readable at 1080p, or does the ellipsis still eat the clip name? **Your call**, and changing it is one function in `plan.rs`.
    - **Is the position missed?** It is in the chapter list now, not on the picture.

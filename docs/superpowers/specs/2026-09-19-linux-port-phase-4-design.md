@@ -76,7 +76,7 @@ These come from the capture research and the spec review. They are measured, not
 
 ### R1. Recording is a second pipeline owned by the bus
 
-`video-coach-media` gains a `Recorder`, and the bus owns it next to the `SourcePlayer`:
+`pundit-media` gains a `Recorder`, and the bus owns it next to the `SourcePlayer`:
 
 ```
 v4l2src device=<path> extra-controls=c,exposure_dynamic_framerate=0
@@ -209,7 +209,7 @@ The parent spec's "fallback for unknown duration after a crash" is dropped. R6 a
 
 ### R8. `RecordingLog`: `RecordingController` ported to core, as a pure event log
 
-`video-coach-core` gains `recording.rs`, which ports `RecordingController.swift` as `RecordingLog` (it controls nothing). The Swift version's injected clock is replaced by caller-supplied times. The log lives on the bus.
+`pundit-core` gains `recording.rs`, which ports `RecordingController.swift` as `RecordingLog` (it controls nothing). The Swift version's injected clock is replaced by caller-supplied times. The log lives on the bus.
 
 - `new(t0_ns, zoom, start_source_seconds)` writes `zoom @0` then `pause(start) @0`. The order is an invariant of construction, not something the caller must remember.
 - `play(host_ns, source_seconds)` and `pause(host_ns, source_seconds)` take a caller-captured time and the anchor chosen by the bus (R10).
@@ -294,10 +294,10 @@ This fix applies whenever the user pauses, recording or not, so the plan lands i
 
 | Crate | Phase 4 contents |
 |---|---|
-| `video-coach-core` | `recording.rs` (the controller); `Project::add_recorded_clip`; `SkipCoordinator` range parameter. |
-| `video-coach-media` | `Recorder`: the pipeline from R1 with injected sources, the forced clock, t0 = base_time, a first-video-buffer signal, a last-buffer-end probe, a synchronous `stop()`, and level and error messages. `devices`: enumeration of usable devices, the caps choice (R3), the encoder choice (R4). |
-| `video-coach-app` | Bus: the recording state machine (R6), Toggle/Stop/Zoom commands, the generation tag on recorder messages, the one guard, anchor choice, clamping, named deadlines, stop on shutdown. UI: R/Esc, the recording transport, the level bar, the Devices popover, the Clips list. |
-| `video-coach-harness` | End-to-end recording with test sources. |
+| `pundit-core` | `recording.rs` (the controller); `Project::add_recorded_clip`; `SkipCoordinator` range parameter. |
+| `pundit-media` | `Recorder`: the pipeline from R1 with injected sources, the forced clock, t0 = base_time, a first-video-buffer signal, a last-buffer-end probe, a synchronous `stop()`, and level and error messages. `devices`: enumeration of usable devices, the caps choice (R3), the encoder choice (R4). |
+| `pundit-app` | Bus: the recording state machine (R6), Toggle/Stop/Zoom commands, the generation tag on recorder messages, the one guard, anchor choice, clamping, named deadlines, stop on shutdown. UI: R/Esc, the recording transport, the level bar, the Devices popover, the Clips list. |
+| `pundit-harness` | End-to-end recording with test sources. |
 
 ---
 

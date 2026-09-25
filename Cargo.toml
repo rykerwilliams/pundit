@@ -3,11 +3,11 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 rust-version = "1.92"
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/rykerwilliams/coach-cutups"
+repository = "https://github.com/rykerwilliams/pundit"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -16,7 +16,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 thiserror = "2"
 tempfile = "3"
 
-# UI and media stack (Phase 2). video-coach-core must never use any of these.
+# UI and media stack (Phase 2). pundit-core must never use any of these.
 slint = { version = "1.18", default-features = false, features = ["std", "backend-winit", "renderer-skia-opengl", "compat-1-18"] }
 slint-build = "1.18"
 gstreamer = { version = "0.25", features = ["v1_24"] }
@@ -26,15 +26,15 @@ gstreamer-gl = { version = "0.25", features = ["v1_24"] }
 gstreamer-gl-egl = { version = "0.25", features = ["v1_24"] }
 gstreamer-pbutils = { version = "0.25", features = ["v1_24"] }
 glutin_egl_sys = "0.7"
-# The vector overlay layer, in video-coach-media only: core stays media-free.
+# The vector overlay layer, in pundit-media only: core stays media-free.
 # `png-format` would pull in a PNG codec no shipping path decodes.
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
-# The text bar's shaping and rasterizing, in video-coach-media only. Default
+# The text bar's shaping and rasterizing, in pundit-media only. Default
 # features are off on purpose: `fontconfig` and `sys-locale` would scan the
 # machine's fonts, and the bar is rendered from the vendored TTF alone, so an
 # export looks the same on every machine (and on CI, which installs no fonts).
 cosmic-text = { version = "0.19", default-features = false, features = ["std", "swash"] }
-# Speech recognition (Phase 10 spec S1), in video-coach-media only, and
+# Speech recognition (Phase 10 spec S1), in pundit-media only, and
 # deliberately **not** behind a feature: transcription is part of the product,
 # and a gate the app would always enable only buys a second, never-exercised
 # compilation of the UI. It vendors whisper.cpp and builds it with CMake, so

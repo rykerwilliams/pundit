@@ -25,7 +25,7 @@
 Each was checked in the code while writing this plan.
 
 **The pattern the sheet copies**
-- **`HighlightsPanel` is the shape**: the component at `crates/video-coach-app/ui/app.slint:1006`, its `out property <bool> editing` at `:1030`, its read-only `for row in root.rows` at `:1055`, and the selected row's reveal `if row.id == root.selected: VerticalLayout` with its one `LineEdit` at `:1113-1135`. That `LineEdit` uses `text <=> root.label-text` (two-way, out to a window property) and `changed has-focus` for begin/end edit. Copy it; do not invent a table.
+- **`HighlightsPanel` is the shape**: the component at `crates/pundit-app/ui/app.slint:1006`, its `out property <bool> editing` at `:1030`, its read-only `for row in root.rows` at `:1055`, and the selected row's reveal `if row.id == root.selected: VerticalLayout` with its one `LineEdit` at `:1113-1135`. That `LineEdit` uses `text <=> root.label-text` (two-way, out to a window property) and `changed has-focus` for begin/end edit. Copy it; do not invent a table.
 - **The one-way-binding warning** is written on `SetupField` (`app.slint:1488-1489`): *"a `text:` binding breaks the moment the user types into it"*. `SetupField`'s `✕` mark is `app.slint:1508-1513`.
 - **The live-validator idiom**: a `pure callback` that takes the text as an argument so the binding re-evaluates on every keystroke — the tags field's suggestions (`app.slint:515-518`) and the setup sheet's validators (`app.slint:1552-1562`, fed from `main.rs:855-877`).
 - **Sheets**: `ExportSheet` (`app.slint:1314`, `width: 480px`, `height: sheet.preferred-height` at `:1339`), `MatchSetupSheet` (`app.slint:1538`, `520px`, `:1587`). Their scrims are `app.slint:3512` and `:3540`, each `background: #000000a0;` with an empty `TouchArea`. The error dialog's is `:3580`.
@@ -41,26 +41,26 @@ Each was checked in the code while writing this plan.
 - **`handle-key` falls through to `reject` at `app.slint:2427`**, so `e` and `m` are free. The three tag keys are `app.slint:2312-2324`.
 
 **The bus**
-- **The funnel** is `Bus::edit_match_events` at `crates/video-coach-app/src/bus/scoreboard.rs:103-118`: clone before, run the closure, clone after, **drop a no-op at `:112-115`**, `save()`, `record(UndoAction::EditMatchEvents { before, after })`, `publish_project()` — once, whatever the closure did. Everything in this feature goes through it.
+- **The funnel** is `Bus::edit_match_events` at `crates/pundit-app/src/bus/scoreboard.rs:103-118`: clone before, run the closure, clone after, **drop a no-op at `:112-115`**, `save()`, `record(UndoAction::EditMatchEvents { before, after })`, `publish_project()` — once, whatever the closure did. Everything in this feature goes through it.
 - **`tag_match_event`** (`bus/scoreboard.rs:34-57`) shows the two refusals to copy: an out-of-range source index at `:41-43` (silent `eprintln!`) and the cap at `:45-52` (a `UserError::Scoreboard` notice with the exact wording).
 - **The recording allow-list** is the `matches!` in `Bus::command` at `bus/mod.rs:762-793`; it is **deny-by-default** and refuses silently with an `eprintln!` at `:792`. `TagMatchEvent` is on it at `:786`, with the comment at `:783-785`: *"Deleting and the setup sheet wait, as every other edit does."*
 - **`UserError::Scoreboard(String)`** is `bus/mod.rs:437`, and `is_notice` returns true for it at `:445-454`.
 - **The command enum**: `TagMatchEvent` at `bus/mod.rs:112-116`, `DeleteMatchEvent` at `:117`, `SetReelTrim` at `:118-126`, and the dispatch arms at `:810-817`.
 - **Two writers publish `ProjectChanged` with no command behind them**, and both can land while the sheet is open:
-  - a transcript arriving for a clip — `crates/video-coach-app/src/bus/transcribe.rs:451-462`, `project_changed()` at `:461`;
-  - a source found missing after a player error — `crates/video-coach-app/src/bus/transport.rs:365-367`, `refresh_missing()` then `publish_project()`.
+  - a transcript arriving for a clip — `crates/pundit-app/src/bus/transcribe.rs:451-462`, `project_changed()` at `:461`;
+  - a source found missing after a player error — `crates/pundit-app/src/bus/transport.rs:365-367`, `refresh_missing()` then `publish_project()`.
 
   This is why spec T3 is an invariant and not an observation.
-- **`UndoAction::EditMatchEvents`** is `crates/video-coach-core/src/undo.rs:70-74`, and `purge_for_source_change` already drops it from both stacks (`undo.rs:154-160`). No new variant, no new purge rule.
+- **`UndoAction::EditMatchEvents`** is `crates/pundit-core/src/undo.rs:70-74`, and `purge_for_source_change` already drops it from both stacks (`undo.rs:154-160`). No new variant, no new purge rule.
 
 **The app's rendering**
-- **`MatchRowText`** is `crates/video-coach-app/src/match_panel.rs:28-42`; `match_rows` builds it from `labelled_events` at `:49-62`; `reel_span` is `:65-77`.
-- **`over_cap`** is `match_panel.rs:152-155` and **subtracts a place for the back-anchor**; `over_cap_warning` is `:162-173`. `Project::start_stops_at_cap` (`crates/video-coach-core/src/scoreboard.rs:790-801`) counts **records** and does not. **They deliberately differ** — see spec V5, and the doc at `scoreboard.rs:310-316`.
+- **`MatchRowText`** is `crates/pundit-app/src/match_panel.rs:28-42`; `match_rows` builds it from `labelled_events` at `:49-62`; `reel_span` is `:65-77`.
+- **`over_cap`** is `match_panel.rs:152-155` and **subtracts a place for the back-anchor**; `over_cap_warning` is `:162-173`. `Project::start_stops_at_cap` (`crates/pundit-core/src/scoreboard.rs:790-801`) counts **records** and does not. **They deliberately differ** — see spec V5, and the doc at `scoreboard.rs:310-316`.
 - **The shared-parse discipline** is written at `match_panel.rs:241-246`: *"the sheet's 'this field is good' mark and the parse that builds the config call the same one and can't drift apart. Written on both sides they did."*
 - **`show_match`** is `main.rs:1005-1039`: one `match_rows` call feeds the scrubber's marks, `match-list-lines` and the rows. **`show_project`** is `main.rs:2018-2075` and calls it at `:2066`; the `ScoreboardContext` rebuild with its "here and nowhere else" comment is `:2068-2073`.
 - **A row's Go already exists**: `window.on_seek_match_event` at `main.rs:764-778` takes an event id, looks up `abs_seconds` and sends `Command::ScrubRelease`. `[` / `]` do the same at `main.rs:814-834`, with the optimistic `ui.target_abs` at `:827`.
 - **The status bar's notice** is `app.slint:3461`, inside the window's layout — **behind** the scrims at `:3512` and `:3540`. That is spec C5's reason for the sheet's own message line.
-- **`format::format_hms_tenths`** already exists and already renders `M:SS.t` / `H:MM:SS.t`, floored: `crates/video-coach-app/src/format.rs:21-30`, with its test at `:82-93`. **`format.rs` cannot move to core**: it imports `gstreamer::glib` at `format.rs:3` for `finish_at`, and core declares no media dependency.
+- **`format::format_hms_tenths`** already exists and already renders `M:SS.t` / `H:MM:SS.t`, floored: `crates/pundit-app/src/format.rs:21-30`, with its test at `:82-93`. **`format.rs` cannot move to core**: it imports `gstreamer::glib` at `format.rs:3` for `finish_at`, and core declares no media dependency.
 
 **Core**
 - **`MatchEventRecord`** is `scoreboard.rs:198-222`; the trims are `Option<f64>` with field-level `#[serde(default)]` at `:210-222`.
@@ -71,7 +71,7 @@ Each was checked in the code while writing this plan.
 - **Core's dependency audit** lists exactly `serde`, `serde_json`, `thiserror`, `uuid`. `match_entry.rs` adds none.
 
 **Tests**
-- The harness's match-event tests are `crates/video-coach-harness/tests/match_events.rs`; its `no_project_changed` helper is at `:78`.
+- The harness's match-event tests are `crates/pundit-harness/tests/match_events.rs`; its `no_project_changed` helper is at `:78`.
 
 ---
 
@@ -80,9 +80,9 @@ Each was checked in the code while writing this plan.
 Everything the coach can type, parsed once. It is pure, so it runs on CI with no GStreamer, and it is where all but a handful of this feature's tests live.
 
 **Files:**
-- `crates/video-coach-core/src/match_entry.rs` (new), `crates/video-coach-core/src/lib.rs`
-- `crates/video-coach-core/src/scoreboard.rs`
-- `crates/video-coach-core/tests/match_entry.rs` (new), `crates/video-coach-core/tests/scoreboard.rs`
+- `crates/pundit-core/src/match_entry.rs` (new), `crates/pundit-core/src/lib.rs`
+- `crates/pundit-core/src/scoreboard.rs`
+- `crates/pundit-core/tests/match_entry.rs` (new), `crates/pundit-core/tests/scoreboard.rs`
 
 **What to build:**
 
@@ -122,7 +122,7 @@ Then the rest, all behavioural:
 - `parse_batch`: the duration bound; the duplicate rule at exactly 1.0 s either side; **the same line twice adds once**; the cap counted incrementally; `leftover` holding exactly the un-added lines.
 - `edit_match_event` in `core/tests/scoreboard.rs`: the id and untouched fields survive; goal → start/stop clears both trims; home ↔ away keeps them; unknown id is `false`; a re-timed event reorders `labelled_events` and can change its role; **re-timing the earliest start/stop under `auto_back_anchor_p1` moves every later clock reading** (spec V6).
 
-**Verify:** the gate. `cargo test -p video-coach-core` alone must pass with no GStreamer, and the dependency audit must still list exactly the four crates.
+**Verify:** the gate. `cargo test -p pundit-core` alone must pass with no GStreamer, and the dependency audit must still list exactly the four crates.
 
 **CLAUDE.md:** nothing yet — Task 4 writes the one paragraph this feature earns.
 
@@ -133,8 +133,8 @@ Commit: `feat(core): one grammar for typed and pasted match events`.
 ## Task 2: The two commands
 
 **Files:**
-- `crates/video-coach-app/src/bus/{mod.rs,scoreboard.rs}`
-- `crates/video-coach-harness/tests/match_events.rs`
+- `crates/pundit-app/src/bus/{mod.rs,scoreboard.rs}`
+- `crates/pundit-harness/tests/match_events.rs`
 
 **What to build:**
 
@@ -144,7 +144,7 @@ Commit: `feat(core): one grammar for typed and pasted match events`.
 4. **Neither joins the recording allow-list** (`bus/mod.rs:762-793`). Deny-by-default means this is *not* a code change; it is a thing not done, and the task must not add an arm.
 5. **The rules live in core.** The bus calls `parse_batch`'s output; it does not re-implement the bound, the duplicate rule or the cap count. The only thing it owns is the aggregate sentence.
 
-**Test that must fail first:** `a_pasted_batch_is_one_undo_step` in `crates/video-coach-harness/tests/match_events.rs` — send `AddMatchEvents` with five events into a two-source project; exactly **one** `ProjectChanged` arrives, the saved project holds all five in match order, and one `Undo` restores the prior list exactly.
+**Test that must fail first:** `a_pasted_batch_is_one_undo_step` in `crates/pundit-harness/tests/match_events.rs` — send `AddMatchEvents` with five events into a two-source project; exactly **one** `ProjectChanged` arrives, the saved project holds all five in match order, and one `Undo` restores the prior list exactly.
 
 Then:
 - `a_partly_refused_batch_adds_the_rest`: seven lines, two past the end of source 2 and two already tagged; three land, one `UserError::Scoreboard` notice names all four refusals, and the file on disk matches.
@@ -163,8 +163,8 @@ Commit: `feat(app): edit and bulk-add match events through the bus`.
 Every string the sheet shows, in `match_panel.rs`, so it is tested without a window — the module's standing rule (`match_panel.rs:1-7`).
 
 **Files:**
-- `crates/video-coach-app/src/match_panel.rs`
-- `crates/video-coach-app/src/format.rs` (test only)
+- `crates/pundit-app/src/match_panel.rs`
+- `crates/pundit-app/src/format.rs` (test only)
 
 **What to build:**
 
@@ -189,8 +189,8 @@ Commit: `feat(app): the match editor's rows, echo and summary`.
 ## Task 4: The sheet
 
 **Files:**
-- `crates/video-coach-app/ui/app.slint`
-- `crates/video-coach-app/src/main.rs`
+- `crates/pundit-app/ui/app.slint`
+- `crates/pundit-app/src/main.rs`
 - `CLAUDE.md`
 
 **What to build:**

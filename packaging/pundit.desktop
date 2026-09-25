@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=pundit
+Comment=Record commentary and drawings over game video, and export the cut
+Exec=pundit
+Icon=pundit
+StartupWMClass=pundit
+Categories=AudioVideo;Video;
+Terminal=false

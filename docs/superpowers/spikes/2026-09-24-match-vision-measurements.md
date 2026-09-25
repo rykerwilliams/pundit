@@ -3,7 +3,7 @@
 **Date:** 2026-09-24 (re-measured the same day, with the restarts)
 **Spec:** `docs/superpowers/specs/2026-09-22-match-vision-design.md`, decisions **D** and **G**
 **Plan:** `docs/superpowers/plans/2026-09-24-match-detection-measure.md` (P3, the measurement phase)
-**How to reproduce:** `cargo test --release -p video-coach-harness --test ground_truth -- --ignored --nocapture --test-threads=1`, with `COACH_GROUND_TRUTH` naming the three tagged folders, tuning match first.
+**How to reproduce:** `cargo test --release -p pundit-harness --test ground_truth -- --ignored --nocapture --test-threads=1`, with `COACH_GROUND_TRUTH` naming the three tagged folders, tuning match first.
 
 Aggregate numbers only. The three matches are **A**, **B** and **C**; **B** is the tuning match and **A** and **C** are held out. Nothing here names a club, an opponent, a player or a file.
 
@@ -253,6 +253,6 @@ Whole `Analyzer` (sound then picture, one decode each), release, on AC: **71–8
 - `core::motion` — stillness at a **quantile of the half's own motion** (0.50, hold ≥ 10 s), the thumbnail correlation and its template.
 - `core::kickoff` — the kick-off pattern, the confirmation rule, the cheer gate (`true`), D7's 10 s de-duplication and `GOAL_WINDOW_SECONDS = 60`, which is V-3's measurement and no longer a guess.
 - `media::analyze` — the audio pass, the motion pass and `Analyzer`, one job per source, ~80 s a half.
-- `video-coach-harness` — `truth.rs` (including `walk_backs`, V-3's pairing), `score.rs` and the one `#[ignore]`d `ground_truth` run that produced everything above.
+- `pundit-harness` — `truth.rs` (including `walk_backs`, V-3's pairing), `score.rs` and the one `#[ignore]`d `ground_truth` run that produced everything above.
 
 **Nothing is wired to the bus, the project format or the UI**, which is what P3 said it would do. P4 (showing suggestions) is **not justified** by these numbers and is not started. Task 3.6 (the detector runtime spike) is now the obvious next measurement rather than a deferred one: the whole remaining gap is a restart detector, and V-2 decides whether P5 can supply it. That decision is the user's.

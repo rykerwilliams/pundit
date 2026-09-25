@@ -1,10 +1,10 @@
 ---
 name: port-swift-module
-description: Port a module from the macOS original, read out of the macos-reference git tag, into the Rust video-coach-core crate. Use when translating any Swift type, function, or test file to Rust.
+description: Port a module from the macOS original, read out of the macos-reference git tag, into the Rust pundit-core crate. Use when translating any Swift type, function, or test file to Rust.
 argument-hint: "<Swift file or module name, e.g. ScoreboardState>"
 ---
 
-# Port a Swift module to video-coach-core
+# Port a Swift module to pundit-core
 
 The Swift tree is no longer in the working tree: it lives at the annotated tag
 `macos-reference`, read with `git show macos-reference:<path>` or checked out

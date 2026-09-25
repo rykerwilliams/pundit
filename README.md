@@ -1,4 +1,6 @@
-# Coach Cuts
+# pundit
+
+*pundit Understands Nothing, Discusses It Thoroughly.*
 
 A desktop app for breaking down game film, for Linux. Open the game video,
 record your commentary over it with a webcam and microphone while you play,
@@ -29,20 +31,24 @@ your exports in `exports/`. The game video stays where it is.
 
 ## Install
 
-Coach Cuts ships as a `.deb` for **Ubuntu 24.04 and Linux Mint 22** on
+pundit ships as a `.deb` for **Ubuntu 24.04 and Linux Mint 22** on
 x86-64. Download it from the
-[releases page](https://github.com/rykerwilliams/coach-cutups/releases), then,
+[releases page](https://github.com/rykerwilliams/pundit/releases), then,
 in the folder you downloaded it to:
 
 ```bash
-sudo apt install ./coach-cuts_*_amd64.deb
+sudo apt install ./pundit_*_amd64.deb
 ```
+
+If you have **Coach Cuts** installed — the name this app went by until 0.8.0 —
+that one command replaces it, and your settings, your basket and the speech
+model you already downloaded are carried over on the first run.
 
 Or [build the package yourself](#build-from-source), which is also how you get
 a build newer than the last release.
 
-It appears in the applications menu as **Coach Cuts**. From a terminal it is
-`coach-cuts`, or `coach-cuts <folder>` to open (or create) a project there;
+It appears in the applications menu as **pundit**. From a terminal it is
+`pundit`, or `pundit <folder>` to open (or create) a project there;
 with no argument it reopens the last project.
 
 ### Requirements
@@ -65,7 +71,7 @@ with no argument it reopens the last project.
 Transcription runs entirely on your computer. The first time you transcribe,
 the app downloads the speech model you chose in the clip inspector —
 `small.en` (488 MB, the default, more accurate) or `base.en` (148 MB, faster)
-— into `~/.cache/coach-cuts/models/`, and keeps it. The Transcribe button
+— into `~/.cache/pundit/models/`, and keeps it. The Transcribe button
 names the download before you press it. After that, nothing leaves your
 machine.
 
@@ -73,7 +79,7 @@ machine.
 
 The app writes its diagnostics to stderr. Started from the applications menu
 on an X11 session (Linux Mint's default), that lands in `~/.xsession-errors`;
-or start it from a terminal as `coach-cuts` to see it directly.
+or start it from a terminal as `pundit` to see it directly.
 
 ## Build from source
 
@@ -85,8 +91,8 @@ installs:
 ```bash
 sudo apt install $(grep -o '^[^#]*' packaging/build-deps.txt)
 
-cargo run --release -p video-coach-app        # run it
-cargo test --workspace                        # test it
+cargo run --release -p pundit-app   # run it
+cargo test --workspace              # test it
 ```
 
 The first build compiles whisper.cpp and takes a few minutes.
@@ -100,9 +106,9 @@ cargo install --locked cargo-about --features cli
 packaging/build-deb.sh
 ```
 
-The code is a Cargo workspace under `crates/`: `video-coach-core` (pure logic,
-no media dependencies), `video-coach-media` (GStreamer), `video-coach-app` (the
-Slint UI) and `video-coach-harness` (headless integration tests). The
+The code is a Cargo workspace under `crates/`: `pundit-core` (pure logic,
+no media dependencies), `pundit-media` (GStreamer), `pundit-app` (the
+Slint UI) and `pundit-harness` (headless integration tests). The
 developer conventions — the zero-copy decode path, the capture clock, the
 export graph, how to run CI's GPU-less path locally — are in
 [`CLAUDE.md`](CLAUDE.md), and the design is in
@@ -110,16 +116,17 @@ export graph, how to run CI's GPU-less path locally — are in
 
 ## Where this came from
 
-Coach Cuts began as a macOS app written in Swift, SwiftUI and AVFoundation,
-and started life as a fork of
-[tayl0r/coach-cutups](https://github.com/tayl0r/coach-cutups). That Swift tree
-lived here under `apple/` while the Linux app was written against it; it is no
-longer in the working tree, and is kept whole at the tag `macos-reference`
-(`git worktree add /tmp/macos-reference macos-reference`). Linux is the only
-platform maintained here.
+This began as a macOS app written in Swift, SwiftUI and AVFoundation, forked
+from [tayl0r/coach-cutups](https://github.com/tayl0r/coach-cutups) — whose
+author named it **Coach Cuts**, which is what this app was called up to 0.7.0.
+The Linux rewrite was written against that Swift tree, which lived here under
+`apple/`; it is no longer in the working tree and is kept whole at the tag
+`macos-reference` (`git worktree add /tmp/macos-reference macos-reference`).
+Linux is the only platform maintained here, and the name changed at 0.8.0
+because the app is not football-only and should not carry one it inherited.
 
 ## Licence
 
 AGPL-3.0-or-later — see [`LICENSE`](LICENSE). The package installs the
 licence notices for the third-party code built into the binary under
-`/usr/share/doc/coach-cuts/`.
+`/usr/share/doc/pundit/`.

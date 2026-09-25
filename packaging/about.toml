@@ -22,7 +22,7 @@ accepted = [
     # Slint, taken under its GPL option (the others are Slint's own
     # licences). AGPL-3.0 section 13 permits the combination.
     "GPL-3.0-only",
-    # Coach Cuts' own crates.
+    # pundit's own crates.
     "AGPL-3.0-or-later",
 ]
 targets = ["x86_64-unknown-linux-gnu"]

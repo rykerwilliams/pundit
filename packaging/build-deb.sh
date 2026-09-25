@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the Coach Cuts .deb: target/debian/coach-cuts_<version>_amd64.deb.
+# Build the pundit .deb: target/debian/pundit_<version>_amd64.deb.
 #
 #   packaging/build-deb.sh [extra cargo-deb flags]
 #
@@ -29,10 +29,10 @@ mkdir -p "$release_dir"
 cargo fetch --locked
 cargo about generate --fail --frozen \
     --config packaging/about.toml \
-    --manifest-path crates/video-coach-app/Cargo.toml \
+    --manifest-path crates/pundit-app/Cargo.toml \
     --output-file "$release_dir/crate-licenses.txt" \
     packaging/about.hbs
-cargo deb --locked -p video-coach-app "$@"
+cargo deb --locked -p pundit-app "$@"
 
 build_outputs=("$release_dir"/build/whisper-rs-sys-*/output)
 [[ -f ${build_outputs[0]} ]] || {

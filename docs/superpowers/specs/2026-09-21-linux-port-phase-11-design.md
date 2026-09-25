@@ -10,11 +10,11 @@
 
 ## Goal
 
-The coach installs Coach Cuts on their laptop, finds it in the applications menu, and it runs — with hardware decode, the camera, the microphone, and their own folders, exactly as it does from `cargo run` today.
+The coach installs pundit on their laptop, finds it in the applications menu, and it runs — with hardware decode, the camera, the microphone, and their own folders, exactly as it does from `cargo run` today.
 
 ## Done when
 
-1. **`sudo apt install ./coach-cuts_<version>_amd64.deb` works in a clean `ubuntu:24.04` container** — not only on the reference laptop, which already has every dev package installed and so cannot prove the dependency list.
+1. **`sudo apt install ./pundit_<version>_amd64.deb` works in a clean `ubuntu:24.04` container** — not only on the reference laptop, which already has every dev package installed and so cannot prove the dependency list.
 2. **It is in the menu**, with an icon, and the running window is associated with its launcher.
 3. **Hardware decode still works** from the installed copy on the laptop — `bus: loaded …` reports `vah265dec` / `memory:DMABuf` / `egl`.
 4. **The model downloads on first use**, with a prompt naming the size and visible progress, verified against its sha256.
@@ -71,7 +71,7 @@ Build with **`cargo-deb`**: a `[package.metadata.deb]` block in the app's `Cargo
 
 ### S3. The model downloader
 
-Phase 10 decided this and parked the implementation here. The decision stands: **download on first use, prompt first, `small.en` default**, cached at `$XDG_CACHE_HOME/coach-cuts/models/` (the `~/.cache` fallback is already implemented and tested).
+Phase 10 decided this and parked the implementation here. The decision stands: **download on first use, prompt first, `small.en` default**, cached at `$XDG_CACHE_HOME/pundit/models/` (the `~/.cache` fallback is already implemented and tested).
 
 - **`souphttpsrc ! filesink`, not an HTTP crate.** Verified: rank primary in `plugins-good` 1.24.2, a real fetch followed the 302 to Hugging Face's CDN and reported `size = 487614201`, and throughput matched `curl`. TLS is guaranteed — `plugins-good` hard-depends on `libsoup-3.0-0`, which depends on `glib-networking`. **Zero new Rust dependencies.** Set `iradio-mode=false`.
 - **The sha256 costs no new code.** `glib::Checksum::new(ChecksumType::Sha256)` is already linked through `gst::glib`, and can hash in a pad probe as the bytes arrive. An earlier draft proposed ~80 lines of hand-rolled cryptography; that would have been the worst option available. Both hashes are already in `WhisperModel`, measured.
@@ -85,7 +85,7 @@ Phase 10 decided this and parked the implementation here. The decision stands: *
 
 ### S4. Desktop integration
 
-**One application ID, used everywhere.** Today the binary is `video-coach-app` while the config directory is `coach-cuts` — pick one ID and use it for the package name, the binary, the `.desktop` basename, `StartupWMClass=`, and the running window.
+**One application ID, used everywhere.** Today the binary is `pundit-app` while the config directory is `pundit` — pick one ID and use it for the package name, the binary, the `.desktop` basename, `StartupWMClass=`, and the running window.
 
 **The running window's association is a one-line call.** An earlier draft called this "a real gap" needing a winit patch or a Slint upgrade, "grepped and confirmed". It was wrong: `slint::set_xdg_app_id(…)` is public in Slint 1.18 (`i-slint-core-1.18.0/api.rs:1443`, re-exported by `slint`), and the winit backend applies it through `with_name` for both Wayland `app_id` and X11 `WM_CLASS`. Call it right after `BackendSelector::select()` in `main.rs`, before `AppWindow::new()`. Slint passes an empty instance name (`WM_CLASS = ("", id)`), which is why `StartupWMClass=` is worth setting.
 

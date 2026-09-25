@@ -13,7 +13,7 @@ Labels: **[cited]** points at a file in this repository or a decision recorded i
 
 The coach asked for this in these words:
 
-> *"the project creation flow is a bit wonky. in general i will have a folder with the game files. so like, i'd want the app to help create the folder? note the pattern of having a 'coach-cuts' folder and then projects inside it? so if the app could help with a uniform naming scheme."*
+> *"the project creation flow is a bit wonky. in general i will have a folder with the game files. so like, i'd want the app to help create the folder? note the pattern of having a 'pundit' folder and then projects inside it? so if the app could help with a uniform naming scheme."*
 
 Today, starting a match takes four separate acts, in a fixed order, none of which knows about the others:
 
@@ -27,7 +27,7 @@ Today, starting a match takes four separate acts, in a fixed order, none of whic
 | | Tree A | Tree B |
 |---|---|---|
 | footage | `<club>/<team>/game-videos/<match>/P1.mp4, P2.mp4` | `<club>/<season>/<match>/<two files from one camera app>` |
-| projects | `<club>/<team>/coach-cuts/<match>/project.json` | `<club>/coach-cuts/<match>/project.json` |
+| projects | `<club>/<team>/pundit/<match>/project.json` | `<club>/pundit/<match>/project.json` |
 | folder names | `2026-09-19-<opponent>` | `<8-digit date>-<opponent>` |
 | project names | `"<club> <team> - <opponent>"` and `"<team> vs <opponent> <date>"` — **two different schemes in two sibling projects** | `"<8-digit date>-<opponent>"` — the raw folder name, i.e. nobody ever renamed it |
 
@@ -41,7 +41,7 @@ This spec collapses steps 1–4 into **one sheet**, prefilled from the footage t
 
 **The user's decisions of 2026-09-24. This spec follows them and does not reopen them:**
 
-- **D-1. The project folder goes in a `coach-cuts/` folder beside the videos.** The app finds the sensible parent and creates `coach-cuts/<match>/`. **The footage is left where it is** — never moved, never copied.
+- **D-1. The project folder goes in a `pundit/` folder beside the videos.** The app finds the sensible parent and creates `pundit/<match>/`. **The footage is left where it is** — never moved, never copied.
 - **D-2. The name carries the date and both teams.** Folder `2026-09-17-<home>-<away>`; project name `<Home> v <Away>`. The date comes from the video files. The coach can edit everything before anything is created.
 
 **In scope:** the entry points, the inference, the sheet, the one command, the naming rules, and the failure behaviour.
@@ -91,7 +91,7 @@ So the signature becomes `then: impl FnMut(Vec<PathBuf>)`, the sort moves out of
 
 **Why mtime is third and is labelled a guess**, rather than second: in Tree A the footage mtime is **two days** after the date the coach's own folder name gives; in Tree B it is **one day** after [observed]. These are downloads, and they are downloaded when the coach gets to it. `bus/export.rs:585-593`'s doc says mtime *"is within a day of the match"*; Tree A shows two. It is close enough to be a useful prefill and not close enough to be trusted (**Deferred 3**).
 
-**I3. The container's creation time is unusable, and the probe is not extended to read it.** Both of the coach's camera systems write `creation_time = 1904-01-01T00:00:02Z` into every file — the QuickTime epoch with a two-second offset, i.e. a field that was never set [observed]. Taking it would date every match in both trees to 1904. `video_coach_media::probe` returns duration and display aspect and nothing else (`probe.rs:18-25`); adding a creation-time field to it would be a media change made to serve a value that is provably garbage on 100% of the coach's footage. **Not done.** If a coach ever shoots on a phone, whose containers do carry a real one, revisit (**Deferred 2**).
+**I3. The container's creation time is unusable, and the probe is not extended to read it.** Both of the coach's camera systems write `creation_time = 1904-01-01T00:00:02Z` into every file — the QuickTime epoch with a two-second offset, i.e. a field that was never set [observed]. Taking it would date every match in both trees to 1904. `pundit_media::probe` returns duration and display aspect and nothing else (`probe.rs:18-25`); adding a creation-time field to it would be a media change made to serve a value that is provably garbage on 100% of the coach's footage. **Not done.** If a coach ever shoots on a phone, whose containers do carry a real one, revisit (**Deferred 2**).
 
 **I4. The opponent comes from the match folder's name, and only from there.**
 
@@ -101,9 +101,9 @@ Both of the coach's trees yield the opponent's name cleanly under this rule [obs
 
 **File names are deliberately not mined for the opponent.** Tree A's file names do contain it, wrapped in a date, an age group, a club abbreviation, a separator that is itself a hyphen-underscore sandwich, and a half marker [observed]. Anything that pulled a team out of that would be a pattern fitted to one camera system, and it would quietly produce nonsense on the other, whose file names carry no team at all. The folder name is what the coach already curates.
 
-**I5. The club, the colours and the match format are seeded from the projects already in the chosen `coach-cuts/` folder.**
+**I5. The club, the colours and the match format are seeded from the projects already in the chosen `pundit/` folder.**
 
-A coach's own team, kit colours and match format are the same for every match of a season; the opponent is the only thing that changes. So, having resolved where `coach-cuts/` is (**W1**):
+A coach's own team, kit colours and match format are the same for every match of a season; the opponent is the only thing that changes. So, having resolved where `pundit/` is (**W1**):
 
 - Read every `project.json` directly under it with `store::read` (`store.rs:97`). Unreadable and legacy files are skipped silently — this is a prefill, not an operation.
 - **The club is the team name that appears in the most of them**, counted case-insensitively over both `home.name` and `away.name`, needing at least **two** appearances to count. Its `TeamConfig` comes from the most recent project it appears in, colours and all, and it is seeded into **the slot it occupied there**.
@@ -130,28 +130,28 @@ The existing rule is a byte sort on the file name (`pickers.rs:96-101`). **On on
 
 **I7. Which files are game videos is the coach's selection (E2).** The app applies no size floor, no duration check and no content sniff at pick time. The bus probes them during Create (**C2**), which is the app's existing and only definition of "can this be a source" (`bus/sources.rs:211-218`).
 
-### W. Where `coach-cuts/` goes
+### W. Where `pundit/` goes
 
-**W1. Walk up from the match folder for an existing `coach-cuts/` directory, and use the first one found.**
+**W1. Walk up from the match folder for an existing `pundit/` directory, and use the first one found.**
 
-From the match folder itself, then its parent, then its parent's parent, up to **four** levels, stopping at the filesystem root or at the coach's home directory (inclusive of home, never above it): test whether `<candidate>/coach-cuts` is a directory. The first hit is the projects folder.
+From the match folder itself, then its parent, then its parent's parent, up to **four** levels, stopping at the filesystem root or at the coach's home directory (inclusive of home, never above it): test whether `<candidate>/pundit` is a directory. The first hit is the projects folder.
 
-This is the decisive rule and it answers the coach's actual question — *"note the pattern of having a 'coach-cuts' folder and then projects inside it"*. It finds the right answer in **both** of his trees, at depth 2 in each, despite the trees having different shapes [observed]:
+This is the decisive rule and it answers the coach's actual question — *"note the pattern of having a 'pundit' folder and then projects inside it"*. It finds the right answer in **both** of his trees, at depth 2 in each, despite the trees having different shapes [observed]:
 
 | | match folder | depth 1 | depth 2 |
 |---|---|---|---|
-| Tree A | `<club>/<team>/game-videos/<match>` | `game-videos/` — no | `<team>/coach-cuts` — **hit** |
-| Tree B | `<club>/<season>/<match>` | `<season>/` — no | `<club>/coach-cuts` — **hit** |
+| Tree A | `<club>/<team>/game-videos/<match>` | `game-videos/` — no | `<team>/pundit` — **hit** |
+| Tree B | `<club>/<season>/<match>` | `<season>/` — no | `<club>/pundit` — **hit** |
 
 It also handles the coach reorganizing, and it needs no configuration, no `state.json` key and no memory of the last folder.
 
-**W2. With no `coach-cuts/` anywhere above, propose two levels up from the videos.**
+**W2. With no `pundit/` anywhere above, propose two levels up from the videos.**
 
-Default to `<match folder>/../../coach-cuts`, clamped so it is never at or above the home directory's parent and never above the mount point the videos are on; if the clamp bites, fall back to `<match folder>/../coach-cuts`.
+Default to `<match folder>/../../pundit`, clamped so it is never at or above the home directory's parent and never above the mount point the videos are on; if the clamp bites, fall back to `<match folder>/../pundit`.
 
-Two levels, not one, because in **both** of the coach's layouts the folder directly above a match is a *grouping* folder shared by every match — a kind (`game-videos/`) in one, a season in the other [observed] — and a `coach-cuts/` inside it would scatter a club's projects across kinds and seasons, which is the opposite of the pattern the coach described. Two levels up is where he put it, both times.
+Two levels, not one, because in **both** of the coach's layouts the folder directly above a match is a *grouping* folder shared by every match — a kind (`game-videos/`) in one, a season in the other [observed] — and a `pundit/` inside it would scatter a club's projects across kinds and seasons, which is the opposite of the pattern the coach described. Two levels up is where he put it, both times.
 
-This is the weakest rule in the document. It only ever fires on the **first** project of a brand-new tree; every project after that is decided by W1. It is a prefill in an editable field with a picker beside it (**W3**), and the sheet says so, with the hint *"No coach-cuts folder found nearby — Coach Cuts will create one here."* See **Q1**.
+This is the weakest rule in the document. It only ever fires on the **first** project of a brand-new tree; every project after that is decided by W1. It is a prefill in an editable field with a picker beside it (**W3**), and the sheet says so, with the hint *"No pundit folder found nearby — pundit will create one here."* See **Q1**.
 
 **W3. The field is an editable path with a Choose… button that opens the existing folder picker, prefilled.** `Pick::ProjectFolder` (`pickers.rs:17`) with its title changed to name what it is choosing. That is the "ask, with a picker prefilled" answer for every case W1 and W2 get wrong, and it is the same control the coach already knows.
 
@@ -171,7 +171,7 @@ So core gains `naming::safe_file_name(&str) -> String`:
 - collapse runs of `-`;
 - trim `-`, `.` and whitespace from both ends (which also disposes of `.` and `..`);
 - truncate to 64 bytes **on a character boundary**;
-- non-ASCII letters are **kept**. A coach's own language is not punctuation, every filesystem this app targets stores UTF-8 names, and mangling it would need a transliteration crate that `video-coach-core` will not be getting.
+- non-ASCII letters are **kept**. A coach's own language is not punctuation, every filesystem this app targets stores UTF-8 names, and mangling it would need a transliteration crate that `pundit-core` will not be getting.
 
 `bus/export.rs`'s `file_name` is changed to call it, so the app has one set of rules rather than two. The visible effect on export is that a project or tag name containing `?` or `|` now produces a file that writes on a shared drive instead of failing there.
 
@@ -234,7 +234,7 @@ Unlike the match event editor, this sheet's fields **are** re-seeded from scratc
 **C1. One new command, `Command::NewMatch`, not a sequence of the existing four.**
 
 ```rust
-/// Create `coach-cuts/<folder>/` under `projects_dir`, write a project into
+/// Create `pundit/<folder>/` under `projects_dir`, write a project into
 /// it naming `videos` in the order given, and open it. All or nothing:
 /// nothing is created until every video has been probed and accepted.
 ///
@@ -264,7 +264,7 @@ One command makes the whole thing one transaction, and it reuses every existing 
 
 1. **Sanity-check the inputs.** `projects_dir` absolute; `folder` and `name` non-blank after trimming; `videos` non-empty. A failure here is a UI bug (S5 gates all of it) and is reported as an error with nothing done.
 2. **Probe every video, in order, and gate each against the ones before it.** `probe` then `check_aspect` (`bus/sources.rs:211-218`), accumulating `(path, Probe)`. The first failure aborts: `Event::Error` naming the file and the reason, **nothing created**.
-3. **`create_dir_all(projects_dir)`**, which makes `coach-cuts/` and any missing parent. Already there is fine.
+3. **`create_dir_all(projects_dir)`**, which makes `pundit/` and any missing parent. Already there is fine.
 4. **`create_dir(project_dir)`** — the leaf, not `_all`. An existing leaf comes back `AlreadyExists` and is refused (**C3**). This, not the sheet's check, is the guarantee: it is one syscall with no window.
 5. **Canonicalize the project folder**, then compute each `SourceRef`: `relative_path(canonical file, canonical folder)`, the display name, the duration and the aspect from the probe of step 2 — `probed_source`'s body with the probe already in hand (`bus/sources.rs:211-237`). Canonical on both sides because the kernel resolves `..` physically, and a cloud-sync mount may well be reached through a symlink (`bus/sources.rs:241-245`).
 6. **Build the `Project`**: `Project::new(name)` (`project.rs:247-259`), `source_videos` from step 5, `scoreboard: Some(config)`. `format_version` is `CURRENT_FORMAT_VERSION` by construction.
@@ -291,7 +291,7 @@ One command makes the whole thing one transaction, and it reuses every existing 
 - **It does not move, copy, rename or delete any footage.** The project points at the files where they are (**W4**).
 - **It does not touch an existing project.** It refuses to create into an existing folder (**C3**) and never writes a `project.json` that is already there. The previously open project is saved-as-it-went and simply replaced in memory by `commit`.
 - **It does not scan for videos.** The coach picks them (**E2**, **I7**).
-- **It does not write outside the chosen projects folder** — one `coach-cuts/` and one match folder under it, and nothing else, ever.
+- **It does not write outside the chosen projects folder** — one `pundit/` and one match folder under it, and nothing else, ever.
 - **It does not remember anything between runs.** No `state.json` key, no last-used projects folder: W1 re-derives it from the footage every time, which is right when a coach works on two clubs.
 - **It does not change the project format.** No new field, no version bump (**N6**).
 
@@ -301,12 +301,12 @@ One command makes the whole thing one transaction, and it reuses every existing 
 
 | Crate | Contents |
 |---|---|
-| `video-coach-core` | A new module `naming.rs`: `safe_file_name`, `slug`, `next_free(taken, base)` (the `-2`/`-3` rule). A new module `ordering.rs`: `order_videos`, plus `parse_date_in(&str) -> Option<CalendarDate>` and `opponent_from(&str) -> Option<String>` — all pure, all over `&str` and `&Path`, all tested with no filesystem. `metadata::match_name` becomes `pub`. **No new dependency:** the audit still lists exactly `serde`, `serde_json`, `thiserror`, `uuid` — no regex crate (the date shapes and the `(n)` suffix are a byte scan), no unicode crate (**N2**). |
-| `video-coach-media` | **Nothing.** `Probe` gains no field; the container's creation time is not read (**I3**). |
-| `video-coach-app` | `bus/mod.rs`: `Command::NewMatch`, off the allow-list. `bus/project.rs`: `new_match`, reusing `probed_source`'s body, `store::write` and `commit`. `bus/sources.rs`: `probed_source` split so the probe and the `SourceRef` construction can be called separately. `bus/export.rs`: `file_name` calls `naming::safe_file_name`. `pickers.rs`: `then` takes the whole `Vec` (**E4**). `main.rs`: the sheet's seeding — the `coach-cuts/` walk, the prior-project read, the inference, the validators, and `on_create_match`. UI: `TeamColumn` extracted from `MatchSetupSheet`, `EmptyCard`'s secondary action, `NewMatchSheet`, and its branch in `handle-key`. |
-| `video-coach-harness` | The command end to end, and each of its refusals. |
+| `pundit-core` | A new module `naming.rs`: `safe_file_name`, `slug`, `next_free(taken, base)` (the `-2`/`-3` rule). A new module `ordering.rs`: `order_videos`, plus `parse_date_in(&str) -> Option<CalendarDate>` and `opponent_from(&str) -> Option<String>` — all pure, all over `&str` and `&Path`, all tested with no filesystem. `metadata::match_name` becomes `pub`. **No new dependency:** the audit still lists exactly `serde`, `serde_json`, `thiserror`, `uuid` — no regex crate (the date shapes and the `(n)` suffix are a byte scan), no unicode crate (**N2**). |
+| `pundit-media` | **Nothing.** `Probe` gains no field; the container's creation time is not read (**I3**). |
+| `pundit-app` | `bus/mod.rs`: `Command::NewMatch`, off the allow-list. `bus/project.rs`: `new_match`, reusing `probed_source`'s body, `store::write` and `commit`. `bus/sources.rs`: `probed_source` split so the probe and the `SourceRef` construction can be called separately. `bus/export.rs`: `file_name` calls `naming::safe_file_name`. `pickers.rs`: `then` takes the whole `Vec` (**E4**). `main.rs`: the sheet's seeding — the `pundit/` walk, the prior-project read, the inference, the validators, and `on_create_match`. UI: `TeamColumn` extracted from `MatchSetupSheet`, `EmptyCard`'s secondary action, `NewMatchSheet`, and its branch in `handle-key`. |
+| `pundit-harness` | The command end to end, and each of its refusals. |
 
-**The filesystem parts stay in the app, the rules stay in core.** `order_videos` takes paths and, for its mtime fallback, a caller-supplied `&[Option<SystemTime>]` — core has no clock and no I/O, exactly as `CalendarDate` is passed in rather than derived (`metadata.rs:62-67`). The `coach-cuts/` walk and the prior-project read are `std::fs` and live in `main.rs` beside the other seeding.
+**The filesystem parts stay in the app, the rules stay in core.** `order_videos` takes paths and, for its mtime fallback, a caller-supplied `&[Option<SystemTime>]` — core has no clock and no I/O, exactly as `CalendarDate` is passed in rather than derived (`metadata.rs:62-67`). The `pundit/` walk and the prior-project read are `std::fs` and live in `main.rs` beside the other seeding.
 
 ## Testing
 
@@ -323,12 +323,12 @@ One command makes the whole thing one transaction, and it reuses every existing 
   - `order_videos`: a `P1`/`P2` pair; a `<stem>.mp4` + `<stem> (1).mp4` pair ordering **bare first** — the case a byte sort reverses, pinned explicitly; a `(2)`/`(4)` pair; a mixed-stem set falling to mtime; an empty mtime slice falling to the byte sort; and **stability**, the same input giving the same output.
   - `match_name` builds `"A v B"` and is `None` when either side is blank.
 - **App (`main.rs` / a new `new_match.rs` helper, headless):**
-  - the `coach-cuts/` walk over **both reconstructed layouts**, finding it at depth 2 in each;
+  - the `pundit/` walk over **both reconstructed layouts**, finding it at depth 2 in each;
   - the walk stopping at four levels, and at the home directory;
-  - the W2 fallback in a tree with no `coach-cuts/`, and its clamp;
+  - the W2 fallback in a tree with no `pundit/`, and its clamp;
   - the club-from-neighbours count: three reconstructed `project.json`s where one name recurs, the recurring one seeded into the slot it last held; two projects with no recurrence; one project; none.
 - **Harness (`tests/new_match.rs`), all inside a temp dir:**
-  - `NewMatch` with two fixture videos creates `coach-cuts/<slug>/project.json` and `recordings/`, publishes **one** `ProjectOpened`, stores both sources in the order given with `../` relative paths, and the saved project reads back through `store::read` with the scoreboard and the name;
+  - `NewMatch` with two fixture videos creates `pundit/<slug>/project.json` and `recordings/`, publishes **one** `ProjectOpened`, stores both sources in the order given with `../` relative paths, and the saved project reads back through `store::read` with the scoreboard and the name;
   - a second `NewMatch` at the same slug is **refused** and the first project's `project.json` is byte-identical afterwards;
   - a video that can't be probed: an error, **and no directory created** — asserted by listing the projects folder;
   - a second video with a different aspect: the same, and in particular **no folder holding one of the two**;
@@ -364,7 +364,7 @@ One command makes the whole thing one transaction, and it reuses every existing 
 
 Each has a default, and **the plan proceeds on it unless the user says otherwise.** (D-1 and D-2 are decided, not open.)
 
-- **Q1. When there is no `coach-cuts/` anywhere above the videos, is two levels up right?** It is where both of the coach's trees put it, but it is inferred from two samples (**W2**).
+- **Q1. When there is no `pundit/` anywhere above the videos, is two levels up right?** It is where both of the coach's trees put it, but it is inferred from two samples (**W2**).
   **Default:** two levels up, clamped, with the hint line and an editable field. The alternative — always asking on a fresh tree — costs a picker on the first project of a club and nothing after.
 - **Q2. Two colour fields per team in the new-match sheet, or all three?** The setup sheet has primary, secondary and font; `TeamConfig::new` already defaults font to secondary (`scoreboard.rs:38-47`).
   **Default:** two. Six colour fields in a sheet that also holds a video list is a wall, and `Setup…` is one click away for the coach who wants the third.
@@ -374,5 +374,5 @@ Each has a default, and **the plan proceeds on it unless the user says otherwise
   **Default:** no date in the name, as decided. The folder carries it, and the export title is derived from the name (`metadata.rs:139-143`).
 - **Q5. Should `New match…` be the primary action of the no-project card, demoting `Open Project…` to a secondary button?** It changes the first thing a new coach sees.
   **Default:** yes (**E1**). Creating is the common case; opening an existing project is what the toolbar and `Ctrl+O` are for (`app.slint:3102-3108`).
-- **Q6. Should the flow offer to reuse the teams of the *last opened* project when the chosen `coach-cuts/` folder is empty** — i.e. across trees, not only within one?
+- **Q6. Should the flow offer to reuse the teams of the *last opened* project when the chosen `pundit/` folder is empty** — i.e. across trees, not only within one?
   **Default:** no. A coach who works on two clubs would get the other club's kit, and the opponent field is the one that matters.

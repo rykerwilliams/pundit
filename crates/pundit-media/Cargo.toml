@@ -1,0 +1,34 @@
+[package]
+name = "pundit-media"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+pundit-core = { path = "../pundit-core" }
+gstreamer.workspace = true
+gstreamer-app.workspace = true
+gstreamer-gl.workspace = true
+gstreamer-gl-egl.workspace = true
+gstreamer-pbutils.workspace = true
+gstreamer-video.workspace = true
+cosmic-text.workspace = true
+# `fixtures` only: reading `ffprobe -of json` back in tests.
+serde_json = { workspace = true, optional = true }
+thiserror.workspace = true
+tiny-skia.workspace = true
+whisper-rs.workspace = true
+
+[features]
+# The synthetic media in `fixtures`, for tests here and in the harness.
+fixtures = ["dep:serde_json"]
+
+[dev-dependencies]
+# Itself with `fixtures`, for the integration tests in `tests/`.
+pundit-media = { path = ".", features = ["fixtures"] }
+# Reads `ffprobe -of json`, the chapter test's independent reader.
+serde_json.workspace = true
+tempfile.workspace = true
+uuid.workspace = true

@@ -6,7 +6,7 @@
 
 **Execution.** A fresh subagent per task, given this plan, the spec and `CLAUDE.md`. The orchestrator runs `verify` and commits each task. Every task builds the workspace and passes its tests on its own.
 
-**Task order is chosen around a blocker, and the order matters.** `cmake` and `libclang-dev` are not installed and cannot be installed without the user. S1 forbids a feature gate, so the moment `whisper-rs` becomes a dependency of `video-coach-media`, **every** `cargo build`, `cargo test --workspace` and `verify` in the repo needs them — and `video-coach-app` depends on `video-coach-media`, so there is no escape via `-p`. The backend therefore comes **fourth, after the UI**: Tasks 1–3 ship real, verified progress while the blocker stands.
+**Task order is chosen around a blocker, and the order matters.** `cmake` and `libclang-dev` are not installed and cannot be installed without the user. S1 forbids a feature gate, so the moment `whisper-rs` becomes a dependency of `pundit-media`, **every** `cargo build`, `cargo test --workspace` and `verify` in the repo needs them — and `pundit-app` depends on `pundit-media`, so there is no escape via `-p`. The backend therefore comes **fourth, after the UI**: Tasks 1–3 ship real, verified progress while the blocker stands.
 
 **Known facts. Don't re-derive these — each was verified against primary source during review.**
 - **whisper-rs 0.16.0 / whisper.cpp 1.8.3 were vendored and read.** `full_n_segments` still exists; `full_get_segment_t0/t1/text` moved onto `WhisperSegment` (`start_timestamp`/`end_timestamp`/`to_str`) via `get_segment(i)`/`as_iter()`; timestamps are **centiseconds**; `full()` returns `Result<(), WhisperError>`.
@@ -23,7 +23,7 @@
 - **`Bus::project_changed()`** (`bus/project.rs:108-111`) *is* save + publish without `record`. Use it; don't inline a fourth copy.
 - **`trash_clip`** (`bus/clips.rs:214-236`) already calls `close_preview_of(id)` first, because the preview holds the recording open. Transcription needs the same treatment.
 - **`Clip.transcript: String`** exists at v7, `#[serde(default)]`, read by nothing. **No format bump.** `store::read` refuses `found < CURRENT_FORMAT_VERSION`, so a v8 would make every existing project unreadable by this build.
-- **`CaptureKind`** is in `video-coach-app/src/bus/recording.rs:34` and **`CaptureSources::Test` is unconditionally compiled**, not behind `fixtures` (which is `video-coach-media`'s, for synthetic media files). The capture seam is a plain always-compiled enum resolved at `Bus::spawn` — that is the pattern to copy.
+- **`CaptureKind`** is in `pundit-app/src/bus/recording.rs:34` and **`CaptureSources::Test` is unconditionally compiled**, not behind `fixtures` (which is `pundit-media`'s, for synthetic media files). The capture seam is a plain always-compiled enum resolved at `Bus::spawn` — that is the pattern to copy.
 - **GitHub's `ubuntu-latest` already ships cmake and clang**, and the `workspace` job already uses `Swatinem/rust-cache@v2`. The apt additions are insurance, not load-bearing.
 
 ---
@@ -37,7 +37,7 @@ No whisper, no cmake.
 3. **`pull` must distinguish cancelled from EOF.** Today both set `done = true`, so a cancelled read is indistinguishable from a clean end — which would hand whisper a silently truncated clip and transcribe it as complete. This is the one real change inside `Reader`.
 4. **`rest(&mut self, cancel: &AtomicBool) -> Result<Vec<f32>, CompositeError>`** — everything from the cursor to EOF, over `pull`, ~8 lines. Not over `read`, which pads forever.
 5. **Bound `start`'s stream-collection wait** so a file that posts neither an error nor a collection fails instead of hanging.
-6. **`crates/video-coach-media/src/transcribe.rs`:** `read_all(path, cancel) -> Result<Vec<f32>, _>` at 16 kHz mono via `start` (never `open`), mapping `Ok(None)` → a distinct "no audio track" error and `Err(_)` → "unreadable". **It runs on the worker thread, never the bus** — decoding a minute of audio takes about a second and would stall the event loop.
+6. **`crates/pundit-media/src/transcribe.rs`:** `read_all(path, cancel) -> Result<Vec<f32>, _>` at 16 kHz mono via `start` (never `open`), mapping `Ok(None)` → a distinct "no audio track" error and `Err(_)` → "unreadable". **It runs on the worker thread, never the bus** — decoding a minute of audio takes about a second and would stall the event loop.
 7. **Tests:** extraction is 16 kHz mono; the sample count matches the duration **within a tolerance** (`audioresample` has filter latency and a tail — an exact count flakes on a plugin bump); no audio track gives that error rather than hanging or returning silence; a damaged file gives the other error; a cancel mid-extraction returns `Cancelled`, **not a short buffer**; export's audio tests pass unchanged.
 
 Commit: `feat(media): 16 kHz mono extraction for transcription`.
@@ -46,7 +46,7 @@ Commit: `feat(media): 16 kHz mono extraction for transcription`.
 
 No whisper, no cmake. **This is the task that makes the phase testable.**
 
-1. **The seam mirrors `CaptureKind`:** `TranscribeKind { Whisper { model: PathBuf }, Test { delay, text } }`, resolved inside `video-coach-media`, chosen at `Bus::spawn`. Unconditionally compiled — **not** behind `fixtures`, which the app doesn't enable and so could never name. Both `Bus::spawn` and `spawn_with_state` gain the parameter. The call takes **PCM** (`&[f32]`), not a path, so extraction errors stay distinguishable from transcription errors and the shape matches Phase 11's `whispertranscriber`. Abort is an **`&AtomicBool`**, as `Exporter` and `Reader` already use.
+1. **The seam mirrors `CaptureKind`:** `TranscribeKind { Whisper { model: PathBuf }, Test { delay, text } }`, resolved inside `pundit-media`, chosen at `Bus::spawn`. Unconditionally compiled — **not** behind `fixtures`, which the app doesn't enable and so could never name. Both `Bus::spawn` and `spawn_with_state` gain the parameter. The call takes **PCM** (`&[f32]`), not a path, so extraction errors stay distinguishable from transcription errors and the shape matches Phase 11's `whispertranscriber`. Abort is an **`&AtomicBool`**, as `Exporter` and `Reader` already use.
 2. **`Transcriber`: one thread per job**, copying `Exporter` exactly — named thread, `Arc<AtomicBool>` cancel, `on_message` on the worker, `Drop` cancels and joins. **The bus owns the queue** (`VecDeque<Uuid>`), unambiguously. An earlier draft had a long-lived worker caching the model "to save minutes"; that contradicted the spec's own "the bus thread owns the queue", needed an unspecified second channel and a drain protocol, and would hold 466 MB resident through a whole recording session. Backlog the context cache; let Task 5's number decide if it ever earns its place.
 3. **A generation counter**, `transcribe_generation: u64`, bumped on every cancel or clear, stamped into `Input::Transcription`, checked on entry. Every other async subsystem on this bus has one (`generation` for the recorder, `preview_generation`). Without it: a job finishes into the channel, the project is closed, a new job starts, the stale `Finished` clears `running`, and `run_next_if_idle` launches a **second concurrent job**.
 4. **Bus surface:** `Command::Transcribe { clip_id }`, `Command::CancelTranscription` (**the running job only, and it clears the queue**), `Input::Transcription(u64, _)`, and
@@ -97,7 +97,7 @@ Commit: `feat(app): the transcript field and Transcribe button`.
 
 **Blocked on `sudo apt install cmake libclang-dev`.** Its literal first step is a hello-world `cargo build` of `whisper-rs`, before any backend code is written — that is S0's build risk, retired here because the blocker forced it last.
 
-1. **`whisper-rs 0.16.0` as a plain dependency** of `video-coach-media` — **no feature gate** (S1). Add `cmake` and `libclang-dev` to `.github/workflows/rust.yml`'s `workspace` job (insurance; the runner has them) and note the first-build cost in `CLAUDE.md`.
+1. **`whisper-rs 0.16.0` as a plain dependency** of `pundit-media` — **no feature gate** (S1). Add `cmake` and `libclang-dev` to `.github/workflows/rust.yml`'s `workspace` job (insurance; the runner has them) and note the first-build cost in `CLAUDE.md`.
 2. **Implement `TranscribeKind::Whisper`:** the **boxed** abort callback with a comment citing BACKLOG #60; **check our cancel flag before interpreting the return code**, so a cancel is `Cancelled` and never `GenericError(n)`; `set_progress_callback_safe` for the percentage; explicit `n_threads`, `print_progress = false`, `print_timestamps = false`, `install_logging_hooks`.
 3. **Join by concatenating raw segment texts and trimming once** — whisper's tokens carry their leading space, so a space-join double-spaces every boundary.
 4. **A missing model is `Failed` naming the exact path and the exact URL.**

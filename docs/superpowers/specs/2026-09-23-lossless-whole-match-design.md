@@ -106,7 +106,7 @@ Both halves of the user's match, read with `ffprobe` and a box dump. The two fil
 - The project's aspect gate (`Project::check_aspect`) already refuses a source whose display aspect differs from the project's, so the commonest mismatch rarely reaches here — but it compares aspect, not size, so 1280×720 and 1920×1080 pass it and this gate catches them.
 - **A refusal leaves nothing behind.** It is an `ExportError::Failed` from `run`, which already deletes the `.part` (`composite/export.rs:279-284`).
 - **The pass is read one file at a time.** Opening every file at once needed a slot per entry, a shared refusal and a poll over the lot of them; a sequential loop refuses the first file that earns it, on every machine and every run, and the header read is milliseconds either way.
-- **The same pass is `video_coach_media::can_copy`,** which the bus calls before it chooses a renderer, so "Default" can mean *the best available* rather than a gate the coach never asked for (**M1**).
+- **The same pass is `pundit_media::can_copy`,** which the bus calls before it chooses a renderer, so "Default" can mean *the best available* rather than a gate the coach never asked for (**M1**).
 
 **L7. The per-source A/V drift, and why one base ends it.** The `concat` graph gave each track its own offset: an MP4's two tracks rarely end on the same instant, so the sound slipped against the picture by each source's own delta and the slips added up — 9 ms across the user's two sources [measured], roughly n × 4.5 ms over n [estimate]. It was never AAC priming.
 
@@ -174,7 +174,7 @@ The honest summary for the user: **on a computer it just works; on a phone or a 
 
 ### U. Where the cue text comes from
 
-**U1. One pure function in `video-coach-core`, over the compilation's frames.**
+**U1. One pure function in `pundit-core`, over the compilation's frames.**
 
 ```rust
 pub struct Cue { pub start: f64, pub end: f64, pub text: String }
@@ -214,7 +214,7 @@ The sheet's third picker, labelled **"Scoreboard"**, with three entries:
 | **Separate track** | `Track` for every ticked target. On the whole match that is the copy, and a project it can't join is **refused**, naming the file — there the coach asked for the copy, and quietly spending an hour instead is the worst available answer. On a clip or a reel it means `Burned` (**T1**). |
 
 - **Under the picker, whenever a ticked target's *effective* mode is `Track`,** one line, which is the only place this trade is explained: *"The whole match is copied, not re-encoded: player highlights and pen drawings can't ride a copy."* It follows the effective mode, not the picked one, because Default reaches `Track` too and a coach told nothing has taken the trade without being asked. Only the whole match is ever copied, so it is that row's tick and a picker that isn't "Burned into the picture".
-- **What "the sources can be joined" costs:** one header read per file (`video_coach_media::can_copy`, the gate's own pass — **L6**), milliseconds against a copy's half-minute, run once per run because a run has at most one whole match.
+- **What "the sources can be joined" costs:** one header read per file (`pundit_media::can_copy`, the gate's own pass — **L6**), milliseconds against a copy's half-minute, run once per run because a run has at most one whole match.
 - **Why three and not two.** The user's rule is a *per-target* default (track for the whole match, burned for a clip), and two values cannot express "I have not chosen" separately from "I chose burned". The per-target rule is one pure function, `default_scoreboard_mode(&ExportTarget) -> ScoreboardMode`, stated once and read by the sheet and the job builder alike.
 - **The picker's value is stored as `Option<ScoreboardMode>`** — `None` is Default.
 
@@ -284,7 +284,7 @@ Of these, only **player highlights** are a loss against today's burned whole mat
 
 The sheet says it in one line under the picker (**M1**): *"The whole match is copied, not re-encoded: player highlights and pen drawings can't ride a copy."*
 
-**What a copy *does* carry beyond the pixels: the header tags** (added 2026-09-24). Every export, copied or encoded, gets `core::metadata::file_tags` set on the muxer's `GstTagSetter` before `PLAYING`: a title (`"Rovers v Athletic — whole match"`), a description naming the project, the final score as the `comment`, both team names as `keywords`, `Coach Cuts <version>` as the `encoder`, and the first source file's modification date as `date`.
+**What a copy *does* carry beyond the pixels: the header tags** (added 2026-09-24). Every export, copied or encoded, gets `core::metadata::file_tags` set on the muxer's `GstTagSetter` before `PLAYING`: a title (`"Rovers v Athletic — whole match"`), a description naming the project, the final score as the `comment`, both team names as `keywords`, `pundit <version>` as the `encoder`, and the first source file's modification date as `date`.
 
 They cost this design nothing, and that is measured rather than assumed:
 
@@ -330,10 +330,10 @@ They cost this design nothing, and that is measured rather than assumed:
 
 | Crate | Holds |
 |---|---|
-| `video-coach-core` | `Cue`, `scoreboard_cues`, `cues_to_srt`, `ScoreboardMode`, `default_scoreboard_mode`, `Preferences::last_export_scoreboard`, the v11 bump, and `metadata::file_tags` with the target labels it words titles from. All pure; no media dependency. |
-| `video-coach-media` | `composite/copy.rs`: the copy graph, the caps gate, the progress probe, the `tx3g` scoreboard track. `ExportJob::{cues, render, tags}`, `ExportDone::sidecar`, the sidecar write and the stale-sidecar removal, `composite/tags.rs` (the `GstTagSetter` half, and what `mp4mux` measurably writes). `chapters::splice` unchanged; `overlay.rs` unchanged. |
-| `video-coach-app` | The sheet's third picker and its one explanatory line, blanking `job.scoreboard` in track mode, filling `job.cues` and `job.tags` (with the first source's mtime as the date), clearing the rate window between targets, writing the choice back to `Preferences`. |
-| `video-coach-harness` | The end-to-end run over the bus: tick the whole match in track mode, get a copied file with chapters and a sidecar. |
+| `pundit-core` | `Cue`, `scoreboard_cues`, `cues_to_srt`, `ScoreboardMode`, `default_scoreboard_mode`, `Preferences::last_export_scoreboard`, the v11 bump, and `metadata::file_tags` with the target labels it words titles from. All pure; no media dependency. |
+| `pundit-media` | `composite/copy.rs`: the copy graph, the caps gate, the progress probe, the `tx3g` scoreboard track. `ExportJob::{cues, render, tags}`, `ExportDone::sidecar`, the sidecar write and the stale-sidecar removal, `composite/tags.rs` (the `GstTagSetter` half, and what `mp4mux` measurably writes). `chapters::splice` unchanged; `overlay.rs` unchanged. |
+| `pundit-app` | The sheet's third picker and its one explanatory line, blanking `job.scoreboard` in track mode, filling `job.cues` and `job.tags` (with the first source's mtime as the date), clearing the rate window between targets, writing the choice back to `Preferences`. |
+| `pundit-harness` | The end-to-end run over the bus: tick the whole match in track mode, get a copied file with chapters and a sidecar. |
 
 Nothing moves between crates, and no new dependency appears in any of them.
 
@@ -345,11 +345,11 @@ Nothing moves between crates, and no new dependency appears in any of them.
 
 Eight tests earn their place, plus the core table and the harness's.
 
-**Core** (`crates/video-coach-core/tests/cues.rs`): **one table test over `scoreboard_cues` and `cues_to_srt`**, with a row per case: a two-source match (kick-off, goal, half-time, second-half start, full time) asserting no cue before the first start, the score turning over on the goal's own frame, one `HT` cue over the break, `FT` after the last period and contiguity within a run; a freeze holding the clock; stoppage appending `+M:SS`; no scoreboard giving an empty list; and `cues_to_srt`'s hours, milliseconds, numbering and empty-input case.
+**Core** (`crates/pundit-core/tests/cues.rs`): **one table test over `scoreboard_cues` and `cues_to_srt`**, with a row per case: a two-source match (kick-off, goal, half-time, second-half start, full time) asserting no cue before the first start, the score turning over on the goal's own frame, one `HT` cue over the break, `FT` after the last period and contiguity within a run; a freeze holding the clock; stoppage appending `+M:SS`; no scoreboard giving an empty list; and `cues_to_srt`'s hours, milliseconds, numbering and empty-input case.
 
 `default_scoreboard_mode` gets no test of its own: a test that restates a two-arm `match` pins nothing that the compiler doesn't.
 
-**Media** (`crates/video-coach-media/tests/copy.rs`), on generated fixtures:
+**Media** (`crates/pundit-media/tests/copy.rs`), on generated fixtures:
 
 1. **A source whose sound stops early is copied.** Two fixtures with four seconds of picture and one of sound — three times the second a `queue` holds, so no queue size could have hidden it. **The two-`concat` graph hung on this every time** (4 runs in 4, unloaded, no test-timeout reached), and on ordinary footage, where the two tracks end a few milliseconds apart, one run in three. It is the deadlock with the race taken out, and it costs two seconds.
 2. **A copy of two sources is lossless, chaptered and subtitled.** Two `CounterKind::H264AacMp4` fixtures (H.264 with B-frames in MP4, and an edit list — the trap this codebase already keeps a fixture for), with audio, and a cue list. Assert in one run: `decode_counters` reads `0..N` then `0..M` with nothing missing, repeated or out of order; `ffprobe` reports the inputs' `codec_name`, `profile`, `width` and `height` and a packet count equal to the sum of the inputs'; `-show_chapters` reads the plan's chapters back at the expected times (which is what proves `reserved-max-duration` was set — without it the splice skips); the `.srt` sits beside the `.mp4` and round-trips through `cues_to_srt`; and the **embedded track** carries the same lines, read back out of the samples themselves (`-show_packets -show_data`, a `tx3g` sample being a two-byte length and then UTF-8 — the dump's ASCII column would mangle the `·`) at the same times to the millisecond, with `codec_tag_string` `tx3g` and `time_base` `1/1000`. The muxer's empty samples are dropped by the reader, which is where that surprise is noted.
@@ -364,7 +364,7 @@ The stale-sidecar rule is asserted where the two halves of it live: the encoded 
 
 `ffprobe` is already a test-only dependency (`packaging/build-deps.txt`, match vision C3). These tests fail without it; they never skip.
 
-**Harness** (`crates/video-coach-harness/tests/whole_match.rs`): one run over the bus in track mode, asserting the run's progress reaches `total_frames` and that the file and the sidecar land in `exports/`; Default over a copyable project; a clip on a separate track, which burns the board in and leaves a `.srt` the coach put there themselves alone; and a burned re-export, which removes the sidecar the last run wrote. `reel.rs`'s whole-match test runs **Default over WebM sources**, which is where the fallback to a re-encode is pinned.
+**Harness** (`crates/pundit-harness/tests/whole_match.rs`): one run over the bus in track mode, asserting the run's progress reaches `total_frames` and that the file and the sidecar land in `exports/`; Default over a copyable project; a clip on a separate track, which burns the board in and leaves a `.srt` the coach put there themselves alone; and a burned re-export, which removes the sidecar the last run wrote. `reel.rs`'s whole-match test runs **Default over WebM sources**, which is where the fallback to a re-encode is pinned.
 
 **Packaging:** every element the copy names by hand is already in `packaging/smoke-test.sh`'s list (`filesrc`, `qtdemux`, `h264parse`, `aacparse`, `appsink`, `appsrc`, `mp4mux`, `filesink`, `fakesink`). `concat` left it with the graph.
 

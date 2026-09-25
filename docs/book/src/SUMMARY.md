@@ -4,7 +4,7 @@
 
 # Guide
 
-- [Using Coach Cuts](guide/index.md)
+- [Using pundit](guide/index.md)
 
 # Reference
 

@@ -46,7 +46,7 @@ jobs:
       - name: Read the workspace version
         run: |
           version=$(cargo metadata --no-deps --format-version 1 |
-            jq -r '.packages[] | select(.name == "video-coach-app") | .version')
+            jq -r '.packages[] | select(.name == "pundit-app") | .version')
           echo "version=$version" >> "$GITHUB_ENV"
       - name: Check the tag matches the workspace version
         # The ref, not the event: a dispatch from a branch has no tag to
@@ -94,11 +94,11 @@ jobs:
       - name: Build the .deb
         run: packaging/build-deb.sh
       - name: Smoke-test the .deb in a clean ubuntu:24.04
-        run: packaging/smoke-test.sh target/debian/coach-cuts_*_amd64.deb
+        run: packaging/smoke-test.sh target/debian/pundit_*_amd64.deb
       - uses: actions/upload-artifact@v4
         with:
           name: deb
-          path: target/debian/coach-cuts_*_amd64.deb
+          path: target/debian/pundit_*_amd64.deb
           if-no-files-found: error
 
   release:
@@ -125,6 +125,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" coach-cuts_*_amd64.deb \
+          gh release create "$GITHUB_REF_NAME" pundit_*_amd64.deb \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
-            --title "Coach Cuts $GITHUB_REF_NAME" --notes-file notes.md
+            --title "pundit $GITHUB_REF_NAME" --notes-file notes.md

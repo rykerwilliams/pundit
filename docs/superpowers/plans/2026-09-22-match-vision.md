@@ -51,11 +51,11 @@ The gate before P2 and before the user starts tagging: a scrub lands within one 
 ### Task 0.1: Make the round trip measurable, and reproduce #67
 
 **Files:**
-- `crates/video-coach-media/src/mailbox.rs`
-- `crates/video-coach-media/src/composite/{mod.rs,decode.rs}`
-- `crates/video-coach-media/src/lib.rs`
-- `crates/video-coach-harness/src/lib.rs`
-- `crates/video-coach-harness/tests/{real_footage.rs,transport.rs}`
+- `crates/pundit-media/src/mailbox.rs`
+- `crates/pundit-media/src/composite/{mod.rs,decode.rs}`
+- `crates/pundit-media/src/lib.rs`
+- `crates/pundit-harness/src/lib.rs`
+- `crates/pundit-harness/tests/{real_footage.rs,transport.rs}`
 
 **What to build:**
 1. **`Frame.stream_time: Option<f64>`**, set in `Frame::from_sample` from the sample's segment: `segment.to_stream_time(pts)`, which is the rule CLAUDE.md sets for export. It is `None` when the segment isn't in time format. It says which frame is on screen: this task's tests read it, and P2's highlight keys are placed at it (Task 2.5).
@@ -74,7 +74,7 @@ The gate before P2 and before the user starts tagging: a scrub lands within one 
 
 ```bash
 COACH_FOOTAGE=/path/to/trace-half.mp4 flock /tmp/claude-1000/cargo.lock nice -n 19 \
-  cargo test -p video-coach-harness --test real_footage real_footage_scrubs -- --ignored --nocapture --test-threads=1
+  cargo test -p pundit-harness --test real_footage real_footage_scrubs -- --ignored --nocapture --test-threads=1
 ```
 
 The footage path comes from the user. It never goes into a commit. The CI guard passes. If it fails, that is a finding in its own right: stop and report it.
@@ -85,7 +85,7 @@ Commit: `test: measure the scan-to-export round trip (BACKLOG #67)`.
 
 ### Task 0.2: Fix #67
 
-**Files:** decided by the root cause. Most likely `crates/video-coach-media/src/player/mod.rs`, `crates/video-coach-app/src/bus/transport.rs` and `crates/video-coach-media/src/fixtures.rs`. Also `BACKLOG.md`, and `CLAUDE.md` if the cause is a new class.
+**Files:** decided by the root cause. Most likely `crates/pundit-media/src/player/mod.rs`, `crates/pundit-app/src/bus/transport.rs` and `crates/pundit-media/src/fixtures.rs`. Also `BACKLOG.md`, and `CLAUDE.md` if the cause is a new class.
 
 **Investigate before changing anything.** Use the numbers from Task 0.1, plus `ffprobe -show_packets -select_streams v` and `-select_streams a` around 568 s and 812 s. The symptoms are:
 - the error is not monotonic (−0.30 at 812, +0.19 at 568);
@@ -116,10 +116,10 @@ Commit: `fix(player): a scrub on a Trace file lands on its target (BACKLOG #67)`
 The arrows skip 3 s, which is too coarse to find the frame the ball crosses the line, or to place a highlight key on the frame the coach means. This task adds a one-frame step while paused, then builds the app the user tags with.
 
 **Files:**
-- `crates/video-coach-app/ui/app.slint`
-- `crates/video-coach-app/src/{main.rs,format.rs,bus/mod.rs,bus/transport.rs}`
-- `crates/video-coach-media/src/player/mod.rs` (if the step needs the player)
-- `crates/video-coach-harness/tests/transport.rs`
+- `crates/pundit-app/ui/app.slint`
+- `crates/pundit-app/src/{main.rs,format.rs,bus/mod.rs,bus/transport.rs}`
+- `crates/pundit-media/src/player/mod.rs` (if the step needs the player)
+- `crates/pundit-harness/tests/transport.rs`
 - `Cargo.toml`, `Cargo.lock`
 
 **What to build:**
@@ -147,10 +147,10 @@ Commit: `feat(app): step one frame with , and ., and show tenths while paused`.
 The user asked for it after the plan was written. It belongs in 0.1.1: tagging means running through whole halves.
 
 **Files:**
-- `crates/video-coach-media/src/player/{mod.rs,sink.rs}`
-- `crates/video-coach-app/src/{main.rs,bus/mod.rs,bus/transport.rs}`
-- `crates/video-coach-app/ui/app.slint`
-- `crates/video-coach-harness/tests/{transport.rs,real_footage.rs}`
+- `crates/pundit-media/src/player/{mod.rs,sink.rs}`
+- `crates/pundit-app/src/{main.rs,bus/mod.rs,bus/transport.rs}`
+- `crates/pundit-app/ui/app.slint`
+- `crates/pundit-harness/tests/{transport.rs,real_footage.rs}`
 
 **Known facts:**
 - **Every scan seek is `seek_simple`** (`player/mod.rs` `seek`), which seeks at rate 1.0. A rate not carried into each seek is lost on the next scrub or skip.
@@ -203,7 +203,7 @@ Commit: `chore: 0.1.1, the build the ground truth is tagged with`.
 
 ## The user's own steps (in order; they never block P1 or P2)
 
-1. **Install 0.1.1** from `~/Downloads` (`sudo apt install ~/Downloads/coach-cuts_0.1.1_amd64.deb`). **Before tagging anything, confirm the scrub fix:** in a Trace half, scrub to a few places and check that the picture and the readout agree. Pause and press `.` a few times: the readout's tenths (`12:34.5`) move with each frame. Press `L` a few times while playing: the match runs faster, up to 32×, and `J` or a pause brings it back.
+1. **Install 0.1.1** from `~/Downloads` (`sudo apt install ~/Downloads/pundit_0.1.1_amd64.deb`). **Before tagging anything, confirm the scrub fix:** in a Trace half, scrub to a few places and check that the picture and the readout agree. Pause and press `.` a few times: the readout's tenths (`12:34.5`) move with each frame. Press `L` a few times while playing: the match runs faster, up to 32×, and `J` or a pause brings it back.
 2. **One project per match** (G1). Start from a new, empty folder for each match.
    - Put that match's video files **inside the project folder** before adding them. Then step 5's copy is one folder, and its relative paths still resolve.
    - Add the halves in order.
@@ -231,8 +231,8 @@ Order: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, then 1.7 closes the phase. 1.3 needs 1.1 an
 ### Task 1.1: Read v7 onward, and store reel trims (v8)
 
 **Files:**
-- `crates/video-coach-core/src/{store.rs,scoreboard.rs,project.rs}`
-- `crates/video-coach-core/tests/{project_format.rs,scoreboard.rs}`
+- `crates/pundit-core/src/{store.rs,scoreboard.rs,project.rs}`
+- `crates/pundit-core/tests/{project_format.rs,scoreboard.rs}`
 - every `MatchEventRecord { … }` literal: `grep -rn "MatchEventRecord {" crates`
 
 **What to build, in this order:**
@@ -304,9 +304,9 @@ Commit: `refactor: plan entries that carry no clip`.
 ### Task 1.3: The reel's plan (R2–R4)
 
 **Files:**
-- `crates/video-coach-core/src/{plan.rs,reel.rs (new),lib.rs}`
-- `crates/video-coach-core/tests/reel.rs` (new)
-- `crates/video-coach-app/src/bus/export.rs` (the `label()` arm)
+- `crates/pundit-core/src/{plan.rs,reel.rs (new),lib.rs}`
+- `crates/pundit-core/tests/reel.rs` (new)
+- `crates/pundit-app/src/bus/export.rs` (the `label()` arm)
 
 **What to build:**
 1. **`ExportTarget::Reel`.** `compilation_plan` builds its entries from the goals, not from `selected_clips`. Every exhaustive match gains its arm in this task, so the workspace still builds:
@@ -349,10 +349,10 @@ Commit: `feat(core): the goals reel's plan`.
 ### Task 1.4: Chapters in exported files (C2, C3)
 
 **Files:**
-- `crates/video-coach-core/src/plan.rs`, `crates/video-coach-core/tests/plan.rs`
-- `crates/video-coach-media/src/{chapters.rs (new),lib.rs,composite/export.rs}`
-- `crates/video-coach-media/tests/export.rs`
-- `crates/video-coach-app/src/bus/export.rs` (the log line)
+- `crates/pundit-core/src/plan.rs`, `crates/pundit-core/tests/plan.rs`
+- `crates/pundit-media/src/{chapters.rs (new),lib.rs,composite/export.rs}`
+- `crates/pundit-media/tests/export.rs`
+- `crates/pundit-app/src/bus/export.rs` (the log line)
 - `packaging/build-deps.txt`
 - `BACKLOG.md` (#23)
 
@@ -391,8 +391,8 @@ Commit: `feat(export): a chapter per entry in every exported file`.
 ### Task 1.5: The reel and its trims through the bus
 
 **Files:**
-- `crates/video-coach-app/src/{main.rs,bus/mod.rs,bus/export.rs,bus/scoreboard.rs}`
-- `crates/video-coach-harness/tests/reel.rs` (new)
+- `crates/pundit-app/src/{main.rs,bus/mod.rs,bus/export.rs,bus/scoreboard.rs}`
+- `crates/pundit-harness/tests/reel.rs` (new)
 
 **What to build:**
 1. **`export_targets`** adds an **"All goals"** row after the tag rows when the reel's plan has entries. **`ExportTargetRow.clips` becomes `entries`,** and `main.rs`'s detail line follows the rename in this task (Task 1.6 words it for the reel).
@@ -415,9 +415,9 @@ Commit: `feat(app): export the goals reel; trim a goal's span`.
 ### Task 1.6: The Match panel and the scrubber (R3, C1)
 
 **Files:**
-- `crates/video-coach-app/ui/{app.slint,scrubber.slint}`
-- `crates/video-coach-app/src/{main.rs,match_panel.rs}`
-- `crates/video-coach-app/tests/scrubber.rs`
+- `crates/pundit-app/ui/{app.slint,scrubber.slint}`
+- `crates/pundit-app/src/{main.rs,match_panel.rs}`
+- `crates/pundit-app/tests/scrubber.rs`
 
 **What to build:**
 1. **`MatchRowText` gains `abs: f64` and `kind: MatchEventKind`.** The goal rows, the scrubber's marks and the chapter jumps are all built from `match_rows`, so there is no separate chapter type.
@@ -466,9 +466,9 @@ Asked for by the user while tagging the first match: the film itself, with the c
 ### Task 1b.1: Export the whole match, with the match's own chapters
 
 **Files:**
-- `crates/video-coach-core/src/{plan.rs,reel.rs (or a new whole_match.rs)}`
-- `crates/video-coach-app/src/{bus/export.rs,main.rs}`
-- `crates/video-coach-core/tests/plan.rs`, `crates/video-coach-harness/tests/reel.rs` (or its own test file)
+- `crates/pundit-core/src/{plan.rs,reel.rs (or a new whole_match.rs)}`
+- `crates/pundit-app/src/{bus/export.rs,main.rs}`
+- `crates/pundit-core/tests/plan.rs`, `crates/pundit-harness/tests/reel.rs` (or its own test file)
 
 **What to build:**
 1. **`ExportTarget::WholeMatch`.** `compilation_plan` gives one entry per source video, in order, each `[0, duration]`, `clip_id: None` and an empty `text`. Everything else follows from P1: game sound, no PiP, the scoreboard and highlights per displayed frame.
@@ -510,8 +510,8 @@ Order: 2.1, 2.2, 2.3, 2.4, 2.5, then 2.6 closes the phase and releases. 2.3 need
 ### Task 2.1: The highlight model (H1, H2), v9
 
 **Files:**
-- `crates/video-coach-core/src/{highlight.rs (new),lib.rs,project.rs,store.rs,undo.rs}`
-- `crates/video-coach-core/tests/{highlight.rs (new),project_format.rs,sources.rs,undo.rs}`
+- `crates/pundit-core/src/{highlight.rs (new),lib.rs,project.rs,store.rs,undo.rs}`
+- `crates/pundit-core/tests/{highlight.rs (new),project_format.rs,sources.rs,undo.rs}`
 
 **What to build:**
 1. **The types** follow H2 exactly: `NormRect { x, y, w, h }`, `PlayerHighlight` and `HighlightKey` (with `tracked`), in `camelCase` and with **no serde defaults** (F2).
@@ -566,9 +566,9 @@ Commit: `feat(core): player highlights (format v9)`.
 ### Task 2.2: Drawing highlights in preview and export (H4, H5)
 
 **Files:**
-- `crates/video-coach-media/src/{overlay.rs,composite/export.rs,composite/preview.rs}`
-- `crates/video-coach-media/tests/preview.rs`
-- `crates/video-coach-app/src/bus/{export.rs,preview.rs}`
+- `crates/pundit-media/src/{overlay.rs,composite/export.rs,composite/preview.rs}`
+- `crates/pundit-media/tests/preview.rs`
+- `crates/pundit-app/src/bus/{export.rs,preview.rs}`
 
 **What to build:**
 1. **`OverlayFrame` gains `highlights: &[HighlightShape]`.** It stays zoom-agnostic: the shapes are already in picture pixels.
@@ -593,8 +593,8 @@ Commit: `feat(media): draw player highlights in preview and export`.
 ### Task 2.3: Highlight commands and undo
 
 **Files:**
-- `crates/video-coach-app/src/bus/{mod.rs,highlights.rs (new),clips.rs,sources.rs}`
-- `crates/video-coach-harness/tests/highlights.rs` (new)
+- `crates/pundit-app/src/bus/{mod.rs,highlights.rs (new),clips.rs,sources.rs}`
+- `crates/pundit-harness/tests/highlights.rs` (new)
 
 **What to build:**
 1. **The commands:**
@@ -623,8 +623,8 @@ Commit: `feat(app): highlight commands and their undo`.
 ### Task 2.4: Rings on the scan and recording picture (H5)
 
 **Files:**
-- `crates/video-coach-app/src/{highlight_view.rs (new),lib.rs,main.rs}`
-- `crates/video-coach-app/ui/app.slint`
+- `crates/pundit-app/src/{highlight_view.rs (new),lib.rs,main.rs}`
+- `crates/pundit-app/ui/app.slint`
 
 **What to build:**
 1. **`highlight_view::live_highlights(project, source_index, source_secs, zoom, content_w, content_h) -> Vec<LiveHighlight { commands, ink, label, label_x, label_y }>`**, from `highlight_shapes` with the content rect as the picture.
@@ -644,8 +644,8 @@ Commit: `feat(app): show highlights on the live picture`.
 ### Task 2.5: The H tool and the highlight inspector (H3)
 
 **Files:**
-- `crates/video-coach-app/ui/app.slint`
-- `crates/video-coach-app/src/{main.rs,video.rs,highlight_view.rs,zoom_input.rs}`
+- `crates/pundit-app/ui/app.slint`
+- `crates/pundit-app/src/{main.rs,video.rs,highlight_view.rs,zoom_input.rs}`
 
 **What to build:**
 1. **The displayed frame's time.** `video.rs` records the `stream_time` of each scan frame it draws, so the UI knows which frame is on screen. A key is placed at that time, on `ui.source_index`, which makes it exactly the frame `Decoder::frame_at` picks for it (Task 0.1). A frame with no stream time falls back to `scan_abs` → `locate`.
@@ -731,7 +731,7 @@ Each of these gets its own detailed plan, written once its entry gate is met, wi
 4. **Harness:** the `kickoffs.txt` reader, `src/score.rs`, and `tests/ground_truth.rs` (`#[ignore]`d):
    ```bash
    COACH_GROUND_TRUTH=/local/match-a:/local/match-b flock /tmp/claude-1000/cargo.lock nice -n 19 \
-     cargo test -p video-coach-harness --test ground_truth -- --ignored --nocapture --test-threads=1
+     cargo test -p pundit-harness --test ground_truth -- --ignored --nocapture --test-threads=1
    ```
 5. **The runtime and detector spike (L3, V-2, V-7):**
    - `rten` against `ort` (`load-dynamic`) on D-FINE-N and RTMDet-tiny, at 640 and 960, on 4 threads, on AC, over minutes;

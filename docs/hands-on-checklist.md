@@ -1,4 +1,4 @@
-# Coach Cuts: try-everything checklist
+# pundit: try-everything checklist
 
 Work down the list in order. It follows a normal session: install, open a project, scan the game, record, tidy clips, preview, export, scoreboard, transcripts.
 
@@ -8,8 +8,8 @@ Work down the list in order. It follows a normal session: install, open a projec
 
 ## 1. Install
 
-- [ ] **Install the package.** Run `sudo apt install ~/Downloads/coach-cuts_0.7.0_amd64.deb`. It replaces the copy you have. **Right:** apt finishes without errors. (To build one yourself instead, run `packaging/build-deb.sh` in the `coach-cutups` folder; the result lands in `target/debian/`.)
-- [ ] **[must work] In the menu.** Open the Mint menu and type "Coach Cuts". **Right:** it's listed with its own icon, not a blank or generic one. Launch it. **Right:** the running window shows the same icon in the panel. If you pin the launcher to the panel, the open window groups onto that pin instead of appearing as a second, separate button.
+- [ ] **Install the package.** Run `sudo apt install ~/Downloads/pundit_0.8.0_amd64.deb`. **Right:** apt finishes without errors, and its plan says it is *removing* `coach-cuts` and installing `pundit` — that is the rename, and one command does both. **Right:** the project you last had open, your pen and your basket are all still there when you launch it, and transcription does not re-download the speech model. (To build the package yourself instead, run `packaging/build-deb.sh` in the checkout; the result lands in `target/debian/`.)
+- [ ] **[must work] In the menu.** Open the Mint menu and type "pundit". **Right:** it's listed with its own icon, not a blank or generic one. Launch it. **Right:** the running window shows the same icon in the panel. If you pin the launcher to the panel, the open window groups onto that pin instead of appearing as a second, separate button.
 
 ## 2. First launch and your project
 
@@ -56,10 +56,10 @@ Work down the list in order. It follows a normal session: install, open a projec
 - [ ] **Cancel and key repeat.** Press R, then press R again during "Preparing…". **Right:** it cancels and no clip appears. Holding R down doesn't flicker recording on and off.
 - [ ] **Listen to the start of a take.** Record a few seconds, then preview it with headphones on. **Right:** it starts cleanly. **Tell us** if you hear a thump, pop or click right at the start — an audio analyzer suggests there may be one.
 - [ ] **Clap test.** Start a take and clap once, clearly in view of the webcam. Keep this clip, because the preview and export checks use it.
-- [ ] **Live webcam view.** While recording, check the inset's colours look natural and it isn't stretched. Run `top` in a terminal during a take and **tell us** the `coach-cuts` CPU figure (we expect roughly 40–60% of one core in total). Then compare with the export: export a clip and check the inset sits in the same place you saw it while recording.
+- [ ] **Live webcam view.** While recording, check the inset's colours look natural and it isn't stretched. Run `top` in a terminal during a take and **tell us** the `pundit` CPU figure (we expect roughly 40–60% of one core in total). Then compare with the export: export a clip and check the inset sits in the same place you saw it while recording.
 - [ ] **Picture and lip sync.** Record in a normally lit room. Open the newest `.mkv` in the project's `recordings/` folder in a video player. **Right:** the picture is reasonably sharp, not blocky, and your lips match your voice.
 - [ ] *(Optional, needs a USB camera or mic)* **Unplug a device.** Choose it in Devices…, unplug it, then press R. **Right:** a notice line says it fell back to the default device, instead of the recording failing. Plug it back in, and it's picked again.
-- [ ] **Crash safety.** While recording, run `pkill -9 coach-cuts` in a terminal. **Right:** the newest `.mkv` in `recordings/` still plays up to the kill. **Expected:** after you relaunch, that take is *not* in the clip list. That's by design, not a bug.
+- [ ] **Crash safety.** While recording, run `pkill -9 pundit` in a terminal. **Right:** the newest `.mkv` in `recordings/` still plays up to the kill. **Expected:** after you relaunch, that take is *not* in the clip list. That's by design, not a bug.
 
 ## 5. Drawing [cam+mic]
 

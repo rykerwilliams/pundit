@@ -244,7 +244,7 @@ Each entry: what, why deferred, when to revisit.
   verbatim on the next save, and never produces a diagnostic. In a non-event
   field it becomes `null`, which no `f64` accepts, so the whole project reports
   `Malformed` and refuses to open. Either way the user loses work silently.
-  Not fixed in `video-coach-core` because a serializer-side validator that walks
+  Not fixed in `pundit-core` because a serializer-side validator that walks
   the document for nulls is more machinery than the problem warrants, and
   because the crate has no producer of NaN today — `Zoom::clamped` and
   `SkipCoordinator::request_skip` were the two panic-or-corrupt paths and both
@@ -543,7 +543,7 @@ Each entry: what, why deferred, when to revisit.
   ellipsize only below it. Left here as the record of why the spec said
   otherwise.
 58. **`scan_abs` can pair a new source's index with the old source's offset.**
-  `scan_abs` (`crates/video-coach-app/src/main.rs`) falls back to
+  `scan_abs` (`crates/pundit-app/src/main.rs`) falls back to
   `abs_seconds(ui.source_index, ui.last_secs)` when `ui.target_abs` is `None`.
   `last_secs` is written only by a *successful* `query_position()`, while
   `ui.source_index` is updated by `Event::Position` independently — so in the
@@ -631,7 +631,7 @@ Each entry: what, why deferred, when to revisit.
   the slot Phase 10 already has.
 
 64. ~~**A panic inside a transcription job would wedge the queue for the
-  session.**~~ **Fixed in P3 Task 3.2**, `video-coach-media/src/job.rs`. The
+  session.**~~ **Fixed in P3 Task 3.2**, `pundit-media/src/job.rs`. The
   deferral said to revisit this "if the job thread grows a path that can panic
   on data", and vision is that path: an analysis indexes tensors and slices on
   what it decoded, and it shares the one running slot with transcription and
@@ -660,7 +660,7 @@ Each entry: what, why deferred, when to revisit.
 ## Phase 11 deferrals (spec `docs/superpowers/specs/2026-09-21-linux-port-phase-11-design.md`)
 
 66. ~~**`a_file_with_no_audio_track_is_a_failure` flaked once under a parallel
-  run.**~~ **RESOLVED — it was not a flake.** In `video-coach-media`'s
+  run.**~~ **RESOLVED — it was not a flake.** In `pundit-media`'s
   transcribe tests, `matroskademux`'s "Internal data stream error" sometimes
   reached the test before the "no sound" answer it asserts. GitHub's runner
   then failed it every time, which made it reproducible: `Reader::start`
@@ -710,7 +710,7 @@ Each entry: what, why deferred, when to revisit.
   the preview a way to drop frames gracefully.
 
 70. **A heap-corruption abort once, tearing down whisper in the harness.** One
-  run of `crates/video-coach-harness/tests/transcribe.rs` died with glibc's
+  run of `crates/pundit-harness/tests/transcribe.rs` died with glibc's
   `corrupted size vs. prev_size` (SIGABRT); three reruns were green. The
   Android branch (`claude/android-tablet-port`) records the same crash as its
   BACKLOG #69, a whisper teardown crash.
@@ -752,7 +752,7 @@ Each entry: what, why deferred, when to revisit.
 
 72. **A source's first load at open once never settled, on CI.** GitHub run
   35697707647, attempt 1: `a_seek_in_the_final_second_stays_in_its_source`
-  (`crates/video-coach-harness/tests/transport.rs`) opened its project, the bus
+  (`crates/pundit-harness/tests/transport.rs`) opened its project, the bus
   issued the load of source 0 at 0 s (`Position { target_abs: Some(0.0) }`), and
   no settled position followed within the harness's 15 s. Attempt 2 of the
   same commit passed, as did the runs before and after.
@@ -853,7 +853,7 @@ Each entry: what, why deferred, when to revisit.
 
 75. **A skip burst's replay margin failed once, by 54 ms.** One run of
   `a_skip_burst_while_playing_lands_where_replay_puts_it`
-  (`crates/video-coach-harness/tests/recording.rs`) failed with "replay reaches
+  (`crates/pundit-harness/tests/recording.rs`) failed with "replay reaches
   7.5019 before the pause anchored at 7.4479". The same suite reran 12/12
   green, and two full workspace runs either side were green. Seen while the
   match-event editor's commands landed, which touch no transport code.
@@ -900,7 +900,7 @@ Each entry: what, why deferred, when to revisit.
 - **What exists already, and where.** Two homes, deliberately: per-project in
   `Preferences` inside `project.json` (`scan_volume`, the preview volumes, the
   last export resolution, quality and scoreboard mode, `pip_for_new_recordings`)
-  and machine-wide in `$XDG_CONFIG_HOME/coach-cuts/state.json` (the last project,
+  and machine-wide in `$XDG_CONFIG_HOME/pundit/state.json` (the last project,
   the speech model, the window size). **Machine-wide is the cheap one:** a field
   added to `Preferences` is a `formatVersion` bump every time, which is why the
   whisper model picker went to `state.json` in the first place.
@@ -981,7 +981,7 @@ Each entry: what, why deferred, when to revisit.
 - **When to revisit:** when one of the three inputs above lands.
 
 83. **`a_pause_while_a_flushing_seek_recovers_playing_sticks` flaked once under
-  the full workspace run.** `video-coach-media`'s lib tests, 2026-09-24: one
+  the full workspace run.** `pundit-media`'s lib tests, 2026-09-24: one
   failure inside a `cargo test --workspace` (every other suite green), and the
   same suite reran 122/122 green on its own a minute later. The test races a
   pause against a flushing seek's recovery, so a loaded machine — the workspace
@@ -1162,56 +1162,30 @@ Each entry: what, why deferred, when to revisit.
   stroke into that corner survives) and `overlay.rs`'s bar test (the corner is
   untinted).
 
-90. **The repository URLs and the docs site's base path, after the rename to
-  `coach-cuts`.** Nine files spell the old slug: `Cargo.toml`'s `repository`,
-  `README.md`, `CHANGELOG.md`, `docs/hands-on-checklist.md`,
-  `docs/book/src/{index,developers,guide/index}.md`, and — the one that is not
-  cosmetic — `docs/book/book.toml`, whose `site-url = "/coach-cutups/"`,
-  `git-repository-url` and `edit-url-template` decide whether the published
-  site's assets and 404 page resolve at all. GitHub redirects the old repository
-  URL forever, so nothing breaks the moment the rename happens, but the Pages
-  site moves to `rykerwilliams.github.io/coach-cuts/` and the old `site-url`
-  would point its assets at a path that no longer exists.
-- **Why deferred:** the rename is the human's to make (Settings → General), and
-  changing these first would point them at a URL that does not resolve yet.
-- **When to revisit:** the same day the repository is renamed — one commit, then
-  watch the Pages deploy.
+90. **The repository URLs and the docs site's base path — RESOLVED** (2026-09-25).
+  All of them point at `rykerwilliams/pundit` now, and `book.toml`'s `site-url`
+  is `/pundit/`, so the published site's assets and 404 page resolve under the
+  new name. The historical specs and plans under `docs/superpowers/` keep the
+  old URLs on purpose: they are dated records of what was true when they were
+  written.
 
-91. **Stop being a fork, and decide whether the name comes with us.** `gh repo
-  view` shows this repository as a fork of `tayl0r/coach-cutups`. Detaching it
-  is a GitHub Support request from the owner and keeps the URL, the stars, the
-  `v0.7.0` release and both tags; the alternative (a fresh repository, all refs
-  pushed) breaks the release page. The AGPL obligations from the shared history
-  stay either way, which is why `README.md`'s "Where this came from" names the
-  upstream repository in prose.
-- **The name is upstream's, which is the part that surprised us.** `321606d`
-  "Rename app to Coach Cuts + add app icon (#11)", Taylor Steil, 2026-07-13 —
-  two months *before* the fork. `coach-cuts` the identifier is ours (`5b78229`
-  onward) but it is only the slug of their name. There is no trademark in play
-  and the AGPL governs code, not names, so keeping it is legitimate; the cheap
-  first move is to ask Taylor.
-- **The app is going sport-neutral**, so any replacement must be too: it will be
-  used for generic telestration, which rules out `Touchline`, `Pitchside` and
-  every other football-only word. Names considered and not chosen: Coach Clips,
-  Coach Tape, Clip Coach, Clip Clinic, Cliproom, Reel Room, Tape Talk, Chalk,
-  Chalkboard, Filmroom, Breakdown, Cutroom, Tape, Greasepen, Whistle. Ruled out
-  on their own merits: `coach-cuts-ng` (the parent's name plus a suffix
-  announcing we are its sequel), `Sport Shorts` ("Shorts" means vertical
-  short-form video, which our 16:9 exports are not), `Sport Clips` (a US salon
-  chain).
-- **What a rename costs, measured:** the `[[bin]]`, the `.deb` `name` (plus
-  `Conflicts`/`Replaces` so apt removes the installed `coach-cuts`), the
-  `.desktop` file and five icon files, `WM_CLASS` / `app_id`, `APP_NAME` in
-  `core::metadata` (the `encoder` tag), `FILMS_DIR`, `$COACH_CUTS_WHISPER_MODEL`
-  (27 sites), the config and cache directory names — with a first-run rename of
-  both, because the cache holds a 488 MB speech model nobody should download
-  twice — the docs, and a 0.8.0 bump. Optionally the crates as well
-  (`video-coach-*`, a third naming system inherited from Swift's `VideoCoach`:
-  499 occurrences across 99 files, mechanical, compiler-checked).
-- **Why deferred:** the coach paused it on 2026-09-25 with the shortlist open.
-  Nothing was renamed; no file was touched.
-- **When to revisit:** when a name is chosen, or after asking Taylor about
-  keeping this one. Detaching the fork needs neither decision and can go first.
+91. **Stop being a fork, and the name — RESOLVED** (2026-09-25). The app is
+  **pundit** (*pundit Understands Nothing, Discusses It Thoroughly*), lower case
+  everywhere, and it lives at `rykerwilliams/pundit`, a repository created fresh
+  and therefore **not a fork** — which took no GitHub Support request and left
+  `rykerwilliams/coach-cutups` untouched, deliberately, along with its v0.7.0
+  release. `tayl0r/coach-cutups` is credited in prose in `README.md`, which is
+  what the shared AGPL history asks for.
+- **Checked before committing to the name:** free on crates.io (all five
+  package names), no Debian or Ubuntu package and no `pundit` binary, nothing on
+  Flathub, the GitHub name available, no sports-video product using it, and the
+  only live US trademark is `SOFTWAREPUNDIT` (reg. 7547190) — a software review
+  site, different goods. `varvet/pundit`, the Rails authorization gem, owns the
+  name in code search; the coach accepted that. `pundit.app`, `pundit.dev` and
+  `getpundit.com` are registered but parked.
+- **What carried the old name over:** `state::adopt_old_name`, the `.deb`'s
+  `conflicts`/`replaces`/`provides`, and `$PUNDIT_WHISPER_MODEL`. See CLAUDE.md,
+  which records both so they are not deleted as dead weight later.
 
 92. **Slates: a time range tagged now, its commentary recorded later.** THE NEXT
   FEATURE, at the coach's direction (2026-09-25). Watching a game through, the

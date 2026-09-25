@@ -4,7 +4,7 @@
 
 **Goal:** Open a v2 project, add a source video to it, and play / pause / scrub / skip through that source inside the Slint window. Audio plays through the OS default sink. First on-screen pixels and first transport state machine in the Rust port.
 
-**Architecture:** A new `SourcePlayer` in `video-coach-media` owns a GStreamer pipeline `filesrc → decodebin → tee → (video: videoconvert → RGBA capsfilter → appsink) (audio: audioconvert → audioresample → autoaudiosink)`. The video appsink callback grabs each decoded frame, copies into a `slint::SharedPixelBuffer<Rgba8Pixel>`, and pushes via `slint::invoke_from_event_loop` into a Slint `Image` property on `MainWindow`. Audio plays directly through the OS sink (no Rust intervention; volume controlled via the audiosink's `volume` property). The bus task owns the `SourcePlayer` lifetime and exposes `Play / Pause / Seek / SetVolume / AddSourceVideo` commands. UI buttons + keyboard shortcuts dispatch through the bus exactly like Phase 6's File-menu wiring.
+**Architecture:** A new `SourcePlayer` in `pundit-media` owns a GStreamer pipeline `filesrc → decodebin → tee → (video: videoconvert → RGBA capsfilter → appsink) (audio: audioconvert → audioresample → autoaudiosink)`. The video appsink callback grabs each decoded frame, copies into a `slint::SharedPixelBuffer<Rgba8Pixel>`, and pushes via `slint::invoke_from_event_loop` into a Slint `Image` property on `MainWindow`. Audio plays directly through the OS sink (no Rust intervention; volume controlled via the audiosink's `volume` property). The bus task owns the `SourcePlayer` lifetime and exposes `Play / Pause / Seek / SetVolume / AddSourceVideo` commands. UI buttons + keyboard shortcuts dispatch through the bus exactly like Phase 6's File-menu wiring.
 
 **Locked-in decisions** (from pre-plan brainstorm with user):
 1. **Video pixels via custom Slint sink** — appsink → SharedPixelBuffer → Slint Image. No GStreamer-native window.
@@ -19,8 +19,8 @@
 ## Task 0: Preflight — bus command shapes + tracing targets
 
 **Files:**
-- Modify: `crates/video-coach-app/src/bus.rs`
-- Modify: `crates/video-coach-app/src/event_layer.rs`
+- Modify: `crates/pundit-app/src/bus.rs`
+- Modify: `crates/pundit-app/src/event_layer.rs`
 
 **Step 1: Add the new `Command` variants (serde shape only; impl in later tasks).**
 
@@ -48,12 +48,12 @@ Add `"player.lifecycle"`, `"player.state"`. The player will emit `player.opened`
 
 ---
 
-## Task 1: SourcePlayer in `video-coach-media` (headless)
+## Task 1: SourcePlayer in `pundit-media` (headless)
 
 **Files:**
-- Create: `crates/video-coach-media/src/source_player.rs`
-- Modify: `crates/video-coach-media/src/lib.rs`
-- Create: `crates/video-coach-media/tests/source_player.rs`
+- Create: `crates/pundit-media/src/source_player.rs`
+- Modify: `crates/pundit-media/src/lib.rs`
+- Create: `crates/pundit-media/tests/source_player.rs`
 
 **Step 1: Define `SourcePlayer` API.**
 
@@ -113,9 +113,9 @@ Test gated `#[cfg(feature = "media")]` and uses the same `fixture()` helper Phas
 ## Task 2: AddSourceVideo command + project mutation
 
 **Files:**
-- Modify: `crates/video-coach-app/src/bus.rs`
-- Modify: `crates/video-coach-core/src/project_store.rs` (only if it doesn't already expose `write`)
-- Modify: `crates/video-coach-harness/tests/open_project_smoke.rs` (or new test file)
+- Modify: `crates/pundit-app/src/bus.rs`
+- Modify: `crates/pundit-core/src/project_store.rs` (only if it doesn't already expose `write`)
+- Modify: `crates/pundit-harness/tests/open_project_smoke.rs` (or new test file)
 
 **Step 1: Implement `AddSourceVideo` handler.**
 
@@ -132,7 +132,7 @@ Command::AddSourceVideo { absolute_path } => {
             .ok_or_else(|| "could not compute relative path".to_string())?;
         // Probe duration via gstreamer::PadProbe-ish discoverer for the
         // SourceRef.duration_seconds field.
-        let duration = video_coach_media::discover::probe_duration(abs)
+        let duration = pundit_media::discover::probe_duration(abs)
             .map_err(|e| e.to_string())?;
         Ok((rel.to_string_lossy().into_owned(), duration, abs.file_name()...))
     }).await...;
@@ -148,7 +148,7 @@ Command::AddSourceVideo { absolute_path } => {
 
 Currently `current_project: Option<Project>` doesn't remember WHERE it was loaded from. Refactor to `current: Option<(Project, PathBuf)>` so AddSourceVideo can write back.
 
-**Step 3: New crate `video-coach-media::discover` (or inline in source_player.rs).**
+**Step 3: New crate `pundit-media::discover` (or inline in source_player.rs).**
 
 Tiny helper: `probe_duration(&Path) -> Result<f64, _>` runs a GStreamer Discoverer. ~20 LOC.
 
@@ -167,8 +167,8 @@ Tiny helper: `probe_duration(&Path) -> Result<f64, _>` runs a GStreamer Discover
 ## Task 3: Wire bus → SourcePlayer (Play / Pause / Seek / SetScanVolume)
 
 **Files:**
-- Modify: `crates/video-coach-app/src/bus.rs`
-- Modify: `crates/video-coach-app/Cargo.toml` (depend on video-coach-media's source_player module unconditionally — already gated by `media` feature)
+- Modify: `crates/pundit-app/src/bus.rs`
+- Modify: `crates/pundit-app/Cargo.toml` (depend on pundit-media's source_player module unconditionally — already gated by `media` feature)
 
 **Step 1: Bus task gains `current_player: Option<SourcePlayer>`.**
 
@@ -193,9 +193,9 @@ Open project, add source video, send `play`, wait 1s, send `pause`, send `seek 5
 ## Task 4: Slint video surface — `Image` binding + `SharedPixelBuffer` push
 
 **Files:**
-- Modify: `crates/video-coach-app/ui/main.slint`
-- Modify: `crates/video-coach-app/src/ui.rs`
-- Create: `crates/video-coach-app/src/frame_sink.rs`
+- Modify: `crates/pundit-app/ui/main.slint`
+- Modify: `crates/pundit-app/src/ui.rs`
+- Create: `crates/pundit-app/src/frame_sink.rs`
 
 **Step 1: Slint surface.**
 
@@ -249,8 +249,8 @@ Open the test project, add `fixtures/source-1080p.mp4`, send `play`, look at the
 ## Task 5: Transport UI — play/pause button, scrubber, position label
 
 **Files:**
-- Modify: `crates/video-coach-app/ui/main.slint`
-- Modify: `crates/video-coach-app/src/ui.rs`
+- Modify: `crates/pundit-app/ui/main.slint`
+- Modify: `crates/pundit-app/src/ui.rs`
 
 **Step 1: Slint transport bar at the bottom.**
 
@@ -297,8 +297,8 @@ Spawn a tokio task that, while a player is loaded, queries the player's snapshot
 ## Task 6: Skip buttons + keyboard shortcuts (J / K / L / arrows)
 
 **Files:**
-- Modify: `crates/video-coach-app/ui/main.slint`
-- Modify: `crates/video-coach-app/src/ui.rs`
+- Modify: `crates/pundit-app/ui/main.slint`
+- Modify: `crates/pundit-app/src/ui.rs`
 
 Add buttons `<< 10s`, `< 3s`, `▶/❚❚`, `3s >`, `10s >>`. Each dispatches `Seek { seconds: current + delta, accurate: true }` via bus.
 
@@ -315,9 +315,9 @@ Manual smoke + commit.
 ## Task 7: Audio playback + scan-volume slider
 
 **Files:**
-- Modify: `crates/video-coach-media/src/source_player.rs`
-- Modify: `crates/video-coach-app/ui/main.slint`
-- Modify: `crates/video-coach-app/src/ui.rs`
+- Modify: `crates/pundit-media/src/source_player.rs`
+- Modify: `crates/pundit-app/ui/main.slint`
+- Modify: `crates/pundit-app/src/ui.rs`
 
 The pipeline already routes audio through `volume name=scan_volume → autoaudiosink` (Task 1). This task ships the UI slider.
 
@@ -390,7 +390,7 @@ cargo test  --workspace --features media
 
 4. **AVFoundation autoaudiosink on macOS.** On a fresh launch macOS may prompt for mic access (false positive). Audio playback doesn't need mic permission, but `autoaudiosink` initialization sometimes triggers a probe. If observed, switch to explicit `osxaudiosink`.
 
-5. **Slint testing backend ≠ GStreamer test environment.** The component test from Phase 6 instantiates MainWindow with the Slint testing backend. With media linked in, the test crate may pull GStreamer init. Keep the source-player tests in `video-coach-media/tests/`, not under app's tests.
+5. **Slint testing backend ≠ GStreamer test environment.** The component test from Phase 6 instantiates MainWindow with the Slint testing backend. With media linked in, the test crate may pull GStreamer init. Keep the source-player tests in `pundit-media/tests/`, not under app's tests.
 
 ---
 

@@ -139,7 +139,7 @@ Anchors are stored as f64 seconds. For every frame of two hours of 30 or 60 fps 
 - `(s * 1e9) as u64` gives back **pts − 1 ns for 1.7–1.9% of frames**. "The last frame with PTS ≤ s" then selects the *previous* frame, which is exactly the "drawings one motion step behind" bug.
 - `.round()` and `Duration::from_secs_f64` / `ClockTime::from_seconds_f64` round-trip all of them.
 
-`crates/video-coach-media/src/player/mod.rs:442` and `player/tests.rs:462` use the truncating form today.
+`crates/pundit-media/src/player/mod.rs:442` and `player/tests.rs:462` use the truncating form today.
 
 ## Q2: freeze semantics
 

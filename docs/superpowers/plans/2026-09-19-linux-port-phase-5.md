@@ -48,7 +48,7 @@
 
 ## Task 1 — Core: `frame_schedule`
 
-`video-coach-core/src/export.rs`, per X1: `OUTPUT_FPS`, `FrameSpec { source_time, zoom }` and `frame_schedule(clip, source_duration)`.
+`pundit-core/src/export.rs`, per X1: `OUTPUT_FPS`, `FrameSpec { source_time, zoom }` and `frame_schedule(clip, source_duration)`.
 - Walk `playback_segments` forward: output times only increase.
 - The count is `ceil(total·30 − 1e-6)`.
 
@@ -137,7 +137,7 @@ Commit: `feat(media): passthrough export`.
 - **`Exporter::start` returns `Result<Exporter, String>`.** It errs only for an empty schedule or a failed thread spawn; everything else arrives as `Finished`.
 - There is no `Progress(0)`: the first message is `Progress(1)` or higher.
 - **`error_text`** moved from `recorder.rs` to `lib.rs` for reuse. The player's `answer_need_context` now takes `(display, context)`, and `gl_caps()` is shared.
-- **Media now depends on `video-coach-core`** (for `FrameSpec`/`Zoom`), with `uuid` as a dev-dependency.
+- **Media now depends on `pundit-core`** (for `FrameSpec`/`Zoom`), with `uuid` as a dev-dependency.
 - **Counter layout:** a 6 × 4 grid over the picture, bits in rows 1–2, and blocks at 60% of a cell. They are ≥32 px at 480×360 and scale with the picture, so `read_counter` needs no source size.
 
 ## Task 3 — Bus, harness, UI

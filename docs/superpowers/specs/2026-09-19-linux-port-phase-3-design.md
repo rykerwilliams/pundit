@@ -44,7 +44,7 @@ Selecting a clip does **not** open a preview: preview is Phase 7. Until then, se
 
 ### C1. `UndoController` is ported to core — with multi-level delete undo
 
-`video-coach-core/src/undo.rs` ports `UndoController.swift`. It is pure: no I/O.
+`pundit-core/src/undo.rs` ports `UndoController.swift`. It is pure: no I/O.
 
 ```rust
 pub enum ClipEdit { Name(String), Tags(Vec<String>), Notes(String), ShowPip(bool) }
@@ -271,10 +271,10 @@ An empty name is allowed; the list shows "Untitled". Transcript is Phase 10.
 
 | Crate | Phase 3 contents |
 |---|---|
-| `video-coach-core` | `undo.rs` (`UndoController`, `UndoAction`, `ClipEdit`). `tag.rs`: `tag_summaries`, `tag_suggestions`. `project.rs`: `renumber`, `apply_clip_order`, `moved_order`, `source_sorted_order`, `remove_clip`, `insert_clip`, `Clip::set` (returns the old value) and `apply_edit`; `store::read` normalizes clip order; `add_recorded_clip` appends. |
-| `video-coach-media` | Nothing. |
-| `video-coach-app` | Bus: the clip commands, the history, `trash_clip`/`restore_clip`, shredding, eviction on source changes, clearing at open, `Event::Select`. UI: the `text-editing` yield, selection, inspector, tag field with suggestions, overview and filter, context menu, double-click jump, drag reorder, sort button, keys. |
-| `video-coach-harness` | End-to-end clip management. |
+| `pundit-core` | `undo.rs` (`UndoController`, `UndoAction`, `ClipEdit`). `tag.rs`: `tag_summaries`, `tag_suggestions`. `project.rs`: `renumber`, `apply_clip_order`, `moved_order`, `source_sorted_order`, `remove_clip`, `insert_clip`, `Clip::set` (returns the old value) and `apply_edit`; `store::read` normalizes clip order; `add_recorded_clip` appends. |
+| `pundit-media` | Nothing. |
+| `pundit-app` | Bus: the clip commands, the history, `trash_clip`/`restore_clip`, shredding, eviction on source changes, clearing at open, `Event::Select`. UI: the `text-editing` yield, selection, inspector, tag field with suggestions, overview and filter, context menu, double-click jump, drag reorder, sort button, keys. |
+| `pundit-harness` | End-to-end clip management. |
 
 ## Testing
 

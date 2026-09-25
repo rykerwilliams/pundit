@@ -38,36 +38,36 @@
 
 **Checked in the code while writing this plan:**
 
-- **`probe::Probe` returns `duration_seconds` and `display_aspect`, and nothing else** (`crates/video-coach-media/src/probe.rs:19-25`). It never returns caps. The compatibility gate therefore reads the copy graph's own pads; there is no second `Discoverer` pass.
-- **`ExportJob` is at `crates/video-coach-media/src/composite/export.rs:68-102`**, `scoreboard: Option<ScoreboardContext>` at `:93`.
+- **`probe::Probe` returns `duration_seconds` and `display_aspect`, and nothing else** (`crates/pundit-media/src/probe.rs:19-25`). It never returns caps. The compatibility gate therefore reads the copy graph's own pads; there is no second `Discoverer` pass.
+- **`ExportJob` is at `crates/pundit-media/src/composite/export.rs:68-102`**, `scoreboard: Option<ScoreboardContext>` at `:93`.
 - **Media reads `job.scoreboard` in exactly two places, both the per-frame overlay state:** `composite/export.rs:381-384` and `composite/preview.rs:443`. Nothing else in media touches it — not the chapters, not the entry text.
-- **Chapter titles and entry text come from core's plan, not the job:** `CompilationPlan::chapters` (`crates/video-coach-core/src/plan.rs:100`), built by `entry_chapters` (`plan.rs:116-118`) or `whole_match_chapters` (`crates/video-coach-core/src/whole_match.rs:64`).
+- **Chapter titles and entry text come from core's plan, not the job:** `CompilationPlan::chapters` (`crates/pundit-core/src/plan.rs:100`), built by `entry_chapters` (`plan.rs:116-118`) or `whole_match_chapters` (`crates/pundit-core/src/whole_match.rs:64`).
 - **Fewer than two entries means no chapters** (`plan.rs:117`), and `whole_match_chapters`'s one-per-source fallback has the same guard (`whole_match.rs:83`) — but **tagged** events are returned whatever their number (`whole_match.rs:76-82`). So a single-source copy gets its tags' chapters, and none at all when nothing is tagged.
 - **`whole_match_entries` filters out a source with no usable duration** (`whole_match.rs:23-31`), which is why the copy iterates `plan.entries` and not `project.source_videos`.
 - **`run` owns the `.part` contract**: `part_path` (`composite/export.rs:262-267`), export → rename → delete-on-error (`:270-287`), `chapters::splice` before the rename (`:437`), `ExportDone` built once (`:439`).
-- **`chapters::splice(path, &[(f64, &str)])`** is at `crates/video-coach-media/src/chapters.rs:157` and needs no change.
-- **`ExportDone`** (`composite/export.rs:132-143`) is constructed in exactly one place (`:439`). Its readers: the `bus: exported …` line (`crates/video-coach-app/src/bus/export.rs:258-269`) and `crates/video-coach-media/tests/export.rs` — the two helper signatures at `:83` and `:103` and the `done.chapters` assertion at `:1679`. **Those are the three test sites** a new field touches.
-- **`Preferences` carries `#[serde(default)]` on the container** (`crates/video-coach-core/src/project.rs:73-75`) and fills from a hand-written `Default` impl (`:91-104`). `project.rs`'s module comment (`:6-18`) forbids the field-level form. **The new field takes no attribute.**
-- **`CURRENT_FORMAT_VERSION = 10`** (`crates/video-coach-core/src/store.rs:21`), **`MIN_READABLE_FORMAT_VERSION = 7`** (`:26`). `read` refuses anything above current as `TooNew`, and `write` keeps a one-time `project.json.v<old>` backup.
+- **`chapters::splice(path, &[(f64, &str)])`** is at `crates/pundit-media/src/chapters.rs:157` and needs no change.
+- **`ExportDone`** (`composite/export.rs:132-143`) is constructed in exactly one place (`:439`). Its readers: the `bus: exported …` line (`crates/pundit-app/src/bus/export.rs:258-269`) and `crates/pundit-media/tests/export.rs` — the two helper signatures at `:83` and `:103` and the `done.chapters` assertion at `:1679`. **Those are the three test sites** a new field touches.
+- **`Preferences` carries `#[serde(default)]` on the container** (`crates/pundit-core/src/project.rs:73-75`) and fills from a hand-written `Default` impl (`:91-104`). `project.rs`'s module comment (`:6-18`) forbids the field-level form. **The new field takes no attribute.**
+- **`CURRENT_FORMAT_VERSION = 10`** (`crates/pundit-core/src/store.rs:21`), **`MIN_READABLE_FORMAT_VERSION = 7`** (`:26`). `read` refuses anything above current as `TooNew`, and `write` keeps a one-time `project.json.v<old>` backup.
 - **The two export pickers are written back in `bus/export.rs:375-378`,** only when they changed. The third joins them there.
-- **`ExportTargetRow` keeps `count`, `unit`, `seconds`** (`bus/export.rs:122-136`); `export_targets` is at `:145`, and the whole match's `"video"` unit at `:153`. **The UI builds the detail string** (`crates/video-coach-app/src/main.rs:646-655`). **Nothing about the rows changes in this plan**, so `crates/video-coach-harness/tests/reel.rs:149` and `:157` (`(count, unit)` assertions) stay as they are. The detail rework the simplify review proposed was dropped: `SourceRef` stores duration and display aspect, never width and height.
+- **`ExportTargetRow` keeps `count`, `unit`, `seconds`** (`bus/export.rs:122-136`); `export_targets` is at `:145`, and the whole match's `"video"` unit at `:153`. **The UI builds the detail string** (`crates/pundit-app/src/main.rs:646-655`). **Nothing about the rows changes in this plan**, so `crates/pundit-harness/tests/reel.rs:149` and `:157` (`(count, unit)` assertions) stay as they are. The detail rework the simplify review proposed was dropped: `SourceRef` stores duration and display aspect, never width and height.
 - **`file_name` replaces `/` and `:`** (`bus/export.rs:216-219`) and **`de_duplicate` suffixes `" (2)"`** (`:484`). `job.path.with_extension("srt")` inherits both.
-- **The rate window is the run's, not the target's:** `Active.rate` (`bus/export.rs:235`), sampled at `:436`, and `RateWindow` keeps a 5-second window with a minimum sample count and span (`crates/video-coach-core/src/export.rs:65-92`). `Active::finish_target` is at `bus/export.rs:248`.
+- **The rate window is the run's, not the target's:** `Active.rate` (`bus/export.rs:235`), sampled at `:436`, and `RateWindow` keeps a 5-second window with a minimum sample count and span (`crates/pundit-core/src/export.rs:65-92`). `Active::finish_target` is at `bus/export.rs:248`.
 - **`ScoreboardContext::for_project` is built once per run** at `bus/export.rs:574`, and frozen (Phase 9).
-- **`Command::Export { targets, resolution, quality }`** (`crates/video-coach-app/src/bus/mod.rs:251-255`, dispatched at `:846-850`).
-- **The sheet's two ComboBoxes** are at `crates/video-coach-app/ui/app.slint:1365-1385`, their properties at `:1963-1964`, wired at `:3491-3492`; `main.rs:616-627` reads them when Export starts, and `main.rs:669-694` sets them from `Preferences` when the sheet opens.
-- **`CounterKind::H264Mp4BFrames` has no audio track** (`crates/video-coach-media/src/fixtures.rs:297-305`, and the assert at `:423-424`). The copy's audio `concat` needs a fixture that has one; `counter_video_with` is at `:380`.
+- **`Command::Export { targets, resolution, quality }`** (`crates/pundit-app/src/bus/mod.rs:251-255`, dispatched at `:846-850`).
+- **The sheet's two ComboBoxes** are at `crates/pundit-app/ui/app.slint:1365-1385`, their properties at `:1963-1964`, wired at `:3491-3492`; `main.rs:616-627` reads them when Export starts, and `main.rs:669-694` sets them from `Preferences` when the sheet opens.
+- **`CounterKind::H264Mp4BFrames` has no audio track** (`crates/pundit-media/src/fixtures.rs:297-305`, and the assert at `:423-424`). The copy's audio `concat` needs a fixture that has one; `counter_video_with` is at `:380`.
 - **`packaging/smoke-test.sh:60-69`** is the element list. `concat` is not in it.
 
 ---
 
 ## Task 1: The cue list, the mode, and format v11
 
-Pure core. Nothing in it needs GStreamer, and `video-coach-core` gains no dependency.
+Pure core. Nothing in it needs GStreamer, and `pundit-core` gains no dependency.
 
 **Files:**
-- `crates/video-coach-core/src/{cues.rs (new),lib.rs,project.rs,store.rs,plan.rs}`
-- `crates/video-coach-core/tests/{cues.rs (new),project_format.rs}`
+- `crates/pundit-core/src/{cues.rs (new),lib.rs,project.rs,store.rs,plan.rs}`
+- `crates/pundit-core/tests/{cues.rs (new),project_format.rs}`
 
 **What to build:**
 
@@ -92,7 +92,7 @@ Pure core. Nothing in it needs GStreamer, and `video-coach-core` gains no depend
   - `cues_to_srt`: hours, milliseconds, numbering from 1, and an empty list → `""`.
 - **No test for `default_scoreboard_mode`.** A test that restates a two-arm `match` pins nothing the compiler doesn't.
 
-**Verify:** the gate. `cargo test -p video-coach-core` must still pass on a runner with no GStreamer — this task adds no dependency, and that is the point of the crate.
+**Verify:** the gate. `cargo test -p pundit-core` must still pass on a runner with no GStreamer — this task adds no dependency, and that is the point of the crate.
 
 **CLAUDE.md:** one line under the format paragraph — v11 adds `Preferences::last_export_scoreboard`, and a field added to `Preferences` takes **no** attribute because the container carries `#[serde(default)]`.
 
@@ -105,9 +105,9 @@ Commit: `feat(core): scoreboard cues and the export's scoreboard mode (format v1
 Media only, and it can be built and tested before anything writes a sidecar. At the end of this task a copy runs, is lossless, carries its chapters, refuses a mismatch and cancels cleanly.
 
 **Files:**
-- `crates/video-coach-media/src/composite/{mod.rs,copy.rs (new),export.rs}`
-- `crates/video-coach-media/src/fixtures.rs`
-- `crates/video-coach-media/tests/copy.rs` (new)
+- `crates/pundit-media/src/composite/{mod.rs,copy.rs (new),export.rs}`
+- `crates/pundit-media/src/fixtures.rs`
+- `crates/pundit-media/tests/copy.rs` (new)
 - `packaging/smoke-test.sh`
 
 **What to build:**
@@ -126,7 +126,7 @@ Media only, and it can be built and tested before anything writes a sidecar. At 
 7. **A fixture with AAC audio in MP4:** `CounterKind::H264AacMp4` beside `H264Mp4BFrames` — the same `x264enc bframes=2 ! mp4mux` with a silent `audiotestsrc ! avenc_aac` track sized to the video, as `Vp8WebmWithAudio` sizes its Vorbis. A new kind rather than a flag on the old one, so no existing test's fixture changes shape.
 8. **`packaging/smoke-test.sh`:** add `concat` to the element list, as every element the code names by hand is listed.
 
-**Test that must fail first,** `crates/video-coach-media/tests/copy.rs`:
+**Test that must fail first,** `crates/pundit-media/tests/copy.rs`:
 
 - **`a_copy_of_two_sources_is_lossless_and_chaptered`** — two `H264AacMp4` fixtures, a two-entry whole-match plan with chapters. In one run: `fixtures::decode_counters` reads `0..N` then `0..M` with nothing missing, repeated or out of order; `ffprobe` reports the inputs' `codec_name`, `profile`, `width` and `height`, and a video packet count equal to the sum of the inputs'; `ffprobe -show_chapters` reads the plan's chapters back at the expected times (which is what proves `reserved-max-duration` was set — without it the splice skips and this fails).
 - **`a_mismatched_pair_refuses_and_leaves_nothing`** — two fixtures at different sizes: `ExportError::Failed` naming the second file, **no `.part` and no file at the target path**. **This is the test the 320×240/640×480 measurement demands:** without the gate the run *succeeds* and writes a wrong file, so watch it fail that way first.
@@ -147,13 +147,13 @@ Commit: `feat(export): copy the whole match instead of re-encoding it`.
 Still media, and it touches **both** renderers: a burned export must remove a stale `.srt` too.
 
 **Files:**
-- `crates/video-coach-media/src/composite/export.rs`
-- `crates/video-coach-media/src/lib.rs`
-- `crates/video-coach-media/tests/{copy.rs,export.rs}`
+- `crates/pundit-media/src/composite/export.rs`
+- `crates/pundit-media/src/lib.rs`
+- `crates/pundit-media/tests/{copy.rs,export.rs}`
 
 **What to build:**
 
-1. **`ExportJob::cues: Vec<Cue>`** — the payload, computed by the bus (Task 4). Empty means no sidecar. **`video-coach-media` already depends on `video-coach-core`**, so `Cue` crosses no new boundary.
+1. **`ExportJob::cues: Vec<Cue>`** — the payload, computed by the bus (Task 4). Empty means no sidecar. **`pundit-media` already depends on `pundit-core`**, so `Cue` crosses no new boundary.
 2. **`ExportDone::sidecar: Option<PathBuf>`**, filled where `ExportDone` is built (`composite/export.rs:439`). Its three test sites (`tests/export.rs:83`, `:103`, `:1679`) and the `bus: exported …` line (Task 4) follow in the same task they belong to.
 3. **The write, after the rename, in `run`, for every renderer** (T6):
    - the path is **`job.path.with_extension("srt")`** — which inherits `file_name`'s `/` and `:` cleaning and the run's `" (2)"` de-duplication, and is the matching basename a player auto-loads;
@@ -181,10 +181,10 @@ Commit: `feat(export): the scoreboard as an .srt beside the file`.
 The app side: one picker, one mapping, and the two corrections the correctness review found in the run.
 
 **Files:**
-- `crates/video-coach-app/ui/app.slint`
-- `crates/video-coach-app/src/main.rs`
-- `crates/video-coach-app/src/bus/{mod.rs,export.rs}`
-- `crates/video-coach-harness/tests/whole_match.rs` (new)
+- `crates/pundit-app/ui/app.slint`
+- `crates/pundit-app/src/main.rs`
+- `crates/pundit-app/src/bus/{mod.rs,export.rs}`
+- `crates/pundit-harness/tests/whole_match.rs` (new)
 
 **What to build:**
 
@@ -203,7 +203,7 @@ The app side: one picker, one mapping, and the two corrections the correctness r
 5. **Clear the rate window when a target finishes** (X3): one line in `Active::finish_target` (`bus/export.rs:248`), `self.rate = RateWindow::default()`. A copy runs at ~3,600 output frames a wall second against an encode's ~20, and without this the clips queued behind it inherit that rate and the sheet promises they will finish almost immediately. `RateWindow` needs a minimum span before it answers, so the gap is silent rather than wrong.
 6. **The `bus: exported …` line** (`bus/export.rs:258-269`) gains the sidecar and the remaining `moov` reserve. Its shape is unchanged, so nothing that reads the log breaks.
 
-**Test that must fail first,** `crates/video-coach-harness/tests/whole_match.rs`:
+**Test that must fail first,** `crates/pundit-harness/tests/whole_match.rs`:
 
 - **`the_whole_match_is_copied_with_a_sidecar`** — a two-source project (the `H264AacMp4` fixture twice), a scoreboard with a kick-off and a goal, exported with `scoreboard: Some(Track)`:
   - the run's progress reaches `plan.total_frames()`;
@@ -235,7 +235,7 @@ Commit: `chore: 0.4.0, the whole match copied with the scoreboard beside it` (wi
 
 ## The user's own steps
 
-1. **Install 0.4.0** (`sudo apt install ~/Downloads/coach-cuts_0.4.0_amd64.deb`).
+1. **Install 0.4.0** (`sudo apt install ~/Downloads/pundit_0.4.0_amd64.deb`).
    **This build writes format v11.** The first save upgrades a project, and 0.3.x then refuses it ("newer than this build supports"). **`project.json.v10` beside it is the way back:** put it back as `project.json`, losing what changed since.
 2. **Export the match.** Open the export sheet on your tagged match, tick **Whole match**, leave Scoreboard on **Default**, and export. Expect **about half a minute and about 2 GB**, not an hour and 8 GB.
 3. **Check it on the laptop, in VLC.**

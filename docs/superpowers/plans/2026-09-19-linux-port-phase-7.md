@@ -28,7 +28,7 @@
 No GStreamer graph, no GL. Independently verifiable.
 
 1. **Core:** the overlay and PiP layout ratios as pure functions (the parent spec's ratio table), with tests.
-2. **`video-coach-media/src/overlay.rs`:** add `tiny-skia` to that crate (core stays media-free) and implement:
+2. **`pundit-media/src/overlay.rs`:** add `tiny-skia` to that crate (core stays media-free) and implement:
 
    ```rust
    pub fn render_overlay(clip: &Clip, record_time: f64, w: u32, h: u32) -> gst::Buffer; // premultiplied RGBA

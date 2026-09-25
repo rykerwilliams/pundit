@@ -1,0 +1,482 @@
+//! The goals reel's plan: which goals, each one's span, the clamps and merges
+//! between them, and the text bar's line.
+
+use pundit_core::export::compilation_schedule;
+use pundit_core::plan::{compilation_plan, CompilationPlan, ExportTarget};
+use pundit_core::project::{Project, SourceRef};
+use pundit_core::reel::{reel_goals, ReelSide};
+use pundit_core::scoreboard::{MatchEventKind, ReelEnd, ScoreboardConfig, TeamConfig};
+use pundit_core::stroke::Rgba;
+use pundit_core::timeline::SegmentKind;
+use pundit_core::zoom::Zoom;
+
+const HOME: MatchEventKind = MatchEventKind::HomeGoal;
+const AWAY: MatchEventKind = MatchEventKind::AwayGoal;
+
+/// A project over sources of these lengths, with no scoreboard.
+fn project(durations: &[f64]) -> Project {
+    let mut p = Project::new("p");
+    for (i, &duration_seconds) in durations.iter().enumerate() {
+        p.source_videos.push(SourceRef {
+            relative_path: format!("half{i}.mp4"),
+            display_name: format!("half{i}"),
+            duration_seconds,
+            display_aspect: 16.0 / 9.0,
+        });
+    }
+    p
+}
+
+fn with_scoreboard(mut p: Project) -> Project {
+    p.scoreboard = Some(ScoreboardConfig {
+        home: TeamConfig::new("Rovers", Rgba::RED, Rgba::RED),
+        away: TeamConfig::new("United", Rgba::RED, Rgba::RED),
+        format: Default::default(),
+        auto_back_anchor_p1: false,
+    });
+    p
+}
+
+/// The whole reel: both sides' goals.
+fn reel(p: &Project) -> CompilationPlan {
+    side(p, ReelSide::All)
+}
+
+fn side(p: &Project, side: ReelSide) -> CompilationPlan {
+    compilation_plan(p, &ExportTarget::Reel(side))
+}
+
+/// Each entry's `(source_index, start, end)`, from its one `Play` segment.
+fn spans(plan: &CompilationPlan) -> Vec<(usize, f64, f64)> {
+    plan.entries
+        .iter()
+        .map(|e| {
+            assert_eq!(e.segments.len(), 1, "one segment per entry");
+            let s = e.segments[0];
+            assert_eq!(s.kind, SegmentKind::Play);
+            (
+                e.source_index,
+                s.source_start,
+                s.source_start + s.out_duration,
+            )
+        })
+        .collect()
+}
+
+fn texts(plan: &CompilationPlan) -> Vec<&str> {
+    plan.entries.iter().map(|e| e.text.as_str()).collect()
+}
+
+#[test]
+fn a_goal_gets_twenty_seconds_before_and_six_after() {
+    let mut p = project(&[1000.0]);
+    p.append_match_event(HOME, 0, 100.0);
+    assert_eq!(p.match_events[0].reel_span(), (20.0, 6.0));
+
+    let plan = reel(&p);
+    assert_eq!(spans(&plan), [(0, 80.0, 106.0)]);
+    let entry = &plan.entries[0];
+    assert_eq!(entry.clip_id, None, "a reel entry has no clip");
+    assert_eq!((entry.start_frame, entry.frames), (0, 26 * 30));
+}
+
+#[test]
+fn a_span_is_clamped_to_its_source() {
+    let mut p = project(&[100.0]);
+    p.append_match_event(HOME, 0, 10.0);
+    p.append_match_event(AWAY, 0, 97.0);
+
+    // Both ends clamp: the first goal's lead-in would start at −10 s, and the
+    // second's tail would run to 103 s.
+    assert_eq!(spans(&reel(&p)), [(0, 0.0, 16.0), (0, 77.0, 100.0)]);
+}
+
+#[test]
+fn a_span_starts_no_earlier_than_the_previous_one_ends_on_its_source() {
+    let mut p = project(&[1000.0]);
+    p.append_match_event(HOME, 0, 100.0);
+    p.append_match_event(AWAY, 0, 120.0);
+
+    // The second goal's own lead-in would start at 100 s, inside the first
+    // entry, so it starts where that one ends instead.
+    let plan = reel(&p);
+    assert_eq!(spans(&plan), [(0, 80.0, 106.0), (0, 106.0, 126.0)]);
+    assert_eq!(plan.entries[1].start_frame, plan.entries[0].frames);
+}
+
+#[test]
+fn the_previous_span_on_another_source_does_not_clamp() {
+    let mut p = project(&[1000.0, 1000.0]);
+    p.append_match_event(HOME, 0, 995.0);
+    p.append_match_event(HOME, 1, 50.0);
+
+    assert_eq!(spans(&reel(&p)), [(0, 975.0, 1000.0), (1, 30.0, 56.0)]);
+}
+
+/// Its moment is already on screen, so it extends that entry instead of
+/// replaying the same footage in one of its own.
+#[test]
+fn a_goal_inside_the_previous_entry_extends_it() {
+    let mut p = project(&[1000.0]);
+    p.append_match_event(HOME, 0, 100.0);
+    let second = p.append_match_event(AWAY, 0, 103.0);
+    // Its own lead-in is ignored: it doesn't pull the start back.
+    p.set_reel_trim(second, ReelEnd::Start, Some((0, 1.0)))
+        .unwrap();
+
+    let plan = reel(&p);
+    assert_eq!(spans(&plan), [(0, 80.0, 109.0)]);
+    assert_eq!(
+        texts(&plan),
+        ["1 / 1 | Home goal"],
+        "numbering counts entries"
+    );
+}
+
+/// A goal inside the previous entry whose own tail ends sooner leaves the
+/// entry's end alone.
+#[test]
+fn a_merged_goal_never_shortens_the_entry() {
+    let mut p = project(&[1000.0]);
+    let first = p.append_match_event(HOME, 0, 100.0);
+    p.set_reel_trim(first, ReelEnd::End, Some((0, 120.0)))
+        .unwrap();
+    p.append_match_event(AWAY, 0, 110.0);
+
+    // The merged goal's own tail would end at 116 s, before the first goal's
+    // trimmed end.
+    assert_eq!(spans(&reel(&p)), [(0, 80.0, 120.0)]);
+}
+
+#[test]
+fn one_side_of_a_trim_overrides_only_that_side() {
+    let mut p = project(&[1000.0]);
+    let a = p.append_match_event(HOME, 0, 100.0);
+    let b = p.append_match_event(HOME, 0, 500.0);
+    p.set_reel_trim(a, ReelEnd::Start, Some((0, 95.0))).unwrap();
+    p.set_reel_trim(b, ReelEnd::End, Some((0, 502.0))).unwrap();
+
+    // `a` keeps the default tail, `b` the default lead-in.
+    assert_eq!(spans(&reel(&p)), [(0, 95.0, 106.0), (0, 480.0, 502.0)]);
+}
+
+/// Only a file edited by hand stores a trim that isn't a positive, finite
+/// number of seconds: that side takes the default, and the other side keeps
+/// its trim.
+#[test]
+fn a_nonsense_stored_trim_falls_back_to_the_default() {
+    let mut p = project(&[1000.0]);
+    p.append_match_event(HOME, 0, 100.0);
+    for bad in [0.0, -5.0, f64::NAN, f64::INFINITY] {
+        p.match_events[0].reel_lead_in = Some(bad);
+        p.match_events[0].reel_tail = Some(2.0);
+        assert_eq!(p.match_events[0].reel_span(), (20.0, 2.0), "{bad}");
+        p.match_events[0].reel_lead_in = Some(4.0);
+        p.match_events[0].reel_tail = Some(bad);
+        assert_eq!(p.match_events[0].reel_span(), (4.0, 6.0), "{bad}");
+    }
+    assert_eq!(spans(&reel(&p)), [(0, 96.0, 106.0)]);
+}
+
+/// A goal past its source's end (a hand-edited file, or a duration that
+/// shrank on a relink) has nothing to play and gets no entry; one exactly at
+/// the end still gets its lead-in.
+#[test]
+fn a_goal_at_or_past_its_sources_end() {
+    let mut p = project(&[100.0]);
+    p.append_match_event(HOME, 0, 150.0);
+    assert!(reel(&p).entries.is_empty());
+
+    p.append_match_event(AWAY, 0, 100.0);
+    let plan = reel(&p);
+    assert_eq!(spans(&plan), [(0, 80.0, 100.0)]);
+    assert_eq!(texts(&plan), ["1 / 1 | Away goal"]);
+}
+
+#[test]
+fn goals_are_in_match_order_across_sources() {
+    let mut p = project(&[1000.0, 1000.0]);
+    // Stored out of match order: the second half's goal was tagged first.
+    p.append_match_event(AWAY, 1, 100.0);
+    p.append_match_event(HOME, 0, 900.0);
+    p.append_match_event(HOME, 0, 200.0);
+
+    let plan = reel(&p);
+    assert_eq!(
+        spans(&plan),
+        [(0, 180.0, 206.0), (0, 880.0, 906.0), (1, 80.0, 106.0)]
+    );
+    assert_eq!(
+        texts(&plan),
+        [
+            "1 / 3 | Home goal",
+            "2 / 3 | Home goal",
+            "3 / 3 | Away goal"
+        ]
+    );
+}
+
+#[test]
+fn the_text_carries_the_score_after_the_goal() {
+    let mut p = with_scoreboard(project(&[3000.0]));
+    p.append_match_event(MatchEventKind::StartStop, 0, 10.0);
+    p.append_match_event(HOME, 0, 100.0);
+    p.append_match_event(AWAY, 0, 500.0);
+
+    assert_eq!(
+        texts(&reel(&p)),
+        ["1 / 2 | Rovers goal | 1-0", "2 / 2 | United goal | 1-1"]
+    );
+}
+
+/// No state: a scoreboard is set up but no kick-off is tagged yet.
+#[test]
+fn the_text_drops_the_score_when_there_is_none() {
+    let mut p = with_scoreboard(project(&[1000.0]));
+    p.append_match_event(AWAY, 0, 100.0);
+
+    assert_eq!(texts(&reel(&p)), ["1 / 1 | United goal"]);
+}
+
+#[test]
+fn the_text_says_home_or_away_with_no_scoreboard() {
+    let mut p = project(&[1000.0]);
+    p.append_match_event(HOME, 0, 100.0);
+    p.append_match_event(AWAY, 0, 500.0);
+
+    assert_eq!(texts(&reel(&p)), ["1 / 2 | Home goal", "2 / 2 | Away goal"]);
+}
+
+/// A goal tagged after the final whistle doesn't count, but it is the coach's
+/// tagging slip to see, not something the reel hides.
+#[test]
+fn a_goal_the_scoreboard_does_not_count_still_has_an_entry() {
+    let mut p = with_scoreboard(project(&[7000.0]));
+    for t in [0.0, 2700.0, 3000.0, 5700.0] {
+        p.append_match_event(MatchEventKind::StartStop, 0, t);
+    }
+    p.append_match_event(HOME, 0, 100.0);
+    p.append_match_event(HOME, 0, 6000.0);
+
+    assert_eq!(
+        texts(&reel(&p)),
+        ["1 / 2 | Rovers goal | 1-0", "2 / 2 | Rovers goal | 1-0"]
+    );
+}
+
+#[test]
+fn a_project_with_no_goals_has_an_empty_reel() {
+    let mut p = with_scoreboard(project(&[1000.0]));
+    assert!(reel(&p).entries.is_empty());
+    p.append_match_event(MatchEventKind::StartStop, 0, 10.0);
+    assert!(reel(&p).entries.is_empty(), "a start/stop is not a goal");
+}
+
+/// Nothing reel-specific in the schedule: the source runs from the span's
+/// start at 1x, at identity zoom.
+#[test]
+fn the_schedule_plays_each_span_at_identity_zoom() {
+    let mut p = project(&[1000.0]);
+    p.append_match_event(HOME, 0, 100.0);
+
+    let c = compilation_schedule(&p, &ExportTarget::Reel(ReelSide::All));
+    assert_eq!(c.frames.len(), c.plan.total_frames());
+    assert_eq!(c.frames[0].source_time, 80.0);
+    let last = c.frames.last().unwrap();
+    assert!((last.source_time - (106.0 - 1.0 / 30.0)).abs() < 1e-9);
+    assert!(c.frames.iter().all(|f| f.zoom == Zoom::IDENTITY));
+}
+
+// -------------------------------------------------------------- one side
+
+/// With one side scoring, its reel is the whole reel — the same entries and
+/// the same captions — and the other side's is empty (spec R1b).
+#[test]
+fn one_sides_reel_is_the_whole_reel_when_only_it_has_scored() {
+    let mut p = project(&[1000.0]);
+    p.append_match_event(HOME, 0, 100.0);
+    p.append_match_event(HOME, 0, 500.0);
+
+    assert_eq!(side(&p, ReelSide::Home), reel(&p));
+    assert!(side(&p, ReelSide::Away).entries.is_empty());
+}
+
+/// A side's reel holds that side's goals, numbered within it: the other
+/// side's are not in it and do not count towards its total. The burned-in
+/// score is still the match's, so it counts every goal.
+#[test]
+fn a_sides_reel_numbers_its_own_goals() {
+    let mut p = with_scoreboard(project(&[3000.0]));
+    p.append_match_event(MatchEventKind::StartStop, 0, 10.0);
+    p.append_match_event(HOME, 0, 100.0);
+    p.append_match_event(AWAY, 0, 500.0);
+    p.append_match_event(HOME, 0, 900.0);
+
+    let home = side(&p, ReelSide::Home);
+    assert_eq!(spans(&home), [(0, 80.0, 106.0), (0, 880.0, 906.0)]);
+    assert_eq!(
+        texts(&home),
+        ["1 / 2 | Rovers goal | 1-0", "2 / 2 | Rovers goal | 2-1"]
+    );
+    assert_eq!(
+        texts(&side(&p, ReelSide::Away)),
+        ["1 / 1 | United goal | 1-1"]
+    );
+}
+
+/// Only a goal in the same reel merges into its entry: with the two sides
+/// split, each keeps its own span around its own goal.
+#[test]
+fn only_a_goal_in_the_same_reel_merges() {
+    let mut p = project(&[1000.0]);
+    p.append_match_event(HOME, 0, 100.0);
+    p.append_match_event(AWAY, 0, 103.0);
+
+    assert_eq!(spans(&reel(&p)), [(0, 80.0, 109.0)]);
+    assert_eq!(spans(&side(&p, ReelSide::Home)), [(0, 80.0, 106.0)]);
+    assert_eq!(spans(&side(&p, ReelSide::Away)), [(0, 83.0, 109.0)]);
+}
+
+/// What a row counts is the reel's own goals, which a merge does not reduce.
+#[test]
+fn a_sides_goals_are_its_own() {
+    let mut p = project(&[1000.0]);
+    p.append_match_event(HOME, 0, 100.0);
+    p.append_match_event(AWAY, 0, 103.0);
+    p.append_match_event(HOME, 0, 500.0);
+
+    let count = |s| reel_goals(&p, s).len();
+    assert_eq!(
+        (
+            count(ReelSide::All),
+            count(ReelSide::Home),
+            count(ReelSide::Away)
+        ),
+        (3, 2, 1)
+    );
+}
+
+// -------------------------------------------------------------- chapters
+
+fn chapters(plan: &CompilationPlan) -> Vec<(f64, &str)> {
+    plan.chapters
+        .iter()
+        .map(|(at, title)| (*at, title.as_str()))
+        .collect()
+}
+
+/// A match tagged end to end over two 45-minute halves.
+fn tagged_match() -> Project {
+    let mut p = with_scoreboard(project(&[7000.0]));
+    for t in [0.0, 2700.0, 3000.0, 5700.0] {
+        p.append_match_event(MatchEventKind::StartStop, 0, t);
+    }
+    p
+}
+
+/// A reel's chapters are a second wording of its entries, not the text bar
+/// burned into them: a line of prose to read in a list.
+#[test]
+fn a_reels_chapters_read_as_prose_not_as_the_text_bar() {
+    let mut p = tagged_match();
+    p.append_match_event(HOME, 0, 100.0);
+    p.append_match_event(AWAY, 0, 500.0);
+
+    let plan = reel(&p);
+    assert_eq!(
+        texts(&plan),
+        ["1 / 2 | Rovers goal | 1-0", "2 / 2 | United goal | 1-1"],
+        "the burned-in caption is unchanged"
+    );
+    assert_eq!(
+        chapters(&plan),
+        [(0.0, "Goal 1 — Rovers 1-0"), (26.0, "Goal 2 — United 1-1")]
+    );
+}
+
+/// The period the goals move into is marked on the chapter that is already
+/// at the boundary: a reel's entries run back to back, so there is no gap
+/// between them to put a chapter of its own in.
+#[test]
+fn a_reel_marks_where_the_second_halfs_goals_begin() {
+    let mut p = tagged_match();
+    p.append_match_event(HOME, 0, 100.0);
+    p.append_match_event(AWAY, 0, 500.0);
+    p.append_match_event(HOME, 0, 3100.0);
+    p.append_match_event(HOME, 0, 4000.0);
+
+    assert_eq!(
+        chapters(&reel(&p)),
+        [
+            (0.0, "Goal 1 — Rovers 1-0"),
+            (26.0, "Goal 2 — United 1-1"),
+            (52.0, "Second half: Goal 3 — Rovers 2-1"),
+            (78.0, "Goal 4 — Rovers 3-1"),
+        ]
+    );
+}
+
+/// Quarters, and a marker that is neither a half nor the first boundary.
+#[test]
+fn a_marker_is_named_after_the_period_the_format_has() {
+    let mut p = with_scoreboard(project(&[7000.0]));
+    if let Some(c) = p.scoreboard.as_mut() {
+        c.format.regulation_periods = 4;
+        c.format.regulation_period_seconds = 12 * 60;
+    }
+    for t in [0.0, 720.0, 1000.0, 1720.0, 2000.0, 2720.0, 3000.0, 3720.0] {
+        p.append_match_event(MatchEventKind::StartStop, 0, t);
+    }
+    p.append_match_event(HOME, 0, 100.0);
+    p.append_match_event(HOME, 0, 2100.0);
+    p.append_match_event(HOME, 0, 3100.0);
+
+    let plan = reel(&p);
+    let titles: Vec<&str> = chapters(&plan).into_iter().map(|c| c.1).collect();
+    assert_eq!(
+        titles,
+        [
+            "Goal 1 — Rovers 1-0",
+            "Third quarter: Goal 2 — Rovers 2-0",
+            "Fourth quarter: Goal 3 — Rovers 3-0",
+        ]
+    );
+}
+
+/// A reel whose goals all fall in one period gets no marker, and neither does
+/// its first entry — a boundary needs an entry on each side of it.
+#[test]
+fn one_period_of_goals_is_never_marked() {
+    let mut p = tagged_match();
+    p.append_match_event(HOME, 0, 3100.0);
+    p.append_match_event(HOME, 0, 4000.0);
+
+    assert_eq!(
+        chapters(&reel(&p)),
+        [(0.0, "Goal 1 — Rovers 1-0"), (26.0, "Goal 2 — Rovers 2-0")],
+        "the first entry opens the film, not a period"
+    );
+}
+
+/// With no scoreboard there are no periods to mark and no team names, exactly
+/// as the text bar has none.
+#[test]
+fn chapters_say_home_or_away_with_no_scoreboard() {
+    let mut p = project(&[7000.0]);
+    p.append_match_event(HOME, 0, 100.0);
+    p.append_match_event(AWAY, 0, 500.0);
+
+    assert_eq!(
+        chapters(&reel(&p)),
+        [(0.0, "Goal 1 — Home"), (26.0, "Goal 2 — Away")]
+    );
+}
+
+/// As for every other target, a single entry gets no chapters at all: one
+/// chapter only repeats the file.
+#[test]
+fn a_one_goal_reel_has_no_chapters() {
+    let mut p = tagged_match();
+    p.append_match_event(HOME, 0, 100.0);
+    assert!(reel(&p).chapters.is_empty());
+}

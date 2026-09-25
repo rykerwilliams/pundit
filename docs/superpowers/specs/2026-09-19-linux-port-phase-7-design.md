@@ -51,7 +51,7 @@ Select a clip and play it back inside the app: the game video edited by the coac
 
 ### P1. Preview is the export graph with a different tail
 
-`video-coach-media/src/export/` becomes a shared composite builder. Everything up to and including `glvideomixer` is common; the tail differs:
+`pundit-media/src/export/` becomes a shared composite builder. Everything up to and including `glvideomixer` is common; the tail differs:
 
 | | Export | Preview |
 |---|---|---|
@@ -89,7 +89,7 @@ Select a clip and play it back inside the app: the game video edited by the coac
 
 ### P4. The overlay rasterizer
 
-`video-coach-media` gains `overlay.rs`:
+`pundit-media` gains `overlay.rs`:
 
 ```rust
 pub fn render_overlay(clip: &Clip, record_time: f64, w: u32, h: u32) -> gst::Buffer; // premultiplied RGBA
@@ -125,10 +125,10 @@ pub fn render_overlay(clip: &Clip, record_time: f64, w: u32, h: u32) -> gst::Buf
 
 | Crate | Phase 7 contents |
 |---|---|
-| `video-coach-core` | The overlay and PiP layout ratios as pure functions. (The audio splice and ramps move to Phase 8.) |
-| `video-coach-media` | The shared composite builder (output size and GL context as parameters); `overlay.rs`; the preview tail into the mailbox; the natively-played recording branch; seek handling with the generation counter; `FrameMailbox` hoisted. |
-| `video-coach-app` | Bus: `OpenPreview` / `ClosePreview`, exclusivity, `Event::Preview`, position from the pump, transport routed to the preview. UI: Play opens a preview, identity zoom and no stroke layer while previewing, the indicator, Close, Esc. |
-| `video-coach-harness` | Open, play, seek, close; the refusals. |
+| `pundit-core` | The overlay and PiP layout ratios as pure functions. (The audio splice and ramps move to Phase 8.) |
+| `pundit-media` | The shared composite builder (output size and GL context as parameters); `overlay.rs`; the preview tail into the mailbox; the natively-played recording branch; seek handling with the generation counter; `FrameMailbox` hoisted. |
+| `pundit-app` | Bus: `OpenPreview` / `ClosePreview`, exclusivity, `Event::Preview`, position from the pump, transport routed to the preview. UI: Play opens a preview, identity zoom and no stroke layer while previewing, the indicator, Close, Esc. |
+| `pundit-harness` | Open, play, seek, close; the refusals. |
 
 ## Testing
 
