@@ -301,6 +301,23 @@ pub struct Slate {
     pub tags: Vec<String>,
 }
 
+/// One field of a [`Slate`], for [`Project::edit_slate`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SlateEdit {
+    Name(String),
+    /// Already normalized by [`crate::tag::normalize_tags`], as a clip's are.
+    Tags(Vec<String>),
+}
+
+/// [`Project::mark_slate_out`] refused; the project is unchanged.
+#[derive(thiserror::Error, Debug, Clone, Copy, PartialEq)]
+pub enum SlateError {
+    #[error("press i first: there is no range open on this video")]
+    NothingOpen,
+    #[error("that is before the range started, at {in_seconds:.1}s")]
+    OutBeforeIn { in_seconds: f64 },
+}
+
 impl Project {
     pub fn new(name: impl Into<String>) -> Self {
         Project {
@@ -559,6 +576,69 @@ impl Project {
             slate_id: None,
         });
         self.clips.last().expect("just pushed")
+    }
+
+    /// Open a range on `source_index` at `in_seconds`, returning its id.
+    ///
+    /// **The slate is stored on this press**, with no out point yet, which is
+    /// what keeps a half-marked range from being UI state that vanishes when
+    /// the app closes — and what saves marking from needing an in-progress
+    /// source index to invalidate when the source list changes underneath it.
+    pub fn mark_slate_in(&mut self, source_index: usize, in_seconds: f64) -> Uuid {
+        let id = Uuid::new_v4();
+        self.slates.push(Slate {
+            id,
+            source_index,
+            in_seconds,
+            out_seconds: None,
+            name: String::new(),
+            tags: Vec::new(),
+        });
+        id
+    }
+
+    /// Close the range most recently opened on `source_index`.
+    ///
+    /// **Most recently opened, which is why the stored order is the marked
+    /// order** — [`slates_sorted`](Self::slates_sorted) is for reading and
+    /// nothing re-sorts the `Vec`. A coach who opens two and closes one closes
+    /// the one they just started.
+    pub fn mark_slate_out(
+        &mut self,
+        source_index: usize,
+        out_seconds: f64,
+    ) -> Result<Uuid, SlateError> {
+        let slate = self
+            .slates
+            .iter_mut()
+            .rev()
+            .find(|s| s.source_index == source_index && s.out_seconds.is_none())
+            .ok_or(SlateError::NothingOpen)?;
+        if out_seconds <= slate.in_seconds {
+            return Err(SlateError::OutBeforeIn {
+                in_seconds: slate.in_seconds,
+            });
+        }
+        slate.out_seconds = Some(out_seconds);
+        Ok(slate.id)
+    }
+
+    /// Applies `edit` to slate `id`, or does nothing when it is gone.
+    pub fn edit_slate(&mut self, id: Uuid, edit: SlateEdit) {
+        let Some(slate) = self.slates.iter_mut().find(|s| s.id == id) else {
+            return;
+        };
+        match edit {
+            SlateEdit::Name(name) => slate.name = name.trim().to_owned(),
+            SlateEdit::Tags(tags) => slate.tags = tags,
+        }
+    }
+
+    /// Removes slate `id`. The clips it was shot into keep their `slate_id`,
+    /// which then names nothing — harmless, since "has it been shot?" is asked
+    /// of the clips and never of the slate.
+    pub fn delete_slate(&mut self, id: Uuid) {
+        self.slates.retain(|s| s.id != id);
     }
 
     /// Slates in reading order: by source, then by where they start. There is

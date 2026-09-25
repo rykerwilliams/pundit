@@ -17,6 +17,7 @@ mod preview;
 mod project;
 mod recording;
 mod scoreboard;
+mod slates;
 mod sources;
 mod state;
 mod transcribe;
@@ -36,7 +37,9 @@ use gstreamer as gst;
 use gstreamer_gl as gst_gl;
 use pundit_core::highlight::{HighlightEdit, NormRect};
 use pundit_core::plan::{ExportTarget, ScoreboardMode};
-use pundit_core::project::{AspectMismatch, Project, Quality, Resolution, SourceReferenced};
+use pundit_core::project::{
+    AspectMismatch, Project, Quality, Resolution, SlateEdit, SourceReferenced,
+};
 use pundit_core::scoreboard::{MatchEventKind, ReelEnd, ScoreboardConfig};
 use pundit_core::skip::SkipCoordinator;
 use pundit_core::store::StoreError;
@@ -178,6 +181,26 @@ pub enum Command {
         rect: NormRect,
         color: Rgba,
     },
+    /// `i`: open a range at the displayed frame, waiting for its commentary
+    /// (the slates spec). `source_seconds` is that frame's source time,
+    /// captured by the caller like every logged position.
+    MarkSlateIn {
+        source_index: usize,
+        source_seconds: f64,
+    },
+    /// `o`: close the range most recently opened on this video. Refused out
+    /// loud — as a notice, since this can arrive mid-take — when there is none
+    /// open, or when the out point is not after the in point.
+    MarkSlateOut {
+        source_index: usize,
+        source_seconds: f64,
+    },
+    /// Rename or retag a slate from its row.
+    EditSlate {
+        id: Uuid,
+        edit: SlateEdit,
+    },
+    DeleteSlate(Uuid),
     /// Rename or recolour a highlight from the Highlights panel.
     EditHighlight {
         id: Uuid,
@@ -519,6 +542,10 @@ pub enum UserError {
     /// the transport keys.
     #[error("{0}")]
     Scoreboard(String),
+    /// A notice, for the same reason [`UserError::Scoreboard`] is one: marking
+    /// is on the recording allow-list, so this can arrive over a live take.
+    #[error("{0}")]
+    Slate(String),
     #[error("{0}")]
     Io(String),
 }
@@ -533,6 +560,7 @@ impl UserError {
                 | UserError::DeviceFallback { .. }
                 | UserError::StopNotClean
                 | UserError::Scoreboard(_)
+                | UserError::Slate(_)
                 | UserError::Basket(_)
         )
     }
@@ -885,6 +913,13 @@ impl Bus {
                     // about them (spec H3), so placing a key is live too.
                     // Renaming, recolouring and deleting wait.
                     | Command::SetHighlightKey { .. }
+                    // The coach spots the next moment while talking over this
+                    // one, so marking a range is live for the same reason: a
+                    // record that belongs to the footage is placeable whenever
+                    // the footage is on screen. Shooting, editing and deleting
+                    // a slate wait, as every other edit does.
+                    | Command::MarkSlateIn { .. }
+                    | Command::MarkSlateOut { .. }
             )
         {
             return eprintln!("bus: refused while recording: {cmd:?}");
@@ -924,6 +959,16 @@ impl Bus {
                 rect,
                 color,
             } => self.set_highlight_key(id, source_index, source_seconds, rect, color),
+            Command::MarkSlateIn {
+                source_index,
+                source_seconds,
+            } => self.mark_slate_in(source_index, source_seconds),
+            Command::MarkSlateOut {
+                source_index,
+                source_seconds,
+            } => self.mark_slate_out(source_index, source_seconds),
+            Command::EditSlate { id, edit } => self.edit_slate(id, edit),
+            Command::DeleteSlate(id) => self.delete_slate(id),
             Command::EditHighlight { id, edit } => self.edit_highlight(id, edit),
             Command::DeleteHighlightKey { id, source_seconds } => {
                 self.delete_highlight_key(id, source_seconds)
