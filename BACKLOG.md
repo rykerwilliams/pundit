@@ -733,6 +733,18 @@ Each entry: what, why deferred, when to revisit.
   `tests/export.rs` again, in 2 of 3 `cargo test --workspace` runs at 2430d39,
   both after 5 of its 29 tests — while the same binary run on its own passed 4
   times in a row. Whatever the trigger is, it is not the binary alone.
+- **Update (2026-09-25, the rename):** a **third** face of the same pattern, and
+  the most informative one. A workspace run at 77cc357 died in the harness's
+  `tests/transcribe.rs` after its first test with `gst_mini_object_copy:
+  assertion 'mini_object != NULL' failed` followed by `Caught a segmentation
+  fault while loading plugin file: …/libgstlevel.so` and exit 255; the binary
+  alone passed 18/18 straight after. That is a crash **inside GStreamer's
+  registry-loading fork**, not in whisper and not in Mesa, which makes a shared
+  registry contended by several test binaries at once the strongest lead yet —
+  and points at `GST_REGISTRY=<per-binary path>` as the experiment to run before
+  any memory checker. The whole class is: one test binary of several, always
+  under a parallel workspace run, never alone. 917 tests passed in that run and
+  nothing asserted false.
 
 71. **A possible thump at the start of every commentary recording.** The
   Android session's audio analyzer found that real Linux recordings open with
