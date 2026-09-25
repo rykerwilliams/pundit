@@ -1076,9 +1076,12 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **Why deferred:** it is a licensing question with a small piece of code
   attached, not the other way round — and the code now has a second half (a
   search UI and a fetcher) that wants #78's settings screen to exist first.
-- **When to revisit:** after #78. The only thing still needed from the coach is
-  whether they will register a Jamendo client ID, or whether the app should stay
-  on shape (a) alone.
+- **Decided, 2026-09-25:** Jamendo, and the coach will hold the client ID. So
+  the build is: the local folder first (the mixer's only input), then a Jamendo
+  search that fetches into the same cache, with the key in #78's settings and
+  the folder as the no-key fallback.
+- **When to revisit:** after #78, which is where the key field lives. Nothing
+  further is needed from the coach.
 
 85. **Recent projects, and a drawer to switch between them.** The coach
   (2026-09-24): "'recent projects' menu or similar? also could have a project
