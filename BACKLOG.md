@@ -377,13 +377,27 @@ Each entry: what, why deferred, when to revisit.
 - **When to revisit:** the checkbox shipped in the Phase 3 inspector
   (per clip); the polish at the end of the port.
 
-### 43. `a_player_error_is_reported_and_play_recovers` is timing-sensitive under load
-- **Why deferred:** during the Phase 4 review it failed twice in full
-  workspace runs with the machine at load ~19 (a second typefind error
-  arrived after the reload), then passed repeatedly on the same tree and on
-  a clean checkout. Not touched by Phase 4.
-- **When to revisit:** if it fails in CI; make the test tolerate repeated
-  errors from one failure, or wait for the reload's `Loaded` before asserting.
+### 43. `a_player_error_is_reported_and_play_recovers` — RESOLVED (2026-09-25)
+- It failed in CI, which was this entry's own trigger, on a **docs-only**
+  commit — so the cause was never the code under it. The mechanism: one
+  unreadable file posts **two** errors (typefind's, then the stream error
+  behind it), and the second can arrive after the reload has already started,
+  pausing playback for a failure that is over.
+- The test now presses play once per pause, exactly as a coach would, and
+  asserts where playback *ends up* rather than that it was never interrupted.
+  Proven both ways: with an unexpected pause injected it passes 3/3, and with
+  the tolerance removed and the same injection it fails with the flake's own
+  `timed out waiting for playing in b`.
+- **What was deliberately not done:** filtering stale errors in
+  `SourcePlayer`, the way it filters a stale `ASYNC_DONE`. There is no obvious
+  correct filter — the *first*, real error also arrives before the load's
+  `ASYNC_DONE`, so "ignore errors until the load settles" would throw away the
+  detection this test exists for, and GStreamer's messages carry nothing that
+  distinguishes the second error from the first. The app's own behaviour in the
+  rare case is one spurious pause and one spurious error line after a file is
+  repaired, which the coach answers with another press of play. Revisit only if
+  that is seen in real use, with a load epoch on the player rather than a
+  guess at the message.
 
 ## Phase 3 deferrals (spec `docs/superpowers/specs/2026-09-19-linux-port-phase-3-design.md`)
 
