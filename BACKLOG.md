@@ -1034,11 +1034,51 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   the track (loop, fade, or refuse); and whether the same track is used every
   time or it rotates, since a coach exporting ten matches does not want ten
   identical soundtracks.
+- **The coach chose, 2026-09-25:** not a folder they fill — *"what i'd rather
+  have is like some interface to a free music search? like free music archive
+  or similar"*. So the app searches a catalogue, the coach picks a genre, and
+  the track arrives without them hunting for files. That answers the shape
+  question above: **(a) is still the floor, but it is no longer the ceiling.**
+- **Free Music Archive cannot be that catalogue: its API is shut down.** FMA's
+  own app-developers page says they retired it because of server load, and asks
+  that apps host any FMA audio themselves under each track's CC terms. So FMA is
+  a place a human browses, not something software queries.
+- **Jamendo is the one that actually fits**, and it is worth naming so the next
+  session does not re-derive it: a documented v3.0 API over a Creative Commons
+  catalogue, search by genre/mood/tempo (which is exactly "pick genre"),
+  **35,000 requests a month free for a non-commercial app**, and — the part that
+  matters most — **the licence of each track is a field in the response**, so
+  the filter can be enforced by the app instead of trusted to the coach.
+  Runners-up if it ever goes away: Openverse's API (a CC aggregator that
+  includes audio) and the Internet Archive's audio collections.
+- **The client ID is a real decision, not a config detail.** Jamendo's API wants
+  one, and this program is AGPL: an ID compiled into public source is one shared
+  quota that anyone can spend, and the first abuse takes the feature down for
+  every coach. **Recommended default:** ship none, put a field in the settings
+  screen (#78) where the coach pastes their own, and fall back to shape (a) when
+  it is empty — the app is then useful with no account and better with one.
+- **Attribution is an output, and the app already writes outputs.** Every CC
+  track requires credit in some form, so a reel that used one writes it beside
+  the video exactly as `.chapters.txt` is written — same `finish`, same name
+  cleaning, same never-fatal rule — and the text is ready to paste into a
+  YouTube description. Burning a credit over the last seconds is a second step,
+  not the first one.
+- **The network discipline is already written down; follow it.** Transcription's
+  model download is the precedent: permission carried on the job type rather
+  than inferred from a path, downloads only under `$XDG_CACHE_HOME/pundit/`,
+  a checksum before use, and **no test may reach the network** — serve from
+  `pundit_media::fixtures::serve`. A search adds a second network surface, and
+  it must be as boring as the first.
+- **The shape that keeps the licence question out of the audio path:** the
+  mixer does not care where a file came from. Build the local folder first, make
+  the search a *fetcher* that lands tracks in the same cache the mixer reads,
+  and the export path never learns that Jamendo exists.
 - **Why deferred:** it is a licensing question with a small piece of code
-  attached, not the other way round.
-- **When to revisit:** when the coach says which of the three shapes they want.
-  (a) is buildable immediately and is the one that promises nothing on anyone
-  else's behalf.
+  attached, not the other way round — and the code now has a second half (a
+  search UI and a fetcher) that wants #78's settings screen to exist first.
+- **When to revisit:** after #78. The only thing still needed from the coach is
+  whether they will register a Jamendo client ID, or whether the app should stay
+  on shape (a) alone.
 
 85. **Recent projects, and a drawer to switch between them.** The coach
   (2026-09-24): "'recent projects' menu or similar? also could have a project
