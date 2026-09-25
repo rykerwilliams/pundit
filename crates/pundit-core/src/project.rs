@@ -16,6 +16,13 @@
 //! genuinely optional keys get a default at all: defaulting `clips` would let a
 //! truncated `project.json` load as an empty project, after which the next save
 //! destroys the user's work.
+//!
+//! **`Option` is serde's own exception to "a new struct's fields get none"**: a
+//! missing field of type `Option` reads as `None` rather than failing, whatever
+//! the struct says. `Slate::out_seconds` leans on that and is harmless, because
+//! an open range is a legal state — but a new struct whose `Option` means
+//! something load-bearing will not get the malformed-file error this header
+//! otherwise promises, so say what a missing one means.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -539,7 +546,7 @@ impl Project {
         duration: f64,
         events: Vec<CommentaryEvent>,
         created_at: String,
-    ) -> &Clip {
+    ) -> &mut Clip {
         // `as` truncates toward zero and saturates, so a negative or NaN start
         // names as 00:00:00, like macOS's `max(0, ...)`.
         let total = pending.start_source_seconds as u64;
@@ -575,7 +582,7 @@ impl Project {
             // function of the recording.
             slate_id: None,
         });
-        self.clips.last().expect("just pushed")
+        self.clips.last_mut().expect("just pushed")
     }
 
     /// Open a range on `source_index` at `in_seconds`, returning its id.

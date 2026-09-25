@@ -102,8 +102,11 @@ impl Bus {
     /// `UserError::NoCamera` comes from `resolve_camera` inside
     /// `capture_sources`, so a caller that seeked first would move the game
     /// video to the in point and *then* refuse on a machine with no camera —
-    /// breaking the promise the comment below makes. Every refusal still
-    /// leaves the player exactly as it was.
+    /// breaking the promise the comment below makes. Every refusal `can_record`
+    /// and `capture_sources` raise still leaves the player exactly as it was —
+    /// the two below the seek (the recordings directory, and the recorder
+    /// failing to start) leave it at the in point, which is harmless and where
+    /// the coach was going anyway.
     pub(super) fn start_recording(&mut self, zoom: Zoom, from: Option<Shot>) {
         if let Err(e) = self.can_record() {
             return self.emit(Event::Error(e));
@@ -377,18 +380,20 @@ impl Bus {
                     .find(|s| s.id == id)
                     .map(|s| (s.name.clone(), s.tags.clone()))
             });
-            open.project
-                .add_recorded_clip(active.pending, outcome.duration, events, created_at());
-            if let Some(clip) = open.project.clips.last_mut() {
-                clip.slate_id = active.slate;
-                if let Some((name, tags)) = inherited {
-                    // An unnamed slate leaves the generated "2-01:02:05"
-                    // alone: it says more than an empty name would.
-                    if !name.is_empty() {
-                        clip.name = name;
-                    }
-                    clip.tags = tags;
+            let clip = open.project.add_recorded_clip(
+                active.pending,
+                outcome.duration,
+                events,
+                created_at(),
+            );
+            clip.slate_id = active.slate;
+            if let Some((name, tags)) = inherited {
+                // An unnamed slate leaves the generated "2-01:02:05" alone: it
+                // says more than an empty name would.
+                if !name.is_empty() {
+                    clip.name = name;
                 }
+                clip.tags = tags;
             }
         }
         self.project_changed();

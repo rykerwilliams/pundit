@@ -56,11 +56,14 @@ pub fn tag_summaries(clips: &[Clip]) -> Vec<TagSummary> {
 
 /// Every tag in use, for [`tag_suggestions`]: a clip's **and a slate's**.
 ///
-/// A coach who tags twelve ranges `corners` live, before any is shot, must
-/// have `corners` offered on the thirteenth — so the vocabulary is the union,
-/// while the tag **overview** stays clips-only. That overview's columns are a
-/// clip count and a total duration, and a slate has neither: it is a view of
-/// exportable material, and this is a spelling aid.
+/// A coach who tags ranges `corners` live, before any is shot, must have
+/// `corners` offered when they next tag a **clip** — so the vocabulary is the
+/// union, while the tag **overview** stays clips-only. That overview's columns
+/// are a clip count and a total duration, and a slate has neither: it is a view
+/// of exportable material, and this is a spelling aid.
+///
+/// The slate's own tag field has no suggestions popover today (only the clip
+/// inspector's is wired to one), so the union's benefit runs one way for now.
 pub fn tag_vocabulary(project: &crate::project::Project) -> Vec<String> {
     let mut out: Vec<String> = project
         .clips

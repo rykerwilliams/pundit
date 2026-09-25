@@ -924,18 +924,18 @@ fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             }
         }
     });
+    // The selection stays after a shoot: the bus can still refuse it (no
+    // camera, an open preview, a running export), and collapsing the row would
+    // make the coach find it again to try twice.
     window.on_shoot_slate({
-        let (bus, weak) = (bus.clone(), window.as_weak());
+        let bus = bus.clone();
         move |id| {
-            let (Some(w), Some(id)) = (weak.upgrade(), parse_id(&id)) else {
-                return;
-            };
-            bus.borrow().send(Command::ShootSlate {
-                id,
-                zoom: UI.with_borrow(|ui| ui.zoom),
-            });
-            // The take owns the picture now; the row's fields would be stale.
-            w.set_selected_slate(SharedString::new());
+            if let Some(id) = parse_id(&id) {
+                bus.borrow().send(Command::ShootSlate {
+                    id,
+                    zoom: UI.with_borrow(|ui| ui.zoom),
+                });
+            }
         }
     });
     window.on_delete_slate({

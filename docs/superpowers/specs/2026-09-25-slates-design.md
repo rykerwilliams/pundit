@@ -114,9 +114,13 @@ source.** There is no in-progress UI state, and that is the point:
   rule**: mark `i` on video 2, drag video 2 to the front, press `o`, and the
   slate lands on whatever file is now at index 2.
 
-The times come from the **displayed frame's source time** (`shown_position` in
-`main.rs`, the same function the highlight keys use), captured on the UI thread
-per the bus contract — never queried in the handler.
+The times come from the game video's position (`scan_source_position` in
+`main.rs`, the same function a **match tag** uses), captured on the UI thread
+per the bus contract — never queried in the handler. Not `shown_source_position`,
+which a highlight key uses: that one exists because a ring must sit on exactly
+the frame it was drawn over. A slate is a range, like a tag, and the two agree
+to within a sub-frame anyway except mid-seek, where `shown_position` falls back
+to the same `locate` this uses.
 
 **Both keys are gated on the existing `can-tag`** (`can-play && !previewing &&
 recording-phase != starting`), not on a new gate. Without `!previewing` the

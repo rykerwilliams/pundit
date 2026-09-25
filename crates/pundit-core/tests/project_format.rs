@@ -426,7 +426,7 @@ fn an_open_slate_and_a_shot_one_round_trip() {
     let slate = Uuid::new_v4();
     p.slates.push(Slate {
         id: slate,
-        source_index: 1,
+        source_index: 0,
         in_seconds: 12.5,
         out_seconds: None,
         name: String::new(),

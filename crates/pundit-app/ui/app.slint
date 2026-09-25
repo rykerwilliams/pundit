@@ -2887,19 +2887,20 @@ export component AppWindow inherits Window {
     /// project open and when its slate leaves the project.
     in-out property <string> selected-slate;
     changed selected-slate => {
-        // A field under the row it is hiding: take the focus back, or the
-        // shortcuts stay switched off.
-        root.slate-editing = false;
         if (self.selected-slate == "") {
             keys.focus();
         }
         root.show-slate();
     }
-    /// A slate's name or tag field has focus. Read off a property the fields
-    /// set, because they live inside the row loop and have no name out here —
-    /// and folded into `text-editing`, or typing a tag would fire every letter
-    /// shortcut, `i` and `o` included.
-    property <bool> slate-editing;
+    /// A slate's name or tag field has focus, folded into `text-editing` —
+    /// without which typing a tag fires every letter shortcut, `i` and `o`
+    /// included, and the letters never reach the field.
+    ///
+    /// **Declarative, like the inspector's**, and never assigned. Two fields
+    /// writing one bool on `changed has-focus` gets this wrong: moving from
+    /// one to the other raises the new field's flag *before* lowering the old
+    /// one's, so the last write is `false` while a field still has focus.
+    property <bool> slate-editing: slate-name-edit.has-focus || slate-tags-edit.has-focus;
     /// The selected slate's name and tags, two-way as the inspector's fields
     /// are: a `text:` binding breaks the first time it is typed in.
     in-out property <string> slate-name;
@@ -3242,6 +3243,11 @@ export component AppWindow inherits Window {
     callback shoot-slate(string);
     callback delete-slate(string);
     callback edit-slate-field(SlateField, string);
+    /// Focus a slate field, for `tests/slate_fields.rs`: both failures that
+    /// test pins are about a *focused* field, and tabbing to one depends on
+    /// the whole window's focus order.
+    public function focus-slate-name() { slate-name-edit.focus(); }
+    public function focus-slate-tags() { slate-tags-edit.focus(); }
     /// Seeds the two fields from the selected slate, as `show-clip` does for
     /// the inspector.
     callback show-slate();
@@ -3854,17 +3860,10 @@ export component AppWindow inherits Window {
                             }
 
                             ListView {
-                                // Capped, and the cap allows for the selected
-                                // row's fields -- as the match editor's does,
-                                // or selecting the last of four puts its name
-                                // and tags below the fold.
-                                height: min(
-                                    root.slates.length * 30px + 4px
-                                        + (root.selected-slate == "" ? 0px : 54px),
-                                    178px);
+                                height: min(root.slates.length * 30px + 4px, 124px);
 
                                     for slate[index] in root.slates: Rectangle {
-                                        height: slate.id == root.selected-slate ? 84px : 30px;
+                                        height: 30px;
                                         border-radius: 4px;
                                         background: slate.id == root.selected-slate
                                             ? Palette.selection-background
@@ -3935,61 +3934,66 @@ export component AppWindow inherits Window {
                                                 }
                                             }
 
-                                            if slate.id == root.selected-slate: VerticalLayout {
-                                                spacing: 4px;
-
-                                                LineEdit {
-                                                    placeholder-text: "Name";
-                                                    text <=> root.slate-name;
-                                                    enabled: !root.recording;
-                                                    // The row the field opened
-                                                    // on, not whatever is
-                                                    // selected when focus
-                                                    // leaves: `for` reuses its
-                                                    // rows by index. The
-                                                    // inspector's rule, and set
-                                                    // here rather than through
-                                                    // Rust, as it does it.
-                                                    changed has-focus => {
-                                                        root.slate-editing = self.has-focus;
-                                                        if (self.has-focus) {
-                                                            root.editing-slate-id = root.selected-slate;
-                                                        } else {
-                                                            root.edit-slate-field(SlateField.name, self.text);
-                                                            root.editing-slate-id = "";
-                                                        }
-                                                    }
-                                                    accepted => { root.edit-slate-field(SlateField.name, self.text); }
-                                                }
-                                                HorizontalLayout {
-                                                    spacing: 6px;
-
-                                                    LineEdit {
-                                                        placeholder-text: "Tags, comma separated";
-                                                        text <=> root.slate-tags;
-                                                        enabled: !root.recording;
-                                                        horizontal-stretch: 1;
-                                                        changed has-focus => {
-                                                            root.slate-editing = self.has-focus;
-                                                            if (self.has-focus) {
-                                                                root.editing-slate-id = root.selected-slate;
-                                                            } else {
-                                                                root.edit-slate-field(SlateField.tags, self.text);
-                                                                root.editing-slate-id = "";
-                                                            }
-                                                        }
-                                                        accepted => { root.edit-slate-field(SlateField.tags, self.text); }
-                                                    }
-                                                    Button {
-                                                        text: "Record";
-                                                        enabled: !root.recording && !root.previewing;
-                                                        clicked => { root.shoot-slate(slate.id); }
-                                                    }
-                                                }
-                                            }
                                         }
                                     }
                             }
+                        }
+
+                        // **The fields live outside the list**, hidden
+                        // rather than removed, which is the inspector's
+                        // rule and exists for two reasons that both bite
+                        // here. A field inside the `for` is destroyed
+                        // whenever the model is rebuilt -- every project
+                        // change, including the save its own commit
+                        // triggers -- and Slint fires no focus-lost
+                        // callback for an item it has destroyed: the
+                        // typing is dropped and `editing` sticks true,
+                        // which leaves every keyboard shortcut dead with
+                        // no way back but reselecting the row.
+                        VerticalLayout {
+                            visible: root.selected-slate != "";
+                            spacing: 4px;
+
+                            slate-name-edit := LineEdit {
+                                placeholder-text: "Name";
+                                text <=> root.slate-name;
+                                enabled: !root.recording;
+                                // The slate the field opened on, not
+                                // whatever is selected when focus leaves.
+                                changed has-focus => {
+                                    if (self.has-focus) {
+                                        root.editing-slate-id = root.selected-slate;
+                                    } else {
+                                        root.edit-slate-field(SlateField.name, self.text);
+                                        root.editing-slate-id = "";
+                                    }
+                                }
+                                accepted => { root.edit-slate-field(SlateField.name, self.text); }
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+
+                                slate-tags-edit := LineEdit {
+                                    placeholder-text: "Tags, comma separated";
+                                    text <=> root.slate-tags;
+                                    enabled: !root.recording;
+                                    horizontal-stretch: 1;
+                                    changed has-focus => {
+                                        if (self.has-focus) {
+                                            root.editing-slate-id = root.selected-slate;
+                                        } else {
+                                            root.edit-slate-field(SlateField.tags, self.text);
+                                            root.editing-slate-id = "";
+                                        }
+                                    }
+                                    accepted => { root.edit-slate-field(SlateField.tags, self.text); }
+                                }
+                            Button {
+                                text: "Record";
+                                enabled: !root.recording && !root.previewing;
+                                clicked => { root.shoot-slate(root.selected-slate); }
+                            }
+                        }
                         }
 
                         HorizontalLayout {

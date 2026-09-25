@@ -545,8 +545,10 @@ v12; spec `docs/superpowers/specs/2026-09-25-slates-design.md`).
   from `resolve_camera` *after* `can_record` passes, so seeking from outside
   would move the game video and then refuse on a camera-less machine; and
   `heading` prefers the skip coordinator's pending target, so a skip burst still
-  in the air would stamp the clip ~1.6 s off the range (measured, and pinned by
-  a test).
+  in the air would stamp the clip **where the arrows were heading** — two taps
+  of the right arrow is 6 s, Shift-taps 20 s — pinned by
+  `a_pending_skip_does_not_drag_the_take_off_the_in_point`, which fails without
+  the reset.
 - **A slate holds its source open** (`source_is_referenced`) and rides both
   remaps. `purge_for_source_change`'s staleness test is an **exhaustive match**
   for this reason — as a `matches!` it admitted new record types in silence, and
