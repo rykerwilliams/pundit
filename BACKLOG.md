@@ -1076,6 +1076,19 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **Why deferred:** it is a licensing question with a small piece of code
   attached, not the other way round — and the code now has a second half (a
   search UI and a fetcher) that wants #78's settings screen to exist first.
+- **SoundCloud and Bandcamp were asked about (2026-09-25) and neither works —
+  and the reason rules out the whole category.** SoundCloud's API is open only
+  through a manual request form (public registration has been shut for years)
+  and is a *streaming and embedding* API: oEmbed players and playback, nothing
+  that grants the right to put a track under a video. Bandcamp has no public
+  catalogue API at all — what exists is gated to labels and merch-fulfilment
+  partners and reports sales; it is a shop, and buying a track grants no such
+  right either. **The blocker was never the API, it is synchronisation rights**
+  — the right to marry music to moving pictures, which streaming, embedding and
+  purchase all leave untouched. Jamendo works because CC licences *do* grant it
+  and the API says which licence each track carries. If the coach ever monetises
+  a channel, Jamendo sells explicit sync licences over the same catalogue, which
+  is the upgrade path rather than a different design.
 - **Decided, 2026-09-25:** Jamendo, and the coach will hold the client ID. So
   the build is: the local folder first (the mixer's only input), then a Jamendo
   search that fetches into the same cache, with the key in #78's settings and
