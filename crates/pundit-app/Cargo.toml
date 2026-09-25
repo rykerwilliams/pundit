@@ -8,7 +8,8 @@ license.workspace = true
 repository.workspace = true
 
 # The binary is named for the application ID (`pundit`, also the config
-# directory and the desktop entry); the package keeps its crate name.
+# directory, the desktop entry and the `.deb`); the cargo package stays
+# `pundit-app`.
 [[bin]]
 name = "pundit"
 path = "src/main.rs"
@@ -62,14 +63,17 @@ the device; the speech model downloads once, on first use.
 Requires an x86-64-v3 CPU (Haswell or newer: AVX2, FMA, F16C, BMI2), \
 which the speech recognizer is built for."""
 section = "video"
-# The app was called coach-cuts until 0.8.0, and that package owns the same
-# files (/usr/bin, the desktop entry, the icons), so apt needs all three to
-# swap one for the other in a single `apt install`: `Conflicts` says they
-# cannot both be unpacked, `Replaces` allows this one to take those paths
-# over, and `Provides` satisfies anything that asked for the old name.
+# The app was called coach-cuts until 0.8.0, and this is what makes one
+# `apt install` swap that package for this one rather than leave both
+# installed -- two binaries, two menu entries, two icon sets. **Measured**, by
+# installing 0.7.0 in a clean container and this over it: `Conflicts` alone is
+# what schedules the old package's removal. `Replaces` would only matter if the
+# two owned a path in common and they own none (every path is name-qualified,
+# `dpkg-deb -c` on both), and `Provides` would only matter to a package that
+# declared `Depends: coach-cuts`, which nothing does. So there is one field
+# here, not the conventional three. Delete it once no 0.7.x install is left
+# (BACKLOG #93).
 conflicts = "coach-cuts"
-replaces = "coach-cuts"
-provides = "coach-cuts"
 # A native package: its version is the workspace version, with no Debian
 # revision, so the file is pundit_<version>_amd64.deb and matches the tag.
 revision = ""

@@ -9,7 +9,7 @@
 //! the reference laptop with
 //!
 //! ```text
-//! COACH_FOOTAGE=/path/to/game.mp4 \
+//! PUNDIT_FOOTAGE=/path/to/game.mp4 \
 //!     cargo test -p pundit-harness --test real_footage -- --ignored --nocapture
 //! ```
 //!
@@ -24,10 +24,10 @@ use std::time::{Duration, Instant};
 use pundit_app::bus::{Command, Event, ScanStep};
 use pundit_harness::{open_one_source_project, round_trip, Harness, Landing};
 
-/// The footage `COACH_FOOTAGE` names.
+/// The footage `PUNDIT_FOOTAGE` names.
 fn footage() -> PathBuf {
-    std::env::var_os("COACH_FOOTAGE")
-        .expect("COACH_FOOTAGE names a real video file with an audio track")
+    std::env::var_os("PUNDIT_FOOTAGE")
+        .expect("PUNDIT_FOOTAGE names a real video file with an audio track")
         .into()
 }
 

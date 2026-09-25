@@ -69,8 +69,8 @@ After both reviews return:
 The Linux port is the active codebase. Spec: `docs/superpowers/specs/2026-09-19-linux-port-design.md`.
 
 ```bash
-cargo test -p pundit-core     # pure logic -- needs NO GStreamer
-cargo test --workspace             # everything -- needs GStreamer dev libraries
+cargo test -p pundit-core   # pure logic -- needs NO GStreamer
+cargo test --workspace      # everything -- needs GStreamer dev libraries
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 ```
@@ -170,16 +170,14 @@ belongs in the README and the package description, not in the UI.
 
 **It was `coach-cuts` until 0.8.0**, a name inherited from the macOS app, and
 0.8.0 also left the fork: the repository is `rykerwilliams/pundit`, with
-`rykerwilliams/coach-cutups` deliberately left in place. Two consequences that
-outlive the rename:
-- **`state::adopt_old_name` runs once at startup**, before anything reads either
-  directory, and renames `<base>/coach-cuts` to `<base>/pundit` under both the
-  config and cache bases — the cache holds a 488 MB model nobody should fetch
-  twice. It does nothing once the new name exists, so only the first run after
-  the upgrade works, and every failure is logged and ignored.
-- **The `.deb` carries `conflicts`/`replaces`/`provides = "coach-cuts"`**, which
-  is what makes one `apt install` swap the old package for this one. Removing
-  those three lines would leave two packages owning `/usr/bin`.
+`rykerwilliams/coach-cutups` deliberately left in place. Two shims carry an
+existing installation across, each explained where it lives —
+`state::adopt_old_name` (it renames the config and cache directories at
+startup) and the `.deb`'s `conflicts = "coach-cuts"` (it is what makes one
+`apt install` swap the packages; the other two fields of the conventional three
+are measurably inert here, and the manifest says why). **Both are dated:**
+`BACKLOG.md` #93 deletes them once no 0.7.x installation is left to upgrade.
+They are transitional, not conventions.
 
 The app must run on Slint's **Skia OpenGL** renderer (it selects it and fails
 loudly otherwise): that renderer is EGL on X11 and Wayland, and EGL is what
@@ -366,7 +364,7 @@ Verify on real hardware with `scripts/linux-gate-check.sh <file>`; see
 - **Never block a push or pull without a bound.** A blocking `appsrc` push hangs forever after a downstream error.
 - **To test CI's path locally,** hide the GPU with `GST_REGISTRY=<scratch>/reg.bin bwrap --dev-bind / / --tmpfs /dev/dri cargo test …`. See `docs/superpowers/specs/2026-09-19-linux-port-phase-5-design.md`.
 
-**The speakers are `autoaudiosink` with `pulsesink` demoted.** `keep_pulsesink_out()` drops `pulsesink`'s rank process-wide at `Bus::spawn`, so `autoaudiosink` picks `alsasink`, which reaches PipeWire through `pipewire-alsa`. Against Ubuntu 24.04's `pipewire-pulse` (PipeWire 1.0.5), `pulsesink` wedged the stream permanently after a quick burst of flushing seeks while playing — a dragged scrubber or a held skip key — and since it supplies the pipeline clock, picture and position froze with it (journal: `pipewire-pulse … [pundit]: stream … OVERFLOW`). Measured A/V offset is unchanged (~+1 ms, audio leading). **The test harness's `Harness::production()` runs the app's exact path** — the GL sink on a surfaceless display plus the real `autoaudiosink` — because the default harness (`fakesink` audio, silent WebM fixtures) can never reach the sound server, which is why this escaped. Real-footage checks are `#[ignore]`d: `COACH_FOOTAGE=/path/to/game.mp4 cargo test -p pundit-harness --test real_footage -- --ignored --nocapture`.
+**The speakers are `autoaudiosink` with `pulsesink` demoted.** `keep_pulsesink_out()` drops `pulsesink`'s rank process-wide at `Bus::spawn`, so `autoaudiosink` picks `alsasink`, which reaches PipeWire through `pipewire-alsa`. Against Ubuntu 24.04's `pipewire-pulse` (PipeWire 1.0.5), `pulsesink` wedged the stream permanently after a quick burst of flushing seeks while playing — a dragged scrubber or a held skip key — and since it supplies the pipeline clock, picture and position froze with it (journal: `pipewire-pulse … [pundit]: stream … OVERFLOW`). Measured A/V offset is unchanged (~+1 ms, audio leading). **The test harness's `Harness::production()` runs the app's exact path** — the GL sink on a surfaceless display plus the real `autoaudiosink` — because the default harness (`fakesink` audio, silent WebM fixtures) can never reach the sound server, which is why this escaped. Real-footage checks are `#[ignore]`d: `PUNDIT_FOOTAGE=/path/to/game.mp4 cargo test -p pundit-harness --test real_footage -- --ignored --nocapture`.
 
 **Transport keys: the arrows skip, `,` and `.` step one frame while paused** (`Command::StepFrame`, refused while playing, recording or previewing). A step works from the shown frame's *end*, which a seek never clips: forward seeks to it, back to half a nominal frame before the frame's nominal start, or its own start where that is earlier (a frame held long). The readout shows tenths while paused, whole seconds while playing.
 
@@ -593,7 +591,7 @@ measurement phase: it stores nothing, suggests nothing and adds no command).
 - **The measurement run is `#[ignore]`d and needs `--release`** — an
   unoptimised Goertzel bank is about forty times slower:
   ```bash
-  COACH_GROUND_TRUTH=B=<folder>:A=<folder>:C=<folder> \
+  PUNDIT_GROUND_TRUTH=B=<folder>:A=<folder>:C=<folder> \
     cargo test --release -p pundit-harness --test ground_truth -- \
       --ignored --nocapture --test-threads=1
   ```

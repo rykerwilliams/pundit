@@ -33,6 +33,9 @@ which the app was called until 0.8.0 renamed it.
   alone for you to delete.
 - **`$COACH_CUTS_WHISPER_MODEL` is now `$PUNDIT_WHISPER_MODEL`**, if you had set
   it by hand.
+- **If you pinned Coach Cuts to your panel or favourites, re-pin it.** The old
+  package is removed by the install, so the launcher it owned goes with it; the
+  new entry is **pundit**, with the same icon.
 - **A basket's film now lands in `pundit` in your videos folder**, not
   `Coach Cuts`. Films already written keep their old folder.
 

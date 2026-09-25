@@ -24,7 +24,7 @@ use pundit_media::Frame;
 
 use crate::AppWindow;
 
-/// The UI's own frame time, collected while `COACH_FRAME_STATS=1` is set and
+/// The UI's own frame time, collected while `PUNDIT_FRAME_STATS=1` is set and
 /// printed at teardown. It is the budget the clip preview has to stay inside:
 /// a p95 of 4 ms, against an idle control of about 1.3 ms (Phase 7 "Gates").
 /// A measuring tool, not a log, so it is off unless asked for.
@@ -87,7 +87,7 @@ pub fn install(window: &AppWindow, bus: Rc<RefCell<BusHandle>>) {
     let weak = window.as_weak();
     let mut context: Option<gst_gl::GLContext> = None;
     let mut current: Option<MappedFrame> = None;
-    let mut stats = std::env::var_os("COACH_FRAME_STATS")
+    let mut stats = std::env::var_os("PUNDIT_FRAME_STATS")
         .is_some_and(|v| v == "1")
         .then(FrameStats::default);
     window

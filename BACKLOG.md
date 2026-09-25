@@ -1177,9 +1177,10 @@ Each entry: what, why deferred, when to revisit.
 90. **The repository URLs and the docs site's base path — RESOLVED** (2026-09-25).
   All of them point at `rykerwilliams/pundit` now, and `book.toml`'s `site-url`
   is `/pundit/`, so the published site's assets and 404 page resolve under the
-  new name. The historical specs and plans under `docs/superpowers/` keep the
-  old URLs on purpose: they are dated records of what was true when they were
-  written.
+  new name — including the two dated docs that named the old URL, which were
+  rewritten with the rest. What the historical specs and plans under
+  `docs/superpowers/` and `rust/docs/` do keep is the old **app name**, on
+  purpose: they are records of what was true when they were written.
 
 91. **Stop being a fork, and the name — RESOLVED** (2026-09-25). The app is
   **pundit** (*pundit Understands Nothing, Discusses It Thoroughly*), lower case
@@ -1195,9 +1196,10 @@ Each entry: what, why deferred, when to revisit.
   site, different goods. `varvet/pundit`, the Rails authorization gem, owns the
   name in code search; the coach accepted that. `pundit.app`, `pundit.dev` and
   `getpundit.com` are registered but parked.
-- **What carried the old name over:** `state::adopt_old_name`, the `.deb`'s
-  `conflicts`/`replaces`/`provides`, and `$PUNDIT_WHISPER_MODEL`. See CLAUDE.md,
-  which records both so they are not deleted as dead weight later.
+- **What carries an existing installation over:** `state::adopt_old_name` and
+  the `.deb`'s `conflicts = "coach-cuts"` — two shims, both dated by #93.
+  `$PUNDIT_WHISPER_MODEL` is **not** one of them: nothing reads the old variable,
+  which is a clean break and is what the CHANGELOG's breaking note says.
 
 92. **Slates: a time range tagged now, its commentary recorded later.** THE NEXT
   FEATURE, at the coach's direction (2026-09-25). Watching a game through, the
@@ -1254,3 +1256,19 @@ Each entry: what, why deferred, when to revisit.
 - **Why deferred:** only by order; nothing is built yet.
 - **When to revisit:** next, ahead of #88 (the per-clip inset) and #77 (the
   export queue). Starts with a spec, per the workflow in `CLAUDE.md`.
+
+93. **Delete the 0.8.0 rename shims.** Three things exist only to carry a
+  `coach-cuts` installation onto `pundit`, and they do nothing on a machine that
+  has ever run 0.8.0: `state::adopt_old_name` / `adopt_in` / `OLD_APP_DIR` and
+  their three tests (`crates/pundit-app/src/bus/state.rs`), the call at
+  `main.rs`'s startup, and `conflicts = "coach-cuts"` in
+  `crates/pundit-app/Cargo.toml`'s `[package.metadata.deb]`. Also then:
+  `docs/hands-on-checklist.md`'s install step, which currently names
+  `pundit_0.8.0_amd64.deb` and checks that apt says it is *removing*
+  `coach-cuts` — true exactly once, so it should go back to the generic "It
+  replaces the copy you have".
+- **Why deferred:** a 0.7.x install that has not upgraded yet still needs all of
+  it, and the coach's own laptop is the population.
+- **When to revisit:** once 0.9.0 has shipped and the coach confirms every
+  machine they use has run 0.8.0. The whole removal is one commit and should
+  leave no `coach-cuts` string in `crates/` at all.

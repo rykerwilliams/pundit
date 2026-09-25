@@ -306,7 +306,7 @@ fn a_malformed_kickoffs_line_names_its_line() {
     }
 }
 
-// ------------------------------------------------------- COACH_GROUND_TRUTH
+// ------------------------------------------------------- PUNDIT_GROUND_TRUTH
 
 #[test]
 fn folders_name_matches_by_position_unless_labelled() {

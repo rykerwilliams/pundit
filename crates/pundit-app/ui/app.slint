@@ -4091,7 +4091,7 @@ export component AppWindow inherits Window {
 
                     if !root.has-project: EmptyCard {
                         title: "No project open";
-                        message: "Open a folder to start scanning match footage. pundit keeps its project file (project.json) inside the folder.";
+                        message: "Open a folder to start scanning match footage. The project file (project.json) lives inside the folder.";
                         action: "Open Project…";
                         clicked => { root.open-project(); }
                     }
@@ -4103,7 +4103,7 @@ export component AppWindow inherits Window {
                     }
                     if root.has-project && root.sources.length > 0 && root.missing-index >= 0: EmptyCard {
                         title: "Source video is missing: " + root.missing-name;
-                        message: "pundit can't find this video. It may have been moved, renamed or deleted. Pick its current location to continue.";
+                        message: "This video can't be found. It may have been moved, renamed or deleted. Pick its current location to continue.";
                         action: "Relink…";
                         // The bus refuses it while recording (R6's guard).
                         enabled: !root.recording;

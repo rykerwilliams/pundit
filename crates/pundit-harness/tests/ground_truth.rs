@@ -6,7 +6,7 @@
 //! children. Run it on the reference laptop with
 //!
 //! ```text
-//! COACH_GROUND_TRUTH=B=/local/b:A=/local/a:C=/local/c \
+//! PUNDIT_GROUND_TRUTH=B=/local/b:A=/local/a:C=/local/c \
 //!   flock /tmp/claude-1000/cargo.lock nice -n 19 \
 //!   cargo test --release -p pundit-harness --test ground_truth \
 //!     -- --ignored --nocapture --test-threads=1
@@ -144,13 +144,13 @@ const SETS: [&str; 3] = ["tuning", "held_out", "all"];
 #[test]
 #[ignore = "needs the coach's tagged matches: see this file's module docs"]
 fn ground_truth() {
-    let var = std::env::var("COACH_GROUND_TRUTH").expect(
-        "COACH_GROUND_TRUTH names the tagged project folders, `:`-separated, \
+    let var = std::env::var("PUNDIT_GROUND_TRUTH").expect(
+        "PUNDIT_GROUND_TRUTH names the tagged project folders, `:`-separated, \
          tuning match first — see this test's module docs",
     );
     gstreamer::init().expect("GStreamer starts");
     let truths: Vec<Truth> = folders(&var)
-        .unwrap_or_else(|why| panic!("COACH_GROUND_TRUTH: {why}"))
+        .unwrap_or_else(|why| panic!("PUNDIT_GROUND_TRUTH: {why}"))
         .iter()
         .map(|(name, folder)| {
             Truth::read(name.as_str(), folder).unwrap_or_else(|e| panic!("match {name}: {e}"))
@@ -290,7 +290,7 @@ struct Half {
     /// `A`, `B`, `C` … — never the folder name.
     match_name: String,
     source_index: usize,
-    /// From the tuning match, the first folder in `COACH_GROUND_TRUTH` (G2).
+    /// From the tuning match, the first folder in `PUNDIT_GROUND_TRUTH` (G2).
     tuning: bool,
     /// This source's tags, copied so nothing borrows the match.
     events: Vec<TruthEvent>,

@@ -400,9 +400,9 @@ fn mm_ss(text: &str) -> Option<f64> {
     (whole < 60).then(|| f64::from(minutes) * 60.0 + f64::from(whole) + tenths)
 }
 
-// ------------------------------------------------------- COACH_GROUND_TRUTH
+// ------------------------------------------------------- PUNDIT_GROUND_TRUTH
 
-/// Split `COACH_GROUND_TRUTH` into `(name, folder)` pairs, **first is the
+/// Split `PUNDIT_GROUND_TRUTH` into `(name, folder)` pairs, **first is the
 /// tuning match** (G2).
 ///
 /// An entry is a folder, or `<LABEL>=<folder>` where the label is one or two
@@ -424,7 +424,7 @@ pub fn folders(var: &str) -> Result<Vec<(String, PathBuf)>, String> {
         out.push((name, PathBuf::from(folder)));
     }
     if out.is_empty() {
-        return Err("COACH_GROUND_TRUTH names no folders".to_string());
+        return Err("PUNDIT_GROUND_TRUTH names no folders".to_string());
     }
     Ok(out)
 }

@@ -24,10 +24,6 @@ use crate::drawing::Pen;
 /// The app's own directory under whichever XDG base directory is in play.
 pub(super) const APP_DIR: &str = "pundit";
 const FILE: &str = "state.json";
-/// Where a basket's film is written (basket spec O1), under the user's videos
-/// folder: a film whose pieces come from several matches belongs to no
-/// project, so it can't go in one's `exports/`.
-const FILMS_DIR: &str = "pundit";
 
 /// **Every field defaults**, and a file written by a later version keeps the
 /// fields this one doesn't know only insofar as it rewrites the whole
@@ -241,11 +237,13 @@ fn config_dir(xdg: Option<OsString>, home: Option<OsString>) -> Option<PathBuf> 
     base_dir(xdg, home, ".config")
 }
 
-/// `<videos>/pundit`, where `videos` is the user's videos folder as glib
-/// reports it: `$HOME/Videos/pundit` when it reports none — a machine
-/// whose `user-dirs.dirs` has no entry — and a relative `pundit`, in the
-/// working directory, when there is no home either. The rule is worth a test,
-/// and the environment is passed in as [`config_dir`] takes it.
+/// Where a basket's film is written (basket spec O1): `<videos>/`[`APP_DIR`],
+/// under the user's **videos** folder, because a film whose pieces come from
+/// several matches belongs to no project and so can't go in one's `exports/`.
+/// `videos` is that folder as glib reports it — `$HOME/Videos/pundit` when it
+/// reports none (a machine whose `user-dirs.dirs` has no entry), and a relative
+/// `pundit`, in the working directory, when there is no home either. The rule is
+/// worth a test, and the environment is passed in as [`config_dir`] takes it.
 fn films_dir(videos: Option<PathBuf>, home: Option<OsString>) -> PathBuf {
     videos
         .or_else(|| {
@@ -254,7 +252,7 @@ fn films_dir(videos: Option<PathBuf>, home: Option<OsString>) -> PathBuf {
                 .map(|h| h.join("Videos"))
         })
         .unwrap_or_default()
-        .join(FILMS_DIR)
+        .join(APP_DIR)
 }
 
 /// `$XDG_CACHE_HOME`, else `~/.cache`: where the whisper models are looked
@@ -265,21 +263,20 @@ pub(super) fn cache_dir(xdg: Option<OsString>, home: Option<OsString>) -> Option
 }
 
 /// The name the app went by before 0.8.0, and so the name on the directories
-/// an existing installation left behind.
+/// an existing installation left behind. Delete this and everything that reads
+/// it once no 0.7.x installation is left to upgrade (`BACKLOG.md` #93).
 const OLD_APP_DIR: &str = "coach-cuts";
 
 /// Take over the directories the old name left behind, before anything reads
-/// them. The cache directory holds a speech model that costs 488 MB to fetch
-/// again, and the config directory holds the project the coach last had open,
-/// the basket they filled and the pen they draw with — all of it still theirs
-/// after a rename.
+/// them. The cache directory holds a speech model that costs hundreds of
+/// megabytes to fetch again, and the config directory holds the project the
+/// coach last had open, the basket they filled and the pen they draw with — all
+/// of it still theirs after a rename.
 ///
 /// A rename, never a copy: the two names sit in the same base directory, so
-/// this is one `rename` syscall and no chance of half a copy. It does nothing
-/// once there is a directory under the new name, so only the first run after
-/// the upgrade does any work; and every failure is logged and ignored, which
-/// costs the coach a re-open and (only if it was the cache) a re-download,
-/// rather than a start that fails.
+/// this is one syscall and no chance of half a copy. Every failure is logged and
+/// ignored, which costs the coach a re-open and (only if it was the cache) a
+/// re-download, rather than a start that fails.
 pub fn adopt_old_name() {
     let bases = [
         config_dir(
@@ -294,20 +291,23 @@ pub fn adopt_old_name() {
 }
 
 /// [`adopt_old_name`] under one base directory, which is what a test can call.
+///
+/// **What stops it is a new directory with something in it, not a new directory**
+/// — an empty one is adopted into. `mkdir` costs nothing and happens by
+/// accident: a build run before this function existed, a write that created the
+/// directory and then failed. Guarding on mere existence would forfeit the whole
+/// carry-over, permanently and in silence, for an empty directory nobody meant
+/// to create.
 fn adopt_in(base: &Path) {
     let (old, new) = (base.join(OLD_APP_DIR), base.join(APP_DIR));
-    if new.exists() || !old.is_dir() {
+    let occupied = std::fs::read_dir(&new).is_ok_and(|mut dir| dir.next().is_some());
+    if occupied || !old.is_dir() {
         return;
     }
     match std::fs::rename(&old, &new) {
-        Ok(()) => eprintln!(
-            "state: {} was {}, and is now {}",
-            APP_DIR,
-            OLD_APP_DIR,
-            new.display()
-        ),
+        Ok(()) => eprintln!("state: adopted {} as {}", old.display(), new.display()),
         Err(err) => eprintln!(
-            "state: could not rename {} to {}: {err}",
+            "state: could not adopt {} as {}: {err}",
             old.display(),
             new.display()
         ),
@@ -512,25 +512,45 @@ mod tests {
     fn the_old_names_directory_is_adopted_with_what_is_in_it() {
         let base = tempfile::tempdir().unwrap();
         let old = base.path().join(OLD_APP_DIR);
-        std::fs::create_dir_all(old.join(MODELS_KEPT)).unwrap();
+        std::fs::create_dir_all(&old).unwrap();
         std::fs::write(old.join(FILE), r#"{"lastProject":"/p/game"}"#).unwrap();
 
         adopt_in(base.path());
 
         assert!(!old.exists(), "the old directory is gone, not copied");
-        let new = base.path().join(APP_DIR);
-        assert!(new.join(MODELS_KEPT).is_dir(), "a 488 MB model comes too");
         assert_eq!(
             AppFiles::in_config_dir(base.path()).last_project(),
             Some(PathBuf::from("/p/game"))
         );
     }
 
-    /// Both halves of the guard: a directory already under the new name is
-    /// never touched — which is what makes every run after the first a no-op —
-    /// and nothing is invented where the old name never was.
+    /// An **empty** directory under the new name does not forfeit the
+    /// carry-over: `mkdir` happens by accident, and the coach's speech model
+    /// and last project must not depend on one. Without the emptiness test
+    /// this fails — `rename(2)` itself would happily do it, so the guard is
+    /// what this pins.
     #[test]
-    fn adopting_leaves_the_new_name_alone_and_invents_nothing() {
+    fn an_empty_new_directory_is_adopted_into() {
+        let base = tempfile::tempdir().unwrap();
+        let old = base.path().join(OLD_APP_DIR);
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join(FILE), r#"{"lastProject":"/p/game"}"#).unwrap();
+        std::fs::create_dir_all(base.path().join(APP_DIR)).unwrap();
+
+        adopt_in(base.path());
+
+        assert_eq!(
+            AppFiles::in_config_dir(base.path()).last_project(),
+            Some(PathBuf::from("/p/game"))
+        );
+    }
+
+    /// The other side of it: a new directory that **holds** something is this
+    /// version's own, so it is left exactly as it is — which is what makes
+    /// every run after the first a no-op — and nothing is invented where the
+    /// old name never was.
+    #[test]
+    fn adopting_leaves_an_occupied_new_name_alone_and_invents_nothing() {
         let base = tempfile::tempdir().unwrap();
         adopt_in(base.path());
         assert!(!base.path().join(APP_DIR).exists());
@@ -546,8 +566,4 @@ mod tests {
         assert_eq!(std::fs::read_to_string(new.join(FILE)).unwrap(), "new");
         assert!(old.is_dir(), "the old one is left for the coach to delete");
     }
-
-    /// Any name will do for the test above; this is the real one, spelled out
-    /// where the test reads rather than repeated in two places.
-    const MODELS_KEPT: &str = "models";
 }

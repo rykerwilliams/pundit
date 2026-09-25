@@ -1,6 +1,6 @@
 # pundit
 
-pundit is a desktop app for breaking down game film. Open the match video —
+A desktop app for breaking down game film. Open the match video —
 one file or several, both halves played straight across the join — and record
 your commentary over it while you watch. Everything you do to the picture while
 you talk is recorded with your voice: play, pause, seek, zoom and pan, freehand

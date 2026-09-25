@@ -2440,8 +2440,16 @@ fn show_export(w: &AppWindow, run: &ExportRun) {
             _ => None,
         }) {
             let file = path.file_name().unwrap_or_default().to_string_lossy();
+            let folder = path
+                .parent()
+                .and_then(Path::file_name)
+                .unwrap_or_default()
+                .to_string_lossy();
             w.set_basket_message(format!("Wrote {}", path.display()).into());
-            show_notice(w, format!("Wrote {file} to pundit in your videos folder"));
+            show_notice(
+                w,
+                format!("Wrote {file} to the {folder} folder in your videos folder"),
+            );
         }
         return;
     }

@@ -119,9 +119,9 @@ pub fn file_tags(project: &Project, target: &ExportTarget, date: Option<Calendar
             None => sentence_case(&phrase),
         },
         description: match project_name {
-            "" => format!("{}, from a pundit project.", sentence_case(&phrase)),
+            "" => format!("{}, from a {APP_NAME} project.", sentence_case(&phrase)),
             name => format!(
-                "{}, from the pundit project “{name}”.",
+                "{}, from the {APP_NAME} project “{name}”.",
                 sentence_case(&phrase)
             ),
         },
