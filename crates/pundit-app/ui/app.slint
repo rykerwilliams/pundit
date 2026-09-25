@@ -18,6 +18,23 @@ export struct SourceRow {
     referenced: bool,
 }
 
+/// One row of the sidebar's Slates list, in `(video, in point)` order — a
+/// range marked while watching, waiting for its commentary.
+export struct SlateRow {
+    /// The slate's UUID.
+    id: string,
+    /// `14:05–14:40`, or `14:05–` while the range is still open.
+    range: string,
+    /// The video it is on, shown only when the project has more than one.
+    video: string,
+    /// "Untitled" for an empty name, as a clip's row does it.
+    name: string,
+    /// Comma-separated, already normalized.
+    tags: string,
+    /// A clip was recorded from it. It stays in the list: a coach re-records.
+    shot: bool,
+}
+
 /// One row of the sidebar's Clips list, in the project's order.
 export struct ClipRow {
     /// The clip's UUID.
@@ -2857,6 +2874,34 @@ export component AppWindow inherits Window {
     in property <[ClipRow]> clips;
     /// All the project's clips, filtered or not.
     in property <int> clip-count;
+    /// The Slates list, in `(video, in point)` order — empty for every project
+    /// that has never marked one, which is what hides the section.
+    in property <[SlateRow]> slates;
+    /// The selected slate's id, empty for none. UI state only, cleared on
+    /// project open and when its slate leaves the project.
+    in-out property <string> selected-slate;
+    changed selected-slate => {
+        // A field under the row it is hiding: take the focus back, or the
+        // shortcuts stay switched off.
+        root.slate-editing = false;
+        if (self.selected-slate == "") {
+            keys.focus();
+        }
+        root.show-slate();
+    }
+    /// A slate's name or tag field has focus. Read off a property the fields
+    /// set, because they live inside the row loop and have no name out here —
+    /// and folded into `text-editing`, or typing a tag would fire every letter
+    /// shortcut, `i` and `o` included.
+    property <bool> slate-editing;
+    /// The selected slate's name and tags, two-way as the inspector's fields
+    /// are: a `text:` binding breaks the first time it is typed in.
+    in-out property <string> slate-name;
+    in-out property <string> slate-tags;
+    /// Which slate the fields are editing, so a commit names it even after the
+    /// selection has moved on -- `editing-clip-id`'s rule, which exists
+    /// because `for` reuses its rows by index.
+    in-out property <string> editing-slate-id;
     /// The export sheet would have a row: a clip, or a goal for the reel
     /// (spec R1). A project of goals and no clips can export its reel.
     in property <bool> can-export;
@@ -3147,7 +3192,7 @@ export component AppWindow inherits Window {
     // editor's, Esc inside its paste box closes the sheet on the first press
     // and throws away a half-typed block (spec P3).
     property <bool> text-editing: name-edit.has-focus || inspector.editing || highlights.editing
-        || root.match-editor-editing || root.basket-editing;
+        || root.match-editor-editing || root.basket-editing || root.slate-editing;
 
     callback open-project();
     callback add-source();
@@ -3183,6 +3228,21 @@ export component AppWindow inherits Window {
     /// JPEG to copy into the project, or drop the one it has.
     callback choose-avatar();
     callback remove-avatar();
+    /// Slates, by id. `mark-in` and `mark-out` take no argument: the bus is
+    /// given the displayed frame's video and source time by `main.rs`, which
+    /// is the only place that knows what is on screen.
+    callback mark-in();
+    callback mark-out();
+    callback shoot-slate(string);
+    callback delete-slate(string);
+    callback begin-slate-edit();
+    callback commit-slate(string);
+    callback end-slate-edit(string);
+    callback commit-slate-tags(string);
+    callback end-slate-tags(string);
+    /// Seeds the two fields from the selected slate, as `show-clip` does for
+    /// the inspector.
+    callback show-slate();
     /// Clips (Phase 3 C5), by id; `move-clip` takes list indices.
     callback jump-to-clip(string);
     callback delete-clip(string);
@@ -3506,6 +3566,22 @@ export component AppWindow inherits Window {
         // free -- no event mode, so no second gate on the zoom keys and no
         // extra layer in the Esc cascade. After the Ctrl branch, so Ctrl+Z
         // isn't one of them.
+        // `i` and `o`: the in and out of a range, the editing convention.
+        // Gated on `can-tag` like the three above -- the same "there is a
+        // frame on screen and it is the game's" test -- and `!event.repeat`,
+        // or a held key marks a slate per repeat.
+        if (event.text == "i" || event.text == "I") {
+            if (pressed && !event.repeat && root.can-tag) {
+                root.mark-in();
+            }
+            return accept;
+        }
+        if (event.text == "o" || event.text == "O") {
+            if (pressed && !event.repeat && root.can-tag) {
+                root.mark-out();
+            }
+            return accept;
+        }
         if (event.text == "z" || event.text == "Z") {
             return root.tag-key(MatchTag.home-goal, event, pressed);
         }
@@ -3749,6 +3825,138 @@ export component AppWindow inherits Window {
                                                         text: source.referenced
                                                             ? @markdown("Used by a clip, a match event, a highlight or a slate. Delete those first.")
                                                             : @markdown("Remove from the project");
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Slates: ranges marked while watching, waiting for
+                        // their commentary. **Hidden entirely when there are
+                        // none**, which is every project that has never marked
+                        // one -- a third list in a 240 px column would
+                        // otherwise shrink the clip list on every project for
+                        // a feature not in use. Capped in height for the same
+                        // reason.
+                        if root.slates.length > 0: VerticalLayout {
+                            spacing: 6px;
+
+                            Text {
+                                text: "Slates";
+                                color: Palette.alternate-foreground;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                            }
+
+                            Rectangle {
+                                height: min(root.slates.length * 30px + 4px, 124px);
+
+                                ListView {
+                                    for slate[index] in root.slates: Rectangle {
+                                        height: slate.id == root.selected-slate ? 84px : 30px;
+                                        border-radius: 4px;
+                                        background: slate.id == root.selected-slate
+                                            ? Palette.selection-background
+                                            : transparent;
+
+                                        TouchArea {
+                                            enabled: !root.recording;
+                                            clicked => {
+                                                root.selected-slate = slate.id == root.selected-slate
+                                                    ? "" : slate.id;
+                                            }
+                                        }
+
+                                        ContextMenuArea {
+                                            enabled: !root.recording;
+                                            Menu {
+                                                MenuItem {
+                                                    title: "Record commentary";
+                                                    activated => { root.shoot-slate(slate.id); }
+                                                }
+                                                MenuItem {
+                                                    title: "Delete slate";
+                                                    activated => { root.delete-slate(slate.id); }
+                                                }
+                                            }
+                                        }
+
+                                        VerticalLayout {
+                                            padding-left: 6px;
+                                            padding-right: 6px;
+                                            padding-top: 4px;
+                                            spacing: 4px;
+
+                                            HorizontalLayout {
+                                                spacing: 6px;
+
+                                                Text {
+                                                    text: slate.range;
+                                                    color: root.recording
+                                                        ? Palette.alternate-foreground
+                                                        : Palette.foreground;
+                                                    font-size: 12px;
+                                                    vertical-alignment: center;
+                                                }
+                                                Text {
+                                                    text: slate.video;
+                                                    color: Palette.alternate-foreground;
+                                                    font-size: 11px;
+                                                    overflow: elide;
+                                                    vertical-alignment: center;
+                                                    horizontal-stretch: 1;
+                                                }
+                                                Text {
+                                                    text: slate.shot ? "recorded" : slate.name;
+                                                    color: Palette.alternate-foreground;
+                                                    font-size: 11px;
+                                                    overflow: elide;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
+
+                                            if slate.id == root.selected-slate: VerticalLayout {
+                                                spacing: 4px;
+
+                                                LineEdit {
+                                                    placeholder-text: "Name";
+                                                    text <=> root.slate-name;
+                                                    enabled: !root.recording;
+                                                    changed has-focus => {
+                                                        root.slate-editing = self.has-focus;
+                                                        if (self.has-focus) {
+                                                            root.begin-slate-edit();
+                                                        } else {
+                                                            root.end-slate-edit(self.text);
+                                                        }
+                                                    }
+                                                    accepted => { root.commit-slate(self.text); }
+                                                }
+                                                HorizontalLayout {
+                                                    spacing: 6px;
+
+                                                    LineEdit {
+                                                        placeholder-text: "Tags, comma separated";
+                                                        text <=> root.slate-tags;
+                                                        enabled: !root.recording;
+                                                        horizontal-stretch: 1;
+                                                        changed has-focus => {
+                                                            root.slate-editing = self.has-focus;
+                                                            if (self.has-focus) {
+                                                                root.begin-slate-edit();
+                                                            } else {
+                                                                root.end-slate-tags(self.text);
+                                                            }
+                                                        }
+                                                        accepted => { root.commit-slate-tags(self.text); }
+                                                    }
+                                                    Button {
+                                                        text: "Record";
+                                                        enabled: !root.recording && !root.previewing;
+                                                        clicked => { root.shoot-slate(slate.id); }
                                                     }
                                                 }
                                             }

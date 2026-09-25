@@ -41,7 +41,7 @@ use pundit_core::highlight::{highlight_shapes, HighlightEdit};
 use pundit_core::layout::{self, avatar_self_view_rect, self_view_rect, STROKE_LINE_WIDTH};
 use pundit_core::match_entry::{self, PendingMatchEvent};
 use pundit_core::plan::{ExportTarget, ScoreboardMode};
-use pundit_core::project::{Clip, Inset, Project, Quality, Resolution};
+use pundit_core::project::{Clip, Inset, Project, Quality, Resolution, Slate, SlateEdit};
 use pundit_core::scoreboard::{
     MatchEventKind, MatchFormat, ReelEnd, ScoreboardConfig, ScoreboardContext, ScoreboardState,
     TeamConfig,
@@ -897,6 +897,104 @@ fn wire_preview(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
 /// The Match panel and the three tag keys (Phase 9 S4). Tagging, deleting and
 /// the setup all go through the bus; the panel renders what comes back.
 fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
+    // `i` and `o`. The mark carries the game video's position, captured here
+    // as a match tag's is and for the same reason: the bus reading it would
+    // mark whatever frame the queue delay had reached.
+    window.on_mark_in({
+        let (bus, position) = (bus.clone(), bus.borrow().position_handle().clone());
+        move || {
+            if let Some((source_index, source_seconds)) = scan_source_position(&position) {
+                bus.borrow().send(Command::MarkSlateIn {
+                    source_index,
+                    source_seconds,
+                });
+            }
+        }
+    });
+    window.on_mark_out({
+        let (bus, position) = (bus.clone(), bus.borrow().position_handle().clone());
+        move || {
+            if let Some((source_index, source_seconds)) = scan_source_position(&position) {
+                bus.borrow().send(Command::MarkSlateOut {
+                    source_index,
+                    source_seconds,
+                });
+            }
+        }
+    });
+    window.on_shoot_slate({
+        let (bus, weak) = (bus.clone(), window.as_weak());
+        move |id| {
+            let (Some(w), Some(id)) = (weak.upgrade(), parse_id(&id)) else {
+                return;
+            };
+            bus.borrow().send(Command::ShootSlate {
+                id,
+                zoom: UI.with_borrow(|ui| ui.zoom),
+            });
+            // The take owns the picture now; the row's fields would be stale.
+            w.set_selected_slate(SharedString::new());
+        }
+    });
+    window.on_delete_slate({
+        let bus = bus.clone();
+        move |id| {
+            if let Some(id) = parse_id(&id) {
+                bus.borrow().send(Command::DeleteSlate(id));
+            }
+        }
+    });
+    window.on_begin_slate_edit({
+        let weak = window.as_weak();
+        move || {
+            if let Some(w) = weak.upgrade() {
+                // The row the field started editing: `for` reuses its items by
+                // index, so a commit must name the slate it opened on, not
+                // whatever is selected when focus leaves (the inspector's
+                // rule).
+                w.set_editing_slate_id(w.get_selected_slate());
+            }
+        }
+    });
+    let slate_edit = |bus: &Rc<RefCell<BusHandle>>, weak: slint::Weak<AppWindow>, tags: bool| {
+        let bus = bus.clone();
+        move |text: SharedString| {
+            let Some(w) = weak.upgrade() else { return };
+            let editing = w.get_editing_slate_id();
+            let Some(id) = (!editing.is_empty()).then(|| parse_id(&editing)).flatten() else {
+                return;
+            };
+            let edit = if tags {
+                SlateEdit::Tags(normalize_tags(&text))
+            } else {
+                SlateEdit::Name(text.to_string())
+            };
+            bus.borrow().send(Command::EditSlate { id, edit });
+        }
+    };
+    window.on_commit_slate(slate_edit(bus, window.as_weak(), false));
+    window.on_end_slate_edit(slate_edit(bus, window.as_weak(), false));
+    window.on_commit_slate_tags(slate_edit(bus, window.as_weak(), true));
+    window.on_end_slate_tags(slate_edit(bus, window.as_weak(), true));
+    window.on_show_slate({
+        let weak = window.as_weak();
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            let selected = w.get_selected_slate();
+            let found = UI.with_borrow(|ui| {
+                ui.snapshot.as_ref().and_then(|s| {
+                    s.project
+                        .slates
+                        .iter()
+                        .find(|slate| slate.id.to_string() == selected.as_str())
+                        .map(|slate| (slate.name.clone(), slate.tags.join(", ")))
+                })
+            });
+            let (name, tags) = found.unwrap_or_default();
+            w.set_slate_name(name.into());
+            w.set_slate_tags(tags.into());
+        }
+    });
     window.on_tag_match_event({
         let (bus, position) = (bus.clone(), bus.borrow().position_handle().clone());
         move |tag| {
@@ -2560,6 +2658,17 @@ fn show_project(w: &AppWindow, snapshot: Snapshot) {
     if selected_id(w).is_some_and(|id| !project.clips.iter().any(|c| c.id == id)) {
         w.set_selected_clip(SharedString::new());
     }
+    // Its slate is gone -- an undone delete is exactly when this bites -- so
+    // the row's fields go with it, as the clip rule above does.
+    if !w.get_selected_slate().is_empty()
+        && !project
+            .slates
+            .iter()
+            .any(|s| s.id.to_string() == w.get_selected_slate().as_str())
+    {
+        w.set_selected_slate(SharedString::new());
+    }
+    show_slates(w, project);
     w.set_clip_count(project.clips.len() as i32);
     // Exactly when the sheet would have a row (spec R1), asked of the sheet's
     // own list rather than restated here: a project of goals and no clips has
@@ -2680,6 +2789,48 @@ fn show_clips(w: &AppWindow, project: &Project) {
         })
         .collect();
     w.set_clips(ModelRc::new(VecModel::from(clips)));
+}
+
+/// The Slates list: every marked range, in reading order, with the video named
+/// only when there is more than one to tell apart.
+fn show_slates(w: &AppWindow, project: &Project) {
+    let many = project.source_videos.len() > 1;
+    let rows: Vec<SlateRow> = project
+        .slates_sorted()
+        .iter()
+        .map(|s| SlateRow {
+            id: s.id.to_string().into(),
+            range: slate_range(s).into(),
+            video: if many {
+                project
+                    .source_videos
+                    .get(s.source_index)
+                    .map(|v| v.display_name.clone())
+                    .unwrap_or_default()
+                    .into()
+            } else {
+                SharedString::new()
+            },
+            name: if s.name.is_empty() {
+                "Untitled".into()
+            } else {
+                s.name.clone().into()
+            },
+            tags: s.tags.join(", ").into(),
+            shot: project.clips.iter().any(|c| c.slate_id == Some(s.id)),
+        })
+        .collect();
+    w.set_slates(ModelRc::new(VecModel::from(rows)));
+}
+
+/// `14:05–14:40`, or `14:05–` while the range is still open — an open range is
+/// a row the coach can finish or delete, not a press that vanished.
+fn slate_range(slate: &Slate) -> String {
+    let start = format_hms(slate.in_seconds);
+    match slate.out_seconds {
+        Some(end) => format!("{start}–{}", format_hms(end)),
+        None => format!("{start}–"),
+    }
 }
 
 /// A clip's name as the lists and the preview indicator show it.
