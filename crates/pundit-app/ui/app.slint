@@ -4061,8 +4061,18 @@ export component AppWindow inherits Window {
                         // otherwise. Off while previewing, which is at
                         // identity zoom (P6).
                         enabled: root.can-play && !root.previewing;
+                        // A plain wheel over the picture scrubs, exactly as it
+                        // does over the scrubber (the coach, 2026-09-25): the
+                        // picture is where the eyes are while scanning, and
+                        // reaching for the strip to move three seconds is a
+                        // detour. Ctrl+wheel still zooms and a drag still pans,
+                        // so taking the plain wheel strands nothing.
                         scroll-event(event) => {
-                            root.zoom-scroll(self.mouse-x, self.mouse-y, event.delta-x, event.delta-y, event.modifiers.control, event.modifiers.shift);
+                            if (event.modifiers.control) {
+                                root.zoom-scroll(self.mouse-x, self.mouse-y, event.delta-x, event.delta-y, true, event.modifiers.shift);
+                            } else {
+                                root.scrub-scroll(event.delta-x, event.delta-y, event.modifiers.shift);
+                            }
                             accept
                         }
                         pointer-event(event) => {

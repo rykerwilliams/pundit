@@ -13,6 +13,19 @@ which the app was called until 0.8.0 renamed it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The scroll wheel scrubbed the wrong way.** Rolling the wheel away from you
+  now goes forward, as it does in a video player. It used to follow the
+  convention for scrolling a document, where pushing the content up walks a
+  timeline backwards — consistent on paper, wrong in the hand.
+
+### Changed
+
+- **The wheel scrubs over the picture too**, not only over the scrubber: a notch
+  is 3 seconds, Shift makes it 10, and it works while recording. Ctrl+wheel
+  still zooms about the pointer, and a drag still pans once you are zoomed in.
+
 ## [0.8.0] - 2026-09-25
 
 ### Changed

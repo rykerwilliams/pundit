@@ -14,9 +14,11 @@
 //! recording, log every one of them in the commentary. So the deltas are added
 //! up here and a skip leaves only on a whole notch.
 //!
-//! **Sign** is [`crate::zoom_input`]'s throughout: a positive delta means the
-//! content moves right or down, which on a timeline moves the playhead
-//! **back**. Scrolling down, or swiping the strip to the left, goes forward.
+//! **Direction is a media player's, not a document's** (the coach, 2026-09-25):
+//! rolling the wheel **away** from you goes **forward**, as it does in every
+//! video player they use. The other reading — that a positive delta scrolls the
+//! content down and so walks a timeline back, which is [`crate::zoom_input`]'s
+//! convention — is defensible on paper and was wrong in the hand.
 
 /// One wheel notch, logical pixels: Slint reports winit's line deltas × 60.
 pub const NOTCH: f64 = 60.0;
@@ -56,7 +58,7 @@ impl Wheel {
             return None;
         }
         self.travel -= notches * NOTCH;
-        Some(-notches * if shift { SHIFT_STEP } else { STEP })
+        Some(notches * if shift { SHIFT_STEP } else { STEP })
     }
 }
 
@@ -64,15 +66,14 @@ impl Wheel {
 mod tests {
     use super::*;
 
-    /// One notch of a mouse wheel is one arrow key: scrolling down (a
-    /// negative delta) goes forward, as the sign convention has it, and
-    /// Shift makes it the long skip.
+    /// One notch of a mouse wheel is one arrow key, and **away from you is
+    /// forward**, as in a video player; Shift makes it the long skip.
     #[test]
     fn a_notch_is_worth_an_arrow_key() {
         let mut wheel = Wheel::default();
-        assert_eq!(wheel.scrolled(0.0, -NOTCH, false), Some(STEP));
-        assert_eq!(wheel.scrolled(0.0, NOTCH, false), Some(-STEP));
-        assert_eq!(wheel.scrolled(0.0, -NOTCH, true), Some(SHIFT_STEP));
+        assert_eq!(wheel.scrolled(0.0, NOTCH, false), Some(STEP));
+        assert_eq!(wheel.scrolled(0.0, -NOTCH, false), Some(-STEP));
+        assert_eq!(wheel.scrolled(0.0, NOTCH, true), Some(SHIFT_STEP));
     }
 
     /// A trackpad's fine deltas add up to one notch and no more: eleven
@@ -80,7 +81,7 @@ mod tests {
     #[test]
     fn fine_deltas_add_up_to_whole_notches() {
         let mut wheel = Wheel::default();
-        let sixth = -NOTCH / 6.0;
+        let sixth = NOTCH / 6.0;
         for _ in 0..5 {
             assert_eq!(wheel.scrolled(0.0, sixth, false), None);
         }
@@ -95,9 +96,9 @@ mod tests {
     #[test]
     fn a_fling_spends_every_notch_it_carries() {
         let mut wheel = Wheel::default();
-        assert_eq!(wheel.scrolled(0.0, -3.5 * NOTCH, false), Some(3.0 * STEP));
+        assert_eq!(wheel.scrolled(0.0, 3.5 * NOTCH, false), Some(3.0 * STEP));
         // Half a notch is still in hand, so the next half completes one.
-        assert_eq!(wheel.scrolled(0.0, -0.5 * NOTCH, false), Some(STEP));
+        assert_eq!(wheel.scrolled(0.0, 0.5 * NOTCH, false), Some(STEP));
     }
 
     /// Turning round starts afresh: half a notch forward left over must not
@@ -105,8 +106,8 @@ mod tests {
     #[test]
     fn turning_round_drops_what_was_left_over() {
         let mut wheel = Wheel::default();
-        assert_eq!(wheel.scrolled(0.0, -0.5 * NOTCH, false), None);
-        assert_eq!(wheel.scrolled(0.0, NOTCH, false), Some(-STEP));
+        assert_eq!(wheel.scrolled(0.0, 0.5 * NOTCH, false), None);
+        assert_eq!(wheel.scrolled(0.0, -NOTCH, false), Some(-STEP));
     }
 
     /// A trackpad swipes horizontally; the bigger axis wins, so a diagonal
@@ -114,9 +115,9 @@ mod tests {
     #[test]
     fn the_larger_axis_wins() {
         let mut wheel = Wheel::default();
-        assert_eq!(wheel.scrolled(-NOTCH, 10.0, false), Some(STEP));
+        assert_eq!(wheel.scrolled(NOTCH, 10.0, false), Some(STEP));
         let mut wheel = Wheel::default();
-        assert_eq!(wheel.scrolled(10.0, -NOTCH, false), Some(STEP));
+        assert_eq!(wheel.scrolled(10.0, NOTCH, false), Some(STEP));
     }
 
     /// Nothing to spend, and nothing that could poison the running total.
@@ -126,6 +127,6 @@ mod tests {
         assert_eq!(wheel.scrolled(0.0, 0.0, false), None);
         assert_eq!(wheel.scrolled(f64::NAN, f64::NAN, false), None);
         assert_eq!(wheel.scrolled(0.0, f64::INFINITY, false), None);
-        assert_eq!(wheel.scrolled(0.0, -NOTCH, false), Some(STEP));
+        assert_eq!(wheel.scrolled(0.0, NOTCH, false), Some(STEP));
     }
 }

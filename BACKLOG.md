@@ -1286,3 +1286,49 @@ Each entry: what, why deferred, when to revisit.
 - **When to revisit:** once 0.9.0 has shipped and the coach confirms every
   machine they use has run 0.8.0. The whole removal is one commit and should
   leave no `coach-cuts` string in `crates/` at all.
+
+94. **Zoom and pan are undiscoverable.** The coach, using 0.8.0 for the first
+  time (2026-09-25): "the panning doesn't work or i don't know how to do it".
+  Nothing is broken — a left-drag over the picture pans, but only once the
+  picture is zoomed in, because `zoom_input::panned` returns the zoom unchanged
+  at `scale <= 1.0` (there is nothing to pan when the picture fits). So a coach
+  who has not zoomed yet drags and sees nothing happen, and the way *in* —
+  `2`/`3` to step the zoom, `0` or `1` to reset it, Ctrl+wheel to zoom about the
+  pointer — is written down nowhere in the app.
+- **What would fix it, cheapest first:** the `ZoomIndicator` already appears
+  over the picture, so it is the natural place to say "Ctrl+scroll or 3 to zoom"
+  while the zoom is at identity; or a notice on a drag that would have panned
+  had the picture been zoomed, beside the existing `DRAWING_HINT`, which is the
+  same shape of problem already solved once ("Drawing works while recording —
+  press R"). A keyboard-shortcut sheet would cover the whole app but is a bigger
+  piece and hides the answer behind a menu.
+- **Why deferred:** the coach found it within a minute of asking, so it is a
+  first-run problem rather than a blocker, and the honest fix is part of a
+  wider "what can I press here?" pass.
+- **When to revisit:** with #85 (recents drawer) or any other first-run polish,
+  or immediately if a second person is ever handed the app.
+
+95. **The player area should take the footage's aspect, so there are no black
+  bars.** The coach, on 0.8.0 (2026-09-25): "i'd like the preview window to be
+  the right aspect ratio? i don't like the black bars in the view". Today
+  `player` (`app.slint`) is a `Rectangle` that fills whatever the layout gives
+  it, and `place-picture` letterboxes the frame inside it, so any window whose
+  player area is not the footage's shape shows bars — in the screenshot,
+  above and below a 16:9 source.
+- **The catch, which the fix has to answer:** the leftover space does not
+  disappear, it moves. Sizing the player to the source aspect turns black bars
+  into either app background (the same bars in a different colour) or space the
+  neighbouring panels take. So this is only a real win **together with panels
+  that can use the slack** — #87 (resizable panels) and the inspector — or with
+  the window itself offering to match the footage's shape.
+- **Worth knowing before designing it:** the bars are not decoration. The
+  clipped content rect is what strokes and highlights are normalized to and
+  what the export crops to (spec D9, one `Zoom::transform`), so the picture
+  rect must stay exactly what export produces — the fix belongs in how much
+  *area* the player is given, never in how the frame is placed inside it.
+- **Also ask:** whether the window should be allowed to resize itself to the
+  footage's aspect on open (tidy, but a window that moves on its own is
+  startling), or whether this is just the inspector growing.
+- **Why deferred:** it is a layout piece that wants #87 in the same pass.
+- **When to revisit:** with #87.
+
