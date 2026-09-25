@@ -8,7 +8,9 @@
 use uuid::Uuid;
 
 use pundit_core::highlight::{HighlightKey, NormRect, PlayerHighlight};
-use pundit_core::project::{AspectMismatch, Clip, Inset, Project, SourceRef, SourceReferenced};
+use pundit_core::project::{
+    AspectMismatch, Clip, Inset, Project, Slate, SourceRef, SourceReferenced,
+};
 use pundit_core::scoreboard::{MatchEventKind, MatchEventRecord};
 use pundit_core::stroke::Rgba;
 
@@ -49,6 +51,7 @@ fn clip_on(source_index: usize) -> Clip {
         sort_index: 0,
         created_at: "2026-09-19T00:00:00Z".into(),
         transcript: String::new(),
+        slate_id: None,
     }
 }
 
@@ -158,6 +161,17 @@ fn locate_round_trips_through_abs_seconds() {
     }
 }
 
+fn slate_on(source_index: usize, in_seconds: f64) -> Slate {
+    Slate {
+        id: Uuid::new_v4(),
+        source_index,
+        in_seconds,
+        out_seconds: Some(in_seconds + 35.0),
+        name: "corner routine".into(),
+        tags: vec!["corners".into()],
+    }
+}
+
 // ------------------------------------------------------------ source_is_referenced
 
 #[test]
@@ -171,6 +185,12 @@ fn a_source_is_referenced_by_a_clip_or_a_match_event() {
 
     p.player_highlights.push(highlight_on(1));
     assert!(p.source_is_referenced(1));
+
+    // A slate points at a file exactly as the other three do.
+    let mut q = project(&[10.0, 10.0]);
+    q.slates.push(slate_on(1, 4.0));
+    assert!(!q.source_is_referenced(0));
+    assert!(q.source_is_referenced(1));
 }
 
 // ------------------------------------------------------------ remove_source
@@ -191,6 +211,45 @@ fn remove_refuses_a_source_used_by_a_match_event() {
     p.match_events.push(match_event_on(0));
     assert_eq!(p.remove_source(0, 1), Err(SourceReferenced { index: 0 }));
     assert_eq!(p.source_videos.len(), 2);
+}
+
+/// A slate belongs to the footage too, and an **open** one — marked in, not
+/// yet out — holds its source just as firmly. Removing the file under it would
+/// leave a range pointing at whatever slid into that index.
+#[test]
+fn remove_refuses_a_source_used_by_a_slate_even_an_open_one() {
+    let mut p = project(&[10.0, 10.0]);
+    let mut open = slate_on(0, 3.0);
+    open.out_seconds = None;
+    p.slates.push(open);
+    let before = p.clone();
+    assert_eq!(p.remove_source(0, 1), Err(SourceReferenced { index: 0 }));
+    assert_eq!(p, before, "a refused remove changes nothing");
+}
+
+/// Removing an *unreferenced* source still drags every higher slate down with
+/// it, as it does for clips, match events and highlights.
+#[test]
+fn remove_remaps_slates_above_it() {
+    let mut p = project(&[10.0, 10.0, 10.0]);
+    p.slates.push(slate_on(2, 6.0));
+    p.slates.push(slate_on(0, 1.0));
+    p.remove_source(1, 0).expect("nothing references source 1");
+    let mut left: Vec<usize> = p.slates.iter().map(|s| s.source_index).collect();
+    left.sort_unstable();
+    assert_eq!(left, [0, 1]);
+}
+
+/// And a move is a permutation every slate rides, or a coach who reorders the
+/// halves finds their ranges on the wrong film.
+#[test]
+fn move_remaps_slates_through_the_permutation() {
+    let mut p = project(&[10.0, 10.0, 10.0]);
+    p.slates.push(slate_on(0, 1.0));
+    p.slates.push(slate_on(2, 2.0));
+    assert_eq!(p.move_source(2, 0, 0), 1);
+    let moved: Vec<usize> = p.slates.iter().map(|s| s.source_index).collect();
+    assert_eq!(moved, [1, 0]);
 }
 
 /// A highlight belongs to the footage, so it holds its source open just as a

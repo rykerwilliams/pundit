@@ -184,6 +184,17 @@ pub struct Clip {
 
     #[serde(default)]
     pub transcript: String,
+
+    /// v12. The [`Slate`] this take was shot from, when it was shot from one:
+    /// the clip inherited that slate's name and tags.
+    ///
+    /// **The link runs this way round so that nothing can dangle.** A slate
+    /// asking "have I been shot?" is `clips.iter().any(|c| c.slate_id ==
+    /// Some(id))`, which stays right across a delete, an undo and a
+    /// re-record — where a pointer stored on the slate would need clearing in
+    /// three places and would still outlive a trashed clip.
+    #[serde(default)]
+    pub slate_id: Option<Uuid>,
 }
 
 impl Clip {
@@ -254,6 +265,40 @@ pub struct Project {
     /// it (spec B1).
     #[serde(default)]
     pub avatar: Option<String>,
+    /// v12. Ranges marked while watching, waiting for their commentary — see
+    /// [`Slate`]. Ordered for reading by [`Project::slates_sorted`]; the stored
+    /// order is only the order they were marked in.
+    #[serde(default)]
+    pub slates: Vec<Slate>,
+}
+
+/// A range on the footage, named and tagged, whose commentary has not been
+/// recorded yet (spec `2026-09-25-slates-design.md`).
+///
+/// **A slate is not a clip, and cannot become one by relaxing a rule:** a clip
+/// *is* a recording, which is what lets every clip replay, preview and export
+/// with no special case. Shooting a slate *produces* a clip, and the link runs
+/// from that clip ([`Clip::slate_id`]) so that nothing here can dangle.
+///
+/// It carries no `created_at` and no `sort_index`. `Clip` has both because
+/// clips are hand-ordered and their position is burned into an export's
+/// caption; slates are never exported, so the only order that means anything
+/// is `(source_index, in_seconds)` — which is also the order a coach marking
+/// ranges in one pass produces.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Slate {
+    pub id: Uuid,
+    pub source_index: usize,
+    pub in_seconds: f64,
+    /// `None` until the out point is marked. **An open slate is stored**, not
+    /// held in the UI: a range half-marked when the app closes is then a
+    /// visible row the coach can finish or delete, rather than a press that
+    /// vanished. It is also why marking needs no in-progress state to
+    /// invalidate when the source list changes.
+    pub out_seconds: Option<f64>,
+    pub name: String,
+    pub tags: Vec<String>,
 }
 
 impl Project {
@@ -263,6 +308,7 @@ impl Project {
             name: name.into(),
             source_videos: Vec::new(),
             clips: Vec::new(),
+            slates: Vec::new(),
             preferences: Preferences::default(),
             scoreboard: None,
             match_events: Vec::new(),
@@ -340,6 +386,7 @@ impl Project {
                 .player_highlights
                 .iter()
                 .any(|h| h.source_index == index)
+            || self.slates.iter().any(|s| s.source_index == index)
     }
 
     /// Remove source `index`, keeping every clip, match event and player
@@ -377,6 +424,9 @@ impl Project {
         self.player_highlights
             .iter_mut()
             .for_each(|h| shift(&mut h.source_index));
+        self.slates
+            .iter_mut()
+            .for_each(|s| shift(&mut s.source_index));
         Ok(match current.cmp(&index) {
             std::cmp::Ordering::Less => Some(current),
             std::cmp::Ordering::Equal => None,
@@ -416,6 +466,9 @@ impl Project {
         }
         for h in &mut self.player_highlights {
             h.source_index = remap(h.source_index);
+        }
+        for s in &mut self.slates {
+            s.source_index = remap(s.source_index);
         }
         remap(current)
     }
@@ -500,8 +553,25 @@ impl Project {
             sort_index,
             created_at,
             transcript: String::new(),
+            // A take shot from a slate is linked by the caller, which is also
+            // where the slate's name and tags are applied: this stays a pure
+            // function of the recording.
+            slate_id: None,
         });
         self.clips.last().expect("just pushed")
+    }
+
+    /// Slates in reading order: by source, then by where they start. There is
+    /// no hand-order to respect — see [`Slate`] — so this is computed rather
+    /// than stored, and nothing has to renumber after a mark or a delete.
+    pub fn slates_sorted(&self) -> Vec<&Slate> {
+        let mut out: Vec<&Slate> = self.slates.iter().collect();
+        out.sort_by(|a, b| {
+            (a.source_index, a.in_seconds)
+                .partial_cmp(&(b.source_index, b.in_seconds))
+                .expect("marked times are finite")
+        });
+        out
     }
 
     // ------------------------------------------------------------ clip order

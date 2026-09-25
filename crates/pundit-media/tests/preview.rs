@@ -70,6 +70,7 @@ fn clip(duration: f64, show_pip: bool, events: Vec<CommentaryEvent>) -> Clip {
         sort_index: 0,
         created_at: "2026-09-19T00:00:00Z".into(),
         transcript: String::new(),
+        slate_id: None,
     }
 }
 

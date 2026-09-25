@@ -9,7 +9,9 @@ use uuid::Uuid;
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::highlight::{HighlightKey, NormRect, PlayerHighlight};
 use pundit_core::plan::ScoreboardMode;
-use pundit_core::project::{Clip, Inset, Preferences, Project, Quality, Resolution, SourceRef};
+use pundit_core::project::{
+    Clip, Inset, Preferences, Project, Quality, Resolution, Slate, SourceRef,
+};
 use pundit_core::recording::PendingClip;
 use pundit_core::scoreboard::{
     MatchEventKind, MatchEventRecord, MatchFormat, ScoreboardConfig, TeamConfig,
@@ -33,6 +35,7 @@ fn sample_clip() -> Clip {
         sort_index: 0,
         created_at: "2026-09-19T12:00:00Z".into(),
         transcript: String::new(),
+        slate_id: None,
     }
 }
 
@@ -358,14 +361,108 @@ fn a_v10_file_loads_under_the_current_version() {
     // The picker's choice belongs to the match, so it is written with it.
     p.preferences.last_export_scoreboard = Some(ScoreboardMode::Track);
     store::write(dir.path(), &mut p).unwrap();
-    assert_eq!(p.format_version, 11);
+    assert_eq!(p.format_version, CURRENT_FORMAT_VERSION);
     assert_eq!(store::read(dir.path()).unwrap(), p);
     assert!(dir.path().join("project.json.v10").exists());
 
     let text = std::fs::read_to_string(dir.path().join("project.json")).unwrap();
     let value: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(value["formatVersion"], json!(11));
+    assert_eq!(value["formatVersion"], json!(CURRENT_FORMAT_VERSION));
     assert_eq!(value["preferences"]["lastExportScoreboard"], json!("track"));
+}
+
+/// F1, for v12. A v11 file has no `slates` key and no `slateId` on a clip: it
+/// loads, both read as absent, and the next save stamps the current version and
+/// keeps the v11 file beside it. Every bump owes this test.
+#[test]
+fn a_v11_file_loads_under_the_current_version() {
+    let dir = TempDir::new().unwrap();
+    let mut raw = serde_json::to_value(sample_project()).unwrap();
+    raw["formatVersion"] = json!(11);
+    raw.as_object_mut()
+        .unwrap()
+        .remove("slates")
+        .expect("v12 writes the key this test removes");
+    raw["clips"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("slateId")
+        .expect("v12 writes the key this test removes");
+    write_raw(dir.path(), raw);
+
+    let mut p = store::read(dir.path()).expect("a v11 file loads");
+    assert!(p.slates.is_empty());
+    assert_eq!(p.clips[0].slate_id, None);
+
+    p.slates.push(Slate {
+        id: Uuid::new_v4(),
+        source_index: 0,
+        in_seconds: 845.0,
+        out_seconds: Some(880.0),
+        name: "corner routine".into(),
+        tags: vec!["corners".into()],
+    });
+    store::write(dir.path(), &mut p).unwrap();
+    assert_eq!(p.format_version, CURRENT_FORMAT_VERSION);
+    assert_eq!(store::read(dir.path()).unwrap(), p);
+    assert!(dir.path().join("project.json.v11").exists());
+
+    let text = std::fs::read_to_string(dir.path().join("project.json")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["formatVersion"], json!(CURRENT_FORMAT_VERSION));
+    assert_eq!(value["slates"][0]["name"], json!("corner routine"));
+    assert_eq!(value["slates"][0]["outSeconds"], json!(880.0));
+    assert_eq!(value["clips"][0]["slateId"], serde_json::Value::Null);
+}
+
+/// v12. An **open** slate — marked in, not yet out — is a stored row, which is
+/// what makes a half-marked range survive the app closing rather than
+/// vanishing. `null` on the wire, `None` in the record, and a slate is linked
+/// to its take from the clip's side so nothing here can dangle.
+#[test]
+fn an_open_slate_and_a_shot_one_round_trip() {
+    let dir = TempDir::new().unwrap();
+    let mut p = sample_project();
+    let slate = Uuid::new_v4();
+    p.slates.push(Slate {
+        id: slate,
+        source_index: 1,
+        in_seconds: 12.5,
+        out_seconds: None,
+        name: String::new(),
+        tags: Vec::new(),
+    });
+    p.clips[0].slate_id = Some(slate);
+    store::write(dir.path(), &mut p).unwrap();
+    assert_eq!(store::read(dir.path()).unwrap(), p);
+
+    let text = std::fs::read_to_string(dir.path().join("project.json")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["slates"][0]["outSeconds"], serde_json::Value::Null);
+    assert_eq!(value["clips"][0]["slateId"], json!(slate.to_string()));
+}
+
+/// Reading order is computed, not stored: by source, then by where each starts
+/// — which is also the order a coach marking ranges in one pass produces.
+#[test]
+fn slates_read_in_source_then_time_order() {
+    let mut p = sample_project();
+    for (source_index, in_seconds) in [(1, 30.0), (0, 90.0), (1, 10.0), (0, 5.0)] {
+        p.slates.push(Slate {
+            id: Uuid::new_v4(),
+            source_index,
+            in_seconds,
+            out_seconds: None,
+            name: String::new(),
+            tags: Vec::new(),
+        });
+    }
+    let order: Vec<(usize, f64)> = p
+        .slates_sorted()
+        .iter()
+        .map(|s| (s.source_index, s.in_seconds))
+        .collect();
+    assert_eq!(order, [(0, 5.0), (0, 90.0), (1, 10.0), (1, 30.0)]);
 }
 
 /// v10. The mode is the picture's file name and nothing else, the inset is a

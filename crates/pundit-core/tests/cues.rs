@@ -112,6 +112,7 @@ fn a_frozen_entry_holds_the_clock_in_one_cue() {
         sort_index: 0,
         created_at: "2026-09-20T00:00:00Z".into(),
         transcript: String::new(),
+        slate_id: None,
     });
 
     let cues = cues(&p, &ExportTarget::AllClips);

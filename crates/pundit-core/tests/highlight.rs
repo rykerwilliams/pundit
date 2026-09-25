@@ -272,6 +272,7 @@ fn clip_with_events(events: Vec<CommentaryEvent>, recording_duration: f64) -> Cl
         sort_index: 0,
         created_at: "2026-09-22T00:00:00Z".into(),
         transcript: String::new(),
+        slate_id: None,
     }
 }
 

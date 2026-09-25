@@ -30,6 +30,7 @@ fn clip(id: Uuid) -> Clip {
         sort_index: 0,
         created_at: String::new(),
         transcript: String::new(),
+        slate_id: None,
     }
 }
 

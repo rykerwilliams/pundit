@@ -26,6 +26,7 @@ fn clip(name: &str, sort_index: i64, tags: &[&str]) -> Clip {
         sort_index,
         created_at: "2026-09-19T00:00:00Z".into(),
         transcript: String::new(),
+        slate_id: None,
     }
 }
 
