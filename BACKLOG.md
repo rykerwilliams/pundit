@@ -1339,3 +1339,49 @@ Each entry: what, why deferred, when to revisit.
 - **Why deferred:** it is a layout piece that wants #87 in the same pass.
 - **When to revisit:** with #87.
 
+96. **Every hot key should be reassignable.** The coach (2026-09-25): "we need
+  to have all the hot keys reassignable". Today there are **33 `event.text ==`
+  branches** in one `FocusScope` in `app.slint`, each naming its key inline:
+  `R` records, `Z`/`X`/`V` tag match events, `,`/`.` step, `J`/`L` set the scan
+  speed, `0`–`3` the zoom, `I`/`O` will mark slates (#92), and so on. Nothing
+  is data, so nothing can be changed without a rebuild, and nothing can be
+  *listed* either — which is half of why #94 exists.
+- **The real work is not the settings UI, it is turning the branches into a
+  table.** One action enum in the app crate (`Action::{Record, TagHomeGoal,
+  StepBack, ScanFaster, ZoomIn, MarkIn, …}`), one default binding per action,
+  and one lookup the `FocusScope` consults. That refactor is worth doing on its
+  own merits even if nothing is ever rebound: it puts every key in one readable
+  place, makes "what can I press here?" answerable (#94), and stops the next
+  feature inventing a key that is already taken — which is exactly the check
+  #92 had to do by grep.
+- **Where a keymap lives:** `state.json`, with the pen, the speech model and
+  the window size. A binding is a property of the coach's hands, not of a
+  match, so it must never be a `project.json` field — and `state.json` costs no
+  format bump (`AppFiles`, `bus/state.rs`). Store it as action → binding by
+  **name**, so an unknown action in a file from a later build is ignored rather
+  than throwing the document away, exactly as `whisper_model` and `pen` do.
+- **What makes this harder than it looks, and must be decided in the spec:**
+  - **Slint gives `event.text`, not a scancode** — the same limitation already
+    recorded in #35. A rebind UI that captures "the key the coach pressed"
+    captures a *character*, so on AZERTY the digits arrive shifted and a dead
+    key arrives as nothing. Either the feature is honestly character-based
+    (and says so), or it waits for a Slint that exposes physical keys.
+  - **Text entry must keep winning.** The window's `text-editing` fold is what
+    stops a key firing while a `LineEdit` has focus; every rebindable action
+    has to stay behind it, and a coach must not be able to bind a bare letter
+    in a way that breaks typing in a sheet.
+  - **Conflicts and reset.** Two actions on one binding, and a way back to the
+    defaults, are the two things every remapper needs and the reason the table
+    has to be the source of truth rather than a list of overrides.
+  - **Modifiers.** `Ctrl+O`, `Ctrl+Z`, `Ctrl+Shift+Z` and the plain letters
+    share the same handler; a binding is a (modifiers, key) pair, not a letter.
+- **It wants #78's settings screen to land on**, and it should ship with a
+  read-only view of the bindings first — that alone closes #94 and is most of
+  the value.
+- **Why deferred:** only by order; it is the natural companion to #78, and the
+  table refactor should not be rushed into the same file four queued features
+  are already editing (#87, #88, #92).
+- **When to revisit:** with #78, or immediately if the coach's hands disagree
+  with a default badly enough to be worth the detour. Related: #35 (physical
+  keys), #94 (nothing says what the keys are), #78 (where the screen goes).
+
