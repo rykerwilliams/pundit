@@ -21,16 +21,21 @@ before it sets the order.
 
 Value to the person using the app today, then risk, then size.
 
-### Batch 1 — the day-of-use annoyances (small, visible)
+### Batch 1 — the day-of-use annoyance (done)
 
 1. **#94 zoom and pan are undiscoverable.** They asked how to pan within an hour
-   of installing. The `ZoomIndicator` is already over the picture: say how to
-   zoom while the zoom is at identity, in the shape of the existing
-   `DRAWING_HINT`.
-2. **#56 the score label overflows its cell at double-digit scores.** Measured,
-   fixed by fitting, which every other scoreboard label already does.
-3. **#73 `,` looks stuck across a timestamp gap longer than half a frame.**
-4. **#68 the volume slider is Slint's stock one**, so a drag commits per pixel.
+   of installing. The drag that does nothing already raises a notice, so that
+   notice now answers both readings of the gesture rather than only "press R".
+
+**Four items were triaged out of this batch, and the reason is the same one:**
+#56 (the score label at double digits), #73 (`,` across a real timestamp gap),
+#58 (`scan_abs` pairing), #63 (a truncated recording transcribing as complete),
+#68 (the stock volume slider) and #74 (a reel trim that is a silent no-op) each
+carry a "when to revisit" that has **not** happened — a format that scores in
+double digits, a coach reporting the symptom, a source with real gaps. Their
+fixes all cost more than the problem today, which is what the entries already
+say. Doing them now would be inventing work against this project's own rule
+that every change must earn its place. They stay as written.
 
 ### Batch 2 — the layout they have now asked for twice
 

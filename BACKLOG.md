@@ -1287,7 +1287,14 @@ Each entry: what, why deferred, when to revisit.
   machine they use has run 0.8.0. The whole removal is one commit and should
   leave no `coach-cuts` string in `crates/` at all.
 
-94. **Zoom and pan are undiscoverable.** The coach, using 0.8.0 for the first
+94. **Zoom and pan are undiscoverable — PARTLY RESOLVED (2026-09-25).** The
+  drag that does nothing is now the moment the app says how: `DRAWING_HINT`
+  reads "Ctrl+scroll to zoom, then drag to pan — or press R to draw", because
+  that gesture has two readings and the app cannot tell which was meant. What
+  is still true: `2`/`3`/`0` are written down nowhere, and a coach who never
+  drags never sees the hint. The rest of this entry stands.
+
+  The coach, using 0.8.0 for the first
   time (2026-09-25): "the panning doesn't work or i don't know how to do it".
   Nothing is broken — a left-drag over the picture pans, but only once the
   picture is zoomed in, because `zoom_input::panned` returns the zoom unchanged

@@ -289,8 +289,10 @@ mod tests {
         assert!(d.is_dragging());
     }
 
-    /// A drag, not recording, not zoomed: the hint. Recording, starting one
-    /// (both `recording` to the window) or zoomed in: none.
+    /// A drag, not recording, not zoomed: the hint — the one moment the app
+    /// has to say how to zoom and pan (BACKLOG #94). Recording, starting one
+    /// (both `recording` to the window) or zoomed in: none, because then the
+    /// drag does something.
     #[test]
     fn the_drawing_hint_is_for_a_pan_that_does_nothing() {
         let zoomed = Zoom::IDENTITY.zoomed_to_cursor(2.0, 0.5, 0.5);

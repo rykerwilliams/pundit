@@ -82,7 +82,13 @@ const LEVEL_DT: f64 = LEVEL_INTERVAL_NS as f64 / 1e9;
 const AVATAR_SIZE: u32 = 512;
 /// What a drag over the picture says outside a recording, where it can only
 /// pan and at 1× visibly does nothing (`zoom_input::drawing_hint`).
-const DRAWING_HINT: &str = "Drawing works while recording — press R";
+///
+/// **It answers both readings of that drag**, because the gesture cannot say
+/// which was meant: the coach who expected to draw, and the coach who expected
+/// to pan (2026-09-25 — "the panning doesn't work or i don't know how to do
+/// it"; nothing was broken, there was simply nothing to pan at 1×). It is the
+/// only place either is written down in the app, which is BACKLOG #94.
+const DRAWING_HINT: &str = "Ctrl+scroll to zoom, then drag to pan — or press R to draw";
 /// What a drag in the H tool says while the picture plays (spec H3). A key
 /// sits on the frame it was placed on, and while the picture runs that frame
 /// is gone before the drag ends.
