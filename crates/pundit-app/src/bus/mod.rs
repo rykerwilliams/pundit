@@ -201,6 +201,14 @@ pub enum Command {
         edit: SlateEdit,
     },
     DeleteSlate(Uuid),
+    /// Record the commentary for a slate: the player goes to its in point and
+    /// a take starts, and the clip inherits the slate's name and tags. It
+    /// carries **no position** — the in point is stored, not read from the
+    /// playhead — and `zoom` is what the recording log opens with.
+    ShootSlate {
+        id: Uuid,
+        zoom: Zoom,
+    },
     /// Rename or recolour a highlight from the Highlights panel.
     EditHighlight {
         id: Uuid,
@@ -969,6 +977,7 @@ impl Bus {
             } => self.mark_slate_out(source_index, source_seconds),
             Command::EditSlate { id, edit } => self.edit_slate(id, edit),
             Command::DeleteSlate(id) => self.delete_slate(id),
+            Command::ShootSlate { id, zoom } => self.shoot_slate(id, zoom),
             Command::EditHighlight { id, edit } => self.edit_highlight(id, edit),
             Command::DeleteHighlightKey { id, source_seconds } => {
                 self.delete_highlight_key(id, source_seconds)

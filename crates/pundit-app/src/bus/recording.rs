@@ -19,7 +19,7 @@ use pundit_core::recording::{PendingClip, RecordingLog};
 use pundit_core::stroke::Stroke;
 use pundit_core::zoom::Zoom;
 use pundit_media::{
-    list_devices, resolve_camera, resolve_mic, CaptureSources, Recorder, RecorderMessage,
+    list_devices, resolve_camera, resolve_mic, CaptureSources, Origin, Recorder, RecorderMessage,
 };
 use uuid::Uuid;
 
@@ -57,6 +57,9 @@ pub enum RecordingStatus {
 /// The recording in progress.
 pub(super) struct Active {
     pub(super) pending: PendingClip,
+    /// The slate this take was shot from, if it was shot from one. The clip
+    /// it produces inherits that slate's name and tags, and carries its id.
+    pub(super) slate: Option<Uuid>,
     recorder: Recorder,
     pub(super) log: RecordingLog,
     /// The file, deleted on an abort.
@@ -75,14 +78,23 @@ impl Bus {
         if self.recording.is_some() {
             self.stop_recording();
         } else {
-            self.start_recording(zoom);
+            self.start_recording(zoom, None);
         }
     }
 
-    /// Starts recording from where the player is heading (R6). Refused with
-    /// an error unless a project with sources, none missing, is open and its
+    /// Starts recording from where the player is heading (R6), or — shooting a
+    /// slate — from `from`, the range's video and in point. Refused with an
+    /// error unless a project with sources, none missing, is open and its
     /// current source is loaded or loading.
-    fn start_recording(&mut self, zoom: Zoom) {
+    ///
+    /// **A slate's seek happens here, not in the caller**, and after
+    /// `capture_sources`. `can_record` does not see every refusal:
+    /// `UserError::NoCamera` comes from `resolve_camera` inside
+    /// `capture_sources`, so a caller that seeked first would move the game
+    /// video to the in point and *then* refuse on a machine with no camera —
+    /// breaking the promise the comment below makes. Every refusal still
+    /// leaves the player exactly as it was.
+    fn start_recording(&mut self, zoom: Zoom, from: Option<(Uuid, usize, f64)>) {
         if let Err(e) = self.can_record() {
             return self.emit(Event::Error(e));
         }
@@ -99,6 +111,15 @@ impl Bus {
         // Every clip starts on a still frame.
         if self.playing {
             self.set_playing(false);
+        }
+        // Now that nothing can refuse: go to the slate's in point. The skip
+        // coordinator is reset first because `heading` prefers its pending
+        // target over the player's, so a skip burst still in the air would
+        // otherwise stamp this clip where the arrows were heading rather than
+        // where the range starts.
+        if let Some((_, source_index, in_seconds)) = from {
+            self.reset_skip();
+            self.load(source_index, in_seconds, true, Origin::Scrub);
         }
         let (source_index, start_source_seconds) = self.heading(None);
         let pending = PendingClip {
@@ -132,6 +153,7 @@ impl Bus {
         };
         self.recording = Some(Active {
             pending,
+            slate: from.map(|(id, _, _)| id),
             log: RecordingLog::new(recorder.t0_ns(), zoom, start_source_seconds),
             recorder,
             path,
@@ -146,6 +168,18 @@ impl Bus {
         // killed a transcript for nothing. After the status, since this joins
         // the transcription thread and the UI is waiting to say Recording.
         self.preempt_transcription();
+    }
+
+    /// [`Bus::shoot_slate`]'s door into the one function that owns the
+    /// refusal barrier: the slate's video and in point, and the id the clip
+    /// will carry.
+    pub(super) fn start_recording_from_slate(&mut self, zoom: Zoom, from: (Uuid, usize, f64)) {
+        if self.recording.is_some() {
+            // The UI greys Record on a row while a take runs; reaching here is
+            // a UI bug, and starting a second one would lose the first.
+            return eprintln!("bus: refused a slate shoot while recording");
+        }
+        self.start_recording(zoom, Some(from));
     }
 
     /// Stops the recording, keeping its clip, or aborts it if nothing has
@@ -335,8 +369,29 @@ impl Bus {
         let clip_id = active.pending.id;
         let outcome = active.recorder.stop(STOP_TIMEOUT);
         if let Some(open) = &mut self.open {
+            // Read out before the mutable borrow: what a slate-shot take
+            // inherits. A slate deleted while the take ran inherits nothing,
+            // which is the right answer and needs no special case.
+            let inherited = active.slate.and_then(|id| {
+                open.project
+                    .slates
+                    .iter()
+                    .find(|s| s.id == id)
+                    .map(|s| (s.name.clone(), s.tags.clone()))
+            });
             open.project
                 .add_recorded_clip(active.pending, outcome.duration, events, created_at());
+            if let Some(clip) = open.project.clips.last_mut() {
+                clip.slate_id = active.slate;
+                if let Some((name, tags)) = inherited {
+                    // An unnamed slate leaves the generated "2-01:02:05"
+                    // alone: it says more than an empty name would.
+                    if !name.is_empty() {
+                        clip.name = name;
+                    }
+                    clip.tags = tags;
+                }
+            }
         }
         self.project_changed();
         self.emit(Event::Recording(RecordingStatus::Idle));

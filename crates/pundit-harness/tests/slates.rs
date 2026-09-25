@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use pundit_app::bus::{Command, UserError};
+use pundit_app::bus::{Command, RecordingStatus, UserError};
 use pundit_core::project::{Project, SlateEdit};
 use pundit_core::store;
 use pundit_core::zoom::Zoom;
@@ -195,4 +195,155 @@ fn a_source_a_slate_sits_on_cannot_be_removed() {
     let saved = p.saved();
     assert_eq!(saved.source_videos.len(), 2, "nothing was removed");
     assert_eq!(saved.slates.len(), 1);
+}
+
+// ------------------------------------------------------------ shooting
+
+/// The whole point of the feature: Record on a row starts the take at the
+/// range's in point, and the clip it produces carries the slate's name, tags
+/// and id — the tagging done live is not done twice.
+#[test]
+fn shooting_a_slate_starts_at_its_in_point_and_the_clip_inherits_it() {
+    let (mut h, p) = Proj::open(&["a.webm", "b.webm"]);
+    h.wait_settled();
+
+    h.send(mark_in(1, 1.2));
+    let id = h.wait_changed().project.slates[0].id;
+    h.send(mark_out(1, 1.8));
+    h.wait_changed();
+    h.send(Command::EditSlate {
+        id,
+        edit: SlateEdit::Name("corner routine".into()),
+    });
+    h.send(Command::EditSlate {
+        id,
+        edit: SlateEdit::Tags(vec!["corners".into()]),
+    });
+    h.wait_changed();
+    h.wait_changed();
+
+    h.send(Command::ShootSlate {
+        id,
+        zoom: Zoom::IDENTITY,
+    });
+    h.wait_recording();
+    h.wait_recording();
+    h.send(Command::StopRecording);
+    h.wait_changed();
+    h.wait_recording();
+    h.shutdown();
+
+    let saved = p.saved();
+    assert_eq!(saved.clips.len(), 1);
+    let clip = &saved.clips[0];
+    assert_eq!(clip.source_index, 1, "the slate's video");
+    assert!(
+        (clip.start_source_seconds - 1.2).abs() < 0.05,
+        "the take starts at the in point, not where the player was: {}",
+        clip.start_source_seconds
+    );
+    assert_eq!(clip.name, "corner routine");
+    assert_eq!(clip.tags, ["corners"]);
+    assert_eq!(
+        clip.slate_id,
+        Some(id),
+        "the clip names the slate it came from"
+    );
+    assert_eq!(saved.slates.len(), 1, "and the slate survives its take");
+}
+
+/// A skip burst still in the air must not carry the take with it.
+/// `start_recording` reads the skip coordinator's pending target in preference
+/// to the player's, so the shoot resets it before seeking — otherwise the clip
+/// is stamped where the arrows were heading.
+#[test]
+fn a_pending_skip_does_not_drag_the_take_off_the_in_point() {
+    let (mut h, p) = Proj::open(&["a.webm"]);
+    h.wait_settled();
+    h.send(mark_in(0, 0.3));
+    let id = h.wait_changed().project.slates[0].id;
+
+    // Two taps of the arrow: a burst is pending when Record is pressed.
+    h.send(Command::Skip {
+        delta: 3.0,
+        host_ns: pundit_media::now_ns(),
+    });
+    h.send(Command::Skip {
+        delta: 3.0,
+        host_ns: pundit_media::now_ns(),
+    });
+    h.send(Command::ShootSlate {
+        id,
+        zoom: Zoom::IDENTITY,
+    });
+    h.wait_recording();
+    h.wait_recording();
+    h.send(Command::StopRecording);
+    h.wait_changed();
+    h.wait_recording();
+    h.shutdown();
+
+    let clip = &p.saved().clips[0];
+    assert!(
+        (clip.start_source_seconds - 0.3).abs() < 0.05,
+        "the burst should not move the take: {}",
+        clip.start_source_seconds
+    );
+}
+
+/// An unnamed slate leaves the clip's generated name alone — "2-00:00:01"
+/// says more than an empty string, and the tagging is still inherited.
+#[test]
+fn an_unnamed_slate_leaves_the_generated_clip_name() {
+    let (mut h, p) = Proj::open(&["a.webm"]);
+    h.wait_settled();
+    h.send(mark_in(0, 0.4));
+    let id = h.wait_changed().project.slates[0].id;
+
+    h.send(Command::ShootSlate {
+        id,
+        zoom: Zoom::IDENTITY,
+    });
+    h.wait_recording();
+    h.wait_recording();
+    h.send(Command::StopRecording);
+    h.wait_changed();
+    h.wait_recording();
+    h.shutdown();
+
+    let clip = &p.saved().clips[0];
+    assert!(!clip.name.is_empty(), "the generated name stands");
+    assert_eq!(clip.slate_id, Some(id));
+}
+
+/// Shooting a slate while a take is already running is refused, and the
+/// running take is left alone — starting a second would lose the first.
+#[test]
+fn shooting_while_recording_is_refused() {
+    let (mut h, p) = Proj::open(&["a.webm"]);
+    h.wait_settled();
+    h.send(mark_in(0, 0.5));
+    let id = h.wait_changed().project.slates[0].id;
+
+    h.send(Command::ToggleRecording {
+        zoom: Zoom::IDENTITY,
+    });
+    h.wait_recording();
+    assert!(matches!(
+        h.wait_recording(),
+        RecordingStatus::Recording { .. }
+    ));
+
+    h.send(Command::ShootSlate {
+        id,
+        zoom: Zoom::IDENTITY,
+    });
+    h.send(Command::StopRecording);
+    h.wait_changed();
+    h.wait_recording();
+    h.shutdown();
+
+    let saved = p.saved();
+    assert_eq!(saved.clips.len(), 1, "one take, not two");
+    assert_eq!(saved.clips[0].slate_id, None, "and it was not the slate's");
 }
