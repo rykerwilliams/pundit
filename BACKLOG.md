@@ -1100,10 +1100,26 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   and the API says which licence each track carries. If the coach ever monetises
   a channel, Jamendo sells explicit sync licences over the same catalogue, which
   is the upgrade path rather than a different design.
-- **Decided, 2026-09-25:** Jamendo, and the coach will hold the client ID. So
-  the build is: the local folder first (the mixer's only input), then a Jamendo
-  search that fetches into the same cache, with the key in #78's settings and
-  the folder as the no-key fallback.
+- **Openverse is the better front door, and it was found by asking about the
+  wrong URL.** `api.creativecommons.org/docs/` is CC's old *licensing-engine*
+  API — the thing that helps an app choose and generate a licence, documented
+  for versions 1.0/1.5 and last touched in 2009. CC's media search became
+  **Openverse** (moved to WordPress in 2021, `api.openverse.org`), and it
+  indexes over a million audio records from **Jamendo, Freesound, ccMixter,
+  Wikimedia Commons and the Free Music Archive** — including, that is, the one
+  catalogue whose own API is dead. **Anonymous queries need no key** (about
+  20/min burst, 200/day sustained, which is far more than a coach picking a
+  track occasionally), and registering an OAuth app later only raises the
+  ceiling. That removes the client-ID decision from the critical path.
+- **The tradeoff to know before building:** Openverse is an *index* — genre
+  lives in tags, and the audio files are hosted by the source, so a download
+  still goes to Jamendo or FMA. Jamendo's own API has explicit genre, mood and
+  tempo filters, which is what *"pick rock or EDM"* actually wants.
+- **Decided, 2026-09-25:** the local folder first (the mixer's only input), then
+  **Openverse** as the search that fetches into the same cache — no key, several
+  catalogues — with **Jamendo direct as the upgrade** if tag matching proves too
+  coarse for genre, and the coach's own Jamendo key an option in #78 rather than
+  a requirement.
 - **When to revisit:** after #78, which is where the key field lives. Nothing
   further is needed from the coach.
 
