@@ -30,7 +30,7 @@ product call, or their own data.
 - **84.** Music under a goals reel. The coach (2026-09-24): "pull in soundtrack
 - **79.** What the app does over a forwarded X11 display, and saying so. The…
 - **82.** P4 (showing suggestions) is not justified and is not started. No
-- **80.** The sixteen restarts have never been written down, and V-3 depends on
+- **80.** The restarts — mostly done; match B's seven are the remainder
 - **81.** Task 3.6 — the detector runtime and formation-feasibility spike (L3,…
 - **53.** 2160p export
 - **24.** Linux packaging: AppImage vs Flatpak
@@ -952,19 +952,30 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 
 ## P3 deferrals (spec `docs/superpowers/specs/2026-09-22-match-vision-design.md`, verdict `docs/superpowers/spikes/2026-09-24-match-vision-measurements.md`)
 
-80. **The sixteen restarts have never been written down, and V-3 depends on
-  them.** `kickoffs.txt` is the blank template in all three tagged folders, so
-  D4's `W` is still the spec's guess of 150 s. Measured, `W` is the single most
-  influential number in the goal rule: it sets how much of the match the
-  suggestions claim, and at the chosen constants that is **57% of a held-out
-  match**, which is most of the gap between the rule and chance.
-- **What to do:** the coach writes the restart of each of the sixteen goals into
-  `kickoffs.txt` (`<1-based source> <mm:ss>`, the moment the ball is played from
-  the centre spot). The ground-truth run reads it already and scores V-3 without
-  another line of code.
-- **Why deferred:** it is the user's own step and nothing in the repo can do it.
-- **When to revisit:** before any further work on suggested goals. Nothing else
-  in P3's follow-ups is worth doing first.
+80. **The restarts — MOSTLY DONE (2026-09-25), and they already changed the
+  answer.** The coach timed them the same week: **9 of 16**, being all of match
+  A (6) and all of match C (3); match B's `kickoffs.txt` is still the blank
+  template. This entry read "never been written down" long after they were
+  written down and used — corrected here.
+- **What they bought, from
+  `docs/superpowers/spikes/2026-09-24-match-vision-measurements.md`:** `W` is
+  **60 s, not the shipped 150** — the longest walk-back ever timed, rounded up,
+  covering 9 of 9 with 13.9 s to spare. Suggestions fell from claiming **57% of
+  a held-out match to 29%**, and lift over chance rose from **+0.15 to +0.48**.
+  Given the nine real restarts — the picture's half done perfectly — the
+  confirmation rule finds **9 of 9 goals with no false ones**, every cheer
+  within 2.4 s of the tagged frame.
+- **So the restarts did their job: they proved which half is broken.** It is not
+  the sound. The picture offers about 21 candidate restarts a half where a half
+  holds three or four, which is why suggestions are still not shown (#82) and
+  why P5's formation check is now the whole question.
+- **What is left:** match B's seven restarts, which would widen the sample but
+  cannot change the conclusion — the two filled matches are the held-out pair,
+  and B is the tuning match. Worth doing only alongside the next detection
+  attempt, not before it.
+- **Why deferred:** the remaining seven are the coach's own step, and nothing
+  in the repo can do it.
+- **When to revisit:** with P5, if it is ever attempted.
 
 81. **Task 3.6 — the detector runtime and formation-feasibility spike (L3, V-2,
   V-7) — is deferred with P5 rather than run.** Its entry condition is met (the
