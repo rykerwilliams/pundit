@@ -946,38 +946,21 @@ fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             }
         }
     });
-    window.on_begin_slate_edit({
-        let weak = window.as_weak();
-        move || {
-            if let Some(w) = weak.upgrade() {
-                // The row the field started editing: `for` reuses its items by
-                // index, so a commit must name the slate it opened on, not
-                // whatever is selected when focus leaves (the inspector's
-                // rule).
-                w.set_editing_slate_id(w.get_selected_slate());
-            }
-        }
-    });
-    let slate_edit = |bus: &Rc<RefCell<BusHandle>>, weak: slint::Weak<AppWindow>, tags: bool| {
-        let bus = bus.clone();
-        move |text: SharedString| {
+    window.on_edit_slate_field({
+        let (bus, weak) = (bus.clone(), window.as_weak());
+        move |field, text| {
             let Some(w) = weak.upgrade() else { return };
+            // The slate the field opened on, which needn't be the selection
+            // any more — the clip inspector's rule.
             let editing = w.get_editing_slate_id();
-            let Some(id) = (!editing.is_empty()).then(|| parse_id(&editing)).flatten() else {
-                return;
-            };
-            let edit = if tags {
-                SlateEdit::Tags(normalize_tags(&text))
-            } else {
-                SlateEdit::Name(text.to_string())
+            let Some(id) = parse_id(&editing) else { return };
+            let edit = match field {
+                SlateField::Tags => SlateEdit::Tags(normalize_tags(&text)),
+                SlateField::Name => SlateEdit::Name(text.to_string()),
             };
             bus.borrow().send(Command::EditSlate { id, edit });
         }
-    };
-    window.on_commit_slate(slate_edit(bus, window.as_weak(), false));
-    window.on_end_slate_edit(slate_edit(bus, window.as_weak(), false));
-    window.on_commit_slate_tags(slate_edit(bus, window.as_weak(), true));
-    window.on_end_slate_tags(slate_edit(bus, window.as_weak(), true));
+    });
     window.on_show_slate({
         let weak = window.as_weak();
         move || {

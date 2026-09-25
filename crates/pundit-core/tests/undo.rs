@@ -318,28 +318,18 @@ fn a_source_change_leaves_a_redo_delete() {
     assert_eq!(c.redo_stack(), [delete(id)]);
 }
 
-/// A slate snapshot is the third of that shape, and this is the test that
-/// would have caught it being forgotten: `purge_for_source_change` used a
-/// **non-exhaustive** `matches!`, so a new record type joined the stacks in
-/// silence. Mark slates on a source, move that source, press Ctrl+Z once for
-/// something unrelated, and the snapshot restores pre-move indices — every
-/// slate pointing at the wrong file, and saved.
-#[test]
-fn a_source_change_purges_a_slate_snapshot_too() {
-    let mut c = UndoController::default();
-    let kept = edit();
-    let _ = c.push(kept.clone());
-    let _ = c.push(slates(1));
-
-    assert!(c.purge_for_source_change().is_empty());
-    assert_eq!(c.undo_stack(), [kept], "the slate snapshot is gone");
-}
-
 /// Phase 9: a match-event snapshot goes from **both** stacks, unlike a
 /// delete. Neither side of one is live, so undoing or redoing it would
 /// restore indices the permutation didn't reach (spec S5). A player-highlight
 /// snapshot is the same shape and goes the same way (match-vision spec H3),
 /// and so is a slate's.
+///
+/// **The slate case is the one this test was extended for**, and it is the
+/// test that would have caught the hole: `purge_for_source_change` tested
+/// staleness with a non-exhaustive `matches!`, so a record type added later
+/// joined the stacks in silence. Mark slates on a source, move that source,
+/// press Ctrl+Z once for something unrelated, and the snapshot restores
+/// pre-move indices — every slate pointing at the wrong file, and saved.
 #[test]
 fn a_source_change_purges_snapshots_from_both_stacks() {
     for snapshot in [match_events as fn(usize) -> UndoAction, highlights, slates] {

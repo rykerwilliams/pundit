@@ -55,6 +55,16 @@ pub enum RecordingStatus {
 }
 
 /// The recording in progress.
+/// What a take shot from a slate starts on: the range's video and in point,
+/// and the slate the clip will carry. A tuple read positionally at three use
+/// sites was harder to read than the four lines this costs.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Shot {
+    pub(super) slate: Uuid,
+    pub(super) source_index: usize,
+    pub(super) in_seconds: f64,
+}
+
 pub(super) struct Active {
     pub(super) pending: PendingClip,
     /// The slate this take was shot from, if it was shot from one. The clip
@@ -94,7 +104,7 @@ impl Bus {
     /// video to the in point and *then* refuse on a machine with no camera —
     /// breaking the promise the comment below makes. Every refusal still
     /// leaves the player exactly as it was.
-    fn start_recording(&mut self, zoom: Zoom, from: Option<(Uuid, usize, f64)>) {
+    pub(super) fn start_recording(&mut self, zoom: Zoom, from: Option<Shot>) {
         if let Err(e) = self.can_record() {
             return self.emit(Event::Error(e));
         }
@@ -117,9 +127,9 @@ impl Bus {
         // target over the player's, so a skip burst still in the air would
         // otherwise stamp this clip where the arrows were heading rather than
         // where the range starts.
-        if let Some((_, source_index, in_seconds)) = from {
+        if let Some(shot) = from {
             self.reset_skip();
-            self.load(source_index, in_seconds, true, Origin::Scrub);
+            self.load(shot.source_index, shot.in_seconds, true, Origin::Scrub);
         }
         let (source_index, start_source_seconds) = self.heading(None);
         let pending = PendingClip {
@@ -153,7 +163,7 @@ impl Bus {
         };
         self.recording = Some(Active {
             pending,
-            slate: from.map(|(id, _, _)| id),
+            slate: from.map(|shot| shot.slate),
             log: RecordingLog::new(recorder.t0_ns(), zoom, start_source_seconds),
             recorder,
             path,
@@ -168,18 +178,6 @@ impl Bus {
         // killed a transcript for nothing. After the status, since this joins
         // the transcription thread and the UI is waiting to say Recording.
         self.preempt_transcription();
-    }
-
-    /// [`Bus::shoot_slate`]'s door into the one function that owns the
-    /// refusal barrier: the slate's video and in point, and the id the clip
-    /// will carry.
-    pub(super) fn start_recording_from_slate(&mut self, zoom: Zoom, from: (Uuid, usize, f64)) {
-        if self.recording.is_some() {
-            // The UI greys Record on a row while a take runs; reaching here is
-            // a UI bug, and starting a second one would lose the first.
-            return eprintln!("bus: refused a slate shoot while recording");
-        }
-        self.start_recording(zoom, Some(from));
     }
 
     /// Stops the recording, keeping its clip, or aborts it if nothing has

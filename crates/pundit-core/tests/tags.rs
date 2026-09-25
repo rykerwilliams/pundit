@@ -3,9 +3,9 @@
 
 use uuid::Uuid;
 
-use pundit_core::project::{Clip, Inset};
+use pundit_core::project::{Clip, Inset, Project, Slate};
 use pundit_core::tag::{
-    tag_suggestions, tag_summaries, take_suggestion, TagSummary, MAX_SUGGESTIONS,
+    tag_suggestions, tag_summaries, tag_vocabulary, take_suggestion, TagSummary, MAX_SUGGESTIONS,
 };
 
 fn clip(tags: &[&str], duration: f64) -> Clip {
@@ -145,4 +145,30 @@ fn taking_a_suggestion_replaces_the_last_fragment() {
         "shot, set piece, "
     );
     assert_eq!(take_suggestion("shot,se", "set piece"), "shot, set piece, ");
+}
+
+/// A coach tags ranges `corners` live and shoots none of them: the next one
+/// must still autocomplete, so the vocabulary is clips **and** slates. The tag
+/// overview stays clips-only — its columns are a clip count and a duration,
+/// and a slate has neither.
+#[test]
+fn the_vocabulary_is_the_union_of_clip_and_slate_tags() {
+    let mut p = Project::new("Game");
+    p.clips.push(clip(&["attack"], 5.0));
+    p.slates.push(Slate {
+        id: Uuid::new_v4(),
+        source_index: 0,
+        in_seconds: 1.0,
+        out_seconds: None,
+        name: String::new(),
+        tags: vec!["corners".into()],
+    });
+
+    assert_eq!(tag_vocabulary(&p), ["attack", "corners"]);
+    assert_eq!(tag_suggestions(&tag_vocabulary(&p), "cor"), ["corners"]);
+    assert_eq!(
+        tag_summaries(&p.clips).len(),
+        1,
+        "the overview is clips only"
+    );
 }

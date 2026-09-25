@@ -93,7 +93,10 @@ fn closing_nothing_is_a_spoken_refusal_that_stores_nothing() {
     let err = h.wait_for_error();
     assert!(matches!(err, UserError::Slate(_)), "{err:?}");
     assert!(err.is_notice(), "a modal could land over a live take");
-    assert!(err.to_string().contains('i'), "it says which key: {err}");
+    assert!(
+        err.to_string().contains("press i"),
+        "it says which key to press: {err}"
+    );
 
     h.shutdown();
     assert!(p.saved().slates.is_empty());

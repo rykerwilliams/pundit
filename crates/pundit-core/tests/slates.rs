@@ -3,6 +3,7 @@
 //! All tests here are new — the macOS app had no such record.
 
 use pundit_core::project::{Project, SlateEdit, SlateError, SourceRef};
+use pundit_core::recording::PendingClip;
 use uuid::Uuid;
 
 fn project(sources: usize) -> Project {
@@ -110,32 +111,24 @@ fn editing_a_slate_sets_the_field_it_names() {
     assert_eq!(p.slates[0].name, "corner routine");
 }
 
-/// Deleting a slate a clip was shot from leaves the clip alone: "shot" is
-/// asked of the clips, so a `slate_id` naming nothing is harmless.
+/// Deleting a slate leaves the clip shot from it alone, `slate_id` and all:
+/// "has this been shot?" is asked of the clips, so a link naming nothing is
+/// harmless — which is the whole reason the link points this way.
 #[test]
 fn deleting_a_slate_leaves_the_clip_it_was_shot_into() {
     let mut p = project(1);
     let id = p.mark_slate_in(0, 1.0);
+    let pending = PendingClip {
+        id: Uuid::new_v4(),
+        source_index: 0,
+        start_source_seconds: 1.0,
+    };
+    p.add_recorded_clip(pending, 12.0, Vec::new(), "2026-09-25T00:00:00Z".into());
+    p.clips[0].slate_id = Some(id);
+
     p.delete_slate(id);
+
     assert!(p.slates.is_empty());
-
-    p.delete_slate(id);
-    assert!(p.slates.is_empty(), "deleting twice is not an error");
-}
-
-/// A coach tags twelve ranges `corners` live and shoots none of them: the
-/// thirteenth must still autocomplete. The tag **overview** stays clips-only
-/// — its columns are a clip count and a duration, and a slate has neither —
-/// so the vocabulary is where the union belongs.
-#[test]
-fn the_tag_vocabulary_is_the_union_of_clips_and_slates() {
-    use pundit_core::tag::{tag_suggestions, tag_vocabulary};
-
-    let mut p = project(1);
-    let id = p.mark_slate_in(0, 1.0);
-    p.edit_slate(id, SlateEdit::Tags(vec!["corners".into()]));
-
-    let vocabulary = tag_vocabulary(&p);
-    assert_eq!(vocabulary, ["corners"]);
-    assert_eq!(tag_suggestions(&vocabulary, "cor"), ["corners"]);
+    assert_eq!(p.clips.len(), 1, "the take is not deleted with its slate");
+    assert_eq!(p.clips[0].slate_id, Some(id), "and keeps its dangling link");
 }

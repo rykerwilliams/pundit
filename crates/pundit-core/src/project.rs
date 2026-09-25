@@ -647,9 +647,9 @@ impl Project {
     pub fn slates_sorted(&self) -> Vec<&Slate> {
         let mut out: Vec<&Slate> = self.slates.iter().collect();
         out.sort_by(|a, b| {
-            (a.source_index, a.in_seconds)
-                .partial_cmp(&(b.source_index, b.in_seconds))
-                .expect("marked times are finite")
+            a.source_index
+                .cmp(&b.source_index)
+                .then(a.in_seconds.total_cmp(&b.in_seconds))
         });
         out
     }

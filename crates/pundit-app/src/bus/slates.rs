@@ -20,6 +20,7 @@ use pundit_core::undo::UndoAction;
 use pundit_core::zoom::Zoom;
 use uuid::Uuid;
 
+use super::recording::Shot;
 use super::{Bus, Event, UserError};
 
 impl Bus {
@@ -68,8 +69,12 @@ impl Bus {
         let Some(slate) = open.project.slates.iter().find(|s| s.id == id) else {
             return eprintln!("bus: ShootSlate on slate {id}, which isn't there");
         };
-        let from = (id, slate.source_index, slate.in_seconds);
-        self.start_recording_from_slate(zoom, from);
+        let shot = Shot {
+            slate: id,
+            source_index: slate.source_index,
+            in_seconds: slate.in_seconds,
+        };
+        self.start_recording(zoom, Some(shot));
     }
 
     pub(super) fn edit_slate(&mut self, id: Uuid, edit: SlateEdit) {
