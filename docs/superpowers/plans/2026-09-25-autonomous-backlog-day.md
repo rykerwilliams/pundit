@@ -27,7 +27,7 @@ Value to the person using the app today, then risk, then size.
    of installing. The drag that does nothing already raises a notice, so that
    notice now answers both readings of the gesture rather than only "press R".
 
-**Four items were triaged out of this batch, and the reason is the same one:**
+**Six items were triaged out of this batch, and the reason is the same one:**
 #56 (the score label at double digits), #73 (`,` across a real timestamp gap),
 #58 (`scan_abs` pairing), #63 (a truncated recording transcribing as complete),
 #68 (the stock volume slider) and #74 (a reel trim that is a silent no-op) each

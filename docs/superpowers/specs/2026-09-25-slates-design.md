@@ -137,19 +137,34 @@ The row's primary action is **Record**. The order is load-bearing, because
 `start_recording` is built around *"Before anything changes: a refusal leaves
 the player as it was"*:
 
-1. **`can_record()` first.** `Bus::load` closes any open preview
-   unconditionally, while `can_record` *refuses* when a preview is open and
-   says so. Seeking first would silently throw away the coach's preview where
-   `R` explains itself. Every other refusal (an export is running, no camera)
-   would likewise leave the game video moved with no recording to show for it.
-2. **`reset_skip()`.** `start_recording` takes its start from
+**The shoot does not sequence this from outside.** `start_recording` gains two
+parameters — `start: Option<(usize, f64)>` and `slate: Option<Uuid>` — and
+`toggle_recording` passes `None, None`. Everything below then happens **inside**
+the one function that already owns the refusal barrier:
+
+1. **Every refusal fires before the player moves.** `can_record` checks the
+   project, a running export, an open preview, the sources and the load; but
+   **`NoCamera` is not among them** — it comes from `resolve_camera` inside
+   `capture_sources`, after `can_record` has passed. So a slate shoot sequenced
+   from outside would move the game video to the in point and *then* refuse on a
+   camera-less machine. Moving the seek inside, after `capture_sources`
+   succeeds, is what makes "a refusal leaves the player as it was" true for this
+   path too — and it needs no change to `can_record`'s or `start_recording`'s
+   visibility, both of which are private to `bus::recording`.
+2. **`reset_skip()` before the seek.** `start_recording` takes its start from
    `heading(None)`, which prefers the **skip coordinator's pending target** over
    the player's. Two taps of the right arrow followed by Record would otherwise
    stamp the clip at the skip target rather than the slate's in point. `scrub`
    and `step_frame` already call `reset_skip` for exactly this reason.
-3. **Seek**, then **start**. This does not race: `load` sets `current` and
+3. **Then the seek**, which does not race: `load` sets `current` and
    `player.holds(uri)` synchronously, so `heading(None)` returns the in point
    immediately — no wait, and nobody should add one.
+
+`Command::ShootSlate` therefore carries `{ id, zoom }` and **no captured
+position**: the in point is a stored field, not a playhead reading. That is the
+same reasoning `EditMatchEvent` records — "the time is typed, not captured … the
+editor never reads the playhead at all". The `zoom` it does carry is the one
+`RecordingLog::new` seeds the log with, which the UI owns.
 
 **The inheritance mechanism**, which the first draft asserted without one:
 `add_recorded_clip` hardcodes the name (`"2-01:02:05"`), empty notes and empty
@@ -171,8 +186,20 @@ recording the coach is still talking over.
 
 A slate row is selectable, and a selected slate edits its **name and tags** in
 the same shape the clip inspector already uses — the two fields it already has.
-`i` and `o` with a slate selected re-time it. Delete is a row action. Every
-edit funnels through a snapshot-undo action, as match events and highlights do.
+Delete is a row action. Every edit funnels through a snapshot-undo action, as
+match events and highlights do.
+
+**`i` and `o` do not re-time a selected slate**, which an earlier draft of this
+section said and §S4 contradicts. One key cannot both create and re-time, and
+the mode deciding which would be invisible state on the primary key. Re-timing
+is delete-and-re-mark: two keystrokes on a list whose rows are cheap.
+
+**Any field added here joins the window's `text-editing` fold in the same commit
+as the keys.** `handle-key` returns `reject` on that property *before* the
+letter branches, so a slate tag field outside the fold would mean typing
+"possession" marks two slates, starts a recording, clears the drawings and tags
+two goals on the way through. The keys also need `!event.repeat`, as `tag-key`
+and the `h`/`r` branches do, or a held key marks a slate per repeat.
 
 **The typed-line editor is not part of this feature** (§S10), and the grammar
 reuse the first draft promised does not exist:
@@ -214,9 +241,13 @@ ever purged, and an add does nothing:
 
 ## S8. Tags
 
-Slates share the tag **vocabulary**: `tag_suggestions` is fed the union of clip
-and slate tags, so a tag invented on a slate autocompletes on the next one, and
-slate tags go through `normalize_tags` like every other tag.
+Slates share the tag **vocabulary**, and that is a small change in core rather
+than a call-site tweak: `tag_suggestions` today takes `&[TagSummary]`, whose
+rows carry `clip_count` and `total_seconds` — numbers a slate has not got. So it
+takes a `&[String]` vocabulary instead, fed by a new
+`tag::tag_vocabulary(project)` (sorted, deduped, clips ∪ slates). A tag invented
+on a slate then autocompletes on the next one, and slate tags go through
+`normalize_tags` like every other tag.
 
 The tag **overview** stays clips-only. Its columns are `clip_count` and
 `total_seconds` summed from `recording_duration` — a number a slate does not
