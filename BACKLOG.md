@@ -1439,9 +1439,23 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   what the export crops to (spec D9, one `Zoom::transform`), so the picture
   rect must stay exactly what export produces — the fix belongs in how much
   *area* the player is given, never in how the frame is placed inside it.
-- **Also ask:** whether the window should be allowed to resize itself to the
-  footage's aspect on open (tidy, but a window that moves on its own is
-  startling), or whether this is just the inspector growing.
+- **Checked in the layout (2026-09-25), and it changes the answer.** The
+  window is `sidebar (240) | player | inspector (280)` in a `HorizontalLayout`,
+  and the bars in the coach's screenshot are **above and below** the picture.
+  Panels are horizontal; the slack is vertical. **Widening or narrowing a panel
+  cannot absorb it** — a narrower panel makes the player *wider*, which reduces
+  letterboxing up to the point where the player area is exactly 16:9, and
+  produces pillarboxing past it. So #87 alone does not deliver this, and the
+  entry's original premise ("panels that can use the slack") is wrong for the
+  bars the coach actually has.
+- **What would deliver it:** a **"Fit window to video"** action — resize the
+  *window* so the player area comes out at the footage's aspect exactly. One
+  action, no bars, and nothing moves unless asked, which answers the "a window
+  that moves on its own is startling" worry by making it explicit. Optionally,
+  a snap while dragging a splitter, so the aspect is reachable by hand too.
+- **Needs the coach:** is "Fit window to video" what was wanted, or should the
+  app simply never letterbox (which means the window resizing itself on every
+  project open)?
 - **Why deferred:** it is a layout piece that wants #87 in the same pass.
 - **When to revisit:** with #87.
 
