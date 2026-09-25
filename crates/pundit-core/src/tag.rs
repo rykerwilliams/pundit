@@ -54,21 +54,40 @@ pub fn tag_summaries(clips: &[Clip]) -> Vec<TagSummary> {
         .collect()
 }
 
+/// Every tag in use, for [`tag_suggestions`]: a clip's **and a slate's**.
+///
+/// A coach who tags twelve ranges `corners` live, before any is shot, must
+/// have `corners` offered on the thirteenth — so the vocabulary is the union,
+/// while the tag **overview** stays clips-only. That overview's columns are a
+/// clip count and a total duration, and a slate has neither: it is a view of
+/// exportable material, and this is a spelling aid.
+pub fn tag_vocabulary(project: &crate::project::Project) -> Vec<String> {
+    let mut out: Vec<String> = project
+        .clips
+        .iter()
+        .flat_map(|c| c.tags.iter())
+        .chain(project.slates.iter().flat_map(|s| s.tags.iter()))
+        .cloned()
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// Existing tags to suggest while the tag field holds `text`.
 ///
 /// The fragment after the last comma, trimmed and lowercased, is matched as a
 /// prefix. Tags already in `text` (normalized, which includes an exact match
 /// of the fragment) are excluded, as on macOS. At most [`MAX_SUGGESTIONS`],
 /// sorted. An empty fragment suggests nothing.
-pub fn tag_suggestions(summaries: &[TagSummary], text: &str) -> Vec<String> {
+pub fn tag_suggestions(vocabulary: &[String], text: &str) -> Vec<String> {
     let fragment = text.rsplit(',').next().unwrap_or("").trim().to_lowercase();
     if fragment.is_empty() {
         return Vec::new();
     }
     let present = normalize_tags(text);
-    let mut out: Vec<String> = summaries
+    let mut out: Vec<String> = vocabulary
         .iter()
-        .map(|s| &s.tag)
         .filter(|t| t.starts_with(&fragment) && !present.contains(t))
         .cloned()
         .collect();

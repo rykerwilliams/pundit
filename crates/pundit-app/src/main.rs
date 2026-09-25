@@ -47,7 +47,9 @@ use pundit_core::scoreboard::{
     TeamConfig,
 };
 use pundit_core::stroke::{Rgba, Stroke};
-use pundit_core::tag::{normalize_tags, tag_suggestions, tag_summaries, take_suggestion};
+use pundit_core::tag::{
+    normalize_tags, tag_suggestions, tag_summaries, tag_vocabulary, take_suggestion,
+};
 use pundit_core::undo::ClipEdit;
 use pundit_core::zoom::{Zoom, SNAP_NOTCHES};
 use pundit_media::{
@@ -1643,7 +1645,7 @@ fn wire_inspector(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
     window.on_suggest_tags(|text| {
         let tags = UI.with_borrow(|ui| {
             ui.snapshot.as_ref().map_or_else(Vec::new, |s| {
-                tag_suggestions(&tag_summaries(&s.project.clips), &text)
+                tag_suggestions(&tag_vocabulary(&s.project), &text)
             })
         });
         let tags: Vec<SharedString> = tags.into_iter().map(SharedString::from).collect();

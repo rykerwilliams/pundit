@@ -13,7 +13,6 @@ made things worse.
 
 ### Next, in order
 
-- **92.** Slates: a time range tagged now, its commentary recorded later. THE…
 - **87.** Resizable panels. The coach (2026-09-25): "resizing all the panels".…
 - **95.** The player area should take the footage's aspect, so there are no…
 - **88.** The inset's size and corner, per clip. The coach (2026-09-25): "avatar
@@ -90,10 +89,12 @@ problem — which is the entry, not an excuse for it.
 - **76.** a_cancelled_copy_leaves_nothing's fixtures sit on the 30…
 - **83.** a_pause_while_a_flushing_seek_recovers_playing_sticks…
 - **93.** Delete the 0.8.0 rename shims. Three things exist only to…
+- **97.** Typing slates in, as match events can be typed
+- **98.** Export the slates as a silent breakdown film
 
 ### Closed, kept for the reasoning
 
-- 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 94
+- 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 92, 94
 
 ### Archived
 
@@ -1304,7 +1305,23 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   `$PUNDIT_WHISPER_MODEL` is **not** one of them: nothing reads the old variable,
   which is a clean break and is what the CHANGELOG's breaking note says.
 
-92. **Slates: a time range tagged now, its commentary recorded later.** THE NEXT
+92. **Slates — RESOLVED, shipped (2026-09-25).** `i` and `o` mark a range, the
+  sidebar's Slates section holds it, Record on a row shoots it and the clip
+  inherits the slate's name and tags. Spec:
+  `docs/superpowers/specs/2026-09-25-slates-design.md`; plan:
+  `docs/superpowers/plans/2026-09-25-slates.md`. Format v12.
+- **What the reviews changed, which the spec's §S11 records in full:** the
+  record lost five of its eleven fields, the link flipped to `Clip.slate_id` so
+  nothing can dangle, `i` stores the slate on the first press (so a half-marked
+  range survives the app closing), and the shoot moved *inside*
+  `start_recording` — because `NoCamera` is raised after `can_record`, so
+  sequencing from outside would move the player and then refuse.
+- **What did not ship, deliberately:** the typed-line editor (#97) and
+  exporting the slates as a silent breakdown film (#98).
+
+  The original entry follows, as the record of how the shape was chosen.
+
+  THE NEXT
   FEATURE, at the coach's direction (2026-09-25). Watching a game through, the
   coach wants to mark "here to here, corner routine, #corners" and move on,
   then come back and record the commentary over those ranges in a later pass.
@@ -1474,3 +1491,34 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   with a default badly enough to be worth the detour. Related: #35 (physical
   keys), #94 (nothing says what the keys are), #78 (where the screen goes).
 
+97. **Typing slates in, as match events can be typed.** Dropped from the slates
+  spec during review (§S6) rather than built: the grammar reuse it rested on
+  does not exist. `match_entry`'s `#` is a **comment to end of line**, so the
+  obvious `2 14:05-14:40 corner routine #corners` would have had its tag
+  silently discarded — and this codebase has no `#` tag sigil at all, tags
+  being comma-separated through `normalize_tags`. The words after the time are
+  a closed vocabulary (`parse_kind` refuses anything that is not an event word
+  or a team name), and a slate's tail is free text.
+- **What is genuinely reusable** if it is ever built: `parse_time`,
+  `format_time`, and the rule that a leading bare integer is a video number —
+  in a new `core::slate_entry`, not a second mode bolted onto `match_entry`.
+  The editor sheet itself is ~300 lines of Slint plus its `editing` fold, the
+  rebuild discipline and the focus-drop-on-commit rule.
+- **Why deferred:** the coach asked to mark ranges while watching, which is
+  what shipped. Nobody has asked to type them.
+- **When to revisit:** if a coach arrives with times already written down —
+  which is exactly how `kickoffs.txt` came about, so it is not far-fetched.
+
+98. **Export the slates as a silent breakdown film.** Named out of scope in the
+  slates spec (§S9) and worth doing on its own: the slates are already an edit
+  decision list, so "export the slates" is a cut of the marked ranges with the
+  scoreboard burned in and no commentary. `reel_plan` is the shape to follow —
+  a list of ranges on sources becomes `PlanEntry { clip_id: None, segments:
+  vec![one Play segment] }` plus chapters — so it is roughly one `ExportTarget`
+  variant and thirty lines against that.
+- **It is also the only thing that would make `out_seconds` load-bearing.**
+  Today the out point is shown in the row and nothing reads it: a take runs as
+  long as the coach talks. This is what would give it a job.
+- **Why deferred:** a second feature, and the first one had to prove itself.
+- **When to revisit:** when a coach wants the ranges without the talking —
+  a walkthrough to send a player, or a silent cut to watch back.

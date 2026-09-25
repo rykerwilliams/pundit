@@ -272,6 +272,8 @@ silently. If you need a media type in core, you need a different design.
   **no** attribute: that container carries `#[serde(default)]` and fills from
   its hand-written `Default` impl, so a field-level one would be a second copy
   of the default.
+- **v12 adds `Project.slates` and `Clip.slate_id`** — a range marked while
+  watching, and the take shot from it.
 - **The first save after an upgrade keeps `project.json.v<old>`**, once, never
   overwritten, so the older build can still be gone back to. It is copied to a
   temporary name and renamed, like `project.json` itself, so a failed copy
@@ -520,6 +522,38 @@ field and in its paste box alike, both read by `core::match_entry`
 - **The defaults are 20 s and 6 s** (`REEL_LEAD_IN`, `REEL_TAIL`), overridden per
   side by the goal's trim. Never replace them with a guess that could be
   shorter: a cut-off assist is the one failure the reel must not have.
+
+**Slates: a range marked now, its commentary recorded later** (`Project.slates`,
+v12; spec `docs/superpowers/specs/2026-09-25-slates-design.md`).
+- **A slate is not a clip and cannot become one.** A clip *is* a recording —
+  that is what lets every clip replay, preview and export with no special case.
+  Shooting a slate **produces** a clip, and the link runs from `Clip.slate_id`
+  so nothing dangles: "has this been shot?" is a scan of the clips, which stays
+  right across a delete, an undo and a re-record.
+- **`i` stores the slate on the first press**, with `out_seconds: None`. A
+  half-marked range is then a row the coach can finish or delete rather than UI
+  state that vanishes with the app — and marking needs no in-progress source
+  index to invalidate when the source list changes underneath it. `o` closes
+  the **most recently opened** range on that video, which is why the stored
+  order is the marked order and `slates_sorted` is for reading only.
+- **Both marks are on the recording allow-list**, beside a match tag and a
+  highlight key, for the rule those two are there for: a record that belongs to
+  the footage is placeable whenever the footage is on screen. So a refusal can
+  land over a live take, and `UserError::Slate` is a notice, never a modal.
+- **The shoot happens inside `start_recording`**, after `capture_sources`, and
+  resets the skip coordinator first. Not because it is tidier: `NoCamera` comes
+  from `resolve_camera` *after* `can_record` passes, so seeking from outside
+  would move the game video and then refuse on a camera-less machine; and
+  `heading` prefers the skip coordinator's pending target, so a skip burst still
+  in the air would stamp the clip ~1.6 s off the range (measured, and pinned by
+  a test).
+- **A slate holds its source open** (`source_is_referenced`) and rides both
+  remaps. `purge_for_source_change`'s staleness test is an **exhaustive match**
+  for this reason — as a `matches!` it admitted new record types in silence, and
+  a snapshot that survives a source move restores indices from before it.
+- The tag **vocabulary** is clips ∪ slates (`tag_vocabulary`), so a tag invented
+  on a slate autocompletes; the tag **overview** stays clips-only, because its
+  columns are a clip count and a duration.
 
 **Player highlights** (`pundit-core/src/highlight.rs`, spec H).
 - **A highlight belongs to the footage, not to a clip.** It is stored on the

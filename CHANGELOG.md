@@ -13,6 +13,18 @@ which the app was called until 0.8.0 renamed it.
 
 ## [Unreleased]
 
+### Added
+
+- **Mark a range now, record the commentary later.** Watching a match through,
+  press **i** where a moment starts and **o** where it ends: that range goes
+  into a **Slates** list in the sidebar, where you can name it and tag it
+  without stopping to talk. When you come back, **Record** on the row jumps to
+  the range's start and arms the take — and the clip that comes out already
+  carries the slate's name and tags, so the work you did live is not done
+  twice. Both keys work while you are recording, because you spot the next
+  moment while talking over this one. The slate stays in the list after its
+  take: coaches re-record.
+
 ### Fixed
 
 - **The scroll wheel scrubbed the wrong way.** Rolling the wheel away from you

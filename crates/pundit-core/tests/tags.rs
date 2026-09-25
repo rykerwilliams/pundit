@@ -28,14 +28,13 @@ fn clip(tags: &[&str], duration: f64) -> Clip {
     }
 }
 
-fn summaries(tags: &[&str]) -> Vec<TagSummary> {
-    tags.iter()
-        .map(|t| TagSummary {
-            tag: t.to_string(),
-            clip_count: 1,
-            total_seconds: 1.0,
-        })
-        .collect()
+/// The vocabulary `tag_suggestions` takes: what a clip or a slate is tagged
+/// with, sorted and deduped, which is what `tag_vocabulary` builds.
+fn vocabulary(tags: &[&str]) -> Vec<String> {
+    let mut out: Vec<String> = tags.iter().map(|t| t.to_string()).collect();
+    out.sort();
+    out.dedup();
+    out
 }
 
 // ----------------------------------------------------------- tag_summaries
@@ -92,7 +91,7 @@ fn no_tags_no_summaries() {
 
 #[test]
 fn suggests_prefix_matches_sorted() {
-    let all = summaries(&["wing", "attack", "wide", "set piece"]);
+    let all = vocabulary(&["wing", "attack", "wide", "set piece"]);
     assert_eq!(tag_suggestions(&all, "wi"), ["wide", "wing"]);
     assert_eq!(
         tag_suggestions(&all, "  WI "),
@@ -104,14 +103,14 @@ fn suggests_prefix_matches_sorted() {
 
 #[test]
 fn matches_the_fragment_after_the_last_comma() {
-    let all = summaries(&["wing", "attack", "wide"]);
+    let all = vocabulary(&["wing", "attack", "wide"]);
     assert_eq!(tag_suggestions(&all, "attack, wi"), ["wide", "wing"]);
     assert_eq!(tag_suggestions(&all, "wing, at"), ["attack"]);
 }
 
 #[test]
 fn an_empty_fragment_suggests_nothing() {
-    let all = summaries(&["wing"]);
+    let all = vocabulary(&["wing"]);
     assert!(tag_suggestions(&all, "").is_empty());
     assert!(tag_suggestions(&all, "attack, ").is_empty());
 }
@@ -120,7 +119,7 @@ fn an_empty_fragment_suggests_nothing() {
 /// fragment that already names a tag exactly.
 #[test]
 fn excludes_tags_already_in_the_text_and_exact_matches() {
-    let all = summaries(&["wing", "wingback", "wide"]);
+    let all = vocabulary(&["wing", "wingback", "wide"]);
     assert_eq!(tag_suggestions(&all, "Wing, wi"), ["wide", "wingback"]);
     assert_eq!(tag_suggestions(&all, "wing"), ["wingback"]);
 }
@@ -131,7 +130,7 @@ fn caps_the_suggestions() {
         .map(|i| format!("t{i:02}"))
         .collect();
     let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
-    let mut all = summaries(&tags);
+    let mut all = vocabulary(&tags);
     all.reverse();
     let s = tag_suggestions(&all, "t");
     assert_eq!(s.len(), MAX_SUGGESTIONS);

@@ -122,3 +122,20 @@ fn deleting_a_slate_leaves_the_clip_it_was_shot_into() {
     p.delete_slate(id);
     assert!(p.slates.is_empty(), "deleting twice is not an error");
 }
+
+/// A coach tags twelve ranges `corners` live and shoots none of them: the
+/// thirteenth must still autocomplete. The tag **overview** stays clips-only
+/// — its columns are a clip count and a duration, and a slate has neither —
+/// so the vocabulary is where the union belongs.
+#[test]
+fn the_tag_vocabulary_is_the_union_of_clips_and_slates() {
+    use pundit_core::tag::{tag_suggestions, tag_vocabulary};
+
+    let mut p = project(1);
+    let id = p.mark_slate_in(0, 1.0);
+    p.edit_slate(id, SlateEdit::Tags(vec!["corners".into()]));
+
+    let vocabulary = tag_vocabulary(&p);
+    assert_eq!(vocabulary, ["corners"]);
+    assert_eq!(tag_suggestions(&vocabulary, "cor"), ["corners"]);
+}
