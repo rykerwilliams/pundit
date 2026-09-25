@@ -21,19 +21,18 @@ made things worse.
 - **78.** App settings for the things an export writes. The coach (2026-09-24):
 - **96.** Every hot key should be reassignable. The coach (2026-09-25): "we need
 - **77.** An export queue across projects. The coach (2026-09-24): "i open…
+- **84.** Music under a goals reel — Openverse search, then the mixer (needs #78)
 
 ### Waiting on the coach
 
 A judgement no amount of code supplies — a licence, a piece of hardware, a
 product call, or their own data.
 
-- **84.** Music under a goals reel. The coach (2026-09-24): "pull in soundtrack
 - **79.** What the app does over a forwarded X11 display, and saying so. The…
 - **82.** P4 (showing suggestions) is not justified and is not started. No
 - **80.** The restarts — mostly done; match B's seven are the remainder
 - **81.** Task 3.6 — the detector runtime and formation-feasibility spike (L3,…
 - **53.** 2160p export
-- **24.** Linux packaging: AppImage vs Flatpak
 
 ### Open, but gated on something happening
 
@@ -43,7 +42,6 @@ gaps, a second person handed the app. Until then the fix costs more than the
 problem — which is the entry, not an excuse for it.
 
 - **20.** Chrome coordinate space for non-16:9 sources
-- **22.** whisper model distribution
 - **25.** Wayland vs X11 for the drawing overlay
 - **27.** macOS export bugs the port fixes but the Swift tree keeps
 - **28.** Non-finite floats silently corrupt a project on save
@@ -95,7 +93,7 @@ problem — which is the entry, not an excuse for it.
 
 ### Closed, kept for the reasoning
 
-- 21, 23, 26, 43, 47, 66, 67, 86, 89, 90, 91, 94
+- 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 94
 
 ### Archived
 
@@ -151,7 +149,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   Slint's property model, which nobody has prototyped against.
 - **When to revisit:** Phase 2 plan, after a Slint property-model spike.
 
-### 22. whisper model distribution
+### 22. whisper model distribution — RESOLVED
 - **Why deferred:** Bundle (~140 MB package), download on first run, or require
   a user-supplied path. Spec recommends download-on-first-run with explicit
   prompt and progress. Note this does not newly break an offline guarantee —
@@ -179,7 +177,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   reader of the `chpl` box (match vision spec C3). Nothing links or ships it,
   and the `.deb` still doesn't depend on it.
 
-### 24. Linux packaging: AppImage vs Flatpak
+### 24. Linux packaging: AppImage vs Flatpak — RESOLVED (`.deb`)
 - **Why deferred:** Flatpak sandboxing complicates camera, microphone and
   arbitrary-path file access — all three of which this app needs. Spec
   recommends AppImage first.
@@ -194,6 +192,9 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   The reasoning, and why Flatpak is a capture rewrite rather than a
   packaging choice, is in the Phase 11 spec's S0. AppImage and Flatpak stay
   open for a later phase if the app is ever handed to someone else.
+- **Confirmed by the coach 2026-09-25:** *"we already solved packaging for now.
+  only deb"*. Nothing here is a live question; it is kept as the record of why
+  the two obvious alternatives were not chosen.
 
 ### 25. Wayland vs X11 for the drawing overlay
 - **Why deferred:** Freehand telestration wants low input latency and the two
