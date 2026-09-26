@@ -86,3 +86,42 @@ fmt, clippy `-D warnings`, `cargo test -p pundit-core`, `cargo test --workspace`
 the core dependency audit, a commit whose message says what was decided and what
 was rejected, and the backlog entry closed with the evidence. A batch ends with
 a `.deb` and a one-line note of what to look at.
+
+---
+
+## Where it stands (2026-09-26, written for the session that picks this up)
+
+**Shipped and released.** `v0.9.0` is published from `rykerwilliams/pundit`
+with its `.deb` attached. Done since this plan was written: the rename to
+pundit and the split out of the fork (0.8.0), the wheel's direction and its
+reach over the picture, the zoom/pan hint (#94), the backlog's index and four
+stale entries corrected, and **slates end to end** (#92 — spec, plan, both
+reviews at every handoff, six tasks, 943 tests green).
+
+**Next, and it is the top of the index:** **#87 resizable panels together with
+#95's fit-to-video.** Nothing is started — no spec, no branch state to inherit.
+
+Read before starting: `BACKLOG.md` #87 and #95 (in that order — #95 carries the
+layout finding that changes what it is), then `CLAUDE.md`. The two things a
+fresh session would otherwise rediscover:
+
+- **Panels cannot remove the black bars.** The window is
+  `sidebar (240px) | player | inspector (280px)` in a `HorizontalLayout`; the
+  coach's bars are above and below the picture. The slack is vertical and the
+  panels are horizontal. Narrowing a panel widens the player, which reduces
+  letterboxing only until the player area is 16:9, then pillarboxes.
+- **So the coach chose "Fit window to video"** (2026-09-25): an action that
+  resizes the *window* so the player area is the footage's aspect exactly.
+  Never automatic — the window moves when asked. A splitter snap at that shape
+  comes with it.
+
+Then #88 (per-clip inset), #85 (recents), #78 (settings), #96 (rebindable
+keys, which wants #78 first), #77 (export queue), #84 (music, wants #78).
+
+**Watch for:** `#87` touches `app.slint`, where the slates section, the
+inspector and the clip list all live — and where two of the three worst bugs of
+the last pass came from putting a field in the wrong place. The rules that
+caught them are in `CLAUDE.md` and worth re-reading before editing that file:
+a field is hidden rather than removed, and an `editing` flag is derived, never
+assigned.
+
