@@ -1453,9 +1453,10 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   action, no bars, and nothing moves unless asked, which answers the "a window
   that moves on its own is startling" worry by making it explicit. Optionally,
   a snap while dragging a splitter, so the aspect is reachable by hand too.
-- **Needs the coach:** is "Fit window to video" what was wanted, or should the
-  app simply never letterbox (which means the window resizing itself on every
-  project open)?
+- **Decided by the coach (2026-09-25): "Fit window to video".** An action, not
+  an automatic resize — the window moves when asked and never on its own. To
+  build with #87, and the splitter snap comes with it so the shape is reachable
+  by hand too.
 - **Why deferred:** it is a layout piece that wants #87 in the same pass.
 - **When to revisit:** with #87.
 
