@@ -1457,8 +1457,19 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   an automatic resize — the window moves when asked and never on its own. To
   build with #87, and the splitter snap comes with it so the shape is reachable
   by hand too.
-- **Why deferred:** it is a layout piece that wants #87 in the same pass.
-- **When to revisit:** with #87.
+- **Specced 2026-09-26** (`docs/superpowers/specs/2026-09-26-panels-and-fit-design.md`),
+  and the spec **declines to build the snap** — see its W11. Because the panels
+  can only grow (their present widths are what their rows were fitted to), a
+  splitter drag can only make the player *narrower*, which makes a letterboxed
+  player worse. The snap could fire only on a **pillarboxed** player: for 16:9
+  footage in a 1600px window, that is window heights in `[700, 715.5)`. It
+  cannot touch the bars the coach complained about — those would need a player
+  1514px wide inside 1600px, leaving 86px for two columns.
+- **Why deferred (the snap only):** it would cost a tint, a test and the only
+  place a panel drag reads the footage, and buy nothing in the case that
+  motivated it. **Needs the coach's nod**, since they asked for it.
+- **When to revisit:** if the panels ever gain a minimum below today's widths,
+  which is what would make the shape reachable by hand.
 
 96. **Every hot key should be reassignable.** The coach (2026-09-25): "we need
   to have all the hot keys reassignable". Today there are **33 `event.text ==`
