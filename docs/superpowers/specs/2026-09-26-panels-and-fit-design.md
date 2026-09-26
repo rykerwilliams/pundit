@@ -147,19 +147,29 @@ when a coach is looking hard at the picture.
   `app.slint:3529` that every letter is behind. `f` is free: the letters in use
   are a, c, d, h, i, j, l, o, r, v, x, z, plus Ctrl+o/0/z/y. It is one more row
   for #96's rebinding table.
-- **A "Fit" button in the transport bar**, with a `Tooltip` naming the key —
-  the row's own established idiom (`"Clear the drawings (C)"`, `"Speed while
-  playing (J slower, L faster)"`). **`enabled`-gated, never `visible`-gated**:
-  a button appearing and vanishing as the window is dragged would reflow the
-  row under the coach's cursor.
-  - **The plan must measure that it fits.** That row is the tightest in the app
-    — `app.slint:694` records a fourth control in the inspector's caption
-    running 76px past its column, and `:4799` that the transport's row once
-    "pushed Export and Devices off". Check at the window's 1100px minimum; if
-    the button does not fit, the fallback is a `ZoomIndicator`-styled pill in
-    the player's **bottom-left** (top-left is the scan scoreboard's corner,
-    bottom-right the self-view's), declared **after** `zoom-area` and the two
-    content-rect `TouchArea`s (`:4374`, `:4420`) or the press never reaches it.
+- **A "Fit" button in the transport's *second* row** — the drawing/status row at
+  `app.slint:4795` — with a `Tooltip` naming the key, the row idiom already in
+  use (`"Clear the drawings (C)"`, `"Speed while playing (J slower, L faster)"`).
+  **`enabled`-gated, never `visible`-gated**: a button appearing and vanishing as
+  the window is dragged would reflow the row under the coach's cursor. A
+  disabled button keeps its `Tooltip`, which is how the Record button explains
+  its own greying.
+  - **Not the first row, and this is measured.** At a 1100px window that row is
+    exactly full: the seven buttons run to x=1092 of a 1084px content width, and
+    the only give is the readout (`horizontal-stretch: 1`, `min-width: 130px`,
+    laid out at ~204px). A ~50px button fits only by taking ~50px from the
+    readout, which **clips rather than ellipsizes** — and the readout is the
+    position display. `app.slint:4797-4800` records that this row already
+    overflowed once, which is why a second row exists at all. The second row's
+    unconditional content is about 300px of that 1084, so the button is free
+    there; it costs the notice line some width, and the plan checks the notice
+    still reads at 1100px.
+  - The rejected alternative was a `ZoomIndicator`-styled pill in the player's
+    **bottom-left**. It is prettier — it would sit *in* the black bar it removes
+    — but it costs a component, it is the only affordance in the app that would
+    live over the picture, it flickers in and out as the window is dragged, and
+    it must be declared **after** `zoom-area` and the two content-rect
+    `TouchArea`s (`:4374`, `:4420`) or the press never reaches it.
 
 ## W4. The panel widths (#87)
 
@@ -182,30 +192,47 @@ in-out property <length> sidebar-width: root.sidebar-min;
 in-out property <length> inspector-width: root.inspector-min;
 ```
 
-The columns take them through one clamp expression each:
+**The bound is expressed as layout constraints, not as a `clamp` on `width`.**
+Each column states what it wants and what it will accept, and the layout is
+what reconciles them:
 
 ```slint
-width: clamp(root.sidebar-width, root.sidebar-min,
-             root.width - max(root.inspector-width, root.inspector-min) - root.player-min);
+min-width: root.sidebar-min;
+preferred-width: max(root.sidebar-min, root.sidebar-width);
+max-width: max(root.sidebar-min, root.sidebar-width);
+horizontal-stretch: 0;
 ```
 
-and the mirror for the inspector. Three things about that line:
+with the mirror for the inspector, and `min-width: root.player-min;
+horizontal-stretch: 1;` on the player. Three things about that:
 
 - **It is declarative, so it is unconditional.** A width restored from a wider
   screen, a window dragged narrow, a hand-edited state file — all read as "as
   wide as there is room for". Nothing is fixed up at startup, and the drag (W5)
-  writes the raw property and lets this expression bound it, so the bounds live
-  in exactly one place.
-- **`clamp` is `max(min, min(v, max))`** (`builtin_macros.rs:228-236`), so the
-  **minimum wins** when the window is too narrow for both columns: they fall to
-  240 and 280, and 240 + 280 + 320 ≤ 1100, so the player never goes under its
-  minimum.
-- **`max(other, other-min)` is what stops the two clamps fighting.** Each
-  column computes its headroom from the other's *raw* property, which can be
-  smaller than the width that column will actually take. Without the `max`, a
-  stored pair of `sidebar: 100, inspector: 700` at a 1100px window gives
-  sidebar 240, inspector 680 and a player of **180px** — under its minimum. With
-  it: 240, 540, and a player of 320.
+  writes the raw property and lets the layout bound it, so the bound lives in
+  exactly one place.
+- **The obvious alternative is measurably wrong.** A
+  `width: clamp(stored, own-min, root.width − other − player-min)` on each
+  column has each one computing its headroom from the other's *raw* property,
+  and neither knows about the two 6px splitters W5 puts in the same layout.
+  Measured at a 1100px window with the two splitters present, stored
+  `(sidebar 100, inspector 700)`:
+
+  | | sidebar | inspector | player |
+  |---|---|---|---|
+  | `clamp` on `width` | 240 | 540 | **308 — under its minimum** |
+  | layout constraints | 240 | 528 | **320** |
+
+  and at `(400, 400)`: 380/380/328 against 384/384/**320**. At the defaults the
+  two are identical (240/280/568). The layout form holds the player's minimum in
+  every case, needs no `max(other, other-min)` term to do it, and accounts for
+  the splitters without being told — which is W2's rule applied to the columns.
+- **It also cannot close a binding loop**, because it never reads `root.width`.
+  The `clamp` form does, from inside a child whose width feeds the layout that
+  determines `root.width` — and Slint deprecates that with a warning that
+  `-D warnings` would fail on. I could **not** reproduce the warning in a
+  scratch window, so treat the loop as unproven rather than as the reason; the
+  308 above is reason enough.
 
 **The minima are today's widths: the panels grow, they do not shrink.** Not
 timidity — measured: the inspector's transcript row is
@@ -215,8 +242,9 @@ minimum". 280 is the width that row was fitted to; 240 is the same kind of
 number for the Clips rows. A narrower panel means re-verifying every row in both
 columns against a width nobody asked for, and the coach wants *more* room on a
 big screen, which is the direction this allows. `player-min` of 320px is below
-the 580 the player gets at the window's own minimum, so it is slack rather than
-a constraint — it exists to keep the clamp pair honest.
+the 568 the player gets at the window's own minimum once the splitters are in
+(520 of columns + 12 of splitters), so it is slack rather than a constraint —
+and it is what the layout reconciles against when the stored widths do not fit.
 
 ## W5. The drag (#87)
 
@@ -271,10 +299,32 @@ is written down: the check is a comparison against `min-window-width` /
 when a splitter or a transport button does.
 
 The refusal is `main.rs`'s **`show_notice`** with a `const` string, as
-`DRAWING_HINT` (`main.rs:1817`) and `HIGHLIGHT_PAUSE_HINT` (`:2015`) already are.
+`DRAWING_HINT` (`main.rs:93`) and `HIGHLIGHT_PAUSE_HINT` (`:97`) already are.
 **No `UserError` variant and no `Command`** — `UserError::is_notice` is the
 bus's route, and W5's principle holds here too: this is the window's own
 geometry.
+
+**But it cannot be said at all unless the fit has three outcomes, not two.**
+A two-state answer (`Some(size)` / `None`) collapses "already the right shape"
+and "too small to fit" into one value, and since that same value is what offers
+the action (W8), a refusal can never be reached: the button is already greyed
+and the key already does nothing, silently. So the answer is:
+
+```rust
+pub enum Fit { NoSlack, TooSmall, To(u32, u32) }
+```
+
+`can-fit` is `!NoSlack`; `To` resizes; **`TooSmall` is the only thing that ever
+shows the notice**, and it is reachable because the action is still offered. A
+`Tooltip` that follows the same distinction is what the transport's Record
+button already does for its three states. **This is not an extra mechanism —
+it is the one that makes W6 exist at all.** A two-state version of this spec
+should have deleted the notice instead.
+
+Fullscreen belongs to the same refusal: winit ignores `set_size` on a
+fullscreen window (`winitwindowadapter.rs:1935-1944`). The app never asks for
+fullscreen, but a WM keybinding can, and without the check `f` would silently
+do nothing.
 
 **The maximised window is the coach's most likely state** — `main.rs:311-322`
 reopens a maximised session by asking for the maximised *size*, and says so. A
@@ -287,17 +337,34 @@ and W6's own safety argument with it — and on X11 the un-maximise is a
 independent requests whose order the WM decides.
 
 So: `f` on a maximised window calls `set_maximized(false)`, arms a **one-shot
-pending fit with a deadline**, and the fit is computed and applied on the first
-`tick` where `is_maximized()` is false — from the geometry then in effect.
-`is_maximized()` tracks the WM rather than Slint's last request
-(`winitwindowadapter.rs:1148-1176`, synced from every `Resized`), and the 30Hz
-`tick` already exists. The deadline (500ms, the shape of the existing
-`notice_until`) is what stops a WM that drops the un-maximise from leaving the
-fit armed to fire minutes later when the coach un-maximises by hand; on expiry
-it becomes the same notice as above. Whether Cinnamon honours the un-maximise at
-all is **a runtime check for execution, not an assumption** — `main.rs` already
-carries the scar that winit's maximise request "straight after mapping the
-window, before the window manager has taken it on" is dropped by Cinnamon.
+pending fit with a deadline**, and the fit is computed and applied on a later
+`tick`, from the geometry then in effect.
+
+**What that later tick waits for is the window's size changing — not
+`is_maximized()`.** `set_maximized(false)` writes the very property
+`is_maximized()` reads (`i-slint-core/window.rs:2444-2454`), so the flag goes
+false *synchronously*, before winit is told and long before the WM has restored
+anything. A gate on the flag therefore fires on the very next tick and computes
+the fit from the **maximised** geometry — the grow in both axes this paragraph
+exists to prevent. The pending fit carries the window size at the moment of the
+press and fires on the first tick where `w.window().size()` differs from it.
+That is one field instead of two, it is the observable that actually matters,
+and it survives a WM that restores in stages.
+
+The deadline (500ms, the shape of the existing `notice_until`) is what stops a
+WM that drops the un-maximise from leaving the fit armed to fire minutes later
+when the coach un-maximises by hand; on expiry it becomes the `TooSmall`
+notice. Whether Cinnamon honours the un-maximise at all is **a runtime check
+for execution, not an assumption** — `main.rs` already carries the scar that
+winit's maximise request "straight after mapping the window, before the window
+manager has taken it on" is dropped by Cinnamon.
+
+**The notice cannot be raised from `tick`.** `tick`'s whole body runs inside
+`UI.with_borrow_mut` and `show_notice` borrows `UI` mutably too, so calling it
+from there is a `BorrowMutError` — a panic that compiles cleanly and only
+appears when a coach presses `f` on a maximised window the WM refuses to
+restore. The pending-fit block sets `notice` and `notice_until` directly, or
+decides an action and acts on it after the borrow ends.
 
 The screen's own size is never consulted: Slint exposes no monitor geometry
 (1.18's `Window` has size, position, scale factor, maximized and fullscreen,
@@ -314,7 +381,7 @@ panels: Option<PanelWidths>,
 ```
 
 and `PanelWidths { sidebar: u32, inspector: u32 }` with
-**`#[serde(default)]` on each field**. That attribute is not decoration: `read`
+**container-level `#[serde(default)]`**. That attribute is not decoration: `read`
 returns `State::default()` on **any** `serde_json` error for the whole document
 (`bus/state.rs:196-200`) and every setter rewrites it, so one field a build
 can't parse takes the last project, the pen and the speech model with it. It is
@@ -344,21 +411,35 @@ window asks, and its header already states the "every function takes finite
 input; the window drops non-finite values (BACKLOG #28)" discipline the fit
 inherits.
 
-One entry point, taking physical pixels and returning the target window size or
-`None` for "nothing to do" — which is also the button's `enabled` and the key's
-gate, so the offer and the action can never disagree:
+One entry point, taking physical pixels, returning W6's three outcomes — and
+**one call drives both the offer and the action**, so they can never disagree:
 
 ```rust
-/// The window size that puts the player area at the frame's aspect, or `None`
-/// when there is no slack to remove or the result is under the window's own
-/// minimum. Physical pixels, rounded up (W1).
+/// What fitting the window to the frame would do. Physical pixels, and the
+/// target is rounded **up** (W1).
 pub fn fit_window(frame: (f64, f64), player: (f64, f64),
-                  window: (f64, f64), min: (f64, f64)) -> Option<(u32, u32)>
+                  window: (f64, f64), min: (f64, f64)) -> Fit
 ```
 
+**It is built on `zoom_input::Viewport`, not beside it.** `Viewport::new`
+already rejects every non-finite and non-positive value among the frame and
+area, and `picture(Zoom::IDENTITY)` **is** the letterbox the fit has to agree
+with — so taking the aspect from the same type that draws the picture makes
+"the bars are gone afterwards" a property of one expression rather than of two
+that must be kept in step. It also buys the strongest assertion available to a
+unit test, with no window at all: the content rect that `Viewport` reports for
+the *fitted* size is the same rect, to the pixel, as for the size before it.
+`Viewport`'s doc already says only the shape matters, so physical pixels are
+fine — `fit.rs`'s header says so, because `zoom_input.rs`'s says logical.
+
 `main.rs` then holds three things and no arithmetic: the call, the un-maximise
-path (W6), and one `in property <bool> can-fit` pushed on the existing tick
-beside `highlight-key-here`.
+path (W6), and one `in property <bool> can-fit` pushed on the existing tick.
+**That push goes before `tick`'s `let Some(project) … else { return }`**: with
+no project open the property would otherwise keep its last value, and since
+`frame-width` is never cleared (W3) a stale `can-fit: true` would let `f`
+resize the window over the empty-project card. `can-play` is part of the gate
+in Rust, inside the same call — never as a second term in Slint, which is what
+"one call drives both" means.
 
 ## W9. What this must not change
 
@@ -393,36 +474,53 @@ is why that distinction matters:
 
 1. **The target is ceiled**, and the picture stays width-limited: the 715.5 case
    resolves to 716, and a floored implementation fails. Measurement 2's table is
-   the fixture.
+   the fixture, and the assertion worth making is `Viewport`'s — the content rect
+   at the fitted size equals the content rect before it, to the pixel — not the
+   number 716.
 2. **A pillarboxed player shrinks the width instead**, same rounding.
-3. **At the frame's aspect the answer is `None`**, and feeding a computed target
-   back in stays `None` (idempotence).
-4. **Under the window's minimum on either axis the answer is `None`** — the
-   refusal, which must be the app's own check and not the WM's clamp.
-5. **Non-finite and zero inputs are `None`**, as `Viewport::new` already
-   requires (BACKLOG #28).
+3. **At the frame's aspect the answer is `NoSlack`**, and feeding a computed
+   target back in stays `NoSlack` (idempotence).
+4. **Under the window's minimum on either axis the answer is `TooSmall`** — and
+   `TooSmall`, not `NoSlack`, because that distinction is the only thing that
+   makes W6's notice reachable.
+5. **Non-finite and zero inputs are `NoSlack`**, which `Viewport::new` already
+   decides (BACKLOG #28).
 
-**One headless window test** (`pundit-app/tests/`, beside `slate_fields.rs`),
-for the one fact no pure function can know: that `f` applies the result, and
-that `player-width` and the content rect's **size** come out unchanged.
-`place-picture` **must be wired to the production `zoom_input::Viewport`** — the
-lib is public, and an unwired callback silently reports a 0×0 content rect,
-which is how a vacuous version of this test gets written. Nothing in it may
-hard-code 520, 108 or 716; every number is derived from `player-width` /
-`player-height`, as W2 requires.
+**One headless window test** (`pundit-app/tests/`, beside `slate_fields.rs`).
+It cannot test that `f` resizes the window: `on_fit_window` lives in `main.rs`,
+which is a `[[bin]]`, so a test can only install its own handler and would be
+testing its own copy. What it *can* pin is the fact no pure function knows —
+**that the chrome subtraction predicts the real layout**: wire `place-picture`
+to the production `zoom_input::Viewport`, set 1600×960 and a 16:9 frame, call
+`fit_window` directly, `set_size` its answer, and assert `player-width` and
+**both** content-rect dimensions are unchanged, and that a second `fit_window`
+on the new layout is `NoSlack` — idempotence in the real layout rather than in
+arithmetic. Nothing about position (W1). Nothing hard-coding 520, 108 or 716.
+
+An unwired `place-picture` returns `PictureRect::default()`, so every
+content-rect assertion silently passes on 0×0. That is how the vacuous version
+of this test gets written, and the test's header should say so.
+
+**Separately, the `f` key's gate** belongs in the same file and is the fact that
+bit the slates pass: `f` invokes `fit-window` when `can-fit` is true, does not
+when it is false, and a focused field swallows it — `slate_fields.rs`'s own
+shape, observing the callback through a closure.
 
 **#87's own tests:**
 
-6. **The clamp pair** (the real window): a stored pair that is too wide leaves
-   the player **at least** `player-min` and neither column below its own
-   minimum. Not "the player is at `player-min`" — with `clamp`'s min-wins
-   semantics both columns fall to their minima and the player comes out at 580
-   at a 1100px window, and pinning that number would pin an accident.
-7. **The drag anchors on the press** (a small `slint!` window, as
-   `tests/scrubber.rs` does it, with `PointerPressed`/`Moved`/`Released`):
-   starting **from a clamped state**, a drag past the minimum stops at the
-   minimum and a drag back picks the pointer up where it left it. Written from
-   an unclamped state it catches neither failure in W5.
+6. **The columns' bounds** (the real window): a stored pair too wide for the
+   window leaves **neither column below its own minimum** and the player at its
+   own minimum. Do not assert an exact player width from arithmetic over the
+   column widths — the two splitters are 12px the naive sum forgets, which is
+   what made the first version of this test fail against the first version of
+   W4.
+7. **The drag anchors on the press** (a small `slint!` window over
+   `ui/splitter.slint`, as `tests/scrubber.rs` does it): starting **from a
+   clamped state**, a drag past the minimum stops there and a drag back picks
+   the pointer up where it left it. Written from an unclamped state it catches
+   neither failure in W5 — and the test window therefore needs a stand-in
+   column carrying the real bound, because a `width-now` bound to a constant
+   can never be clamped.
 
 **In `bus/state.rs`'s own tests**, beside `remembers_the_window_size`:
 
