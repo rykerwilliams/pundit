@@ -95,7 +95,8 @@ Rules 5 and 6 need doc comments carrying *why*.
 table. The strongest assertion available, and the one to write for test 1, is
 `Viewport`'s own: the content rect at the fitted size equals the content rect
 before it, to the pixel. Assert that **and** `To(1600, 716)`, with a comment
-that 715 is the floored answer and shrinks the picture ~1.9px.
+that 715 is the floored answer, shrinks the picture 0.89px of width, and
+breaks idempotence (a floored re-fit of 1600×715 asks for 1599).
 
 **Verify:** `cargo test -p pundit-app --lib fit` — and **assert the count**
 (`5 passed`, or run each test `--exact`). A filter that matches nothing exits 0,
@@ -132,8 +133,8 @@ build. One task.
    `!event.repeat` as the other letter branches are (`:3568`, `:3582`, `:3588`,
    `:3607`, `:3614`, `:3650`, `:3687`). `f` is free.
 
-4. **The button, in the transport's *second* row** (`:4795`, the drawing/status
-   row) — **not the first**. Spec W3 has the measurement: the first row is
+4. **The button, in the transport's *second* row** (`:4801`, the drawing/status
+   row; `:4795` is the first row's closing brace) — **not the first**. Spec W3 has the measurement: the first row is
    exactly full at a 1100px window (buttons out to x=1092 of 1084px usable), and
    the only give is the readout, which clips rather than ellipsizes. `text:
    "Fit"`, `enabled: root.can-fit` (**never `visible`** — it would reflow the row
@@ -172,7 +173,9 @@ build. One task.
      and return. **Do not compute the target here** (spec W6: the WM restores the
      pre-maximise geometry, so a target from the maximised one is a *grow* in
      both axes). Fullscreen is in the same branch because winit ignores
-     `set_size` on a fullscreen window.
+     `set_size` on a fullscreen window. **Correction from execution:**
+     un-maximising cannot leave fullscreen, so fullscreen is its own immediate
+     refusal with its own notice — see spec W6.
    - Otherwise `match fit_window(...)`: `To(w, h)` →
      `set_size(slint::PhysicalSize::new(w, h))`; `TooSmall` →
      `show_notice(&w, FIT_IMPOSSIBLE.into())`; `NoSlack` → nothing.

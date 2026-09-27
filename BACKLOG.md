@@ -14,7 +14,6 @@ made things worse.
 ### Next, in order
 
 - **87.** Resizable panels. The coach (2026-09-25): "resizing all the panels".…
-- **95.** The player area should take the footage's aspect, so there are no…
 - **88.** The inset's size and corner, per clip. The coach (2026-09-25): "avatar
 - **85.** Recent projects, and a drawer to switch between them. The coach
 - **78.** App settings for the things an export writes. The coach (2026-09-24):
@@ -93,6 +92,9 @@ problem — which is the entry, not an excuse for it.
 - **98.** Export the slates as a silent breakdown film
 
 ### Closed, kept for the reasoning
+
+- **95.** Fit window to video — shipped 2026-09-26; the splitter snap is still
+  the coach's call (see the entry)
 
 - 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 92, 94
 
@@ -703,6 +705,11 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   of 1500, on both audio sinks and both source files, while another session's
   GPU/CPU-heavy process was running (and occasionally without it). The preview's
   Rust pump ran at the test's `nice 19` priority there.
+- **Seen again 2026-09-26**, as a *test* failure rather than a measurement:
+  `preview.rs::a_seek_lands_on_the_frame_it_asked_for` timed out on its frame
+  poll during a full `cargo test --workspace` under `nice -n 19`, and passed on
+  its own in 7.3 s. Same shape — the pump starved by everything else in the
+  run — so this entry, not a new one.
 - **Why deferred:** seen only in tests at lowest priority under deliberate
   contention; the clean runs were perfect (1500/1500 frames).
 - **When to revisit:** if the coach's preview ever stutters or freezes while
@@ -1422,7 +1429,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   or immediately if a second person is ever handed the app.
 
 95. **The player area should take the footage's aspect, so there are no black
-  bars.** The coach, on 0.8.0 (2026-09-25): "i'd like the preview window to be
+  bars — RESOLVED (2026-09-26), as `F` / the Fit button.** The coach, on 0.8.0 (2026-09-25): "i'd like the preview window to be
   the right aspect ratio? i don't like the black bars in the view". Today
   `player` (`app.slint`) is a `Rectangle` that fills whatever the layout gives
   it, and `place-picture` letterboxes the frame inside it, so any window whose
@@ -1465,6 +1472,9 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   footage in a 1600px window, that is window heights in `[700, 715.5)`. It
   cannot touch the bars the coach complained about — those would need a player
   1514px wide inside 1600px, leaving 86px for two columns.
+- **Shipped:** `F` fits the window, shrinking the dimension with the slack, so
+  the picture is never re-fitted — see CLAUDE.md and the spec's W1. Everything
+  here about the snap stands; nothing else in this entry is open.
 - **Why deferred (the snap only):** it would cost a tint, a test and the only
   place a panel drag reads the footage, and buy nothing in the case that
   motivated it. **Needs the coach's nod**, since they asked for it.

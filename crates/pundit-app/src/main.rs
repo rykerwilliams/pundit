@@ -29,6 +29,7 @@ use pundit_app::bus::{
 };
 use pundit_app::color_picker;
 use pundit_app::drawing::{path_commands, InProgress, Pen};
+use pundit_app::fit::{fit_window, Fit};
 use pundit_app::format::{finish_at, format_hms, format_hms_tenths, sentence};
 use pundit_app::highlight_view::{self, LiveHighlight as Ring};
 use pundit_app::match_panel::{
@@ -65,6 +66,24 @@ slint::include_modules!();
 const TICK: Duration = Duration::from_nanos(1_000_000_000 / 30);
 /// How long a notice stays up.
 const NOTICE: Duration = Duration::from_secs(6);
+/// How long a fit waits for a maximised window to come back before giving up
+/// (spec W6). A maximised window cannot change shape, so `f` asks for the
+/// un-maximise and fits the geometry the window manager hands back — and this
+/// is what stops a manager that drops the request leaving the fit armed to
+/// fire minutes later, when the coach un-maximises by hand.
+const FIT_UNMAXIMIZE: Duration = Duration::from_millis(500);
+/// What the fit says when it cannot be done (spec W6): the target is under the
+/// window's own minimum, or a maximised window never came back. The window's
+/// size is the coach's to change, so this says what to do rather than what
+/// went wrong — and asking anyway is worse than refusing, since the minimum is
+/// a hint the window manager clamps against and half a fit is the bars *and* a
+/// moved window.
+const FIT_IMPOSSIBLE: &str =
+    "Not enough room to fit this footage — make the window bigger and press F";
+/// And what it says in fullscreen, where the advice above would be wrong: there
+/// is no shape to change until the window leaves it, and that is the window
+/// manager's to undo since it is the window manager the coach asked.
+const FIT_FULLSCREEN: &str = "Leave fullscreen to fit the window to the footage";
 /// How long the self-view stays up without a new frame. It is hidden when
 /// its frames stop, rather than frozen on the last one: a failed or stalled
 /// self-view says nothing about the recording, and a frozen one would look
@@ -166,6 +185,16 @@ struct UiState {
     highlight_drag: Option<HighlightDrag>,
     /// When the notice line clears, if one is up.
     notice_until: Option<Instant>,
+    /// A fit waiting for a maximised window to be restored (spec W6): the
+    /// window's size when `f` was pressed, and when to give up on it.
+    ///
+    /// The size, not a flag: `set_maximized(false)` writes the very property
+    /// `is_maximized()` reads, so the flag goes false synchronously and long
+    /// before the window manager has restored anything. The fit fires on the
+    /// first tick where the window's size differs from this one, and the target
+    /// is computed **then** — from the maximised geometry it would be a grow in
+    /// both axes, which is the one thing the fit promises not to do.
+    pending_fit: Option<(slint::PhysicalSize, Instant)>,
     /// The previewed clip's duration while a preview is open. The transport
     /// then runs over the clip rather than the concat timeline (spec P6).
     preview_duration: Option<f64>,
@@ -265,6 +294,7 @@ impl Default for UiState {
             shown_stream_time: None,
             highlight_drag: None,
             notice_until: None,
+            pending_fit: None,
             preview_duration: None,
             export_targets: Vec::new(),
             scoreboard: None,
@@ -350,6 +380,7 @@ fn main() {
     wire_zoom(&window, &bus);
     wire_drawing(&window, &bus);
     wire_highlights(&window, &bus);
+    wire_fit(&window);
 
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, TICK, {
@@ -1882,6 +1913,125 @@ fn finite(value: f32) -> Option<f64> {
     value.is_finite().then_some(value)
 }
 
+/// Fit the window to the footage's shape (spec W1): `f` and the Fit button.
+///
+/// The window's own geometry, like the size it reopens at — nothing here
+/// reaches the bus, and there is no `Command` and no `UserError` for it.
+fn wire_fit(window: &AppWindow) {
+    window.on_fit_window({
+        let weak = window.as_weak();
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            // A fit is already waiting on an un-maximise, so this press is the
+            // coach pressing again into the wait — which is nothing to hold
+            // against them, since up to 500 ms pass with nothing on screen.
+            // Without this it would fall straight through to `apply_fit`:
+            // `is_maximized()` is already false (see below), so the second
+            // press would fit the still-maximised geometry, and then the first
+            // press's pending fit would resize again from another one.
+            if UI.with_borrow(|ui| ui.pending_fit.is_some()) {
+                return;
+            }
+            let window = w.window();
+            // Fullscreen is refused outright, and says so. `set_size` is
+            // ignored on a fullscreen window and **un-maximising cannot leave
+            // fullscreen** — slint applies the two flags separately and its own
+            // comment is that "fullscreen overrides maximized"
+            // (`winitwindowadapter.rs:1174`) — so taking the branch below would
+            // spend the deadline achieving nothing and then advise a bigger
+            // window, which is not the coach's problem here. Leaving fullscreen
+            // for them is not this key's business either: they asked the window
+            // manager for it.
+            if window.is_fullscreen() {
+                return show_notice(&w, FIT_FULLSCREEN.into());
+            }
+            // A maximised window cannot change shape, and the geometry the window
+            // manager restores is not the one on screen now — a target computed
+            // from the maximised size would grow the window in both axes (spec
+            // W6). So ask for the restore, remember the size to watch for, and
+            // let the tick fit whatever comes back.
+            if window.is_maximized() {
+                window.set_maximized(false);
+                let armed = (window.size(), Instant::now() + FIT_UNMAXIMIZE);
+                UI.with_borrow_mut(|ui| ui.pending_fit = Some(armed));
+                return;
+            }
+            if apply_fit(&w) == Fit::TooSmall {
+                show_notice(&w, FIT_IMPOSSIBLE.into());
+            }
+        }
+    });
+}
+
+/// What fitting the window would do right now — the one call behind both the
+/// offer and the action, so they can never disagree (spec W8).
+///
+/// `can-play` is part of the gate here rather than a second term in Slint:
+/// `frame-width` and `frame-height` are never cleared, so with no project open
+/// they still read 16:9 and the picture would look as fittable as ever.
+///
+/// The content rect, the player and the floor are logical pixels and the
+/// window's size is physical, so the three are scaled; `fit.rs`'s header
+/// carries why the target is only ever asked for in physical pixels.
+fn fit_now(w: &AppWindow) -> Fit {
+    if !w.get_can_play() {
+        return Fit::NoSlack;
+    }
+    let window = w.window();
+    let scale = f64::from(window.scale_factor());
+    let size = window.size();
+    fit_window(
+        (
+            f64::from(w.get_content_width()) * scale,
+            f64::from(w.get_content_height()) * scale,
+        ),
+        (
+            f64::from(w.get_player_width()) * scale,
+            f64::from(w.get_player_height()) * scale,
+        ),
+        (f64::from(size.width), f64::from(size.height)),
+        (
+            f64::from(w.get_min_window_width()) * scale,
+            f64::from(w.get_min_window_height()) * scale,
+        ),
+    )
+}
+
+/// A fit that was waiting on a maximised window (spec W6) — and it waits on the
+/// **size**, because `is_maximized()` went false the moment `set_maximized`
+/// wrote it, which is before winit is told and long before the window manager
+/// has restored anything.
+///
+/// The deadline fits anyway rather than refusing outright. A window manager that
+/// restores to the size it was maximised at — which is exactly what this app's
+/// own restore produces, reopening at the stored maximised size and letting the
+/// window manager re-maximise it — never changes the size, so refusing there
+/// would answer a perfectly possible fit with "not enough room". If the
+/// un-maximise really was dropped, `set_size` is ignored and the press is a
+/// silent no-op, which beats advice that does not apply.
+fn resolve_pending_fit(w: &AppWindow) {
+    let Some((pressed_at, deadline)) = UI.with_borrow(|ui| ui.pending_fit) else {
+        return;
+    };
+    if w.window().size() == pressed_at && deadline > Instant::now() {
+        return;
+    }
+    UI.with_borrow_mut(|ui| ui.pending_fit = None);
+    if apply_fit(w) == Fit::TooSmall {
+        show_notice(w, FIT_IMPOSSIBLE.into());
+    }
+}
+
+/// Resizes the window if there is black to take off, and answers what it did
+/// so the caller can raise the refusal its own way.
+fn apply_fit(w: &AppWindow) -> Fit {
+    let fit = fit_now(w);
+    if let Fit::To(width, height) = fit {
+        w.window().set_size(slint::PhysicalSize::new(width, height));
+    }
+    fit
+}
+
 /// Drawing on the picture while recording (Phase 6 spec D2). The window's
 /// drawing area is the content rect, so its coordinates already are; the
 /// clock is read here, at the input event, as the bus contract requires.
@@ -3045,8 +3195,23 @@ fn scan_frame_shown(stream_time: Option<f64>) {
 /// position on the current source. Also the recording's elapsed time (R11),
 /// the notice's expiry, the drawings' (Phase 6 D5, which reuses this timer
 /// rather than adding one), and whether the self-view is still arriving.
+///
+/// It is also where the fit is offered and where a fit waiting on a maximised
+/// window lands (spec W6, W8) — both before the borrow, for the reason given
+/// there. **The rest of the body runs inside `UI`'s mutable borrow**, so nothing
+/// in it may call something that borrows again; `show_notice` is the one that
+/// bites.
 fn tick(w: &AppWindow, position: &PositionHandle, preview: &PreviewPosition) {
     let content = content_size(w);
+    // The fit, **outside** the borrow below, which is what lets it use
+    // `show_notice` like every other notice rather than setting the two fields
+    // by hand. Neither half needs anything from `UiState` but `pending_fit`
+    // itself, and keeping them here also keeps the offer clear of the early
+    // return further down: a closed project would otherwise leave `can-fit` at
+    // its last value, and since `frame-width` is never cleared the offer would
+    // stand over the empty-project card.
+    w.set_can_fit(fit_now(w) != Fit::NoSlack);
+    resolve_pending_fit(w);
     UI.with_borrow_mut(|ui| {
         // The quiet timer is the camera's: a frozen picture would lie about
         // it. An avatar take has no frames at all, and a still image lies

@@ -2765,8 +2765,15 @@ export component AppWindow inherits Window {
     // Every control fits at this size. The window opens at the size it last
     // closed at, which Rust sets from the app's state file, and at a roomier
     // one the first time.
-    min-width: 1100px;
-    min-height: 700px;
+    //
+    // Named properties in front of the reserved ones: `min-width` and
+    // `min-height` are layout properties with no generated getter, and the fit
+    // (spec W6) has to compare its target against this floor itself. The
+    // alternative was a fourth copy of the pair in Rust.
+    out property <length> min-window-width: 1100px;
+    out property <length> min-window-height: 700px;
+    min-width: root.min-window-width;
+    min-height: root.min-window-height;
     background: Palette.background;
     forward-focus: keys;
 
@@ -2822,6 +2829,18 @@ export component AppWindow inherits Window {
     callback zoom-press(length, length);
     /// ... and, still down, the pointer moved to (x, y).
     callback zoom-drag(length, length);
+
+    // --- Fit the window to the footage (spec W1) ---
+
+    /// There is black to take off: the player's shape differs from the
+    /// frame's and the fit would land on a window this one can hold. One
+    /// answer from Rust, `can-play` folded into it, so the offer and the
+    /// action can never disagree about whether there is anything to do.
+    in property <bool> can-fit;
+    /// Shrink the window to the footage's shape. Never grows it and never
+    /// re-fits the picture: the window closes up around the picture already
+    /// on screen, and the bars are what goes.
+    callback fit-window();
 
     // --- Project state (from bus events) ---
 
@@ -3686,6 +3705,18 @@ export component AppWindow inherits Window {
         if (event.text == "j" || event.text == "J" || event.text == "l" || event.text == "L") {
             if (pressed && !event.repeat && root.can-scan-fast) {
                 root.step-scan-speed(event.text == "l" || event.text == "L" ? ScanStep.faster : ScanStep.slower);
+            }
+            return accept;
+        }
+        // Fit the window to the footage (spec W1, W3). Beside the zoom keys
+        // below, which is the company it keeps: it changes what the picture is
+        // drawn in, not what is played. Gated on `can-fit` alone — Rust folds
+        // `can-play` and the frame's shape into it — and on `!event.repeat`,
+        // since a held key would ask the window manager to resize per repeat
+        // and only the first would have anything to take off.
+        if (event.text == "f" || event.text == "F") {
+            if (pressed && !event.repeat && root.can-fit) {
+                root.fit-window();
             }
             return accept;
         }
@@ -4864,6 +4895,33 @@ export component AppWindow inherits Window {
 
                             Tooltip {
                                 text: @markdown("Clear the drawings (C)");
+                            }
+                        }
+                        // Fit the window to the footage (spec W3). **This row,
+                        // not the transport's above:** at the window's 1100px
+                        // minimum that one is already exactly full, and the
+                        // only give in it is the position readout, which clips
+                        // rather than elides.
+                        Button {
+                            text: "Fit";
+                            // `enabled`, never `if`: a button that appeared
+                            // and vanished as the window was dragged would
+                            // reflow this row under the coach's cursor. A
+                            // disabled Button keeps its Tooltip, so the
+                            // greying explains itself the way Record's does.
+                            enabled: root.can-fit;
+                            clicked => {
+                                keys.focus();
+                                root.fit-window();
+                            }
+
+                            Tooltip {
+                                text: root.can-fit
+                                    ? @markdown("Shrink the window to the footage's shape, losing the black bars (F)")
+                                    // Not "there is no black to take off": this
+                                    // is also the wording with no footage on
+                                    // screen, where that would be a lie.
+                                    : @markdown("Nothing to fit");
                             }
                         }
                         // The H tool is a mode, so it says so (spec H3): the

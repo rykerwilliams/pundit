@@ -370,6 +370,20 @@ Verify on real hardware with `scripts/linux-gate-check.sh <file>`; see
 
 **Transport keys: the arrows skip, `,` and `.` step one frame while paused** (`Command::StepFrame`, refused while playing, recording or previewing). A step works from the shown frame's *end*, which a seek never clips: forward seeks to it, back to half a nominal frame before the frame's nominal start, or its own start where that is earlier (a frame held long). The readout shows tenths while paused, whole seconds while playing.
 
+**`F` fits the window to the footage** (BACKLOG #95): it only ever **shrinks**,
+so the picture is never re-fitted — the window closes up around the picture
+already on screen and the letterbox bars go, which is also why it can never put
+the window off a screen whose size Slint will not report. Every input is read
+off the window rather than derived from it: the chrome is `window − player` and
+the picture is `content-width`/`content-height`, so a new transport button or a
+dragged panel cannot put it out of date. `fit.rs` is the one place the
+arithmetic lives, and it answers three outcomes because the refusal has to be
+reachable — with two, the value that offers the action is the value that refuses
+it, and the notice could never be shown. A maximised window is un-maximised
+first and fitted on a later tick, watching the window's **size**: `is_maximized()`
+goes false the instant `set_maximized` writes it. Fullscreen is refused outright,
+because un-maximising cannot leave it.
+
 **`J`/`L` set the scan speed** (`Command::ScanSpeed(ScanStep)`: the bus steps 1×–32×, while scanning only; any pause returns to 1×, so a recording starts at 1×). The player owns the rate, and **every scan seek carries it** (`pipeline.seek(rate, …)`, never `seek_simple`, whose 1.0 would drop it on the next scrub or skip). `set_rate` issues no seek: the bus does, through `load`, unless a seek still to be issued will carry it; after a pause it seeks to the frame on screen, not the position the picture trails at speed. Opening a preview returns to 1× with no seek. Every frame is decoded even at 32× and the scan sink's QoS (`max-lateness` 20 ms) drops what's late: measured on 1080p30 H.264, that showed 88 fps at 32× against key frames only's 16, with a tenth of the lag.
 
 **Preview and export share one composite** (`pundit-media/src/composite/`).

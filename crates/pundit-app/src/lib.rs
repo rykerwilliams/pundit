@@ -7,6 +7,7 @@
 pub mod bus;
 pub mod color_picker;
 pub mod drawing;
+pub mod fit;
 pub mod format;
 pub mod highlight_view;
 pub mod match_panel;

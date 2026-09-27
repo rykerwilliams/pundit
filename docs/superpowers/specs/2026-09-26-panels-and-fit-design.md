@@ -43,7 +43,9 @@ measurement here reports a content rect of 0×0 and concludes nothing):
    fit at 1600 wide wants `1080 / (16/9) + 108` = **715.5**. The last two rows
    are why this spec says *ceil*: at 716 the picture is still width-limited and
    unchanged; at 715 it becomes height-limited and the picture **shrinks by
-   ~1.9px**, which is the one thing W1 promises won't happen.
+   0.89px of width** (1080 → 1079.111, the table's own last row), which is the
+   one thing W1 promises won't happen. A floored fit also stops being
+   idempotent: re-fitting a floored 1600×715 window asks for 1599.
 3. **`min-width` / `min-height` are not a floor a test can see, and not one the
    app can read.** The headless backend's `set_size` dispatches the resize
    unconditionally and consults layout constraints only when the current size is
@@ -321,10 +323,15 @@ button already does for its three states. **This is not an extra mechanism —
 it is the one that makes W6 exist at all.** A two-state version of this spec
 should have deleted the notice instead.
 
-Fullscreen belongs to the same refusal: winit ignores `set_size` on a
-fullscreen window (`winitwindowadapter.rs:1935-1944`). The app never asks for
-fullscreen, but a WM keybinding can, and without the check `f` would silently
-do nothing.
+**Fullscreen is refused immediately, with its own wording.** `set_size` is
+ignored on a fullscreen window, and un-maximising cannot rescue it: slint
+applies the two flags separately and its own comment is that "fullscreen
+overrides maximized so if both are true then the window will remain in
+fullscreen" (`winitwindowadapter.rs:1174`). So routing fullscreen through the
+un-maximise path above would spend the deadline achieving nothing and then
+advise a bigger window, which is not the problem. It gets a notice naming
+fullscreen. Leaving fullscreen on the coach's behalf is not this key's
+business: they asked the window manager for it.
 
 **The maximised window is the coach's most likely state** — `main.rs:311-322`
 reopens a maximised session by asking for the maximised *size*, and says so. A
@@ -348,8 +355,13 @@ anything. A gate on the flag therefore fires on the very next tick and computes
 the fit from the **maximised** geometry — the grow in both axes this paragraph
 exists to prevent. The pending fit carries the window size at the moment of the
 press and fires on the first tick where `w.window().size()` differs from it.
-That is one field instead of two, it is the observable that actually matters,
-and it survives a WM that restores in stages.
+That is one field instead of two, and it is the observable that actually
+matters. It does **not** make a staged restore safe: a one-shot that fires on
+the first differing size will fit an intermediate geometry and then clear
+itself. Making it survive that needs a second observable ("stable for a tick"),
+which is not worth a field until a WM is seen doing it — the tick is 33ms and
+most stage sequences land inside one. A4's runtime check is where it would
+show.
 
 The deadline (500ms, the shape of the existing `notice_until`) is what stops a
 WM that drops the un-maximise from leaving the fit armed to fire minutes later
@@ -496,6 +508,14 @@ to the production `zoom_input::Viewport`, set 1600×960 and a 16:9 frame, call
 **both** content-rect dimensions are unchanged, and that a second `fit_window`
 on the new layout is `NoSlack` — idempotence in the real layout rather than in
 arithmetic. Nothing about position (W1). Nothing hard-coding 520, 108 or 716.
+
+**The two assertions are not interchangeable, and only one catches a wrong
+target.** Measured: with the window floored to 1600×715, the `NoSlack`
+assertion **passes** — the picture turns height-limited, the re-fit computes
+1079.111 + 520 = 1599.111, and the `ceil` puts it back on 1600, so the floor
+hides inside the rounding that rule 4 exists for. The **content-rect**
+assertion is what fires. It is the one that must never be dropped; idempotence
+is a second property, not a proof that the target landed.
 
 An unwired `place-picture` returns `PictureRect::default()`, so every
 content-rect assertion silently passes on 0×0. That is how the vacuous version
