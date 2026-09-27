@@ -749,6 +749,88 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   touched only `pundit-app`. So the 2026-09-25 reading holds exactly — it is not
   the binary alone, it is the binary under a loaded machine — and this is the
   fourth sighting of the pattern.
+- **Investigated 2026-09-27 (the coach said go).** First real evidence, and it
+  moves the entry on from guesswork. **Reproduced without a workspace run:**
+  4 concurrent copies of the media `export` binary, `nice -n 19`, gave **1 crash
+  in 16 runs** — so the trigger is CPU contention, not `cargo test --workspace`
+  specifically, and a repro costs ~25 minutes rather than an hour. Two things
+  that do **not** reproduce it, so nobody need retry them: the single suspect
+  test (`a_vp8_counter_fixture_decodes_to_its_frame_numbers`) at 8-way
+  concurrency, **0 in 64**; and one binary alone.
+- **Two cores captured and symbolised** (`systemd-coredump` keeps them; no
+  `ulimit` fiddling needed, and **gdb on a core works where gdb *around* the
+  process never reproduced it**). Both abort identically — glibc
+  `unlink_chunk` → `corrupted size vs. prev_size` inside `_int_malloc`, on a
+  **non-main (per-thread) arena** — but they are discovered in completely
+  different places:
+  - `gst_bus_set_flushing` ← `gst_element_change_state` ×3 ← `set_state(Null)` in
+    `fixtures::decode_each`, i.e. tearing a **fixture decode** pipeline down
+    (`a_vp8_counter_fixture_decodes_to_its_frame_numbers`).
+  - `gst_buffer_new_allocate` ← **`libgstvideoparsersbad.so`** on a streaming
+    thread — a different codec and a different phase entirely.
+- **So the backtrace does not name the culprit**, and reading it as if it did is
+  the trap here: the corruption is already in the free list, and the crash lands
+  on whichever `malloc` next walks it. That also explains the entry's three
+  "faces" — they are one bug discovered in three arbitrary places, not three
+  bugs.
+- **What the heap says, which is more informative than the stack.** Read by hand
+  from the first core: the chunk being unlinked has size `0x60`, while the
+  following chunk's `prev_size` reads **0** instead of `0x60`, and the words
+  around it are zeros. That is a **run of zeros written past the end of an
+  allocation**, clobbering a chunk header — the signature of a clear with a
+  miscomputed length, not a wild pointer. No `unsafe` exists in `fixtures.rs`,
+  and its frame mapping uses `VideoFrameRef` plus a slice that would **panic**
+  rather than corrupt, so the writer is in C.
+- **ROOT CAUSE FOUND: libvorbis frees an invalid pointer when a Vorbis decoder
+  is torn down.** `MALLOC_CHECK_=3` is **inert on glibc 2.34+** — the checks
+  moved into `libc_malloc_debug.so`, which has to be preloaded with the tunable
+  set, so the entry's own suggested command would have measured nothing. Run
+  properly, `LD_PRELOAD=libc_malloc_debug.so.0
+  GLIBC_TUNABLES=glibc.malloc.check=3` raised the hit rate from **1/16 to 4/24**
+  and moved the abort from a bystander `malloc` to the culprit's own `free`:
+
+      free_check → vorbis_book_clear → vorbis_info_clear   (libvorbis.so.0)
+        → libgstvorbis.so → libgstaudio (the decoder base class)
+        → gst_element_change_state        ← the decoder being torn down
+        → libgstplayback.so (decodebin3)
+
+  So the `corrupted size vs. prev_size` aborts, in all their places, are the
+  damage being *discovered*; the write is libvorbis freeing a pointer that is
+  not a live allocation while clearing its codebooks.
+- **Why our tests and not everyone's.** Every audio-bearing fixture is
+  `vorbisenc` (four sites in `fixtures.rs`), and `decode_each`'s video path
+  selects only the video stream — "the other streams of the file are left
+  alone". But **`decodebin3` decodes every stream regardless**: measured with
+  `GST_DEBUG=GST_ELEMENT_FACTORY:4`, a video-only fixture decode still builds a
+  `vorbisdec`, and **`caps=video/x-raw(ANY)` does not stop it**. So each fixture
+  decode spins up a Vorbis decoder it never reads and then tears it down, which
+  is the crashing path, ~8 at a time across the test threads.
+- **Not reproducible with one stock pipeline**: `gst-launch-1.0 uridecodebin3`
+  over a VP8+Vorbis file, 6-way, under the same heap checking — **0 in 60**. It
+  wants several decoders coming down inside *one* process under load, which is
+  what a test binary does and a single `gst-launch` never does.
+- **The app is exposed too, but narrowly.** The player decodes audio, so a
+  source whose audio is Vorbis would run the same teardown on every project
+  close or source change. Football footage is MP4/MKV with AAC, so this is
+  unlikely rather than impossible — and it is the honest answer to this entry's
+  original worry ("can crash the real app"): yes, but only for Vorbis input.
+- **When to revisit — two separable pieces, in this order:**
+  1. **Stop decoding audio we throw away** (fixes the flake, and is less wasted
+     work regardless). The `caps` property does not do it, so it needs proper
+     stream selection: take the `StreamCollection` message and send a
+     `select-streams` event naming only the video stream, ~30 lines in
+     `decode_each`. **Verify with the repro that now exists**: 4 concurrent
+     copies of the media `export` binary under the preload above, 24 runs,
+     expecting 0 where it is currently 4. Note the *audio* fixture path
+     (`fixtures.rs:618`) legitimately decodes Vorbis and would still tear a
+     decoder down, so confirm whether that path is a second source before
+     calling it closed.
+  2. **Upstream.** This is a libvorbis/gst-plugins-base bug, not ours. The
+     material for a report is in this entry: the backtrace, the heap forensics
+     (a chunk's `prev_size` zeroed while the neighbour's size reads `0x60`), the
+     hit rates, and the fact that GStreamer 1.24.2 on Ubuntu 24.04 is the
+     platform. A single-process C repro building and tearing down N vorbisdecs
+     concurrently is what a maintainer would want, and does not exist yet.
 - **Update (2026-09-25, the rename):** a **third** face of the same pattern, and
   the most informative one. A workspace run at 77cc357 died in the harness's
   `tests/transcribe.rs` after its first test with `gst_mini_object_copy:
@@ -894,11 +976,26 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **Why deferred:** twice now, both times on a loaded machine, on a timing margin
   rather than a logic error. It is not BACKLOG #70 (that is the whisper
   teardown).
-- **When to revisit:** it has recurred, so the cheap half is due: **print the
-  margin on failure** (the assertion at `recording.rs:462` reports the two
-  positions but not the slack, so nobody can tell a 5 ms miss from a 500 ms one).
-  Do that the next time anything in that file is touched. A coach reporting a
-  take whose replay drifts from where they paused is what would make it urgent.
+- **Done 2026-09-27 (the coach said go), and the measurement changes the
+  reading.** The margin is now computed into a named `REPLAY_MARGIN` and
+  **printed on every run**, not only on failure, so a sighting reports its own
+  number. Then it was measured rather than guessed: **24 runs at 4-way
+  contention gave 6.2–12.4 ms, median 8.9 ms** — the 0.05 tolerance is about
+  **four times** the worst that load produces.
+- **So the tolerance is not too tight, and widening it would be the wrong fix.**
+  Both flakes came in at **54 ms**: six times the median and far outside the
+  measured spread, i.e. an **outlier with its own cause** rather than the tail of
+  normal variance. Something occasionally stalls by ~50 ms; this assertion is
+  the only thing that notices, and silencing it would discard the evidence.
+  (The entry previously said the message "does not carry the margin" — it did
+  carry both positions, and subtracting them is where the 54 ms comes from. What
+  was missing was the margin on the *passing* runs, which is what makes an
+  outlier recognisable as one.)
+- **When to revisit:** on the next sighting, which will now print its own
+  margin. If it is ~54 ms again, the cause is a discrete stall worth chasing (a
+  seek landing late, or the recording thread descheduled) rather than a
+  tolerance to adjust. A coach reporting a take whose replay drifts from where
+  they paused is what would make it urgent.
 
 76. **`a_cancelled_copy_leaves_nothing`'s fixtures sit on the 30 s EOS bound.**
   That test generates two 1280×720 × 900-frame H.264 sources, and
