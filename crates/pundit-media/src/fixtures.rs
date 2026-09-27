@@ -31,8 +31,11 @@ use pundit_core::project::{Clip, Project, SourceRef};
 /// How long a fixture pipeline may run before it is declared hung.
 const TIMEOUT: gst::ClockTime = gst::ClockTime::from_seconds(30);
 
-/// Audio sample rate for fixtures that carry audio.
-const AUDIO_RATE: u32 = 44_100;
+/// Audio sample rate for fixtures that carry audio. **48 kHz because the audio
+/// is Opus**, which takes only 8/12/16/24/48; and it still divides every fps in
+/// use (25, 30, 60), which `webm` asserts so a wrong pairing fails loudly rather
+/// than drifting the tracks apart.
+const AUDIO_RATE: u32 = 48_000;
 
 /// Sample rate of a [`tone_video`]: the export's own mixing rate, so the tone
 /// is neither resampled on its way in nor on its way out and its onset can be
@@ -83,7 +86,7 @@ pub fn webm(dir: &Path, name: &str, secs: u32, w: u32, h: u32, fps: u32, keyint:
            ! vp8enc deadline=1 keyframe-max-dist={keyint} ! queue ! mux. \
          audiotestsrc num-buffers={frames} samplesperbuffer={samples_per_buffer} \
            ! audio/x-raw,rate={AUDIO_RATE},channels=1 \
-           ! audioconvert ! vorbisenc ! queue ! mux. \
+           ! audioconvert ! opusenc ! queue ! mux. \
          webmmux name=mux ! filesink name=out"
     );
     run(&pipeline, &dir.join(name))
@@ -117,7 +120,7 @@ pub fn solid_video(
         format!(
             "audiotestsrc wave=silence num-buffers={frames} samplesperbuffer={} \
                ! audio/x-raw,rate={AUDIO_RATE},channels=1 \
-               ! audioconvert ! vorbisenc ! queue ! mux. ",
+               ! audioconvert ! opusenc ! queue ! mux. ",
             AUDIO_RATE / fps
         )
     } else {
@@ -231,13 +234,20 @@ pub fn tone_video(path: &Path, w: u32, h: u32, fps: u32, frames: u32, tone: Tone
     })
 }
 
-/// A one-second Vorbis-in-Ogg file at `dir/audio_only.ogg` with no video
-/// stream.
+/// A one-second Opus-in-Ogg file at `dir/audio_only.ogg` with no video stream.
+///
+/// Thirty buffers of a thirtieth of a second, so the length is exactly one
+/// second whatever [`AUDIO_RATE`] is — it used to spell out 44100 and 1470 and
+/// was the one fixture the move to Opus broke, because `opusenc` refuses a rate
+/// it cannot take and 44.1 kHz is not one of them.
 pub fn audio_only(dir: &Path) -> PathBuf {
     run(
-        "audiotestsrc num-buffers=30 samplesperbuffer=1470 \
-           ! audio/x-raw,rate=44100,channels=1 \
-           ! audioconvert ! vorbisenc ! oggmux ! filesink name=out",
+        &format!(
+            "audiotestsrc num-buffers=30 samplesperbuffer={} \
+           ! audio/x-raw,rate={AUDIO_RATE},channels=1 \
+           ! audioconvert ! opusenc ! oggmux ! filesink name=out",
+            AUDIO_RATE / 30
+        ),
         &dir.join("audio_only.ogg"),
     )
 }
@@ -424,7 +434,7 @@ pub fn counter_video_with(
                    ! vp8enc deadline=1 keyframe-max-dist={fps} ! queue ! mux. \
                  audiotestsrc num-buffers={audio_buffers} samplesperbuffer={samples_per_buffer} \
                    ! audio/x-raw,rate={AUDIO_RATE},channels=1 \
-                   ! audioconvert ! vorbisenc ! queue ! mux. \
+                   ! audioconvert ! opusenc ! queue ! mux. \
                  webmmux name=mux ! filesink name=out"
             )
         }
@@ -648,8 +658,14 @@ fn for_each_gray(path: &Path, mut visit: impl FnMut(GrayFrame)) {
 
 /// Decodes `path` with whatever decoder the machine ranks first, and calls
 /// `visit` with each video frame as `format` (`bytes` bytes a pixel, one
-/// plane), tightly packed. The video stream is selected by caps, so an audio
-/// stream is left alone.
+/// plane), tightly packed.
+///
+/// The caps pick the video stream, and **that is about the pads, not the
+/// elements**: `decodebin3` builds a decoder for every stream whatever is
+/// linked or selected (measured with `GST_DEBUG=GST_ELEMENT_FACTORY:4`), so an
+/// audio decoder is constructed here, fed its headers, and torn down unread.
+/// Harmless in itself — it is why the fixtures' audio is Opus and not Vorbis,
+/// whose teardown frees an invalid pointer (BACKLOG #70).
 fn for_each_frame(
     path: &Path,
     format: &str,
@@ -683,8 +699,9 @@ fn for_each_frame(
 /// Runs `description` — a `decodebin3` named `dec` fed from `path`, ending in
 /// an `appsink` named `sink` — and calls `visit` with every sample it yields.
 ///
-/// The decoder is whatever the machine ranks first, and the stream is picked
-/// by the caller's caps, so the other streams of the file are left alone.
+/// The decoder is whatever the machine ranks first, and the caller's caps pick
+/// which stream reaches the sink — **not which decoders exist**. See
+/// [`for_each_frame`]: the others are built and torn down regardless.
 fn decode_each(description: &str, path: &Path, mut visit: impl FnMut(&gst::Sample)) {
     let pipeline = gst::parse::launch(description)
         .expect("decode pipeline parses")

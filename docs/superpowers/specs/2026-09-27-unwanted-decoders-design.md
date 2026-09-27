@@ -1,4 +1,23 @@
-# Keeping libvorbis out of the test suite (#70) — design
+# Fixtures that match what the app records — design
+
+> **OUTCOME (2026-09-27, after execution): this did not fix #70, because the
+> root cause this spec was built on was wrong.** The fixtures were moved off
+> Vorbis, `vorbisdec` constructions in the harness's `transcribe.rs` went 60 → 0,
+> and it aborted anyway on the next workspace run with `corrupted size vs.
+> prev_size` — in `gst_va_pool_new`, with no Vorbis in the process. The
+> `free(): invalid pointer` inside `vorbis_book_clear` was *itself* a discovery
+> site, not the culprit; glibc's checker aborts earlier, not at the write.
+>
+> **What shipped still earns its place, on a different argument**: the recorder
+> writes Opus, so fixtures encoded with Vorbis never resembled what the app
+> produces, and the suite is better for matching it. That is the whole of the
+> claim now. #70 stays open, and its next step is ASan — see the entry.
+>
+> The spec is kept as written below, wrong root cause and all, because the
+> mistake is instructive: it is the *second* time in one day that an
+> allocator-detected backtrace was read as naming the culprit, the first being
+> the thing this spec's own U0 warns about.
+
 
 BACKLOG **#70**: a glibc heap-corruption abort, four sightings across three test
 binaries, always under load, never alone. Root cause, found 2026-09-27:

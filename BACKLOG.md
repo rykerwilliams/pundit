@@ -781,7 +781,30 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   miscomputed length, not a wild pointer. No `unsafe` exists in `fixtures.rs`,
   and its frame mapping uses `VideoFrameRef` plus a slice that would **panic**
   rather than corrupt, so the writer is in C.
-- **ROOT CAUSE FOUND: libvorbis frees an invalid pointer when a Vorbis decoder
+- **CORRECTION (2026-09-27, later the same day): the libvorbis conclusion below
+  is WRONG, and the way it is wrong is the whole lesson of this entry.** The
+  fixtures were moved off Vorbis (see the spec
+  `2026-09-27-unwanted-decoders-design.md`), which took `vorbisdec` constructions
+  in the harness's `transcribe.rs` from 60 to **0** — and it **still aborted**,
+  `corrupted size vs. prev_size`, on the very next workspace run. A fifth
+  sighting, a fifth distinct discovery site, and this one with no Vorbis in the
+  process at all:
+
+      unlink_chunk → _int_malloc → g_malloc
+        → gst_atomic_queue_new → gst_va_pool_new   (libgstva, VA-API)
+
+  So `free(): invalid pointer` inside `vorbis_book_clear` was **itself a
+  discovery site**: a legitimate pointer failing validation because the chunk
+  header beside it was already clobbered. glibc's checker moved the abort
+  *earlier*, not *to the culprit*. This entry had already written, in bold, that
+  the backtrace does not name the culprit — and then I read the checker's
+  backtrace as if it did. **The lesson generalises: no allocator-detected abort
+  names the writer, however early you catch it.** Only a tool that watches the
+  *write* can, which means ASan and nothing less.
+- **The source of the corruption is therefore still unknown.** VA-API is now in
+  the frame as a discovery site, and by the argument above that is not evidence
+  against it either.
+- **Superseded: libvorbis frees an invalid pointer when a Vorbis decoder
   is torn down.** `MALLOC_CHECK_=3` is **inert on glibc 2.34+** — the checks
   moved into `libc_malloc_debug.so`, which has to be preloaded with the tunable
   set, so the entry's own suggested command would have measured nothing. Run
@@ -814,7 +837,16 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   close or source change. Football footage is MP4/MKV with AAC, so this is
   unlikely rather than impossible — and it is the honest answer to this entry's
   original worry ("can crash the real app"): yes, but only for Vorbis input.
-- **When to revisit — two separable pieces, in this order:**
+- **When to revisit — ASan, and little else is worth trying first.** Everything
+  cheaper has now been spent: three plain backtraces, one heap-checked backtrace,
+  a codec elimination, and a 4-way repro. Each produced a *discovery* site and
+  none produced a writer. `nightly` is installed, so
+  `RUSTFLAGS=-Zsanitizer=address` over `pundit-media`'s export test, run 4-way
+  with `ASAN_OPTIONS=detect_leaks=0:halt_on_error=1`, is the next step: its
+  redzones around every allocation are what catch a linear overflow **at the
+  write**. Budget for it being noisy against GStreamer, Mesa and VA-API, and for
+  the instrumentation's slowdown perturbing the race either way.
+- **Superseded plan (kept because its first item shipped for other reasons):**
   1. **Stop decoding audio we throw away** (fixes the flake, and is less wasted
      work regardless). The `caps` property does not do it, so it needs proper
      stream selection: take the `StreamCollection` message and send a
