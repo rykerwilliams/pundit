@@ -6,6 +6,7 @@
 
 import { Button, CheckBox, ComboBox, LineEdit, ListView, Palette, ProgressIndicator, ScrollView, Slider, TextEdit } from "std-widgets.slint";
 import { Mark, Scrubber } from "scrubber.slint";
+import { Splitter } from "splitter.slint";
 
 /// One row of the sidebar's Sources list.
 export struct SourceRow {
@@ -2774,6 +2775,44 @@ export component AppWindow inherits Window {
     out property <length> min-window-height: 700px;
     min-width: root.min-window-width;
     min-height: root.min-window-height;
+
+    // --- The side columns' widths (#87, spec W4) ---
+
+    /// The narrowest each column may be laid out at: today's widths. The
+    /// inspector's 280px is **measured** — the "One action, not two" note in
+    /// `TranscriptRow` records a fourth control in that row running 76px past
+    /// this column at the window's 1100x700 minimum, so 280 is the width the
+    /// row was fitted to. The sidebar's 240px is **not measured**: it is
+    /// today's width, asserted by analogy with the Clips rows' name-plus-
+    /// duration line, and nothing has been shown to need it. The panels grow
+    /// from here and never shrink, so no row has to be re-verified against a
+    /// width nobody asked for.
+    out property <length> sidebar-min: 240px;
+    out property <length> inspector-min: 280px;
+    /// At the window's own 1100px floor the columns and the splitters leave the
+    /// player 568px, so this is slack rather than a constraint — but it is what
+    /// the layout reconciles the columns against when their stored widths do
+    /// not fit.
+    out property <length> player-min: 320px;
+    /// What the coach dragged the columns to, restored from `state.json`. Raw:
+    /// a width from a wider screen, or a hand-edited file, arrives here
+    /// unchecked and the layout is what bounds it (the table above the
+    /// sidebar's constraints).
+    in-out property <length> sidebar-width: root.sidebar-min;
+    in-out property <length> inspector-width: root.inspector-min;
+    /// What the layout gave each column once it had reconciled the pair above
+    /// with the window's width. The effective width is a different number from
+    /// the stored one whenever the bound is active, and it is the one anything
+    /// outside the layout has to work from — the pointer follows the column
+    /// the coach can see, and only this can show the bound holding.
+    out property <length> sidebar-width-now: sidebar-column.width;
+    out property <length> inspector-width-now: inspector-column.width;
+    /// A splitter drag ended, however it ended. No argument: the two width
+    /// properties above are already the widths to keep by the time this fires,
+    /// and one of them has just been overwritten with what the layout settled
+    /// on — a single argument could only carry one column anyway.
+    callback panels-released();
+
     background: Palette.background;
     forward-focus: keys;
 
@@ -3755,8 +3794,30 @@ export component AppWindow inherits Window {
         VerticalLayout {
             HorizontalLayout {
                 // --- Sidebar ---
-                Rectangle {
-                    width: 240px;
+                sidebar-column := Rectangle {
+                    // The stored width is stated as what this column wants and
+                    // will accept; the layout is what reconciles it with the
+                    // window and the other two. The obvious alternative —
+                    // `width: clamp(stored, own-min, root.width - other -
+                    // player-min)` — is measurably wrong. At a 1100px window
+                    // with the two splitters and stored `(sidebar 100,
+                    // inspector 700)`:
+                    //
+                    //     form                sidebar  inspector  player
+                    //     clamp on `width`    240      540        308
+                    //     layout constraints  240      528        320
+                    //
+                    // 308 is under `player-min`: each column's clamp works out
+                    // its headroom from the other's *raw* property, and neither
+                    // knows the splitters are in the layout too. At
+                    // `(400, 400)` it is 380/380/328 against 384/384/320; at
+                    // the defaults the two agree (240/280/568). The constraint
+                    // form also never reads `root.width`, so it cannot close a
+                    // binding loop from inside a child whose width feeds it.
+                    min-width: root.sidebar-min;
+                    preferred-width: max(root.sidebar-min, root.sidebar-width);
+                    max-width: max(root.sidebar-min, root.sidebar-width);
+                    horizontal-stretch: 0;
                     background: Palette.alternate-background;
 
                     // Empty space: off any field (C6), which Slint doesn't do
@@ -4184,9 +4245,49 @@ export component AppWindow inherits Window {
                     }
                 }
 
+                // The grip between the sidebar and the player. It sits in this
+                // layout rather than over it, so its 6px are chrome, which the
+                // fit's `window - player` subtraction absorbs without being
+                // told about it (spec W2).
+                //
+                // `width-now` is the column's **laid-out** width, and that is
+                // the one line of this wiring the component cannot get right
+                // for itself (spec W5): handed the raw `sidebar-width`, a drag
+                // begun while the bound was active would anchor on a value off
+                // in the distance and move nothing until the pointer had
+                // dragged it back into range.
+                Splitter {
+                    width-now: root.sidebar-width-now;
+                    // The sidebar is to the *left* of this grip, so rightward
+                    // motion widens it. The inspector's grip runs the other
+                    // way, and the pair is only right against the order this
+                    // layout is written in.
+                    panel-on-the-right: false;
+                    moved(w) => { root.sidebar-width = w; }
+                    released => {
+                        // Store the width the coach can see, not the one the
+                        // pointer asked for (spec W5). The bound is not what
+                        // makes this necessary — it is safe for any value, and
+                        // the next drag anchors on `sidebar-width-now` rather
+                        // than on this property. What it stops is a width
+                        // coming back from the dead: drag the sidebar wide in a
+                        // window too narrow for it and the layout gives 528
+                        // while the raw value says 700, and a later, wider
+                        // window would restore the 700 the coach dragged away
+                        // from.
+                        root.sidebar-width = root.sidebar-width-now;
+                        root.panels-released();
+                    }
+                }
+
                 // --- Player area: black, the picture fitted, zoomed and
                 // panned (spec D9) ---
                 player := Rectangle {
+                    // The one item in this row that takes the slack, and the
+                    // floor the columns are reconciled against when their
+                    // stored widths ask for more than the window has.
+                    min-width: root.player-min;
+                    horizontal-stretch: 1;
                     /// The zoom the picture is drawn at: identity while
                     /// previewing (P6), since the preview's texture already
                     /// has the coach's zoom baked in and the scan-time
@@ -4493,10 +4594,29 @@ export component AppWindow inherits Window {
                     }
                 }
 
+                // The sidebar's grip the other way round: the inspector is to
+                // the *right* of this one, so it widens as the pointer goes
+                // left. The comment above the first one carries the rest.
+                Splitter {
+                    width-now: root.inspector-width-now;
+                    panel-on-the-right: true;
+                    moved(w) => { root.inspector-width = w; }
+                    released => {
+                        // The sidebar's write-back, for the reason given there.
+                        root.inspector-width = root.inspector-width-now;
+                        root.panels-released();
+                    }
+                }
+
                 // --- Inspector: the selected clip, else the tag overview
                 // (C7, C8) -- with the Match panel under it (Phase 9 S4) ---
-                Rectangle {
-                    width: 280px;
+                inspector-column := Rectangle {
+                    // The sidebar's constraints mirrored; the table above them
+                    // is why this is not a `clamp` on `width`.
+                    min-width: root.inspector-min;
+                    preferred-width: max(root.inspector-min, root.inspector-width);
+                    max-width: max(root.inspector-min, root.inspector-width);
+                    horizontal-stretch: 0;
                     background: Palette.alternate-background;
 
                     // Empty space: off any field (C6).

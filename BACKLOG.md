@@ -13,7 +13,6 @@ made things worse.
 
 ### Next, in order
 
-- **87.** Resizable panels. The coach (2026-09-25): "resizing all the panels".…
 - **88.** The inset's size and corner, per clip. The coach (2026-09-25): "avatar
 - **85.** Recent projects, and a drawer to switch between them. The coach
 - **78.** App settings for the things an export writes. The coach (2026-09-24):
@@ -95,6 +94,8 @@ problem — which is the entry, not an excuse for it.
 
 - **95.** Fit window to video — shipped 2026-09-26; the splitter snap is still
   the coach's call (see the entry)
+- **87.** Resizable panels — shipped 2026-09-27; panels grow but do not shrink,
+  and there is no keyboard path (99)
 
 - 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 92, 94
 
@@ -740,6 +741,14 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   `tests/export.rs` again, in 2 of 3 `cargo test --workspace` runs at 2430d39,
   both after 5 of its 29 tests — while the same binary run on its own passed 4
   times in a row. Whatever the trigger is, it is not the binary alone.
+- **Update (2026-09-27, #87's close-out):** the media `tests/export.rs` binary
+  again, `corrupted size vs. prev_size`, SIGABRT, **after 6 of its 29 tests** in
+  a `cargo test --workspace --no-fail-fast` run under `nice -n 19`. The binary
+  alone straight afterwards: **29/29 in 39.7 s.** Everything else in that
+  workspace run passed (933 tests, 0 failures), and the change it surfaced under
+  touched only `pundit-app`. So the 2026-09-25 reading holds exactly — it is not
+  the binary alone, it is the binary under a loaded machine — and this is the
+  fourth sighting of the pattern.
 - **Update (2026-09-25, the rename):** a **third** face of the same pattern, and
   the most informative one. A workspace run at 77cc357 died in the harness's
   `tests/transcribe.rs` after its first test with `gst_mini_object_copy:
@@ -876,10 +885,20 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   7.5019 before the pause anchored at 7.4479". The same suite reran 12/12
   green, and two full workspace runs either side were green. Seen while the
   match-event editor's commands landed, which touch no transport code.
-- **Why deferred:** once, under a loaded machine, on a timing margin rather
-  than a logic error. It is not BACKLOG #70 (that is the whisper teardown).
-- **When to revisit:** if it recurs, or if a coach reports a take whose replay
-  drifts from where they paused. Start by printing the margin on failure.
+- **Seen a second time, 2026-09-27**, during #87's close-out: same test, same
+  suite, in a full `cargo test --workspace` under `nice -n 19` with three other
+  builds contending for the machine. Passed alone on the next run (2.86 s). The
+  failure message still does not carry the margin, so the second sighting tells
+  us no more than the first did — which makes the diagnostic below the next step
+  rather than a nicety.
+- **Why deferred:** twice now, both times on a loaded machine, on a timing margin
+  rather than a logic error. It is not BACKLOG #70 (that is the whisper
+  teardown).
+- **When to revisit:** it has recurred, so the cheap half is due: **print the
+  margin on failure** (the assertion at `recording.rs:462` reports the two
+  positions but not the slack, so nobody can tell a 5 ms miss from a 500 ms one).
+  Do that the next time anything in that file is touched. A coach reporting a
+  take whose replay drifts from where they paused is what would make it urgent.
 
 76. **`a_cancelled_copy_leaves_nothing`'s fixtures sit on the 30 s EOS bound.**
   That test generates two 1280×720 × 900-frame H.264 sources, and
@@ -1221,7 +1240,8 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** after #77's queue, whose machinery it shares, or sooner
   if the coach starts gathering corners before the queue exists.
 
-87. **Resizable panels.** The coach (2026-09-25): "resizing all the panels". Every
+87. **Resizable panels — RESOLVED (2026-09-27): a draggable splitter either side
+  of the player, remembered in `state.json`.** The coach (2026-09-25): "resizing all the panels". Every
   column is a fixed width today — the left column is **280 px** of a window whose
   minimum is 1100×700 (`app.slint:638`, `:672`), and the lists inside it are
   capped in px too (the Match panel at `min(168px, lines × 28px)`, the
@@ -1239,11 +1259,15 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   already, so a resize is not a new class of bug, but the scoreboard is
   rasterized per device-pixel size (`main.rs`'s `show_board`) and would re-raster
   on every drag frame — it needs to raster on release, or on a coalesced size.
-- **Why deferred:** nothing is broken; it is a comfort gap on large screens. It
-  is also best done once rather than per panel, and it touches the same file four
-  other features are queued in.
-- **When to revisit:** with the next round of UI work, or the first time the
-  coach says they can't read a clip name.
+- **Shipped** (spec/plan `2026-09-26-panels-and-fit`): the columns' widths are
+  layout constraints, not a `clamp` — measured, the obvious `clamp` form put the
+  player 12px under its own minimum because each column read the other's raw
+  width and neither knew about the splitters. **The panels grow but do not
+  shrink**: 280px is the width the inspector's transcript row was fitted to, so
+  today's widths are the floor. The scoreboard re-raster this entry asked to
+  coalesce needed nothing — see the spec's W9.
+- **What was checked and needed no change:** the raster cost above. **What is
+  still open:** 99 (no keyboard path to the splitters).
 
 88. **The inset's size and corner, per clip.** The coach (2026-09-25): "avatar
   sizing and position should be settable per clip i think?" Today both are fixed:
@@ -1558,3 +1582,33 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **Why deferred:** a second feature, and the first one had to prove itself.
 - **When to revisit:** when a coach wants the ranges without the talking —
   a walkthrough to send a player, or a silent cut to watch back.
+
+99. **No keyboard path to the panel splitters.** #87 ships a 6px draggable grip
+  either side of the player and nothing else: the only way to resize a panel is
+  to grab it with the pointer. GtkPaned makes its handle focusable and moves it
+  with the arrow keys (F6/F8 to cycle); QSplitterHandle does not, so this matches
+  Qt and not GTK. In an app where every other control has a key and the coach
+  works by keyboard, a 6px pointer target is a real gap.
+- **Why deferred:** the obvious fix collides with the window's keyboard design.
+  `AppWindow` has `forward-focus: keys` and every letter is a global binding, so
+  a focusable grip would swallow `z` / `x` / `v` while it held focus. It needs a
+  decision about how a focused control coexists with the global letters — which
+  is #96's question (rebindable hot keys), not a splitter's.
+- **When to revisit:** with #96, or if the coach asks to resize without the mouse.
+
+100. **`state.json` is read all-or-nothing, so one bad value still costs the
+  whole file.** #87 added container-level `#[serde(default)]` to `PanelWidths`
+  and `WindowSize`, which rescues a **partial** object — but measured, every one
+  of these still returns `State::default()` and so loses the last project, the
+  pen and the speech model: `"panels":"wide"`, `"panels":{"sidebar":-5}`,
+  `"panels":{"sidebar":1.5}`, `"panels":null`, `"window":{"height":-1}`.
+  `AppFiles::read` gives up on any `serde_json` error for the document, and every
+  setter rewrites it.
+- **Why deferred:** the real fix is a per-field read (parse to a
+  `serde_json::Map`, take each key independently, keep the defaults for whatever
+  fails), about 15 lines in one place, which would retire the whole class rather
+  than one shape of it. That is worth doing on its own merits and was not #87's
+  to do. It is also why `CLAUDE.md` gives this exact hazard as the reason the
+  basket lives in its own file.
+- **When to revisit:** next time anything is added to `state.json`, or the first
+  time a coach loses their last-project pointer for no visible reason.

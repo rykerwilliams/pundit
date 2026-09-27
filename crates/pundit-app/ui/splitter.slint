@@ -1,0 +1,107 @@
+// The 6px grip between a panel and the player (spec W5), dragged to set that
+// panel's width.
+//
+// It emits a width and stores nothing: the bound on that width is the
+// column's own layout constraints (spec W4), in one place, and this component
+// deliberately has no `minimum` to clamp against. That is the whole reason the
+// two rules below exist -- against a consumer that bounds what it is handed,
+// the obvious ways of writing a drag both stick:
+//
+// 1. **The anchor is absolute, and taken once, on the press.** Every `moved`
+//    reports the pointer's position in window coordinates and emits
+//    `start + (pointer - anchor)` -- a width computed from scratch, not
+//    adjusted. The incremental form (`width += mouse-x - pressed-x`), which
+//    Slint's own `widgets/material/tableview.slint` uses, adds an increment
+//    per event that a bounded consumer never gives back: past the minimum the
+//    raw width runs away from the pointer, and the drag back does nothing
+//    until it has run all the way home. Window coordinates are what make the
+//    from-scratch form possible at all, because `mouse-x` is measured from a
+//    grip that the drag is itself moving, while the pointer's absolute x is
+//    invariant.
+//
+// 2. **`start` is the column's laid-out width, never the raw property.** A
+//    drag that begins while the bound is active would otherwise anchor on a
+//    value off in the distance, and the column would not move until the
+//    pointer dragged it back into range -- the same stick in a second shape.
+//
+// The pointer-up and the cancel both end the drag, for the reason
+// `scrubber.slint`'s header gives: on X11 a drag that leaves the window is
+// cancelled rather than released, and a `released()` that never comes is a
+// width the coach set and the app never saved.
+
+import { Palette } from "std-widgets.slint";
+
+export component Splitter inherits Rectangle {
+    /// The column's **laid-out** width -- bind it to the column's `width`, not
+    /// to the property this drag writes. Rule 2 above is why.
+    in property <length> width-now;
+    /// The panel is to the *right* of the grip (the inspector), so dragging
+    /// left widens it. A bool rather than a signed factor: there is no third
+    /// direction, and nothing can set this one to 0 or 2. Not `mirrored`: that
+    /// is the word toolkits keep for right-to-left layout mirroring, which this
+    /// has nothing to do with.
+    in property <bool> panel-on-the-right;
+    /// A width for the column, every time the pointer moves. Absolute, not a
+    /// delta: the consumer assigns it.
+    callback moved(length);
+    /// A drag ended, however it ended — but only a drag, never a bare click
+    /// (`resized` below). The width to store is the column's, which the
+    /// consumer already has.
+    callback released();
+
+    width: 6px;
+    // Hidden until it is wanted. Lit through the drag as well as the hover,
+    // because the pointer spends most of a drag outside these 6px.
+    background: area.has-hover || root.dragging ? Palette.selection-background : transparent;
+
+    property <length> anchor;
+    property <length> start;
+    property <bool> dragging;
+    /// Whether this drag ever moved. A click is not a drag: the grip is 6px, it
+    /// is easy to hit by accident, and the consumer's `released` handler
+    /// overwrites the stored width with whatever today's window allows -- so a
+    /// bare press-and-release would quietly cut a 400px column the coach set on
+    /// a bigger monitor down to what this one has room for. Cleared on the
+    /// press, so a click after a real drag cannot inherit it.
+    ///
+    /// **Any** movement counts, with no threshold — unlike `zoom_input`'s
+    /// `DRAG_THRESHOLD`, which a pan must clear before it begins. A drag of one
+    /// pixel is still the coach moving the grip, and a width they nudged is a
+    /// width they chose; what was surprising was the *click*, which asks for
+    /// nothing at all. A threshold here would only widen the band in which
+    /// touching the grip does nothing, which is its own surprise.
+    property <bool> resized;
+
+    /// The pointer in window coordinates: `mouse-x` alone is measured from a
+    /// grip this drag moves.
+    function pointer-x() -> length {
+        return area.absolute-position.x + area.mouse-x;
+    }
+
+    area := TouchArea {
+        mouse-cursor: ew-resize;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                root.anchor = root.pointer-x();
+                root.start = root.width-now;
+                root.dragging = true;
+                root.resized = false;
+            } else if (root.dragging
+                && ((event.kind == PointerEventKind.up && event.button == PointerEventButton.left)
+                    || event.kind == PointerEventKind.cancel)) {
+                root.dragging = false;
+                if (root.resized) {
+                    root.released();
+                }
+            }
+        }
+        moved => {
+            if (root.dragging) {
+                root.resized = true;
+                root.moved(root.start + (root.panel-on-the-right
+                    ? root.anchor - root.pointer-x()
+                    : root.pointer-x() - root.anchor));
+            }
+        }
+    }
+}

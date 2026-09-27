@@ -139,7 +139,12 @@ mod tests {
     /// Measured 2026-09-26, and constant at and above the floor: 520 is the two
     /// columns, 108 the transport bar (spec W0). Nothing here may depend on the
     /// values — they change with a splitter or a transport button — only on the
-    /// subtraction being what the app does.
+    /// subtraction being what the app does. **It has already changed, and this
+    /// number is deliberately not chased:** #87's two 6px grips joined the same
+    /// row, so the app's own chrome is now 532x108 (measured constant at
+    /// 1100x700, 1600x960 and 1920x1080). These tests are arithmetic over a
+    /// synthetic chrome, so the shipped value is `panel_widths.rs` and
+    /// `fit_window.rs`'s business, not this constant's.
     const CHROME: (f64, f64) = (520.0, 108.0);
 
     fn player(window: (f64, f64)) -> (f64, f64) {

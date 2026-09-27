@@ -185,10 +185,16 @@ lets GStreamer import decoded frames without a CPU copy. It logs the decoder,
 the caps entering `glupload` and the GL platform on every source load (`bus:
 loaded …` on stderr); that line is the zero-copy diagnostic, and on the
 reference laptop it reads `vah265dec` / `memory:DMABuf` / `egl`.
-`scripts/linux-gate-check.sh` measures decode throughput. The last project
-and the chosen speech model live in `$XDG_CONFIG_HOME/pundit/state.json`;
+`scripts/linux-gate-check.sh` measures decode throughput. The last project, the
+chosen speech model, the pen, the window's size and **the two side columns'
+widths** live in `$XDG_CONFIG_HOME/pundit/state.json` — every one of them a
+property of this machine and none of the project's;
 point `XDG_CONFIG_HOME` elsewhere when testing so the real one isn't
-touched. With
+touched. **That file is read all-or-nothing** (any `serde_json` error returns the
+defaults for the whole document, and every setter rewrites it), which is why each
+struct in it carries `#[serde(default)]` on the **container** — never on the
+fields, where it would resolve to `0` rather than to the hand-written `Default`.
+One shape of the hazard remains: see BACKLOG #100. With
 the monitor off (DPMS), playback slows unless run with `vblank_mode=0`
 (BACKLOG #36).
 
@@ -383,6 +389,22 @@ it, and the notice could never be shown. A maximised window is un-maximised
 first and fitted on a later tick, watching the window's **size**: `is_maximized()`
 goes false the instant `set_maximized` writes it. Fullscreen is refused outright,
 because un-maximising cannot leave it.
+
+**The two side columns are resizable** (BACKLOG #87): a 6px splitter either side
+of the player, `ui/splitter.slint`, with the widths in `state.json`. Two things
+about it are load-bearing and neither is obvious. The columns' bound is
+**layout constraints** (`min-width` + `preferred-width`/`max-width` +
+`horizontal-stretch: 0`, the player taking the stretch), not a
+`width: clamp(stored, min, root.width − other − player-min)`: measured, the clamp
+form put the player 12px **under** its own minimum, because each column computed
+its headroom from the other's *raw* width and neither knew about the splitters —
+and reading `root.width` from inside a child of the row it feeds also risks a
+binding-loop deprecation that `-D warnings` fails on. And the drag **anchors on
+the press** (`absolute-position.x + mouse-x`, invariant as the grip moves) rather
+than accumulating `mouse-x − pressed-x`, which is what Slint's own
+`tableview.slint` does and what sticks against a bounded consumer. **The panels
+grow but do not shrink**: 280px is the width the inspector's transcript row was
+fitted to. There is no keyboard path to them (#99).
 
 **`J`/`L` set the scan speed** (`Command::ScanSpeed(ScanStep)`: the bus steps 1×–32×, while scanning only; any pause returns to 1×, so a recording starts at 1×). The player owns the rate, and **every scan seek carries it** (`pipeline.seek(rate, …)`, never `seek_simple`, whose 1.0 would drop it on the next scrub or skip). `set_rate` issues no seek: the bus does, through `load`, unless a seek still to be issued will carry it; after a pause it seeks to the frame on screen, not the position the picture trails at speed. Opening a preview returns to 1× with no seek. Every frame is decoded even at 32× and the scan sink's QoS (`max-lateness` 20 ms) drops what's late: measured on 1080p30 H.264, that showed 88 fps at 32× against key frames only's 16, with a tenth of the lag.
 

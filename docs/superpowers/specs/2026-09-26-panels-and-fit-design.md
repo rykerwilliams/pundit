@@ -90,9 +90,14 @@ could push the window off a screen whose size the app cannot read (W6).
 > **Fit = shrink the dimension that has the slack. Never grow, never move.**
 
 - Player too **tall** (bars above and below — the coach's case): the height
-  becomes `player_w / aspect + chrome_h`.
+  becomes `content_h + chrome_h`.
 - Player too **wide** (bars left and right — a 4:3 source, or a short window):
-  the width becomes `player_h × aspect + chrome_w`.
+  the width becomes `content_w + chrome_w`.
+
+where `content` is the drawn picture, which the window already publishes — see
+W2. (An earlier draft wrote these as `player_w / aspect + chrome_h`. Equivalent,
+but it rebuilt the letterbox from the frame's shape, which is the same
+arithmetic the window had already done.)
 - Already at the footage's aspect, within a pixel: nothing happens, and nothing
   is said. The action is idempotent, which is what makes a stray second press
   harmless.
@@ -106,8 +111,7 @@ logical ceil is not enough to keep the picture width-limited.
 ## W2. The chrome is read off the window, never computed
 
 `chrome_h = window_h − player_h` and `chrome_w = window_w − player_w`, from
-`player-width` / `player-height`, which `AppWindow` already publishes
-(`app.slint:2809-2810`).
+`player-width` / `player-height`, which `AppWindow` already publishes.
 
 Deriving it instead — 240 + 280, plus a transport bar of 108 — would be a
 fourth copy of the layout's numbers, wrong the first time a button joins the
@@ -115,19 +119,28 @@ transport row or a panel is dragged. The subtraction cannot be wrong: whatever
 is not the player **is** the chrome. It is also what lets #95 ship before #87
 and stay correct afterwards.
 
+**The picture is read the same way, and for the same reason.** `content-width` /
+`content-height` are `place-picture` at identity zoom — the expression the player
+draws with — so the fit takes them rather than rebuilding the letterbox from the
+frame's shape. That is what makes "the bars are gone afterwards" a property of
+one expression instead of two that must be kept in step, and it leaves
+`Viewport` free to be an **independent oracle** in the tests rather than a second
+copy of the implementation. The rule is one rule: **every input is read off the
+window, never derived from it.**
+
 Nothing in the spec may hard-code 520, 108, 716 or a threshold derived from
 them — not the code and not the tests. Measurement 1 already shows two of those
 numbers changing.
 
 ## W3. Which aspect, when the action is offered, and where it is offered from
 
-**The aspect is the displayed frame's** — `frame-width / frame-height`, the same
-pair `place-picture` letterboxes against, set by `video.rs` from the decoded
-frame's **display** size with the pixel aspect applied (`video.rs:157-162`). Not
-`SourceRef::display_aspect`: a project may hold sources of different shapes, and
-the bars on screen belong to the frame on screen. Reading the same numbers the
-letterbox is computed from is what makes "the bars are gone afterwards" true by
-construction rather than by agreement.
+**The shape is the displayed frame's, and it arrives already applied** — in the
+content rect (W2), which `place-picture` computes from `frame-width` /
+`frame-height`, set by `video.rs` from the decoded frame's **display** size with
+the pixel aspect applied. Not `SourceRef::display_aspect`: a project may hold
+sources of different shapes, and the bars on screen belong to the frame on
+screen. The fit never divides a frame width by a frame height itself; it reads
+the rect those two produced.
 
 **Offered when, and only when, there is slack to remove**, which is:
 `can-play` (`app.slint:2848` — sources, none missing) **and** a player whose
@@ -194,6 +207,14 @@ in-out property <length> sidebar-width: root.sidebar-min;
 in-out property <length> inspector-width: root.inspector-min;
 ```
 
+`AppWindow` also publishes each column's **laid-out** width
+(`sidebar-width-now`, `inspector-width-now`), as it already does for the player.
+Slint has no other way to read it — a test cannot walk to it (`ElementHandle`
+needs `SLINT_EMIT_DEBUG_INFO`, which this build does not set) and the drag needs
+it as its anchor (W5). Note the columns are `sidebar-column` /
+`inspector-column`: `inspector` is already the id of the `Inspector` *inside*
+that column, and reusing it is a compile error.
+
 **The bound is expressed as layout constraints, not as a `clamp` on `width`.**
 Each column states what it wants and what it will accept, and the layout is
 what reconciles them:
@@ -213,6 +234,21 @@ horizontal-stretch: 1;` on the player. Three things about that:
   wide as there is room for". Nothing is fixed up at startup, and the drag (W5)
   writes the raw property and lets the layout bound it, so the bound lives in
   exactly one place.
+- **When the stored pair does not fit, both columns give way together**, and that
+  is accepted rather than worked around. Measured: stored `(400, 400)` in a
+  1100px window lays out 384/384, and `(1400, 1400)` at 1920px lays out 800/800 —
+  and the split is **equal, not proportional**: a stretch-0 item is given nothing
+  to shrink until the player reaches its floor, after which the remainder is
+  divided evenly among whatever can still shrink. That is why the numbers come
+  out as matched pairs rather than as a ratio. The player holds its floor in
+  every case. So dragging one splitter past the available room visibly narrows
+  the *other* column, though its stored width never changed. The alternatives are
+  worse: sticking the drag at a bound computed from the other column's width is
+  the coupling this form exists to delete, and letting the player go under its
+  floor is not on offer. It is also nearly unreachable in normal use — a release
+  stores the **effective** width (W5), so the stored pair converges on a pair
+  that fits; getting there needs a smaller screen than the one the widths were
+  set on, or a hand-edited file.
 - **The obvious alternative is measurably wrong.** A
   `width: clamp(stored, own-min, root.width − other − player-min)` on each
   column has each one computing its headroom from the other's *raw* property,
@@ -236,12 +272,13 @@ horizontal-stretch: 1;` on the player. Three things about that:
   scratch window, so treat the loop as unproven rather than as the reason; the
   308 above is reason enough.
 
-**The minima are today's widths: the panels grow, they do not shrink.** Not
-timidity — measured: the inspector's transcript row is
-`[Transcript] [model] [Transcribe]` and `app.slint:694` records that a fourth
-control there "runs 76px past this 280px column at the window's 1100x700
-minimum". 280 is the width that row was fitted to; 240 is the same kind of
-number for the Clips rows. A narrower panel means re-verifying every row in both
+**The minima are today's widths: the panels grow, they do not shrink.** For the
+inspector that is measured: its transcript row is `[Transcript] [model]
+[Transcribe]`, and `app.slint` records that a fourth control there "runs 76px
+past this 280px column at the window's 1100x700 minimum" — 280 is the width that
+row was fitted to. **240 is not measured**, only asserted by analogy with the
+Clips rows' name-plus-duration line; it is today's width and nothing has been
+shown to need it. Say so rather than borrowing the inspector's evidence. A narrower panel means re-verifying every row in both
 columns against a width nobody asked for, and the coach wants *more* room on a
 big screen, which is the direction this allows. `player-min` of 320px is below
 the 568 the player gets at the window's own minimum once the splitters are in
@@ -251,8 +288,11 @@ and it is what the layout reconciles against when the stored widths do not fit.
 ## W5. The drag (#87)
 
 A 6px `Splitter` **inside the `HorizontalLayout`**, between each column and the
-player: transparent until hovered, `mouse-cursor: ew-resize`, and a `TouchArea`
-that does the arithmetic **in window coordinates**. Being in the layout means
+player, with a `TouchArea` that does the arithmetic **in window coordinates**.
+It is lit while `has-hover` **or dragging** — the pointer spends nearly all of a
+drag outside a 6px grip, so hover alone would blink it out the moment the drag
+began. (`mouse-cursor` goes on the `TouchArea`; in Slint 1.18 it exists nowhere
+else.) Being in the layout means
 they are part of the chrome — `chrome_w` becomes 532 — which is exactly why W2
 subtracts instead of adding up column widths.
 
@@ -268,14 +308,46 @@ Two rules, and both are bugs if broken:
   property runs away from the pointer and a drag back does nothing until it
   returns.
 - **`start` is the column's laid-out width, not the raw property.** If a drag
-  begins while the clamp is active, the raw value is off in the distance and the
+  begins while the bound is active, the raw value is off in the distance and the
   column will not move until it comes back into range — the same stick, in a
-  second shape.
+  second shape. **This rule lives at the wiring site, not in the component:**
+  nothing inside `splitter.slint` can get it wrong, because it is the caller's
+  `width-now: <column>.width` that either reads the laid-out width or does not.
+  The test that catches a mistake here is therefore a change to the test
+  *window*, not to the component.
 
-On release the property is set to the column's **effective** (clamped) width and
-that is what is stored. Storing the raw value would put a width the coach never
-saw into `state.json`, give the next drag a dead zone, and hand W4 the only
-out-of-range input its clamp pair is not safe for.
+**With both columns bounded, the stored width is one solver pass off what was
+drawn.** Measured: stored `(400, 400)` at 1100px, drag the sidebar wider — it
+lays out ≈456 while the raw value says 584, and writing 456 back re-solves the
+row to ≈409, because what each column is given depends on what the other asked
+for. So the write-back is an exact fixed point only while one column is bounded.
+This is the convergence W4 already accepts, taking one extra launch rather than
+none: it stores a width that fits, and no width comes back from the dead. Not
+worth a second solver pass to chase.
+
+**A bare click is not a drag and must write nothing.** Press-and-release on a 6px
+grip with no movement would otherwise overwrite the stored width with whatever
+today's window happens to allow — a coach's 400px, set on a bigger monitor,
+silently reduced by a mis-click — and rewrite `state.json` for it. The component
+tracks whether it actually moved and fires `released` only then.
+
+**A drag ends on a cancel as well as a release, and both must write.** On X11 a
+drag that leaves the window is *cancelled*, not released — which is the whole
+reason `scrubber.slint` exists, and it bites the same way here. Without the
+cancel branch, dragging a splitter off the window's edge leaves the component
+mid-drag: the width the coach set is never written to `state.json`, and the next
+bare pointer move across the grip resizes the column with no button held.
+
+On release the property is set to the column's **effective** (laid-out) width,
+and that is what is stored. **The reason is a later widening, not the next
+drag:** a raw 700 left behind while the coach settled at 528 would resurrect
+itself the moment the window got wide enough to honour it, undoing a width they
+chose. It is *not* about a dead zone on the next drag — the next drag anchors on
+the laid-out width (rule 2 above), so a stale raw value is overwritten by its
+first `moved`; a test drives that value to −70 and the following move is still
+exactly right.
+
+
 
 The release callback takes **no argument** — Rust reads both properties. The
 width is written to `state.json` on release and nowhere else: a drag is 30
@@ -333,7 +405,7 @@ advise a bigger window, which is not the problem. It gets a notice naming
 fullscreen. Leaving fullscreen on the coach's behalf is not this key's
 business: they asked the window manager for it.
 
-**The maximised window is the coach's most likely state** — `main.rs:311-322`
+**The maximised window is the coach's most likely state** — `main.rs`'s startup resize
 reopens a maximised session by asking for the maximised *size*, and says so. A
 maximised window cannot change shape, so fit must un-maximise first. Computing
 the target *before* doing so is wrong twice over: the WM restores the
@@ -385,17 +457,23 @@ harmless.
 
 ## W7. Where the widths live
 
-`state.json`, beside the window size, as one optional field:
+`state.json`, beside the window size, as one field:
 
 ```rust
 #[serde(default)]
-panels: Option<PanelWidths>,
+panels: PanelWidths,
 ```
 
 and `PanelWidths { sidebar: u32, inspector: u32 }` with
-**container-level `#[serde(default)]`**. That attribute is not decoration: `read`
+**container-level `#[serde(default)]`**. **No `Option`:** with the container
+default, an absent key already reads as `PanelWidths::default()`, so an `Option`
+would be a second spelling of the same "absent" that every caller would
+`unwrap_or_default()` away. (`window` keeps the `Option` it already has.) The
+field-level `#[serde(default)]` on `panels` is safe for exactly the reason a
+field-level one *inside* `PanelWidths` would not be: it resolves to that
+struct's hand-written `Default`, not to zeroes. That attribute is not decoration: `read`
 returns `State::default()` on **any** `serde_json` error for the whole document
-(`bus/state.rs:196-200`) and every setter rewrites it, so one field a build
+(`AppFiles::read`) and every setter rewrites it, so one field a build
 can't parse takes the last project, the pen and the speech model with it. It is
 the same hazard `CLAUDE.md` gives as the reason the basket lives in its own
 file. `WindowSize` has the same gap today — `{"window": {"width": 1600}}`

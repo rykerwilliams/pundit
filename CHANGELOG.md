@@ -13,6 +13,26 @@ which the app was called until 0.8.0 renamed it.
 
 ## [Unreleased]
 
+### Added
+
+- **Fit the window to the video.** Press **F**, or the **Fit** button by the
+  pens, and the black bars above and below the picture go away. The window
+  closes up around the picture rather than the picture being redrawn to fill the
+  window — so what you are looking at does not change size or shape, there is
+  simply no more black around it. It only ever makes the window smaller, which
+  is why it can never send the window off the edge of your screen. If the window
+  is too small for the footage's shape to fit at all, it says so instead of
+  half-doing it. Leave full screen first: a full-screen window has no shape to
+  change.
+- **Drag the side panels wider.** There is a grip either side of the video; pull
+  it and the sidebar or the inspector takes the room, which is worth having on a
+  big screen where a long clip name used to be cut off with space to spare. The
+  widths are remembered between sessions, per machine — they describe your
+  screen, not your project, so they follow you rather than the folder you open.
+  The panels widen but do not narrow: the inspector's controls were laid out to
+  fit the width it has, and taking that away would push one of them off the
+  edge.
+
 ## [0.9.0] - 2026-09-25
 
 ### Added

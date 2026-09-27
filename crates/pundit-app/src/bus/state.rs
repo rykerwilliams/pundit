@@ -1,10 +1,11 @@
 //! Where the app's own files live ([`AppFiles`]), and the one it reads and
 //! writes itself: `$XDG_CONFIG_HOME/pundit/state.json`, holding the last
 //! successfully opened project folder (spec D6), which speech model
-//! transcription runs (Phase 10 S3), which pen the coach draws with and how
-//! big the window was. **None is a project's.** The model describes how fast
-//! this machine is, not the match, the pen and the window are the coach's
-//! habit, and `Preferences` lives
+//! transcription runs (Phase 10 S3), which pen the coach draws with, how big
+//! the window was and how wide its two side columns are. **None is a
+//! project's.** The model describes how fast this machine is, not the match,
+//! the pen, the window and its columns are the coach's habit, and
+//! `Preferences` lives
 //! in `project.json`, where a new field is a format change that
 //! [`store::read`](pundit_core::store::read)'s exact-version guard would
 //! make every existing project unreadable for.
@@ -43,10 +44,25 @@ struct State {
     pen: Option<String>,
     #[serde(default)]
     window: Option<WindowSize>,
+    /// No `Option`: [`PanelWidths`]'s own container default already fills a
+    /// file that doesn't mention the panels, so a second "absent" state would
+    /// mean the same thing twice.
+    #[serde(default)]
+    panels: PanelWidths,
 }
 
 /// The main window's size, in logical pixels.
+///
+/// `default` is on the **container**, so a **partial object** —
+/// `{"window": {"width": 1600}}` — reads as 1600x960 rather than throwing the
+/// whole document, the last project, the pen and the speech model with it, away
+/// at [`AppFiles::read`]. A missing field is the one shape of that it closes:
+/// measured, `{"width": 1600, "height": -1}` still costs the document, as does
+/// a `window` that is not an object at all. Field-level `#[serde(default)]`
+/// would be the hazard `project.rs` names: it resolves to `Default::default()`,
+/// i.e. a height of `0`, which `main.rs` hands straight to `set_size`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct WindowSize {
     pub width: u32,
     pub height: u32,
@@ -60,6 +76,40 @@ impl Default for WindowSize {
         WindowSize {
             width: 1600,
             height: 960,
+        }
+    }
+}
+
+/// How wide the coach dragged the two side columns, in logical pixels (spec W7).
+///
+/// One field holding both, because they are read and written together and a
+/// file with one but not the other is a state nobody wants to reason about.
+/// `default` is on the container for [`WindowSize`]'s reason and reaches exactly
+/// as far: a partial `{"panels": {"sidebar": 400}}` survives, while `"wide"`,
+/// `-5`, `1.5` and `null` each still cost the whole document.
+///
+/// **Unlike [`WindowSize`], a field-level one here would be merely untidy**, and
+/// the asymmetry is worth knowing. The layout bounds a stored `0` back up to
+/// `sidebar-min` before anything is drawn — measured, stored `(0, 0)` at
+/// 1600x960 lays out 240 / 280 / player 1068, the defaults to the pixel — so no
+/// width a `Default::default()` could invent ever reaches a resize, where
+/// `WindowSize`'s zero height goes straight to `set_size`. The container default
+/// is here for the **document**, not for the column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PanelWidths {
+    pub sidebar: u32,
+    pub inspector: u32,
+}
+
+impl Default for PanelWidths {
+    /// Today's fixed widths, which are also the minima: the panels grow, they
+    /// do not shrink (spec W4 — 280 is the width the inspector's transcript row
+    /// was fitted to).
+    fn default() -> Self {
+        PanelWidths {
+            sidebar: 240,
+            inspector: 280,
         }
     }
 }
@@ -179,6 +229,21 @@ impl AppFiles {
     pub fn set_window_size(&self, size: WindowSize) {
         let mut state = self.read();
         state.window = Some(size);
+        self.save(&state);
+    }
+
+    /// How wide the side columns were. A file that doesn't say reads as
+    /// today's widths.
+    pub fn panel_widths(&self) -> PanelWidths {
+        self.read().panels
+    }
+
+    /// Remembers `widths` for every project on this machine. Called on the
+    /// release of a drag and nowhere else (spec W5): a drag is 30 events a
+    /// second and every setter here rewrites the whole document.
+    pub fn set_panel_widths(&self, widths: PanelWidths) {
+        let mut state = self.read();
+        state.panels = widths;
         self.save(&state);
     }
 
@@ -458,6 +523,11 @@ mod tests {
             height: 900,
         };
         state.set_window_size(size);
+        let widths = PanelWidths {
+            sidebar: 400,
+            inspector: 320,
+        };
+        state.set_panel_widths(widths);
         assert_eq!(state.last_project(), Some(PathBuf::from("/p/game")));
         assert_eq!(state.whisper_model(), WhisperModel::Base);
         // (Base, not the default Small: a clobbered model must be visible.)
@@ -467,12 +537,14 @@ mod tests {
         assert_eq!(state.last_project(), Some(PathBuf::from("/p/other")));
         assert_eq!(state.whisper_model(), WhisperModel::Base);
         assert_eq!(state.window_size(), size);
+        assert_eq!(state.panel_widths(), widths);
         state.set_window_size(WindowSize {
             width: 1920,
             height: 1012,
         });
         assert_eq!(state.pen(), Pen::Blue);
         assert_eq!(state.last_project(), Some(PathBuf::from("/p/other")));
+        assert_eq!(state.panel_widths(), widths);
     }
 
     /// A state file from before the picker, and one from a version that knows
@@ -495,6 +567,85 @@ mod tests {
                 Some(PathBuf::from("/p/game")),
                 "{text}"
             );
+        }
+    }
+
+    /// The panels likewise, and today's widths until one is dragged.
+    #[test]
+    fn remembers_the_panel_widths() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppFiles::in_config_dir(dir.path());
+        assert_eq!(state.panel_widths(), PanelWidths::default());
+        let widths = PanelWidths {
+            sidebar: 400,
+            inspector: 320,
+        };
+        state.set_panel_widths(widths);
+        assert_eq!(AppFiles::in_config_dir(dir.path()).panel_widths(), widths);
+    }
+
+    /// Every state file written before this pass: no `panels` key at all, which
+    /// reads as today's widths rather than as a pair of zero-width columns.
+    #[test]
+    fn a_file_from_before_the_panels_reads_the_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppFiles::in_config_dir(dir.path());
+        std::fs::create_dir_all(dir.path().join(APP_DIR)).unwrap();
+        std::fs::write(
+            dir.path().join(APP_DIR).join(FILE),
+            r#"{"lastProject":"/p/game","window":{"width":1400,"height":900}}"#,
+        )
+        .unwrap();
+        assert_eq!(state.panel_widths(), PanelWidths::default());
+        assert_eq!(state.last_project(), Some(PathBuf::from("/p/game")));
+    }
+
+    /// **The container-level `#[serde(default)]` is what this pins.** `read`
+    /// throws the whole document away on any parse error and every setter
+    /// rewrites it, so a half-written object — a hand edit, a build that wrote
+    /// one field of two — used to cost the last project, the pen and the speech
+    /// model as well. Observed before the attribute was added: the `window` half
+    /// failed on its very first assertion, `serde` reporting
+    /// `missing field 'height'` and `last_project` coming back `None`.
+    ///
+    /// The missing field reads as its **real** default — 960, not the `0` a
+    /// field-level attribute would resolve to and `main.rs` would hand to
+    /// `set_size`.
+    #[test]
+    fn a_partial_window_or_panels_object_costs_nothing_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppFiles::in_config_dir(dir.path());
+        std::fs::create_dir_all(dir.path().join(APP_DIR)).unwrap();
+        let file = dir.path().join(APP_DIR).join(FILE);
+        let rest = r#""lastProject":"/p/game","pen":"blue","whisperModel":"base.en""#;
+        for (text, window, panels) in [
+            (
+                format!(r#"{{{rest},"window":{{"width":1600}}}}"#),
+                WindowSize {
+                    width: 1600,
+                    height: 960,
+                },
+                PanelWidths::default(),
+            ),
+            (
+                format!(r#"{{{rest},"panels":{{"sidebar":400}}}}"#),
+                WindowSize::default(),
+                PanelWidths {
+                    sidebar: 400,
+                    inspector: 280,
+                },
+            ),
+        ] {
+            std::fs::write(&file, &text).unwrap();
+            assert_eq!(
+                state.last_project(),
+                Some(PathBuf::from("/p/game")),
+                "{text}"
+            );
+            assert_eq!(state.pen(), Pen::Blue, "{text}");
+            assert_eq!(state.whisper_model(), WhisperModel::Base, "{text}");
+            assert_eq!(state.window_size(), window, "{text}");
+            assert_eq!(state.panel_widths(), panels, "{text}");
         }
     }
 

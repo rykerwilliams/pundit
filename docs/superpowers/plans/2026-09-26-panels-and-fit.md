@@ -20,7 +20,8 @@ redirect to a log and check `$?`.
 
 ## Traps that cost a working day if rediscovered
 
-All four are measured, in the spec, and all four compile cleanly:
+All of these are measured, in the spec, and all of them compile cleanly (or, for
+5 and 6, fail in a way that reads like something else):
 
 1. **`tick`'s body runs inside `UI.with_borrow_mut`.** Calling `show_notice`
    from it is a `BorrowMutError` panic. Set `notice` and `notice_until` by hand
@@ -33,7 +34,19 @@ All four are measured, in the spec, and all four compile cleanly:
    neither the rounding nor the floor. Those are unit-test facts.
 4. **`ElementHandle` silently finds nothing** unless the crate was built with
    `SLINT_EMIT_DEBUG_INFO=1` — and the test still passes. Any measurement that
-   walks the element tree must set it, or it measures nothing and says fine.
+   walks the element tree must set it, or it measures nothing and says fine. It
+   does **not** apply to reading `out` properties through their generated
+   getters, which walks nothing.
+5. **`///` is a parse error inside `slint::slint!`.** Rust turns it into a
+   `#[doc]` attribute the Slint parser rejects. Use `//` there. `tests/scrubber.rs`
+   happens to have no comments inside its macro, so following the house
+   "reasoning in the header" style into an inline window is how you find this.
+6. **`mouse-cursor` is a `TouchArea` property only** — on a `Rectangle` root it
+   does not compile.
+7. **A drag that leaves the window is *cancelled*, not released** (X11). A
+   splitter that only handles the release stays mid-drag: the coach's width is
+   never stored and the next bare pointer move over the grip resizes the column
+   with no button held. `scrubber.slint` exists for the same reason.
 
 ---
 
@@ -246,7 +259,7 @@ wiring. Two tests:
   *container*.** **Not field-level.** `project.rs:77-80` states the rule: "Field
   level `#[serde(default)]` is the hazard: it resolves to `Default::default()`",
   i.e. `0`. Field-level on `WindowSize` would turn `{"window":{"width":1600}}`
-  into `1600×0` and `main.rs:313` would hand that straight to `set_size`.
+  into `1600×0`, which the startup resize hands straight to `set_size`.
 - **Add the same container-level `default` to `WindowSize`**, which has the gap
   today: any parse error discards the whole document (`:196-200`), taking the
   last project, the pen and the model. A free adjacent fix, and the test below is
@@ -339,12 +352,23 @@ would catch neither failure. Use B2's constraint form in the stand-in, not a
 
 ## B4. Wiring the drag
 
-**Files:** `app.slint`, `crates/pundit-app/src/main.rs`.
+**Files:** `app.slint`, `crates/pundit-app/src/main.rs`, and
+`crates/pundit-app/src/bus/mod.rs` — `mod state` is private, so `PanelWidths`
+reaches `main.rs` only through that module's `pub use` list, exactly as
+`WindowSize` does. (B1 added it; noted here because the type is unusable
+without it.)
 
 - A `Splitter` either side of the player, **inside the `HorizontalLayout`** — so
-  they are chrome, which spec W2's subtraction absorbs without being told.
-  `width-now` binds to the column's laid-out `width`; `moved` assigns the
-  `root.*-width` property; `released` calls `root.panels-released()`.
+  they are chrome, which spec W2's subtraction absorbs without being told. A 6px
+  `width` on the component's root **is** honoured as a fixed width by the layout
+  (verified), so the pair is 12px of chrome and nothing needs telling.
+  `width-now` binds to the column's **laid-out `width`**: that is the
+  load-bearing line for W5's second rule, which the component cannot defend
+  itself against. `moved` assigns the `root.*-width` property; `released` calls
+  `root.panels-released()`.
+- **`mirrored` means the panel sits to the right of the grip**, so leftward
+  pointer motion widens it. Check that against the order you write the layout
+  in, or the inspector resizes backwards.
 - **On release, set the property to the column's effective (clamped) width
   before firing the callback** (verified: the new value is visible to Rust when
   the callback runs). Spec W5: the raw value would put a width the coach never

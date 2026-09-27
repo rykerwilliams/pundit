@@ -24,8 +24,8 @@ use uuid::Uuid;
 
 use pundit_app::bus::{
     self, export_targets, whisper, whisper_model_override, AppFiles, BasketView, Bus, BusHandle,
-    CaptureKind, Command, Event, ExportRun, ExportTargetRun, Finish, RecordingStatus, Snapshot,
-    Stage, TargetState, TranscriptionState, WindowSize,
+    CaptureKind, Command, Event, ExportRun, ExportTargetRun, Finish, PanelWidths, RecordingStatus,
+    Snapshot, Stage, TargetState, TranscriptionState, WindowSize,
 };
 use pundit_app::color_picker;
 use pundit_app::drawing::{path_commands, InProgress, Pen};
@@ -352,8 +352,16 @@ fn main() {
         size.width as f32,
         size.height as f32,
     ));
-    // Written once the bus is gone, which also writes this file.
-    let state_on_close = state.clone();
+    // The columns the coach dragged, in the same logical pixels the layout
+    // states its minima in. Nothing is checked here: a pair from a wider screen
+    // or a hand-edited file is bounded by the layout, in one place (spec W4).
+    let panels = state.panel_widths();
+    window.set_sidebar_width(panels.sidebar as f32);
+    window.set_inspector_width(panels.inspector as f32);
+    // A second handle on the same file: the bus takes the one above, and this
+    // one is what the window's own geometry is written through — the panel
+    // widths on a drag's release, the size once the bus is gone.
+    let machine_state = state.clone();
 
     let weak = window.as_weak();
     let bus = Bus::spawn(
@@ -381,6 +389,7 @@ fn main() {
     wire_drawing(&window, &bus);
     wire_highlights(&window, &bus);
     wire_fit(&window);
+    wire_panels(&window, &machine_state);
 
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, TICK, {
@@ -400,7 +409,7 @@ fn main() {
     window.run().expect("run the window");
     // Normally already done by the renderer's teardown; idempotent.
     bus.borrow_mut().shutdown();
-    state_on_close.set_window_size(closing_window_size(&window));
+    machine_state.set_window_size(closing_window_size(&window));
 }
 
 /// The size to reopen at, read from the window after it has closed, which
@@ -2030,6 +2039,33 @@ fn apply_fit(w: &AppWindow) -> Fit {
         w.window().set_size(slint::PhysicalSize::new(width, height));
     }
     fit
+}
+
+/// Remember what the coach dragged the side columns to (spec W5).
+///
+/// Written on the release of a drag and nowhere else: a drag is 30 events a
+/// second and every setter on `AppFiles` rewrites the whole document. Unlike the
+/// window's size, which the app can only learn on the way out, a panel width is
+/// known the instant the coach lets go and a release is the last thing that can
+/// happen to it, so there is no on-close write to pair with this one.
+///
+/// Like the window's size and for the same reason, this is the window's own
+/// geometry: nothing here reaches the bus, and there is no `Command` for it.
+fn wire_panels(window: &AppWindow, state: &AppFiles) {
+    window.on_panels_released({
+        let weak = window.as_weak();
+        let state = state.clone();
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            // Both properties, not an argument: either splitter's release fires
+            // this, and `app.slint` has already replaced the one it was dragging
+            // with the width the layout settled on.
+            state.set_panel_widths(PanelWidths {
+                sidebar: w.get_sidebar_width().round() as u32,
+                inspector: w.get_inspector_width().round() as u32,
+            });
+        }
+    });
 }
 
 /// Drawing on the picture while recording (Phase 6 spec D2). The window's
