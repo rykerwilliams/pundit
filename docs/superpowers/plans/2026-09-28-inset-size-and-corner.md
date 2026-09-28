@@ -14,15 +14,24 @@ to remove.
 ## Where this stands (update it as tasks land)
 
 - **B1 — DONE**, committed `d1ee1cc`. 501 core tests pass, clippy clean.
-- **B2 — next.** Media.
-- **B3** — app. **B4** — close out.
+- **B2 — DONE**, committed `98d6031`. 342 tests pass across media + harness,
+  clippy clean on the three crates. Two plan errors it corrected, both in the
+  commit message: the avatar cache was **not** "a key change" (a rect travelling
+  with a shared texture leaves mixed *corners* broken, which the mixed-*size*
+  test this plan asked for would not have caught), and preview's **camera** path
+  needed the placement too (`place_pip`'s caps probe), or a Large camera clip
+  previews at Medium. `InsetSize` gained `Hash` — one unplanned core edit, since
+  the cache key needs it.
+- **B3 — next.** App. `cargo check -p pundit-app` fails on exactly two lines,
+  `main.rs:1790` and `:1791` — item 4's self-view, and nothing else.
+- **B4** — close out.
 
 > **The workspace does not compile right now, and that is intended.** B1 changed
-> the geometry signatures and added two `Clip` fields; `pundit-media` and
-> `pundit-app` are fixed by B2 and B3. **Do not add a shim, a `Default` on `Clip`,
-> or anything else to make them build** — that is the second source of truth this
-> whole change exists to remove. The only gate available until B2 lands is
-> `cargo test -p pundit-core`.
+> the geometry signatures and added two `Clip` fields; `pundit-media` is fixed
+> (B2) and `pundit-app` is B3's. **Do not add a shim, a `Default` on `Clip`,
+> or anything else to make it build** — that is the second source of truth this
+> whole change exists to remove. Until B3 lands the gates are
+> `cargo test -p pundit-core -p pundit-media -p pundit-harness`.
 
 Every `cargo` call except `fmt` goes through
 `flock /tmp/claude-1000/cargo.lock nice -n 19 cargo …`. `pundit-core` is fast and
