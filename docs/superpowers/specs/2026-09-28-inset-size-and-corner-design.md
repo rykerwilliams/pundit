@@ -25,7 +25,7 @@ Today both are fixed: `layout::PIP_WIDTH_RATIO` is 0.22 of the output width and
 | Large | 0.30 | 0.70 |
 
 Medium is exactly today's `PIP_WIDTH_RATIO`, which is what makes every existing
-clip render to the pixel (I6).
+clip render to the pixel (I8).
 
 **Why steps and not a slider — the honest reason.** A first draft argued that a
 free ratio would make the caption bar jitter between clips. That argument is
@@ -142,13 +142,13 @@ of `shows_inset`, so geometry takes one value rather than two arguments.
   **once** and hands that single rect to every avatar entry, while the camera
   path computes its rect per entry from the probe. So a run mixing a Small
   bottom-left avatar clip with a Large bottom-right one would draw **both in one
-  place**, silently, with no test failing — I6's pixel-identity test passes,
+  place**, silently, with no test failing — I8's pixel-identity test passes,
   because single-size projects are unaffected. The rect moves into `Pip::open`,
   which already holds the `clip`.
   **The texture is sized to the run's largest avatar box**, not to Large
   unconditionally: the pixmap is deliberately `ceil()`ed so "the drawn box is
   never short of the rect it stands for", and always building at Large would
-  change the pixels of every existing Medium-only project and break I6.
+  change the pixels of every existing Medium-only project and break I8.
 - **`avatar_box` folds into the ratio and stops being corner arithmetic.** It is
   only ever applied to a **square** `pip_rect`, and shrinking a corner-flush
   square about the corner it is flush in *is* a corner-flush square at
@@ -174,31 +174,53 @@ of `shows_inset`, so geometry takes one value rather than two arguments.
   answer *whether*, and a reel entry (`clip: None`) correctly still reads as no
   inset and gets a full-width bar.
 
-## I6. The live self-view is out of scope, and why
+## I6. Both readings, from one sticky preference
 
-A first draft said the scan view's self-view "must take the same size and corner,
-because its whole purpose is to show the coach where the export will put the
-inset". **There is no clip during a take.** `finish_recording` builds the `Clip`
-*after* the recording, and takes the sibling field from a **preference**:
-`show_pip: self.preferences.pip_for_new_recordings`. So a live self-view can only
-follow the defaults or two new `Preferences` fields — the draft asserted a third
-thing that does not exist, and its harness test for "the self-view and the export
-agree" is unwritable (`place-self-view` lives in `main.rs`, which no test binary
-links — BACKLOG #48).
+The coach, asked whether they wanted to choose this before recording or fix it
+afterwards: **"can pick before or fix after, either."** Both, then — and there is
+a pattern in the same struct that gives both for the price of one.
 
-**Decision: new recordings get the defaults (Medium, BottomRight), and the coach
-retunes the clip afterwards in the Inspector, checking it in Preview.** Then the
-self-view is correct at record time and needs no change at all — which removes
-three of the five geometry functions a draft was going to thread this through
-(`pip_rect_over_picture`, `self_view_rect`, `avatar_self_view_rect`) and both
-`main.rs` call sites.
+**There is no clip during a take.** `finish_recording` builds the `Clip`
+*afterwards* and takes the sibling field from a preference
+(`show_pip: self.preferences.pip_for_new_recordings`). So "pick before" cannot be
+a per-clip field by definition, and a first draft's claim that the live self-view
+should follow the clip's size and corner was unimplementable.
 
-**This is the one thing worth asking the coach**, because it decides whether the
-feature is the right shape: *"do you want to pick this before you record, or fix
-it after?"* If the answer is "before", the extension is two `Preferences` fields
-carried into the new clip and into `start_self_view` — and it costs **no format
-bump**, because `Preferences` carries a container-level `#[serde(default)]`. That
-cheapness is why building the per-clip half first is safe rather than a gamble.
+**But `pip_for_new_recordings` is the wrong precedent to copy: it has no UI at
+all.** It is a format field with a `true` default, written only by tests — the
+coach cannot reach it. Adding `inset_*_for_new_recordings` beside it would add two
+more inert fields and leave "pick before" no more reachable than it is today.
+
+**The right precedent is three fields further up the same struct.**
+`last_export_resolution`, `last_export_quality` and `last_export_scoreboard` are
+**sticky last-used** values: written back when the coach picks one
+(`bus/export.rs`), read to seed the next sheet. Applied here:
+
+- `Clip::inset_size` / `inset_corner` (v13) — **"fix after"**: edit any clip in
+  the Inspector, check it in Preview.
+- `Preferences::last_inset_size` / `last_inset_corner` — written back whenever
+  the coach changes a clip's, and read by `finish_recording` to seed the next
+  clip. **"Pick before"**: set it once on any clip and every later recording
+  inherits it.
+
+One mechanism, both readings, an established naming and write-back pattern, **no
+new UI beyond I7's two controls**, and no dependency on #78 (app settings) — which
+is where `pip_for_new_recordings` would finally get a control, and where these two
+would then appear for free.
+
+**The live self-view comes back into scope, cheaply**: it reads the two
+*preferences* — the values the next clip will get — so it honestly shows where
+the inset will land, without needing a clip that does not exist. That is
+`pip_rect_over_picture` and the two `self_view_rect` helpers taking a size and a
+corner, which is a plain argument-threading change, not the impossible one the
+draft implied.
+
+**Two different serde rules in one change, and getting them the wrong way round
+is a bug.** The `Clip` fields take a **field-level** `#[serde(default)]` (I4).
+The `Preferences` fields take **none at all**: that container already carries
+`#[serde(default)]` and fills from its hand-written `Default` impl, so a
+field-level one would be a second copy of the default — the rule `CLAUDE.md`
+states for `last_export_scoreboard`.
 
 ## I7. The surface the coach actually touches
 
