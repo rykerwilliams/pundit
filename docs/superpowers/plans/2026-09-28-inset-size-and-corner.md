@@ -22,9 +22,19 @@ to remove.
   needed the placement too (`place_pip`'s caps probe), or a Large camera clip
   previews at Medium. `InsetSize` gained `Hash` — one unplanned core edit, since
   the cache key needs it.
-- **B3 — next.** App. `cargo check -p pundit-app` fails on exactly two lines,
-  `main.rs:1790` and `:1791` — item 4's self-view, and nothing else.
-- **B4** — close out.
+- **B3 — DONE**, committed `ff27712`. Two more plan errors: **a declared Slint
+  enum cannot drive these two controls** (a `ComboBox`'s `current-index` needs a
+  two-way binding, the scar `transcript-model` already records), so the pickers
+  use the index pattern and the enums went to `place-self-view`, where they do
+  work; and **Slint enums have no `#[default]`** — the first variant wins, and
+  `InsetSize`'s is `small`, so an unfed self-view placed one step narrower than
+  any inset the app has drawn.
+- **B4 — DONE**, committed `35a4f04`. Two reviews, one deliberation. It found two
+  real bugs (the sticky preference swallowed on a no-op pick — which **this plan
+  wrongly called correct** — and no camera-inset test at a non-default
+  placement), and it deleted three `Clip` predicates after counting that **all
+  five** of their call sites also wanted the placement: the spec's "whether vs
+  where" split, falsified by its own call sites.
 
 > **The workspace does not compile right now, and that is intended.** B1 changed
 > the geometry signatures and added two `Clip` fields; `pundit-media` is fixed
