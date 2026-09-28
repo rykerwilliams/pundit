@@ -13,6 +13,8 @@ which the app was called until 0.8.0 renamed it.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-27
+
 ### Added
 
 - **Fit the window to the video.** Press **F**, or the **Fit** button by the
