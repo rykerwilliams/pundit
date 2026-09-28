@@ -837,15 +837,63 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   close or source change. Football footage is MP4/MKV with AAC, so this is
   unlikely rather than impossible — and it is the honest answer to this entry's
   original worry ("can crash the real app"): yes, but only for Vorbis input.
-- **When to revisit — ASan, and little else is worth trying first.** Everything
-  cheaper has now been spent: three plain backtraces, one heap-checked backtrace,
-  a codec elimination, and a 4-way repro. Each produced a *discovery* site and
-  none produced a writer. `nightly` is installed, so
-  `RUSTFLAGS=-Zsanitizer=address` over `pundit-media`'s export test, run 4-way
-  with `ASAN_OPTIONS=detect_leaks=0:halt_on_error=1`, is the next step: its
-  redzones around every allocation are what catch a linear overflow **at the
-  write**. Budget for it being noisy against GStreamer, Mesa and VA-API, and for
-  the instrumentation's slowdown perturbing the race either way.
+- **The ASan recipe, and it does not need a rebuild** (2026-09-27). An
+  instrumented build is **not available**: `RUSTFLAGS=-Zsanitizer=address` on the
+  installed `nightly-2026-04-19` fails to compile `option-operations`, a
+  gstreamer-rs dependency (36 errors). **Preloading works instead, and is the
+  right tool for this signature anyway:**
+
+      ASAN_OPTIONS=detect_leaks=0:verify_asan_link_order=0:halt_on_error=1:abort_on_error=1 \
+      LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libasan.so.8 <test binary>
+
+  Uninstrumented code gets no per-access shadow checks, but ASan's **`memset` /
+  `memcpy` / `strcpy` interceptors do bounds-check**, and the heap forensics in
+  this entry point at a *run of zeros past an allocation* — i.e. exactly what a
+  `memset` interceptor catches. **Proven live before trusting it**: a deliberate
+  `memset(malloc(64), 0, 96)` under that exact command reports
+  `heap-buffer-overflow … WRITE of size 96` with the writing frame named. A
+  diagnostic nobody has proved can fail is the recurring mistake in this entry;
+  that check takes ten seconds.
+  The export suite runs clean under the preload (6.4 s for one test), so the
+  harness is valid.
+- **ASan does not fire, and that is a result: 0 crashes in 24 runs, 0 reports.**
+  Against a base rate of ~21% (11 in 48 below), zero in 24 is a one-in-a-thousand
+  coincidence, so ASan's allocator — redzones, quarantine, a different layout —
+  **suppresses** the race rather than missing it. Do not spend more runs there.
+  The same is true of an instrumented build if a working nightly ever appears:
+  the allocator is the thing that changes, and the allocator is what the bug
+  depends on.
+- **THE SHARPEST CONSTRAINT, measured the same day: it needs parallel tests
+  *inside* one process.** Four concurrent copies of the media `export` binary,
+  all under glibc heap checking:
+
+  | configuration | crashes |
+  |---|---|
+  | parallel tests per process, GPU | **6 / 24** |
+  | parallel tests per process, `/dev/dri` hidden (software) | **5 / 24** |
+  | **`--test-threads=1` per process** | **0 / 24** |
+  | parallel tests per process, under ASan | 0 / 24 |
+
+  A loaded machine is **not** sufficient. So this is concurrent use of something
+  **process-wide**, not a decoder bug and not contention — which also retires
+  three suspects at once: the GPU and VA-API (the software arm crashes at the
+  same rate), the video decoder (the two arms use different ones), and libvorbis
+  (already retired above).
+- **The one documented piece of process-wide state is the prime suspect:**
+  `composite::Gl::shared()` — **one surfaceless `GLDisplayEGL` and one
+  `GLContext` per process, never dropped**, handed to every export and every
+  GL-sink preview by `clone()`. Its own doc records that these wrap the *same*
+  `EGLDisplay` and that finalizing one calls `eglTerminate` for all. A GL context
+  is not safe for concurrent use, and llvmpipe reaches it through EGL exactly as
+  the real driver does, which is why hiding the GPU changed nothing.
+- **When to revisit — the experiment that would confirm or kill it:** run the
+  4-way repro against a suite that uses **no** GL (the media `copy` tests are a
+  stream copy) and against one that shares the GL context hard (`export`). If
+  only the GL one crashes, it is `Gl::shared()`, and the fix is a real design
+  question — a context per job costs the `eglTerminate` problem that doc comment
+  exists for, so it would more likely be a mutex around the pipelines that use
+  it. Note the harness's `transcribe.rs` and `reel` have also crashed, so check
+  whether those paths touch a GL display before concluding.
 - **Superseded plan (kept because its first item shipped for other reasons):**
   1. **Stop decoding audio we throw away** (fixes the flake, and is less wasted
      work regardless). The `caps` property does not do it, so it needs proper
