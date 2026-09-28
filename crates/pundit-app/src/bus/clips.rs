@@ -39,6 +39,21 @@ impl Bus {
         if before == edit {
             return;
         }
+        // The inset's size and corner are **sticky**: the value the coach last
+        // set on a clip is what the next recording is given (#88 spec I6), as
+        // the export sheet's three pickers are written back in `export.rs`.
+        // Here, before the save that carries it — after it, the preference
+        // would be lost until some unrelated edit wrote the project again.
+        //
+        // The guard above means a no-op edit writes nothing, and **undo does
+        // not put it back**: a last-used value is not part of the document's
+        // meaning, which is why the `last_export_*` preferences sit outside the
+        // undo history too.
+        match &edit {
+            ClipEdit::InsetSize(size) => open.project.preferences.last_inset_size = *size,
+            ClipEdit::InsetCorner(corner) => open.project.preferences.last_inset_corner = *corner,
+            _ => {}
+        }
         self.save();
         self.record(UndoAction::EditClip {
             id,
