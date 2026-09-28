@@ -18,9 +18,8 @@ use std::time::{Duration, Instant};
 use gstreamer as gst;
 use gstreamer_video as gst_video;
 use gstreamer_video::prelude::*;
-use pundit_core::avatar::avatar_box;
 use pundit_core::event::{CommentaryEvent, EventKind};
-use pundit_core::layout::{pip_rect, BAR_HEIGHT_RATIO};
+use pundit_core::layout::{avatar_box, bar_rect, pip_rect};
 use pundit_core::project::{Clip, Inset, InsetCorner, InsetPlacement, InsetSize};
 use pundit_core::stroke::{Rgba, Stroke, StrokePoint};
 use pundit_media::fixtures::{self, counter_video, read_counter, CounterKind, GrayFrame};
@@ -288,7 +287,18 @@ fn the_composite_places_the_pip_and_the_overlay_on_the_picture() {
         a: 0.5,
         ..Rgba::RED
     };
-    let clip = clip(1.0, true, vec![bar(0.5, Rgba::RED), bar(0.75, translucent)]);
+    // **Neither value the default**, so `place_pip` fails this test if it stops
+    // reading the clip -- and bottom-left moves the caption bar's whole edge,
+    // the other half of what the placement has to reach.
+    let placement = InsetPlacement {
+        size: InsetSize::Large,
+        corner: InsetCorner::BottomLeft,
+    };
+    let clip = Clip {
+        inset_size: placement.size,
+        inset_corner: placement.corner,
+        ..clip(1.0, true, vec![bar(0.5, Rgba::RED), bar(0.75, translucent)])
+    };
 
     let running = Running::start(source, recording, clip, 3.0);
     running.play_out();
@@ -301,27 +311,23 @@ fn the_composite_places_the_pip_and_the_overlay_on_the_picture() {
     picture.assert_rgb("the right bar", (1200, 100), 0x000000);
     picture.assert_rgb("the picture", (300, 200), BLUE);
 
-    // The PiP is the recording, flush into the bottom-right corner in output
-    // space -- overlapping the right bar, which is the point of putting it
-    // there, and overlapping the text bar, which it is mixed over.
-    let pip = pip_rect(
-        OUT_W as f64,
-        OUT_H as f64,
-        16.0 / 9.0,
-        InsetPlacement::default(),
-    );
+    // The PiP is the recording at the clip's own placement, flush into the
+    // bottom-left corner in output space -- overlapping the left bar, which is
+    // the point of putting it there, and overlapping the text bar, which it is
+    // mixed over.
+    let pip = pip_rect(OUT_W as f64, OUT_H as f64, 16.0 / 9.0, placement);
     let pip_centre = (
         (pip.x + pip.w / 2.0) as usize,
         (pip.y + pip.h / 2.0) as usize,
     );
     picture.assert_rgb("the PiP", pip_centre, GREEN);
     picture.assert_rgb(
-        "just left of the PiP",
-        (pip.x as usize - 20, pip_centre.1),
+        "just right of the PiP",
+        ((pip.x + pip.w) as usize + 20, pip_centre.1),
         BLUE,
     );
     // Its bottom row is the recording's own green, not green under the bar's
-    // 60% black: the whole bar stops at the inset's left edge, here as in the
+    // 60% black: the whole bar starts at the inset's right edge, here as in the
     // export (`core::layout::bar_rect`).
     picture.assert_rgb(
         "the PiP under the text bar's row",
@@ -341,14 +347,19 @@ fn the_composite_places_the_pip_and_the_overlay_on_the_picture() {
     picture.assert_rgb("the translucent stroke", (640, 540), 0x7f197f);
 
     // And the text bar the export burns in is here too (spec E7): its tint
-    // over the picture is 40% of it, ...
-    let bar_top = (OUT_H as f64 * (1.0 - BAR_HEIGHT_RATIO)) as usize;
-    picture.assert_rgb("the bar's tint", (300, bar_top + 40), 0x000066);
-    picture.assert_rgb("one row above the bar", (300, bar_top - 4), BLUE);
-    // ... with the line `1 / 1 | c` drawn in it. White glyphs are the only
-    // thing in this frame with a red channel that high.
+    // over the picture is 40% of it, and its edge is the inset's -- probed well
+    // inside the bar, since the inset owns the left of this row.
+    let bar = bar_rect(OUT_W as f64, OUT_H as f64, Some(placement));
+    assert_eq!(bar.x, pip.x + pip.w, "the bar does not start at the inset");
+    let bar_x = (bar.x + bar.w / 2.0) as usize;
+    let bar_top = bar.y as usize;
+    picture.assert_rgb("the bar's tint", (bar_x, bar_top + 40), 0x000066);
+    picture.assert_rgb("one row above the bar", (bar_x, bar_top - 4), BLUE);
+    // ... with the line `1 / 1 | c` drawn in it, from the bar's own left edge.
+    // White glyphs are the only thing in this frame with a red channel that
+    // high.
     let glyphs = (bar_top..OUT_H)
-        .flat_map(|y| (0..300).map(move |x| (x, y)))
+        .flat_map(|y| (bar.x as usize..bar.x as usize + 300).map(move |x| (x, y)))
         .filter(|&(x, y)| picture.at(x, y)[0] > 200)
         .count();
     assert!(glyphs > 20, "{glyphs} pixels of text in the preview's bar");

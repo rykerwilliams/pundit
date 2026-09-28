@@ -1,10 +1,9 @@
 //! The composite's layout ratios.
 
-use pundit_core::avatar::avatar_box;
 use pundit_core::layout::{
-    avatar_self_view_rect, bar_rect, inset_ratio, inset_span, pip_rect, pip_rect_over_picture,
-    scoreboard_rects, self_view_rect, stroke_line_width, Rect, BAR_HEIGHT_RATIO,
-    SCOREBOARD_FONT_RATIO,
+    avatar_box, avatar_self_view_rect, bar_rect, inset_ratio, inset_span, pip_rect,
+    pip_rect_over_picture, scoreboard_rects, self_view_rect, stroke_line_width, Rect,
+    BAR_HEIGHT_RATIO, SCOREBOARD_FONT_RATIO,
 };
 use pundit_core::project::{InsetCorner, InsetPlacement, InsetSize};
 

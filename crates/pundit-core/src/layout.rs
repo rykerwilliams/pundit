@@ -70,12 +70,12 @@ pub const BAR_FONT_RATIO: f64 = 0.5;
 
 /// A column of width `ratio × out_w` flush into `corner`, as `(x, w)`.
 ///
-/// [`inset_span`] is this at an [`InsetSize`]'s own ratio; the avatar's box is
-/// this at a ratio *of* one ([`crate::avatar::avatar_box`]), which is the whole
-/// of the difference between the two footprints.
+/// [`inset_span`] is this at an [`InsetSize`]'s own ratio, and it is the only
+/// caller that wants a span rather than a rect: the bar needs the inset's
+/// column without its height.
 ///
 /// [`InsetSize`]: crate::project::InsetSize
-pub(crate) fn corner_span(out_w: f64, corner: InsetCorner, ratio: f64) -> (f64, f64) {
+fn corner_span(out_w: f64, corner: InsetCorner, ratio: f64) -> (f64, f64) {
     let w = ratio * out_w;
     let x = match corner {
         InsetCorner::BottomLeft => 0.0,
@@ -84,13 +84,22 @@ pub(crate) fn corner_span(out_w: f64, corner: InsetCorner, ratio: f64) -> (f64, 
     (x, w)
 }
 
-/// The rect a `span` of `(x, w)` makes in `corner` at display aspect `aspect`.
+/// The rect a column of `ratio × out_w` makes in `corner` at display aspect
+/// `aspect`: [`corner_span`] given a height.
 ///
 /// The inset is flush into its corner in both axes, so `aspect` decides only
 /// how far the rect reaches back from the edge it hangs off — the bottom one,
 /// or the top for a top corner.
-pub(crate) fn corner_rect(span: (f64, f64), out_h: f64, aspect: f64, corner: InsetCorner) -> Rect {
-    let (x, w) = span;
+///
+/// **It takes the ratio and the corner, not a span and the corner again.** Both
+/// callers — [`pip_rect`] at an [`InsetSize`]'s own ratio, [`avatar_box`] at a
+/// ratio *of* one, which is the whole of the difference between the two
+/// footprints — want the span this makes and nothing else, so passing the
+/// corner twice bought only the chance of passing two different ones.
+///
+/// [`InsetSize`]: crate::project::InsetSize
+fn corner_rect(out_w: f64, out_h: f64, ratio: f64, aspect: f64, corner: InsetCorner) -> Rect {
+    let (x, w) = corner_span(out_w, corner, ratio);
     let h = w / aspect;
     let y = match corner {
         InsetCorner::TopRight => 0.0,
@@ -147,10 +156,10 @@ pub fn inset_span(out_w: f64, placement: InsetPlacement) -> (f64, f64) {
 /// ask with any `inset`.
 ///
 /// **The camera's column, whichever inset the clip has:** an avatar's circle is
-/// flush into the same corner and narrower ([`crate::avatar::avatar_box`]), and
-/// its pulse only shrinks it further, so this column clears either kind in
-/// every corner. A round avatar cannot finish the row the way a camera's
-/// rectangle does whatever width is picked, so it is not worth a second edge.
+/// flush into the same corner and narrower ([`avatar_box`]), and its pulse only
+/// shrinks it further, so this column clears either kind in every corner. A
+/// round avatar cannot finish the row the way a camera's rectangle does whatever
+/// width is picked, so it is not worth a second edge.
 ///
 /// **`None` means no inset is drawn, not "no clip".** It is
 /// [`Clip::inset_placement`](crate::project::Clip::inset_placement), which
@@ -162,11 +171,21 @@ pub fn inset_span(out_w: f64, placement: InsetPlacement) -> (f64, f64) {
 /// the bug this signature exists to make unwritable.
 pub fn bar_rect(out_w: f64, out_h: f64, inset: Option<InsetPlacement>) -> Rect {
     let h = BAR_HEIGHT_RATIO * out_h;
-    let (x, w) = match inset.map(|p| (p.corner, inset_span(out_w, p))) {
-        None | Some((InsetCorner::TopRight, _)) => (0.0, out_w),
-        Some((InsetCorner::BottomRight, (inset_x, _))) => (0.0, inset_x),
-        Some((InsetCorner::BottomLeft, (inset_x, inset_w))) => {
-            (inset_x + inset_w, out_w - (inset_x + inset_w))
+    let (x, w) = match inset {
+        // Nothing in the bottom row: both edges, as every clip's bar was
+        // before there was an inset to give way to.
+        None => (0.0, out_w),
+        Some(p) => {
+            let (inset_x, inset_w) = inset_span(out_w, p);
+            match p.corner {
+                // The bar runs from the left edge up to the inset.
+                InsetCorner::BottomRight => (0.0, inset_x),
+                // Its edge moves rather than the strip widening: a bar still
+                // starting at 0 would run under the inset.
+                InsetCorner::BottomLeft => (inset_x + inset_w, out_w - (inset_x + inset_w)),
+                // The inset is out of this row, so the bar has it to itself.
+                InsetCorner::TopRight => (0.0, out_w),
+            }
         }
     };
     Rect {
@@ -195,11 +214,70 @@ pub fn bar_rect(out_w: f64, out_h: f64, inset: Option<InsetPlacement>) -> Rect {
 /// nor a fourth pad.
 pub fn pip_rect(out_w: f64, out_h: f64, cam_aspect: f64, placement: InsetPlacement) -> Rect {
     corner_rect(
-        inset_span(out_w, placement),
+        out_w,
         out_h,
+        inset_ratio(placement.size),
         cam_aspect,
         placement.corner,
     )
+}
+
+/// How large the avatar's circle is against the webcam inset a camera take of
+/// the same size would fill — the user asked for smaller, 2026-09-23; it is one
+/// line to retune.
+pub const AVATAR_BOX_RATIO: f64 = 0.75;
+
+/// The box an avatar's circle is drawn in at its loudest: the clip's inset
+/// column at [`AVATAR_BOX_RATIO`] of its width, square, flush into the same
+/// corner — so the circle keeps the webcam inset's own margins off the frame's
+/// two edges and is simply smaller. That is the whole of the difference between
+/// an avatar's footprint and a camera's.
+///
+/// **A ratio of a ratio, not a rect shrunk about a corner**, which is what this
+/// was while there was one corner to shrink about. Shrinking a corner-flush
+/// square about the corner it is flush in *is* a corner-flush square at
+/// `AVATAR_BOX_RATIO ×` the ratio — identical to the pixel at Medium in the
+/// bottom-right — while the rect form only worked in the corner it was written
+/// for: applied to a bottom-left inset it drifted 105.6 px off the left edge at
+/// Medium/1080p, and to a top-right one it hung the same 105.6 px below the top
+/// — the box is square, so the two are one number.
+///
+/// The aspect is 1.0 and not a parameter because the avatar's image is square
+/// (avatar spec A5), and the pulse still grows the circle concentrically
+/// *inside* this box ([`avatar_rect`](crate::avatar::avatar_rect)), so nothing
+/// else moves. **The pulse is the only part of the avatar's geometry that is
+/// not here:** this is [`pip_rect`] at another ratio and a fixed aspect, which
+/// is layout, while the pulse is a level and lives with the rest of the
+/// estimator ([`crate::avatar`]).
+pub fn avatar_box(out_w: f64, out_h: f64, placement: InsetPlacement) -> Rect {
+    corner_rect(
+        out_w,
+        out_h,
+        avatar_ratio(placement.size),
+        1.0,
+        placement.corner,
+    )
+}
+
+/// The fraction of the output width an avatar's square box takes at `size`.
+fn avatar_ratio(size: InsetSize) -> f64 {
+    AVATAR_BOX_RATIO * inset_ratio(size)
+}
+
+/// The side of the square box an avatar's circle is drawn in, in output pixels.
+///
+/// **The one number a pixmap needs**, and the reason it is not
+/// [`avatar_box`]`(…).w`: the corner moves the box without resizing it, so the
+/// pixels depend on `size` alone. Export keys its avatar textures on
+/// `(image, InsetSize)` and shares each one across the corners its entries use
+/// (`media::composite::export`), so at that point there is no corner to name —
+/// and asking for a rect there meant inventing one, which said something untrue
+/// about a value nothing read.
+///
+/// Equal to `avatar_box(out_w, _, placement).w` for every corner, by
+/// construction: both are [`avatar_ratio`] of `out_w`.
+pub fn avatar_box_side(out_w: f64, size: InsetSize) -> f64 {
+    avatar_ratio(size) * out_w
 }
 
 /// The composite's output shape. Every export resolution and the clip
@@ -270,15 +348,15 @@ pub fn self_view_rect(
 ///
 /// One placement rule per kind of take. The avatar's image is square (avatar
 /// spec A5), so its box is the clip's inset column at the avatar's own ratio
-/// ([`avatar_box`](crate::avatar::avatar_box)), breathed by the live level
-/// ([`avatar_rect`](crate::avatar::avatar_rect)) — the same two functions, in
-/// the same order, as the render.
+/// ([`avatar_box`]), breathed by the live level
+/// ([`avatar_rect`](crate::avatar::avatar_rect)) — the same two functions, in the
+/// same order, as the render.
 ///
 /// `None` before the first layout, or with no picture to place on.
 pub fn avatar_self_view_rect(picture: Rect, level: f64, placement: InsetPlacement) -> Option<Rect> {
     (picture.w > 0.0 && picture.h > 0.0).then(|| {
         crate::avatar::avatar_rect(
-            over_picture(picture, |w, h| crate::avatar::avatar_box(w, h, placement)),
+            over_picture(picture, |w, h| avatar_box(w, h, placement)),
             level,
         )
     })

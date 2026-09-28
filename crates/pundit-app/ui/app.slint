@@ -530,8 +530,15 @@ component Inspector inherits Rectangle {
     /// control. Nothing stores an index -- `ClipEdit::InsetSize` carries the
     /// enum -- so the one that lives here lives only between a click and the
     /// command it sends.
-    in-out property <int> inset-size-index;
-    in-out property <int> inset-corner-index;
+    ///
+    /// **Both carry their default**, because Slint's is `0` and these are
+    /// shown before `show_clip` has ever run -- with no project open, in a
+    /// disabled inspector. `inset_size_index(InsetSize::default())` is 1
+    /// (Medium); `inset_corner_index(InsetCorner::default())` really is 0
+    /// (Bottom right), and says so here so the asymmetry doesn't read as an
+    /// oversight.
+    in-out property <int> inset-size-index: 1;
+    in-out property <int> inset-corner-index: 0;
     /// This clip was recorded with the project's avatar rather than a camera
     /// (avatar G3). One word of the checkbox above follows it; the property,
     /// the command and the undo are the one `show-pip` either way.
@@ -3104,9 +3111,10 @@ export component AppWindow inherits Window {
     in-out property <bool> clip-show-pip;
     /// The selected clip's inset size and corner (#88 spec I7), as indices
     /// into the inspector's two pickers -- which is where the reasoning for an
-    /// index rather than `InsetSize` / `InsetCorner` lives.
-    in-out property <int> clip-inset-size-index;
-    in-out property <int> clip-inset-corner-index;
+    /// index rather than `InsetSize` / `InsetCorner` lives, and where the two
+    /// defaults below are explained.
+    in-out property <int> clip-inset-size-index: 1;
+    in-out property <int> clip-inset-corner-index: 0;
     /// The selected clip's inset is the avatar, not a camera (avatar G3):
     /// one word of the inspector's checkbox.
     in property <bool> clip-avatar;

@@ -30,10 +30,8 @@ use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_video as gst_video;
 use gstreamer_video::prelude::*;
-use pundit_core::avatar::{avatar_box, pulse, PULSE_RATE};
+use pundit_core::avatar::{pulse, PULSE_RATE};
 use pundit_core::export::OUTPUT_FPS;
-use pundit_core::layout::Rect as LayoutRect;
-use pundit_core::project::InsetPlacement;
 use tiny_skia::{FillRule, FilterQuality, Mask, PathBuilder, Pixmap, PixmapPaint, Transform};
 
 use super::audio::Reader;
@@ -177,53 +175,33 @@ pub fn drawn(path: &Path, size: u32) -> Result<Drawn, String> {
     })
 }
 
-/// The avatar as the mixer's inset pad takes it.
-pub(super) struct Avatar {
-    /// Cover-cropped into the square inset, premultiplied, and masked to the
-    /// circle inscribed in it, so the pad has only to scale and blend it.
-    pub(super) image: Pixmap,
-    /// [`avatar_box`] at `placement`: the avatar's footprint at its loudest.
-    ///
-    /// **It is the placement's box and no one else's.** Export keys its
-    /// textures on the image and the *size* — the pixmap is square and sized by
-    /// the size alone — and computes this rect per entry, because the corner is
-    /// the entry's own (`export::Pip::open`).
-    pub(super) rect: LayoutRect,
-}
-
-/// Decodes `path` and prepares it for an `out_w`×`out_h` run at `placement`.
+/// Decodes `path` and draws it for a `box_side`-wide inset: the pixels the
+/// mixer's inset pad carries, cover-cropped into the square box,
+/// premultiplied, and masked to the circle inscribed in it, so the pad has only
+/// to scale and blend them.
 ///
-/// **The box is square and the image is cover-cropped into it** (spec A5).
-/// What is drawn is always the circle inscribed in the box, so a box of the
+/// **The side, not the geometry.** The box is square (spec A5), so its width is
+/// all the pixels depend on: every entry of a run at one size shares them
+/// whatever corner its clip puts them in, and *where* they land is each entry's
+/// own (`export::Pip::open`, `preview::AvatarInset::open`, both from
+/// `core::layout::avatar_box`).
+///
+/// **Cover-cropped into that box, not fitted to it** (spec A5). What is drawn
+/// is always the circle inscribed in the box, so a box of the
 /// image's own aspect would put a portrait's circle floating above the corner
 /// the webcam inset sits in and a wide screenshot's off the top of the frame.
 /// A square box is flush into that same corner whatever was picked, and the
 /// image fills it: scaled until its shorter side covers the box, then centred,
 /// so the middle of the picture — where a face is — is what survives.
 ///
-/// **And the box is [`avatar_box`], not the whole inset**: a photograph at the
-/// webcam's full size reads as too big (the coach's, on seeing it), so the
-/// circle is drawn in the clip's inset column at a ratio of its width — square,
-/// and flush into the same corner, so it keeps the inset's own two margins off
-/// the frame and is simply smaller — and only then does the pulse breathe
-/// inside it. That fold, and why it is a ratio rather than a rect shrunk about
-/// a corner, is [`avatar_box`]'s own doc.
-///
 /// The circle is masked in **once, here**: the mask is the same size for every
 /// frame of the run, so building it per frame would buy nothing and cost a
 /// rasterization.
-pub(super) fn open(
-    path: &Path,
-    out_w: f64,
-    out_h: f64,
-    placement: InsetPlacement,
-) -> Result<Avatar, String> {
+pub(super) fn open(path: &Path, box_side: f64) -> Result<Pixmap, String> {
     let still = decode_still(path)?;
-    let rect = avatar_box(out_w, out_h, placement);
     // Rounded **up**, so the drawn box is never short of the rect it stands
     // for; everything after this reads the small pixmap.
-    let image = circular(&still, rect.w.ceil() as u32)?;
-    Ok(Avatar { image, rect })
+    circular(&still, box_side.ceil() as u32)
 }
 
 /// [`open`], reporting a failure on stderr and giving the caller `None`.
@@ -232,14 +210,9 @@ pub(super) fn open(
 /// and it is reported once per image the run opens rather than once an entry:
 /// the same trade, and the same tone, as a picture-in-picture that will not
 /// open.
-pub(super) fn open_reported(
-    path: &Path,
-    out_w: f64,
-    out_h: f64,
-    placement: InsetPlacement,
-) -> Option<Avatar> {
-    match open(path, out_w, out_h, placement) {
-        Ok(avatar) => Some(avatar),
+pub(super) fn open_reported(path: &Path, box_side: f64) -> Option<Pixmap> {
+    match open(path, box_side) {
+        Ok(image) => Some(image),
         Err(e) => {
             eprintln!(
                 "no avatar from {}: {e}; the inset stays empty",
@@ -364,15 +337,22 @@ fn mask_to_circle(image: &mut Pixmap) {
 mod tests {
     use super::*;
     use crate::fixtures::{self, StillFormat};
+    use pundit_core::layout::avatar_box;
+    use pundit_core::project::InsetPlacement;
 
     fn dir() -> tempfile::TempDir {
         gst::init().unwrap();
         tempfile::tempdir().unwrap()
     }
 
+    /// The box a 1080p run gives `placement`'s avatar, which is what the
+    /// callers hand [`open`] the width of.
+    fn box_side(placement: InsetPlacement) -> f64 {
+        avatar_box(1920.0, 1080.0, placement).w
+    }
+
     /// The pixel at the middle of the fitted box, which every avatar covers.
-    fn centre(avatar: &Avatar) -> tiny_skia::PremultipliedColorU8 {
-        let image = &avatar.image;
+    fn centre(image: &Pixmap) -> tiny_skia::PremultipliedColorU8 {
         image
             .pixel(image.width() / 2, image.height() / 2)
             .expect("the centre is inside the pixmap")
@@ -382,8 +362,8 @@ mod tests {
     fn the_avatar_pixmap_is_premultiplied() {
         let dir = dir();
         let path = fixtures::solid_png(dir.path(), "half.png", 64, 64, 0x00ff_ffff, 128);
-        let avatar = open(&path, 1920.0, 1080.0, InsetPlacement::default()).unwrap();
-        let px = centre(&avatar);
+        let image = open(&path, box_side(InsetPlacement::default())).unwrap();
+        let px = centre(&image);
         // Half-transparent white: premultiplied, every colour channel is the
         // alpha. A straight copy would leave them at 255 — the haloed
         // cut-out this test exists for.
@@ -403,12 +383,11 @@ mod tests {
     fn an_avatar_is_a_circle_in_its_box() {
         let dir = dir();
         let path = fixtures::still_image(dir.path(), "square.png", 96, 96, StillFormat::Png);
-        let avatar = open(&path, 1920.0, 1080.0, InsetPlacement::default()).unwrap();
-        let image = &avatar.image;
+        let image = open(&path, box_side(InsetPlacement::default())).unwrap();
         let (w, h) = (image.width(), image.height());
         let alpha = |x: u32, y: u32| image.pixel(x, y).expect("inside the pixmap").alpha();
 
-        assert!(centre(&avatar).alpha() > 0, "the middle is drawn");
+        assert!(centre(&image).alpha() > 0, "the middle is drawn");
         for (x, y) in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)] {
             assert_eq!(alpha(x, y), 0, "the corner at ({x}, {y}) is cut away");
         }
@@ -419,8 +398,8 @@ mod tests {
         assert_eq!(alpha(w / 8, h / 8), 0, "outside the circle");
     }
 
-    /// Whatever shape is picked, the box is the **square** `avatar_box` of the
-    /// clip's placement, and the pixmap is square with it (spec A5).
+    /// Whatever shape is picked, the pixmap is the **square** box the caller
+    /// asked for — `core::layout::avatar_box`'s width, rounded up (spec A5).
     ///
     /// A box of the image's own aspect would put the circle — which is what is
     /// actually drawn — somewhere other than where the webcam inset sits: a 3:4
@@ -429,22 +408,19 @@ mod tests {
     #[test]
     fn an_avatar_is_drawn_in_a_square_inset_whatever_its_shape() {
         let dir = dir();
-        let square = avatar_box(1920.0, 1080.0, InsetPlacement::default());
+        let side = box_side(InsetPlacement::default());
         for (name, w, h) in [
             ("square.png", 96, 96),
             ("tall.png", 60, 80),
             ("wide.png", 160, 90),
         ] {
             let path = fixtures::still_image(dir.path(), name, w, h, StillFormat::Png);
-            let avatar = open(&path, 1920.0, 1080.0, InsetPlacement::default()).unwrap();
-            assert_eq!(avatar.rect, square, "{name}: the inset is the square one");
-            let image = &avatar.image;
+            let image = open(&path, side).unwrap();
             assert_eq!(image.width(), image.height(), "{name}: a square pixmap");
             assert!(
-                f64::from(image.width()) >= square.w && f64::from(image.width()) < square.w + 1.0,
-                "{name}: pixmap side {} against {}",
+                f64::from(image.width()) >= side && f64::from(image.width()) < side + 1.0,
+                "{name}: pixmap side {} against {side}",
                 image.width(),
-                square.w
             );
             // And the circle is the one inscribed in that box, centred in it.
             let (c, last) = (image.width() / 2, image.width() - 1);
@@ -521,9 +497,7 @@ mod tests {
         let dir = dir();
         assert!(open(
             &dir.path().join("gone.png"),
-            1920.0,
-            1080.0,
-            InsetPlacement::default()
+            box_side(InsetPlacement::default())
         )
         .is_err());
     }

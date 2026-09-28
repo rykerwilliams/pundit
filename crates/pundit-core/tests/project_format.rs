@@ -1046,23 +1046,28 @@ fn a_clip_that_draws_no_inset_has_no_placement() {
     }
 }
 
-/// B3: the one reading of `show_pip` × `inset`, all four combinations. The
-/// two can never both be true — one inset is drawn, or none is.
+/// B3: the one reading of `show_pip` × `inset`, all four combinations — and
+/// each says *where* as well as *whether*, so no caller has to ask twice. The
+/// two can never both be `Some`: one inset is drawn, or none is.
 #[test]
-fn one_predicate_per_inset_and_never_both() {
+fn one_placement_per_inset_and_never_both() {
     let mut clip = sample_clip();
+    clip.inset_size = InsetSize::Large;
+    clip.inset_corner = InsetCorner::TopRight;
+    let placement = InsetPlacement {
+        size: InsetSize::Large,
+        corner: InsetCorner::TopRight,
+    };
     for (show_pip, inset, camera, avatar) in [
-        (true, Inset::Camera, true, false),
-        (true, Inset::Avatar, false, true),
-        (false, Inset::Camera, false, false),
-        (false, Inset::Avatar, false, false),
+        (true, Inset::Camera, Some(placement), None),
+        (true, Inset::Avatar, None, Some(placement)),
+        (false, Inset::Camera, None, None),
+        (false, Inset::Avatar, None, None),
     ] {
         clip.show_pip = show_pip;
         clip.inset = inset;
-        assert_eq!(clip.shows_camera_pip(), camera, "{show_pip} {inset:?}");
-        assert_eq!(clip.shows_avatar(), avatar, "{show_pip} {inset:?}");
-        assert!(!(clip.shows_camera_pip() && clip.shows_avatar()));
-        // And the third reading, which the bar's line turns on: either inset.
-        assert_eq!(clip.shows_inset(), camera || avatar, "{show_pip} {inset:?}");
+        assert_eq!(clip.camera_placement(), camera, "{show_pip} {inset:?}");
+        assert_eq!(clip.avatar_placement(), avatar, "{show_pip} {inset:?}");
+        assert!(!(clip.camera_placement().is_some() && clip.avatar_placement().is_some()));
     }
 }

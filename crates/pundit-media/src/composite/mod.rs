@@ -408,7 +408,7 @@ struct Layout {
     /// The inset: the PiP pad's, at full size. A 1×1 rect while the entry has
     /// no inset at all, which is where its transparent filler lands,
     /// invisibly; an avatar entry's is its image's own box
-    /// (`core::avatar::avatar_box`, the clip's inset column at the avatar's own
+    /// (`core::layout::avatar_box`, the clip's inset column at the avatar's own
     /// ratio), which [`Schedule::inset`] then scales per frame with the pulse.
     pip: PadRect,
 }

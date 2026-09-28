@@ -44,14 +44,13 @@ use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_video as gst_video;
 use pundit_core::audio::{Region, AUDIO_SAMPLE_RATE};
-use pundit_core::avatar::avatar_box;
 use pundit_core::chapters::chapter_list;
 use pundit_core::cues::{cues_to_srt, Cue};
 use pundit_core::export::{Compilation, OUTPUT_FPS};
 use pundit_core::highlight::{highlight_shapes, PlayerHighlight};
-use pundit_core::layout::pip_rect;
+use pundit_core::layout::{avatar_box, avatar_box_side, pip_rect};
 use pundit_core::metadata::FileTags;
-use pundit_core::project::{Clip, InsetPlacement, InsetSize, Quality, Resolution};
+use pundit_core::project::{Clip, InsetSize, Quality, Resolution};
 use pundit_core::scoreboard::ScoreboardContext;
 
 use super::audio::Mixer;
@@ -182,7 +181,7 @@ pub struct MatchMedia {
     pub highlights: Vec<PlayerHighlight>,
     /// The project's avatar image, or `None` for a project that records on
     /// camera. One image for the project, so one path here: every entry of it
-    /// whose clip `shows_avatar` draws this one (spec A1, I6).
+    /// whose clip has an `avatar_placement` draws this one (spec A1, I6).
     pub avatar: Option<PathBuf>,
 }
 
@@ -568,10 +567,10 @@ fn export(
     // An image that will not open is remembered as `None`, so it is reported
     // once per image and size rather than once per entry that wanted it.
     let mut avatars: HashMap<(PathBuf, InsetSize), Option<Texture>> = HashMap::new();
-    for (path, placement) in encode.entries.iter().filter_map(wanted_avatar) {
+    for (path, size) in encode.entries.iter().filter_map(wanted_avatar) {
         avatars
-            .entry((path.clone(), placement.size))
-            .or_insert_with(|| avatar_texture(path, &gl, &watch, (out_w, out_h), placement));
+            .entry((path.clone(), size))
+            .or_insert_with(|| avatar_texture(path, &gl, &watch, out_w, size));
     }
     let schedule = Schedule::new(
         job.compilation.frames.clone(),
@@ -632,7 +631,7 @@ fn export(
                 .map_err(|e| ExportError::Failed(format!("unusable decoded caps {caps}: {e}")))?;
             picture = fit_rect(&info, out_w, out_h);
             let avatar = wanted_avatar(media)
-                .and_then(|(path, p)| avatars.get(&(path.clone(), p.size))?.as_ref());
+                .and_then(|(path, size)| avatars.get(&(path.clone(), size))?.as_ref());
             pip = Pip::open(media, avatar, &gl, cancel, (out_w, out_h));
             // Before the push, so the pad probes find it (see `Schedule`).
             schedule.set_layout(
@@ -736,18 +735,22 @@ fn close_unread<T>(open: &mut HashMap<PathBuf, T>, entries: &[EntryMedia], from:
     open.retain(|path, _| live.iter().any(|media| media.source == *path));
 }
 
-/// The avatar image `media` draws and the placement it is drawn at, or `None` —
+/// The avatar image `media` draws and the inset size it is drawn at, or `None` —
 /// its clip doesn't show one, it has no clip at all, or its match has no image.
+///
+/// **The size, because that is the texture's key.** The pixmap is square and
+/// sized by the size alone, so the corner is no part of what is uploaded; each
+/// entry's rect is built from its own clip in [`Pip::open`].
 ///
 /// **One expression, three readers**: the pre-pass that opens the textures,
 /// the loop that looks one up per entry, and [`pulse_levels`], which takes what
 /// that pre-pass managed to open as its real gate. There is no per-job gate
 /// beside it — with the image in the condition, a run nobody asks an avatar for
 /// opens nothing and pulses nothing by itself.
-fn wanted_avatar(media: &EntryMedia) -> Option<(&PathBuf, InsetPlacement)> {
+fn wanted_avatar(media: &EntryMedia) -> Option<(&PathBuf, InsetSize)> {
     let clip = &media.clip.as_ref()?.clip;
-    let placement = clip.inset_placement().filter(|_| clip.shows_avatar())?;
-    Some((media.match_media.avatar.as_ref()?, placement))
+    let size = clip.avatar_placement()?.size;
+    Some((media.match_media.avatar.as_ref()?, size))
 }
 
 /// `sample`'s caps with the output frame rate on them, which is what the base
@@ -815,15 +818,21 @@ impl Pip {
         }
     }
 
-    /// What this entry's inset is, from the two predicates `core` states it in
-    /// (spec B3, E5) — **before the probe**, which would call an avatar
-    /// recording's missing video track a missing picture-in-picture.
+    /// What this entry's inset is and where it goes, from the two placement
+    /// accessors `core` states `show_pip × inset` in (spec B3, E5) — **before
+    /// the probe**, which would call an avatar recording's missing video track a
+    /// missing picture-in-picture.
     ///
     /// A webcam recording that will not open falls back to the filler, saying
     /// on stderr why: a missing inset is a smaller loss than a failed export of
     /// an hour of video. An entry with no clip, a clip with `show_pip` off and
     /// an avatar whose image is gone take the filler silently — the image was
     /// reported once per image, by [`avatar_texture`].
+    ///
+    /// Both accessors are positive and specific, so anything neither claims —
+    /// `show_pip` off today, a third [`Inset`](pundit_core::project::Inset)
+    /// variant tomorrow — falls through to the filler rather than needing a
+    /// guard of its own.
     ///
     /// `avatar` is the texture for this entry's image **and inset size**,
     /// already looked up by the caller. **Where it goes is worked out here**,
@@ -840,13 +849,7 @@ impl Pip {
         let Some(ClipMedia { recording, clip }) = media.clip.as_ref() else {
             return Pip::filler();
         };
-        // The third of core's readings of `show_pip × inset`, and the only one
-        // that says *where*: `None` is the switch off, which is the filler for
-        // either kind of inset.
-        let Some(placement) = clip.inset_placement() else {
-            return Pip::filler();
-        };
-        if clip.shows_avatar() {
+        if let Some(placement) = clip.avatar_placement() {
             return match avatar {
                 Some(texture) => Pip {
                     // A reference to the run's texture for this image and
@@ -857,9 +860,9 @@ impl Pip {
                 None => Pip::filler(),
             };
         }
-        if !clip.shows_camera_pip() {
+        let Some(placement) = clip.camera_placement() else {
             return Pip::filler();
-        }
+        };
         let refuse = |why: String| {
             eprintln!(
                 "export: no picture-in-picture for {}: {why}",
@@ -1047,14 +1050,12 @@ impl Texture {
 }
 
 /// Decodes, pre-scales and uploads the project's avatar for an inset of
-/// `placement`'s size, or says on stderr why there is none.
+/// `size`, or says on stderr why there is none.
 ///
 /// **The texture and nothing else.** The pixmap is square and its side is that
 /// size's box, so it is shared by every entry at that size whatever corner the
 /// clip puts it in; the rect each entry draws it in is that entry's own
-/// ([`Pip::open`]). `placement`'s corner therefore reaches only the rect
-/// [`avatar::open_reported`] returns and this drops — the pixels do not depend
-/// on it.
+/// ([`Pip::open`]).
 ///
 /// **Once per distinct image and size, and a failure costs the inset rather
 /// than the export** (spec A4) — one line, not one per entry. An image that has
@@ -1065,12 +1066,14 @@ fn avatar_texture(
     path: &Path,
     gl: &Gl,
     watch: &Watch,
-    (out_w, out_h): (i32, i32),
-    placement: InsetPlacement,
+    out_w: i32,
+    size: InsetSize,
 ) -> Option<Texture> {
-    let avatar = avatar::open_reported(path, f64::from(out_w), f64::from(out_h), placement)?;
-    let (w, h) = (avatar.image.width(), avatar.image.height());
-    match Texture::upload(gl, watch, w, h, avatar.image.data().to_vec()) {
+    // The size alone, because the size alone decides the pixels: whichever
+    // corner an entry puts this texture in, the rect is built in `Pip::open`.
+    let image = avatar::open_reported(path, avatar_box_side(f64::from(out_w), size))?;
+    let (w, h) = (image.width(), image.height());
+    match Texture::upload(gl, watch, w, h, image.data().to_vec()) {
         Ok(texture) => Some(texture),
         Err(e) => {
             eprintln!("export: the avatar did not upload: {e}");
@@ -1097,9 +1100,9 @@ fn pulse_levels(
     cancel: &AtomicBool,
 ) -> Vec<f64> {
     let opened = |media: &EntryMedia| {
-        wanted_avatar(media).is_some_and(|(path, p)| {
+        wanted_avatar(media).is_some_and(|(path, size)| {
             avatars
-                .get(&(path.clone(), p.size))
+                .get(&(path.clone(), size))
                 .is_some_and(Option::is_some)
         })
     };

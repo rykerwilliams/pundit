@@ -18,10 +18,9 @@ use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_pbutils as pbutils;
 use pundit_core::audio::audio_regions;
-use pundit_core::avatar::avatar_box;
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::export::{compilation_schedule, Compilation, FrameSpec, OUTPUT_FPS};
-use pundit_core::layout::{bar_rect, pip_rect, scoreboard_rects, Rect as LayoutRect};
+use pundit_core::layout::{avatar_box, bar_rect, pip_rect, scoreboard_rects, Rect as LayoutRect};
 use pundit_core::metadata::FileTags;
 use pundit_core::plan::ExportTarget;
 use pundit_core::project::{
@@ -783,9 +782,19 @@ fn stroke_between(x0: f64, x1: f64, y: f64, color: Rgba) -> CommentaryEvent {
     )
 }
 
+/// The placement the layout tests render: **neither value the default**, so the
+/// two sites that put the inset in the frame — `Pip::open`'s `pip_rect` here and
+/// `preview::place_pip`'s — fail these tests if either stops reading the clip.
+/// Bottom-left also moves the caption bar's whole edge, which is the other half
+/// of what the placement has to reach.
+const LAID_OUT: InsetPlacement = InsetPlacement {
+    size: InsetSize::Large,
+    corner: InsetCorner::BottomLeft,
+};
+
 /// The clip the layout test exports: a pillarboxed blue source with three
 /// strokes on it — the third drawn into the inset's own corner — `show_pip` as
-/// given, and a line for the bar.
+/// given, [`LAID_OUT`]'s size and corner, and a line for the bar.
 fn laid_out_job(dir: &Path, show_pip: bool) -> (ExportJob, PathBuf) {
     gst::init().unwrap();
     // 4:3, so the picture is pillarboxed to (160, 0, 960, 720) and a stroke
@@ -799,13 +808,16 @@ fn laid_out_job(dir: &Path, show_pip: bool) -> (ExportJob, PathBuf) {
     let clip = Clip {
         show_pip,
         inset: Inset::Camera,
+        inset_size: LAID_OUT.size,
+        inset_corner: LAID_OUT.corner,
         events: vec![
             stroke(0.5, Rgba::RED),
             stroke(0.75, translucent),
-            // Into the inset's corner: 0.90..0.98 of a picture that starts at
-            // x = 160 is 1024..1101, and the inset owns 998..1280 from y = 562
-            // down. This is the stroke the z-order has to keep.
-            stroke_between(0.9, 0.98, 0.9, Rgba::RED),
+            // Into the inset's corner, which `LAID_OUT` puts on the left:
+            // 0.05..0.22 of a picture that starts at x = 160 is 208..371, and a
+            // Large bottom-left inset owns 0..384 from y = 504 down. This is
+            // the stroke the z-order has to keep.
+            stroke_between(0.05, 0.22, 0.9, Rgba::RED),
         ],
         ..clip(0.0, 0.2, Vec::new())
     };
@@ -871,20 +883,12 @@ fn the_export_stacks_the_picture_the_pip_and_the_overlay() {
     assert_rgb(frame, "the right bar", (1200, 100), 0x000000);
     assert_rgb(frame, "the picture", (300, 200), BLUE);
 
-    // The PiP is the recording, flush into the bottom-right corner in output
-    // space -- overlapping the right pillarbox bar, which is the point of
-    // putting it there -- and OVER the text bar rather than on it.
-    let pip = pip_rect(
-        f64::from(OUT_W),
-        f64::from(OUT_H),
-        16.0 / 9.0,
-        InsetPlacement::default(),
-    );
-    let bar = bar_rect(
-        f64::from(OUT_W),
-        f64::from(OUT_H),
-        Some(InsetPlacement::default()),
-    );
+    // The PiP is the recording at the clip's own placement, flush into the
+    // bottom-left corner in output space -- overlapping the left pillarbox bar,
+    // which is the point of putting it there -- and OVER the text bar rather
+    // than on it.
+    let pip = pip_rect(f64::from(OUT_W), f64::from(OUT_H), 16.0 / 9.0, LAID_OUT);
+    let bar = bar_rect(f64::from(OUT_W), f64::from(OUT_H), Some(LAID_OUT));
     assert!(pip.y + pip.h > bar.y, "the PiP is not on the bar");
     let pip_centre = (
         (pip.x + pip.w / 2.0) as usize,
@@ -893,25 +897,32 @@ fn the_export_stacks_the_picture_the_pip_and_the_overlay() {
     assert_rgb(frame, "the PiP", pip_centre, GREEN);
     assert_rgb(
         frame,
-        "just left of the PiP",
-        (pip.x as usize - 20, pip_centre.1),
+        "just right of the PiP",
+        ((pip.x + pip.w) as usize + 20, pip_centre.1),
         BLUE,
     );
     // **Nothing washes the inset, and nothing hides the coach's pen.** The
     // overlay is the top layer, so the stroke drawn into this corner is over
     // the recording rather than swallowed by it -- and the bar's own tint never
-    // reaches the inset, because the whole bar stops at its left edge
+    // reaches the inset, because the whole bar starts at its right edge
     // (`core::layout::bar_rect`). These two are the z-order: the first fails if
     // the inset goes back on top, the second if the bar goes back to full
     // width.
-    assert_rgb(frame, "the stroke over the PiP", (1060, 648), 0xff3333);
+    assert_rgb(frame, "the stroke over the PiP", (300, 648), 0xff3333);
     assert_rgb(
         frame,
         "the PiP under the bar's row",
         (pip_centre.0, OUT_H as usize - 8),
         GREEN,
     );
-    assert_eq!(bar.w, pip.x, "the bar does not stop at the inset");
+    // A bottom-left inset moves the bar's edge rather than shortening it: it
+    // begins where the inset ends and still reaches the right edge.
+    assert_eq!(bar.x, pip.x + pip.w, "the bar does not start at the inset");
+    assert_eq!(
+        bar.x + bar.w,
+        f64::from(OUT_W),
+        "the bar lost the right edge"
+    );
 
     // The overlay's strokes are mapped into the picture rect, so the middle of
     // a stroke drawn at x = 0.5 is at 160 + 0.5*960, not 0.5*1280.
@@ -938,8 +949,10 @@ fn the_export_stacks_the_picture_the_pip_and_the_overlay() {
     let bar_mid = (bar.y + bar.h / 2.0) as usize;
     assert_rgb(frame, "the bar's tint", (900, bar_mid), 0x000066);
     assert_rgb(frame, "just above the bar", (900, bar.y as usize - 8), BLUE);
+    // Counted from the bar's own left edge, which is the inset's right one:
+    // the stroke in the corner is red too, and it sits in the inset's column.
     let glyphs = (bar.y as usize..OUT_H as usize)
-        .flat_map(|y| (0..640).map(move |x| (x, y)))
+        .flat_map(|y| (bar.x as usize..bar.x as usize + 640).map(move |x| (x, y)))
         .filter(|&(x, y)| frame.at(x, y)[0] > 150)
         .count();
     assert!(glyphs > 50, "only {glyphs} glyph pixels in the bar");
@@ -1277,7 +1290,7 @@ fn an_entry_whose_source_is_missing_fails_and_leaves_no_part() {
 /// Two matches sharing one avatar image both draw it, and a piece whose match
 /// has no image takes the filler without stalling the run (spec J5).
 ///
-/// The gate is per entry — its clip's `shows_avatar` **and** its match's image
+/// The gate is per entry — its clip's `avatar_placement` **and** its match's image
 /// — so the three pads alternate avatar, avatar, filler, which is a caps
 /// change on a pad whose caps feature never changes. A system-memory filler
 /// would break the next entry's `glupload`.
@@ -1456,19 +1469,14 @@ fn show_pip_off_leaves_the_inset_empty_and_the_export_running() {
     assert_eq!(out.len(), frames, "the export produced no frames");
     let frame = out.last().expect("frames out");
 
-    let pip = pip_rect(
-        f64::from(OUT_W),
-        f64::from(OUT_H),
-        16.0 / 9.0,
-        InsetPlacement::default(),
-    );
+    let pip = pip_rect(f64::from(OUT_W), f64::from(OUT_H), 16.0 / 9.0, LAID_OUT);
     let centre = (
         (pip.x + pip.w / 2.0) as usize,
         (pip.y + pip.h / 2.0) as usize,
     );
-    // The inset's centre falls in the right pillarbox bar, so with no PiP it
-    // is the mixer's black background.
-    assert_rgb(frame, "where the PiP would be", centre, 0x000000);
+    // The inset's centre falls over the picture, so with no PiP the source
+    // shows through where the recording would have been.
+    assert_rgb(frame, "where the PiP would be", centre, BLUE);
     // And the picture is untouched.
     assert_rgb(frame, "the picture", (300, 200), BLUE);
 }
@@ -1508,7 +1516,7 @@ fn an_avatar_clip_pulses_in_the_export() {
     let dir = tempfile::tempdir().unwrap();
     let source = fixtures::solid_video(&dir.path().join("src.webm"), 640, 360, 30, 60, BLUE, false);
     // An avatar take's own file has no video track. This one has one and it is
-    // never opened: `shows_avatar` takes the pad before the probe would.
+    // never opened: `avatar_placement` takes the pad before the probe would.
     let recording = fixtures::tone_video(
         &dir.path().join("rec.mkv"),
         64,

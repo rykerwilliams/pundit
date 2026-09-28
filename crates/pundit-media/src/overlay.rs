@@ -323,7 +323,8 @@ impl OverlayRenderer {
     ///
     /// **The board and the inset stay apart in each of the three corners the
     /// coach can pick** (`core::project::InsetCorner`) — and the top-left one
-    /// they cannot pick is the board's own. The two separations are different:
+    /// they cannot pick is the board's own. The separations are not all the
+    /// same:
     ///
     /// - **Top-right, horizontally.** The board's tail ends at x = 0.45 of the
     ///   width (`scoreboard_rects`); the widest inset offered starts at 0.70.
@@ -334,6 +335,20 @@ impl OverlayRenderer {
     ///   about 0.58:1 for one to reach the board's rows at all, and there the
     ///   board is simply drawn over it: a half-hidden face, degraded and not
     ///   corrupt, and not worth code for a shape no webcam reports.
+    /// - **Top-right and the *caption bar*, vertically** — the adjacency the
+    ///   new corners created, and the one where the loss goes the other way. A
+    ///   top-right inset hangs *down* from y = 0, so it reaches the bar's row
+    ///   once it is taller than `1 − BAR_HEIGHT_RATIO` of the frame: at 16:9
+    ///   output that is a camera display aspect below
+    ///   `ratio × 16 / (9 × 0.92)`, which is 0.580:1 at Large, 0.425:1 at
+    ///   Medium and 0.309:1 at Small. `core::layout::bar_rect` gives a
+    ///   top-right inset the **full** width — from the bottom row's point of
+    ///   view nothing is standing in it — so the bar would be laid out as if
+    ///   the row were clear, and this layer is mixed **over** the inset: a
+    ///   caption drawn across the coach's face, which is exactly what the
+    ///   2026-09-25 corner-lock exists to prevent. So "degraded, not corrupt"
+    ///   does **not** transfer here. It still takes a shape no webcam reports,
+    ///   which is why it is named and not coded for.
     fn draw(&mut self, pixmap: &mut PixmapMut, frame: &OverlayFrame) {
         // The allocator hands back whatever was in that memory, and nothing
         // else clears it: `from_bytes` adopts the bytes as they are.

@@ -220,10 +220,41 @@ fn an_inset_edit_is_the_placement_the_next_recording_inherits() {
     assert_eq!(prefs(&project), (InsetSize::Large, InsetCorner::BottomLeft));
     assert_eq!(h.wait_select(), p.id(0));
 
+    // **Picking the value the clip already has is still a choice.** Slint's
+    // `ComboBoxBase::select` calls `selected` whatever was showing, and this is
+    // the only gesture that says "put my takes back in the usual corner" about a
+    // clip that is already in it -- here, undoing the sticky value the Ctrl+Z
+    // above left behind. Nothing about the document's clips changes, so the
+    // preference is the whole of the edit; behind the no-op guard it was
+    // swallowed and the next recording stayed bottom-left.
+    edit(&h, p.id(0), ClipEdit::InsetCorner(InsetCorner::BottomRight));
+    let project = h.wait_changed().project;
+    assert_eq!(project.clips[0].inset_corner, InsetCorner::BottomRight);
+    assert_eq!(
+        prefs(&project),
+        (InsetSize::Large, InsetCorner::BottomRight)
+    );
+    // On disk, as above: the write-back is inside the save.
+    assert_eq!(
+        prefs(&p.saved()),
+        (InsetSize::Large, InsetCorner::BottomRight)
+    );
+
+    // And it filed no undo step of its own -- a last-used value is not part of
+    // the document's meaning -- so the redo still waiting is the corner edit.
+    h.send(Command::Redo);
+    let project = h.wait_changed().project;
+    assert_eq!(project.clips[0].inset_corner, InsetCorner::BottomLeft);
+    assert_eq!(
+        prefs(&project),
+        (InsetSize::Large, InsetCorner::BottomRight)
+    );
+    assert_eq!(h.wait_select(), p.id(0));
+
     h.shutdown();
     assert_eq!(
         prefs(&p.saved()),
-        (InsetSize::Large, InsetCorner::BottomLeft)
+        (InsetSize::Large, InsetCorner::BottomRight)
     );
 }
 

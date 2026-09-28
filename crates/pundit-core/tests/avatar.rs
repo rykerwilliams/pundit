@@ -2,10 +2,10 @@
 //! per-frame table the render reads, and where the picture lands.
 
 use pundit_core::avatar::{
-    avatar_box, avatar_rect, level_from_db, pulse, smooth, AVATAR_BOX_RATIO, PULSE_ATTACK,
-    PULSE_CEILING_DB, PULSE_FLOOR_DB, PULSE_GROWTH, PULSE_RATE, PULSE_RELEASE,
+    avatar_rect, level_from_db, pulse, smooth, PULSE_ATTACK, PULSE_CEILING_DB, PULSE_FLOOR_DB,
+    PULSE_GROWTH, PULSE_RATE, PULSE_RELEASE,
 };
-use pundit_core::layout::{pip_rect, Rect};
+use pundit_core::layout::{avatar_box, pip_rect, Rect, AVATAR_BOX_RATIO};
 use pundit_core::project::{InsetCorner, InsetPlacement, InsetSize};
 
 const DT: f64 = 1.0 / 30.0;

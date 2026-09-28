@@ -36,23 +36,41 @@ impl Bus {
         let Some(before) = open.project.apply_edit(id, edit.clone()) else {
             return eprintln!("bus: EditClip on a clip that isn't there: {id}");
         };
-        if before == edit {
-            return;
-        }
         // The inset's size and corner are **sticky**: the value the coach last
         // set on a clip is what the next recording is given (#88 spec I6), as
         // the export sheet's three pickers are written back in `export.rs`.
         // Here, before the save that carries it — after it, the preference
         // would be lost until some unrelated edit wrote the project again.
         //
-        // The guard above means a no-op edit writes nothing, and **undo does
-        // not put it back**: a last-used value is not part of the document's
-        // meaning, which is why the `last_export_*` preferences sit outside the
-        // undo history too.
-        match &edit {
-            ClipEdit::InsetSize(size) => open.project.preferences.last_inset_size = *size,
-            ClipEdit::InsetCorner(corner) => open.project.preferences.last_inset_corner = *corner,
-            _ => {}
+        // **Before the no-op guard below, and reason enough to save on its
+        // own.** Nothing to save about the *document* is not the same as nothing
+        // the coach asked for: `ComboBoxBase::select` calls `selected` whatever
+        // was showing, so picking the value a clip already has is a real
+        // gesture — and it is the only way to say "put my takes back in the
+        // usual corner" about a clip that is already there, or to undo a sticky
+        // choice after a Ctrl+Z. Behind the guard it was swallowed, leaving the
+        // next recording in the corner the coach had just moved away from and
+        // the picker showing exactly what they chose.
+        //
+        // **Undo does not put it back**: a last-used value is not part of the
+        // document's meaning, which is why the `last_export_*` preferences sit
+        // outside the undo history too — and so a preference-only change files
+        // no undo step.
+        let sticky = match &edit {
+            ClipEdit::InsetSize(v) => {
+                std::mem::replace(&mut open.project.preferences.last_inset_size, *v) != *v
+            }
+            ClipEdit::InsetCorner(v) => {
+                std::mem::replace(&mut open.project.preferences.last_inset_corner, *v) != *v
+            }
+            _ => false,
+        };
+        if before == edit {
+            if sticky {
+                self.save();
+                self.publish_project();
+            }
+            return;
         }
         self.save();
         self.record(UndoAction::EditClip {

@@ -243,8 +243,8 @@ pub struct Clip {
     pub events: Vec<CommentaryEvent>,
     pub show_pip: bool,
     /// v10. Which inset this clip was recorded with; `show_pip` still decides
-    /// whether one is drawn at all. Read through [`Clip::shows_camera_pip`]
-    /// and [`Clip::shows_avatar`], never on its own.
+    /// whether one is drawn at all. Read through [`Clip::camera_placement`]
+    /// and [`Clip::avatar_placement`], never on its own.
     #[serde(default)]
     pub inset: Inset,
     /// v13. How wide this clip's inset is drawn. Read through
@@ -299,34 +299,6 @@ impl Clip {
         }
     }
 
-    // The two halves of one decision, written together so they cannot drift:
-    // `show_pip × inset` is interpreted here and nowhere else. Each has a
-    // caller that wants it positively — the webcam PiP pad and the overlay's
-    // avatar — and they are never both true.
-
-    /// The webcam PiP pad carries this clip's recording.
-    pub fn shows_camera_pip(&self) -> bool {
-        self.show_pip && self.inset == Inset::Camera
-    }
-
-    /// The overlay draws the project's avatar for this clip.
-    pub fn shows_avatar(&self) -> bool {
-        self.show_pip && self.inset == Inset::Avatar
-    }
-
-    /// **Some** inset is drawn: what the text bar is fitted to, since it stops
-    /// where the inset stands whichever kind it is (`layout::bar_rect`).
-    ///
-    /// It is `show_pip` alone, and says so rather than or-ing the two above:
-    /// every [`Inset`] is drawn somewhere, so a clip that shows one shows one
-    /// whatever it picked. Written as `shows_camera_pip() || shows_avatar()`
-    /// this would read as a claim about the variants that it cannot make — a
-    /// third kind nobody drew would still be `true` here, and the or-form would
-    /// suggest it wasn't.
-    pub fn shows_inset(&self) -> bool {
-        self.show_pip
-    }
-
     /// Where this clip's inset goes and how big — or `None` when none is drawn.
     ///
     /// **`None` rather than a placement the caller has to remember to
@@ -335,14 +307,46 @@ impl Clip {
     /// width it has always had. An accessor returning a bare
     /// [`InsetPlacement`] would make `clip.map(Clip::inset_placement)` compile
     /// and quietly cut *every* clip's bar at the inset's column, in export and
-    /// preview alike. Folding `show_pip` in here also keeps `show_pip × inset`
-    /// interpreted in this one place, which is the rule the two `shows_*`
-    /// predicates above exist for.
+    /// preview alike.
+    ///
+    /// **This one is kind-blind, and that is the bar's whole reading of the
+    /// inset:** it is `show_pip` alone, because every [`Inset`] is drawn
+    /// somewhere, so a clip that shows one shows one whatever it picked. Written
+    /// as "camera or avatar" it would read as a claim about the variants that it
+    /// cannot make — a third kind nobody drew would still fill this column, and
+    /// the or-form would suggest it wouldn't.
     pub fn inset_placement(&self) -> Option<InsetPlacement> {
-        self.shows_inset().then_some(InsetPlacement {
+        self.show_pip.then_some(InsetPlacement {
             size: self.inset_size,
             corner: self.inset_corner,
         })
+    }
+
+    // The two halves of one decision, written together so they cannot drift:
+    // `show_pip × inset` is interpreted here and nowhere else. Each answers
+    // *where* in the same breath as *whether*, because every caller that asks
+    // one asks the other — the webcam PiP pad and the avatar's own pad both
+    // need a rect, and a bare predicate would send them back for it. They are
+    // never both `Some`. `inset_placement` above is the third reading, the
+    // kind-blind one, and it belongs to the caption bar alone.
+    //
+    // **A third `Inset` variant would need a third accessor.** Nothing in this
+    // codebase matches `Inset` exhaustively — every read of it is an `==`, the
+    // two here and the inspector's one word — so a new variant would simply be
+    // `None` from both of these: export falls back to its filler and preview
+    // asks for no pad. Safe, and silent.
+
+    /// The webcam PiP pad carries this clip's recording, at this placement.
+    pub fn camera_placement(&self) -> Option<InsetPlacement> {
+        self.inset_placement()
+            .filter(|_| self.inset == Inset::Camera)
+    }
+
+    /// The inset pad carries the project's avatar for this clip, at this
+    /// placement.
+    pub fn avatar_placement(&self) -> Option<InsetPlacement> {
+        self.inset_placement()
+            .filter(|_| self.inset == Inset::Avatar)
     }
 }
 
