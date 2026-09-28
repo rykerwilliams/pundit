@@ -5,10 +5,13 @@ use pundit_core::avatar::{
     avatar_box, avatar_rect, level_from_db, pulse, smooth, AVATAR_BOX_RATIO, PULSE_ATTACK,
     PULSE_CEILING_DB, PULSE_FLOOR_DB, PULSE_GROWTH, PULSE_RATE, PULSE_RELEASE,
 };
-use pundit_core::layout::Rect;
+use pundit_core::layout::{pip_rect, Rect};
+use pundit_core::project::{InsetCorner, InsetPlacement, InsetSize};
 
 const DT: f64 = 1.0 / 30.0;
 
+/// An arbitrary rect for the pulse's own tests, which are about how
+/// `avatar_rect` breathes inside whatever box it is handed.
 fn pip() -> Rect {
     Rect {
         x: 1456.0,
@@ -16,6 +19,21 @@ fn pip() -> Rect {
         w: 422.4,
         h: 316.8,
     }
+}
+
+/// All nine placements a clip can carry.
+fn placements() -> impl Iterator<Item = InsetPlacement> {
+    [InsetSize::Small, InsetSize::Medium, InsetSize::Large]
+        .into_iter()
+        .flat_map(|size| {
+            [
+                InsetCorner::BottomRight,
+                InsetCorner::BottomLeft,
+                InsetCorner::TopRight,
+            ]
+            .into_iter()
+            .map(move |corner| InsetPlacement { size, corner })
+        })
 }
 
 /// A deterministic generator, so a property test is reproducible and core
@@ -167,34 +185,65 @@ fn every_level_is_in_range_whatever_the_audio() {
 
 // --------------------------------------------------------------- avatar_box
 
-/// The avatar's box is the webcam inset's corner, smaller: it keeps the
-/// inset's own **right and bottom** edges — its margins from the frame — and
-/// gives up `AVATAR_BOX_RATIO` of the width and height at the other two.
+/// The avatar's box is the clip's square inset, smaller: it keeps the two edges
+/// the inset is flush against — its margins off the frame — and gives up
+/// `AVATAR_BOX_RATIO` of the width and height at the other two. **In every
+/// corner**, which is what folding the shrink into the ratio bought: as a rect
+/// operation about the bottom-right corner it moved a bottom-left box 105.6 px
+/// off the left edge at Medium/1080p, and a top-right one the same distance
+/// below the top.
 #[test]
-fn the_avatar_box_keeps_the_insets_corner_and_only_shrinks() {
-    let pip = pip();
-    let r = avatar_box(pip);
-    assert!(
-        (r.x + r.w - (pip.x + pip.w)).abs() < 1e-12,
-        "the right edge is the inset's: {r:?}"
-    );
-    assert!(
-        (r.y + r.h - (pip.y + pip.h)).abs() < 1e-12,
-        "the bottom edge is the inset's: {r:?}"
-    );
-    assert!((r.w - pip.w * AVATAR_BOX_RATIO).abs() < 1e-12, "{r:?}");
-    assert!((r.h - pip.h * AVATAR_BOX_RATIO).abs() < 1e-12, "{r:?}");
-    assert!(r.x > pip.x && r.y > pip.y, "smaller, not moved: {r:?}");
+fn the_avatar_box_keeps_the_insets_flush_corner_and_only_shrinks() {
+    for (w, h) in [(1280.0, 720.0), (1920.0, 1080.0), (3840.0, 2160.0)] {
+        for p in placements() {
+            // The inset an avatar clip's box is cut out of is the square one:
+            // the picture is square, so nothing is letterboxed inside it.
+            let inset = pip_rect(w, h, 1.0, p);
+            let r = avatar_box(w, h, p);
+            assert!((r.w - inset.w * AVATAR_BOX_RATIO).abs() < 1e-12, "{p:?}");
+            assert!((r.h - inset.h * AVATAR_BOX_RATIO).abs() < 1e-12, "{p:?}");
+            assert_eq!(r.w, r.h, "{p:?}: square, like the picture in it");
+            match p.corner {
+                InsetCorner::BottomLeft => {
+                    assert_eq!(r.x, inset.x, "{p:?}: the left edge is the inset's");
+                    assert!(r.x + r.w < inset.x + inset.w, "{p:?}: smaller: {r:?}");
+                }
+                InsetCorner::BottomRight | InsetCorner::TopRight => {
+                    assert!(
+                        (r.x + r.w - (inset.x + inset.w)).abs() < 1e-12,
+                        "{p:?}: the right edge is the inset's: {r:?}"
+                    );
+                    assert!(r.x > inset.x, "{p:?}: smaller, not moved: {r:?}");
+                }
+            }
+            match p.corner {
+                InsetCorner::TopRight => {
+                    assert_eq!(r.y, inset.y, "{p:?}: the top edge is the inset's");
+                    assert!(r.y + r.h < inset.y + inset.h, "{p:?}: smaller: {r:?}");
+                }
+                InsetCorner::BottomLeft | InsetCorner::BottomRight => {
+                    assert!(
+                        (r.y + r.h - (inset.y + inset.h)).abs() < 1e-12,
+                        "{p:?}: the bottom edge is the inset's: {r:?}"
+                    );
+                    assert!(r.y > inset.y, "{p:?}: smaller, not moved: {r:?}");
+                }
+            }
+        }
+    }
 }
 
 /// And the pulse still breathes inside that box: the two compose, so the
 /// avatar at its loudest is the box and never the inset.
 #[test]
 fn the_avatar_never_reaches_past_its_box() {
-    let (pip, r) = (pip(), avatar_box(pip()));
-    assert_eq!(avatar_rect(r, 1.0), r);
-    assert!(avatar_rect(r, 1.0).w < pip.w, "smaller than a camera's");
-    assert!(avatar_rect(r, 0.0).w < r.w, "and at rest, smaller still");
+    for p in placements() {
+        let inset = pip_rect(1920.0, 1080.0, 1.0, p);
+        let r = avatar_box(1920.0, 1080.0, p);
+        assert_eq!(avatar_rect(r, 1.0), r, "{p:?}");
+        assert!(r.w < inset.w, "{p:?}: smaller than a camera's");
+        assert!(avatar_rect(r, 0.0).w < r.w, "{p:?}: at rest, smaller still");
+    }
 }
 
 // -------------------------------------------------------------- avatar_rect

@@ -63,6 +63,52 @@ pub enum Inset {
     Avatar,
 }
 
+/// How wide a clip's inset is drawn, as one of three named steps. v13.
+///
+/// Three named steps rather than a free ratio because this app has no live
+/// preview of the composite: a coach dragging a slider is guessing until they
+/// export, where each of three steps can be measured against the longest
+/// caption the app produces (spec I1). The widths themselves are
+/// [`crate::layout::inset_ratio`]'s — a stored enum is a name for a step, not a
+/// number, as [`Resolution`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InsetSize {
+    Small,
+    #[default]
+    Medium,
+    Large,
+}
+
+/// Which corner a clip's inset is flush into. v13.
+///
+/// **Top-left is deliberately absent.** The scoreboard is locked into it (the
+/// coach, 2026-09-25) and the composite mixes the board *over* the inset, so a
+/// top-left inset would corrupt nothing and simply be drawn under the board —
+/// a half-hidden face, and a coach left to work out why (spec I2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InsetCorner {
+    #[default]
+    BottomRight,
+    BottomLeft,
+    TopRight,
+}
+
+/// Where a clip's inset goes and how big: [`Clip::inset_size`] and
+/// [`Clip::inset_corner`] as one value.
+///
+/// **Not serialized** — it is read off the clip, through
+/// [`Clip::inset_placement`]. One type threaded through the geometry is less
+/// code than two arguments that can be passed in the wrong order, and it gives
+/// "Medium in the bottom-right corner", which is every inset the app has ever
+/// drawn, a single home in its derived `Default`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct InsetPlacement {
+    pub size: InsetSize,
+    pub corner: InsetCorner,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Quality {
@@ -89,6 +135,18 @@ pub struct Preferences {
     /// Which way the export sheet last carried the scoreboard, or `None` for
     /// its per-target default ([`crate::plan::default_scoreboard_mode`]). v11.
     pub last_export_scoreboard: Option<ScoreboardMode>,
+    /// The inset size and corner the coach last set on a clip, seeding the next
+    /// recording ([`Project::add_recorded_clip`]). v13.
+    ///
+    /// **Sticky last-used, like the three `last_export_*` fields above**, and
+    /// that is what gives both readings of #88 out of one mechanism: the clip's
+    /// own fields are "fix it afterwards", and this pair — written back
+    /// whenever a clip's is changed — is "pick it before", with no field the
+    /// coach cannot reach and no UI beyond the clip's two controls (spec I6).
+    /// Deliberately **not** modelled on `pip_for_new_recordings` below, which
+    /// has no control at all and so is written only by tests.
+    pub last_inset_size: InsetSize,
+    pub last_inset_corner: InsetCorner,
     /// Stable identifier for the preferred camera: its PipeWire `node.name`.
     /// A hint: if the device is absent at launch the app falls back to the
     /// default **without clearing this**, so the preference is restored if the
@@ -108,6 +166,8 @@ impl Default for Preferences {
             last_export_resolution: Resolution::R1080,
             last_export_quality: Quality::Medium,
             last_export_scoreboard: None,
+            last_inset_size: InsetSize::Medium,
+            last_inset_corner: InsetCorner::BottomRight,
             preferred_camera_id: None,
             preferred_mic_id: None,
             pip_for_new_recordings: true,
@@ -182,6 +242,15 @@ pub struct Clip {
     /// and [`Clip::shows_avatar`], never on its own.
     #[serde(default)]
     pub inset: Inset,
+    /// v13. How wide this clip's inset is drawn. Read through
+    /// [`Clip::inset_placement`], never on its own: `show_pip` still decides
+    /// whether an inset is drawn at all.
+    #[serde(default)]
+    pub inset_size: InsetSize,
+    /// v13. Which corner this clip's inset is flush into. Same reading rule as
+    /// [`Clip::inset_size`].
+    #[serde(default)]
+    pub inset_corner: InsetCorner,
     pub sort_index: i64,
 
     /// RFC3339, opaque. Nothing reads it — ordering is by `sort_index` — so it
@@ -213,6 +282,12 @@ impl Clip {
             ClipEdit::Tags(v) => ClipEdit::Tags(std::mem::replace(&mut self.tags, v)),
             ClipEdit::Notes(v) => ClipEdit::Notes(std::mem::replace(&mut self.notes, v)),
             ClipEdit::ShowPip(v) => ClipEdit::ShowPip(std::mem::replace(&mut self.show_pip, v)),
+            ClipEdit::InsetSize(v) => {
+                ClipEdit::InsetSize(std::mem::replace(&mut self.inset_size, v))
+            }
+            ClipEdit::InsetCorner(v) => {
+                ClipEdit::InsetCorner(std::mem::replace(&mut self.inset_corner, v))
+            }
             ClipEdit::Transcript(v) => {
                 ClipEdit::Transcript(std::mem::replace(&mut self.transcript, v))
             }
@@ -245,6 +320,24 @@ impl Clip {
     /// suggest it wasn't.
     pub fn shows_inset(&self) -> bool {
         self.show_pip
+    }
+
+    /// Where this clip's inset goes and how big — or `None` when none is drawn.
+    ///
+    /// **`None` rather than a placement the caller has to remember to
+    /// discard.** `layout::bar_rect` takes exactly this, so a clip with the
+    /// inset switched off cuts the caption bar at nothing and keeps the full
+    /// width it has always had. An accessor returning a bare
+    /// [`InsetPlacement`] would make `clip.map(Clip::inset_placement)` compile
+    /// and quietly cut *every* clip's bar at the inset's column, in export and
+    /// preview alike. Folding `show_pip` in here also keeps `show_pip × inset`
+    /// interpreted in this one place, which is the rule the two `shows_*`
+    /// predicates above exist for.
+    pub fn inset_placement(&self) -> Option<InsetPlacement> {
+        self.shows_inset().then_some(InsetPlacement {
+            size: self.inset_size,
+            corner: self.inset_corner,
+        })
     }
 }
 
@@ -574,6 +667,13 @@ impl Project {
             } else {
                 Inset::Camera
             },
+            // The size and corner the coach last set on a clip: there is no
+            // clip during a take, so "pick before" can only be a preference
+            // (spec I6). Seeded here, beside `show_pip`, because this is the
+            // core function that holds the line — the bus's `finish_recording`
+            // is only its caller.
+            inset_size: self.preferences.last_inset_size,
+            inset_corner: self.preferences.last_inset_corner,
             sort_index,
             created_at,
             transcript: String::new(),

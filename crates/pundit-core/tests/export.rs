@@ -13,7 +13,7 @@ use pundit_core::export::{
     basket_schedule, compilation_schedule, Compilation, FrameSpec, RateWindow, OUTPUT_FPS,
 };
 use pundit_core::plan::{BasketPiece, ExportTarget};
-use pundit_core::project::{Clip, Inset, Project, SourceRef};
+use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize, Project, SourceRef};
 use pundit_core::scoreboard::{
     ClockDisplay, MatchEventKind, MatchFormat, ScoreboardConfig, ScoreboardContext, TeamConfig,
 };
@@ -33,6 +33,8 @@ fn clip(start: f64, duration: f64, events: Vec<CommentaryEvent>) -> Clip {
         events,
         show_pip: true,
         inset: Inset::Camera,
+        inset_size: InsetSize::Medium,
+        inset_corner: InsetCorner::BottomRight,
         sort_index: 0,
         created_at: "2026-09-19T00:00:00Z".into(),
         transcript: String::new(),

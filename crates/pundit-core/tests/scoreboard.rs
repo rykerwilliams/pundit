@@ -5,7 +5,7 @@ use uuid::Uuid;
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::export::compilation_schedule;
 use pundit_core::plan::ExportTarget;
-use pundit_core::project::{Clip, Inset, Project, SourceRef};
+use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize, Project, SourceRef};
 use pundit_core::scoreboard::{
     chapter_events, format_clock, interpret, labelled_events, scoreboard_state, AbsoluteMatchEvent,
     ClockDisplay, LabelledEvent, MatchEventKind, MatchFormat, PeriodRole, ReelEnd, ReelTrimError,
@@ -720,6 +720,8 @@ fn clip_with_events(events: Vec<CommentaryEvent>, recording_duration: f64) -> Cl
         events,
         show_pip: true,
         inset: Inset::Camera,
+        inset_size: InsetSize::Medium,
+        inset_corner: InsetCorner::BottomRight,
         sort_index: 0,
         created_at: "2026-09-20T00:00:00Z".into(),
         transcript: String::new(),

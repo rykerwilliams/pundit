@@ -55,8 +55,10 @@ Each is a bug that compiles cleanly. Everything else is in the spec.
 ## B1. Core: the fields, the format, the geometry, and all of core's tests
 
 **Files:** `crates/pundit-core/src/{project.rs, store.rs, layout.rs, avatar.rs,
-undo.rs}` and `crates/pundit-core/tests/{layout.rs, avatar.rs, project_format.rs,
-recording.rs}`.
+undo.rs}` and `crates/pundit-core/tests/{layout.rs, avatar.rs, project_format.rs}`.
+(A draft listed `tests/recording.rs`; it has no `Clip` literal, no
+`add_recorded_clip` and no geometry. The preference-seeding test belongs in
+`project_format.rs` beside `show_pip_comes_from_preferences`.)
 
 **This task knowingly leaves the workspace red downstream**, and the radius is
 wider than the geometry: `Clip` has **no `Default`**, so adding two fields breaks
@@ -118,9 +120,11 @@ available until B2 lands.
 11. **Delete `avatar_box`.** It is only applied to a square `pip_rect`, and
     shrinking a corner-flush square about its flush corner *is* a corner-flush
     square at `AVATAR_BOX_RATIO ×` the ratio. **This is the fix, not a tidy-up:**
-    left as a rect operation, a bottom-left avatar drifts 105.6px off the left edge
-    **and a top-right one hangs 118.8px below the top edge** at Medium/1080p — two
-    of the three new corners, not one. Keep `AVATAR_BOX_RATIO` and its reasoning,
+    left as a rect operation, a bottom-left avatar drifts **105.6px** off the left
+    edge and a top-right one hangs **105.6px** below the top edge at Medium/1080p —
+    two of the three new corners, not one, and the *same* number on both axes
+    because the avatar's box is square (aspect 1.0). (A draft said 118.8 for the
+    top; that is `0.22·1080·0.5`, which corresponds to nothing on this path.) Keep `AVATAR_BOX_RATIO` and its reasoning,
     now as a ratio on a ratio. The avatar path asks for the inset rect at
     `AVATAR_BOX_RATIO * inset_ratio(size)` with aspect 1.0.
 12. **`pip_rect_over_picture`, `self_view_rect`, `avatar_self_view_rect`** take the
@@ -148,28 +152,39 @@ available until B2 lands.
   also calls it. The fold's own error is harmless and measured: `x` and `y` are
   **bit-identical**, `w`/`h` differ by ≤1.14e-13, and every case rounds and ceils
   to the same integer — so the pixmap size and the mixer's rect are unchanged.
-- **The bump needs a test that can fail, and the obvious one cannot.** Every
-  version assertion in the tree reads `CURRENT_FORMAT_VERSION` rather than a
-  literal, so a `a_v12_file_loads_under_the_current_version` test passes whether
-  the constant is 12 or 13 — trap 2 would go untested. **Verify it where it
-  bites:** extend `an_upgrade_keeps_the_old_file_once` with a v12 file and assert
-  a `project.json.v12` backup appears, which fails if the constant never moved.
-  Write the v12-loads test as well — there is `a_v10_…` and `a_v11_…` but no v12
-  one, because slates skipped it, so this closes a real gap.
+- **The v12-loads test written to the existing pattern is exactly the test that
+  bites**, and a draft of this plan was wrong to say otherwise. `a_v10_…` and
+  `a_v11_…` each end by asserting a `project.json.v<old>` backup exists, and
+  `store::write` only keeps a backup of a file *older* than the version it writes —
+  so at `CURRENT_FORMAT_VERSION = 12` the v12 test fails on that line. **Proven:**
+  reverting the constant to 12 failed exactly
+  `a_v12_file_loads_under_the_current_version` on
+  `project.json.v12 … .exists()`. No extra assertion grafted onto
+  `an_upgrade_keeps_the_old_file_once` is needed; it would be a second copy. And
+  there was no v12 test at all — slates skipped it — so this closes a real gap.
 - **The preferences seed a new clip**: a clip edited to Large/BottomLeft leaves the
   next `finish_recording` at Large/BottomLeft.
 
 ## B2. Media: per-entry placement, and the bug only a run can show
 
-**Files:** `crates/pundit-media/src/{overlay.rs, composite/export.rs,
-composite/preview.rs, composite/mod.rs}` and
+**Files:** `crates/pundit-media/src/{overlay.rs, composite/avatar.rs,
+composite/export.rs, composite/preview.rs, composite/mod.rs}` and
 `crates/pundit-media/tests/{export.rs, preview.rs, avatar.rs}`.
+**`composite/avatar.rs` is where items 3–5 actually bite**: `avatar::open` computes
+the box, and its doc ("shrunk about its bottom-right corner — keeping the inset's
+own right and bottom margins") becomes false and needs **replacing**, like
+`overlay.rs`'s board comment. Both `AvatarInset`s go through it.
+**Also fix `crates/pundit-harness/src/lib.rs`'s `Clip` literal**, which B1 breaks
+and which no task owned.
 
 **Expect ~14 call sites in media's own tests** (`tests/export.rs` alone has ten) on
 top of the source changes. B1 left them red; that is this task's work.
 
-1. **`overlay.rs`** passes `frame.clip.filter(|c| c.shows_inset()).map(Clip::inset_placement)`
-   to `bar_rect` — trap 3, the one line to get right.
+1. **`overlay.rs`** passes `frame.clip.and_then(Clip::inset_placement)` to
+   `bar_rect` — trap 3, the one line to get right, and `None` now comes from the
+   accessor rather than a `filter` here. Good news, verified: `overlay.rs` hands the
+   whole `bar` rect to `fill` and to `Label { rect: bar, … }` and never assumes
+   `bar.x == 0`, so a moved left edge needs **no drawing change**.
 2. **`overlay.rs`'s falsified decision comment** — *"The board cannot reach it: it
    is 0.36 of the width from the left edge and the inset starts at 0.78"* — is
    **replaced, not retuned**: bottom-left is separated from the board

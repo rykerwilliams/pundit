@@ -10,7 +10,8 @@ use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::highlight::{HighlightKey, NormRect, PlayerHighlight};
 use pundit_core::plan::ScoreboardMode;
 use pundit_core::project::{
-    Clip, Inset, Preferences, Project, Quality, Resolution, Slate, SourceRef,
+    Clip, Inset, InsetCorner, InsetPlacement, InsetSize, Preferences, Project, Quality, Resolution,
+    Slate, SourceRef,
 };
 use pundit_core::recording::PendingClip;
 use pundit_core::scoreboard::{
@@ -32,6 +33,8 @@ fn sample_clip() -> Clip {
         events: Vec::new(),
         show_pip: true,
         inset: Inset::Camera,
+        inset_size: InsetSize::Medium,
+        inset_corner: InsetCorner::BottomRight,
         sort_index: 0,
         created_at: "2026-09-19T12:00:00Z".into(),
         transcript: String::new(),
@@ -144,6 +147,8 @@ fn preferences_defaults_are_not_zero() {
     assert_eq!(p.preview_commentary_volume, 1.0);
     assert_eq!(p.last_export_resolution, Resolution::R1080);
     assert_eq!(p.last_export_quality, Quality::Medium);
+    assert_eq!(p.last_inset_size, InsetSize::Medium);
+    assert_eq!(p.last_inset_corner, InsetCorner::BottomRight);
     assert!(p.pip_for_new_recordings);
     assert_eq!(p.preferred_camera_id, None);
     assert_eq!(p.preferred_mic_id, None);
@@ -330,6 +335,12 @@ fn v7_to_v9_files_load_under_the_current_version() {
         // `inset` was recorded on a camera, which is `Inset::Camera`.
         assert_eq!(p.avatar, None);
         assert!(p.clips.iter().all(|c| c.inset == Inset::Camera));
+        // v13's: a clip with neither key reads as the inset the app drew before
+        // there was a choice — Medium, in the bottom-right corner.
+        assert!(p
+            .clips
+            .iter()
+            .all(|c| c.inset_placement() == Some(InsetPlacement::default())));
 
         store::write(dir.path(), &mut p).unwrap();
         assert_eq!(
@@ -413,6 +424,87 @@ fn a_v11_file_loads_under_the_current_version() {
     assert_eq!(value["slates"][0]["name"], json!("corner routine"));
     assert_eq!(value["slates"][0]["outSeconds"], json!(880.0));
     assert_eq!(value["clips"][0]["slateId"], serde_json::Value::Null);
+}
+
+/// F1, for v13. A v12 file has neither inset key on a clip and neither sticky
+/// preference: it loads, all four read as the inset the app drew before there
+/// was a choice, and the next save stamps the current version and keeps the v12
+/// file beside it. Every bump owes this test.
+///
+/// **The backup is also what pins the bump itself.** Every version assertion in
+/// this file reads `CURRENT_FORMAT_VERSION`, so none of them can tell 12 from
+/// 13; `store::write` only keeps a copy of a file *older* than what it writes,
+/// so the literal `v12` below is what fails if the constant never moved.
+#[test]
+fn a_v12_file_loads_under_the_current_version() {
+    let dir = TempDir::new().unwrap();
+    let mut raw = serde_json::to_value(sample_project()).unwrap();
+    raw["formatVersion"] = json!(12);
+    for key in ["insetSize", "insetCorner"] {
+        raw["clips"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove(key)
+            .expect("v13 writes the key this test removes");
+    }
+    for key in ["lastInsetSize", "lastInsetCorner"] {
+        raw["preferences"]
+            .as_object_mut()
+            .unwrap()
+            .remove(key)
+            .expect("v13 writes the key this test removes");
+    }
+    write_raw(dir.path(), raw);
+
+    let mut p = store::read(dir.path()).expect("a v12 file loads");
+    assert_eq!(
+        p.clips[0].inset_placement(),
+        Some(InsetPlacement::default())
+    );
+    assert_eq!(p.preferences.last_inset_size, InsetSize::Medium);
+    assert_eq!(p.preferences.last_inset_corner, InsetCorner::BottomRight);
+
+    p.clips[0].inset_size = InsetSize::Large;
+    store::write(dir.path(), &mut p).unwrap();
+    assert_eq!(p.format_version, CURRENT_FORMAT_VERSION);
+    assert_eq!(store::read(dir.path()).unwrap(), p);
+    assert!(dir.path().join("project.json.v12").exists());
+
+    let text = std::fs::read_to_string(dir.path().join("project.json")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["formatVersion"], json!(CURRENT_FORMAT_VERSION));
+    assert_eq!(value["clips"][0]["insetSize"], json!("large"));
+}
+
+/// v13. The size and the corner are the clip's own fields and the sticky pair is
+/// the project's; all four survive a write and a read at the wire spellings a
+/// v13 file holds. A rename of any of them would make every v13 project read as
+/// the default and say nothing.
+#[test]
+fn an_inset_size_and_corner_round_trip() {
+    let dir = TempDir::new().unwrap();
+    let mut p = sample_project();
+    p.clips[0].inset_size = InsetSize::Small;
+    p.clips[0].inset_corner = InsetCorner::TopRight;
+    p.preferences.last_inset_size = InsetSize::Large;
+    p.preferences.last_inset_corner = InsetCorner::BottomLeft;
+    store::write(dir.path(), &mut p).unwrap();
+    assert_eq!(store::read(dir.path()).unwrap(), p);
+
+    let text = std::fs::read_to_string(dir.path().join("project.json")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["clips"][0]["insetSize"], json!("small"));
+    assert_eq!(value["clips"][0]["insetCorner"], json!("topRight"));
+    assert_eq!(value["preferences"]["lastInsetSize"], json!("large"));
+    assert_eq!(value["preferences"]["lastInsetCorner"], json!("bottomLeft"));
+
+    // And the default is spelled out on disk too, so a v13 file has one shape.
+    let mut default = sample_project();
+    store::write(dir.path(), &mut default).unwrap();
+    let text = std::fs::read_to_string(dir.path().join("project.json")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["clips"][0]["insetSize"], json!("medium"));
+    assert_eq!(value["clips"][0]["insetCorner"], json!("bottomRight"));
 }
 
 /// v12. An **open** slate — marked in, not yet out — is a stored row, which is
@@ -901,6 +993,57 @@ fn the_inset_of_a_new_clip_comes_from_the_projects_avatar() {
         Inset::Camera,
         "removing the picture puts new takes back on the camera"
     );
+}
+
+/// I6. One sticky preference gives both readings of #88: the clip's own fields
+/// are "fix it afterwards", and the next recording is seeded from the preference
+/// the app writes back when a clip's is changed — "pick it before", with no
+/// field the coach cannot reach.
+#[test]
+fn the_inset_placement_of_a_new_clip_comes_from_the_sticky_preference() {
+    let mut p = Project::new("p");
+    let first = p
+        .add_recorded_clip(pending(0.0), 1.0, Vec::new(), String::new())
+        .clone();
+    assert_eq!(first.inset_placement(), Some(InsetPlacement::default()));
+
+    p.preferences.last_inset_size = InsetSize::Large;
+    p.preferences.last_inset_corner = InsetCorner::BottomLeft;
+    let next = p.add_recorded_clip(pending(0.0), 1.0, Vec::new(), String::new());
+    assert_eq!(
+        next.inset_placement(),
+        Some(InsetPlacement {
+            size: InsetSize::Large,
+            corner: InsetCorner::BottomLeft,
+        })
+    );
+}
+
+/// Trap: the accessor folds `show_pip` in, so `layout::bar_rect` takes what it
+/// returns verbatim and a clip with the inset switched off keeps the full-width
+/// caption bar it has always had. A bare placement would make
+/// `clip.map(Clip::inset_placement)` compile and cut every clip's bar at the
+/// inset's column.
+#[test]
+fn a_clip_that_draws_no_inset_has_no_placement() {
+    let mut clip = sample_clip();
+    clip.inset_size = InsetSize::Large;
+    clip.inset_corner = InsetCorner::TopRight;
+    assert_eq!(
+        clip.inset_placement(),
+        Some(InsetPlacement {
+            size: InsetSize::Large,
+            corner: InsetCorner::TopRight,
+        })
+    );
+    // Whichever kind it was recorded with: `show_pip` is the whole of it.
+    for inset in [Inset::Camera, Inset::Avatar] {
+        clip.inset = inset;
+        clip.show_pip = false;
+        assert_eq!(clip.inset_placement(), None, "{inset:?}");
+        clip.show_pip = true;
+        assert!(clip.inset_placement().is_some(), "{inset:?}");
+    }
 }
 
 /// B3: the one reading of `show_pip` × `inset`, all four combinations. The

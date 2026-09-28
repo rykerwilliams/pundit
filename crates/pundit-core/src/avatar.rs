@@ -11,7 +11,8 @@
 //! scale.** [`PULSE_GROWTH`] is applied in [`avatar_rect`] and nowhere else.
 
 use crate::export::OUTPUT_FPS;
-use crate::layout::Rect;
+use crate::layout::{self, Rect};
+use crate::project::InsetPlacement;
 
 /// The rate the render decodes the commentary at, mono. The same rate
 /// transcription uses.
@@ -102,26 +103,37 @@ pub fn pulse(samples_mono: &[f32], rate: u32, frames: usize) -> Vec<f64> {
     levels
 }
 
-/// How large the avatar's circle is against the webcam inset a camera take
-/// would fill — the user asked for smaller, 2026-09-23; it is one line to
-/// retune.
+/// How large the avatar's circle is against the webcam inset a camera take of
+/// the same size would fill — the user asked for smaller, 2026-09-23; it is one
+/// line to retune.
 pub const AVATAR_BOX_RATIO: f64 = 0.75;
 
-/// The box an avatar's circle is drawn in at its loudest: `pip` shrunk by
-/// [`AVATAR_BOX_RATIO`] about its **bottom-right corner**, so the circle keeps
-/// the webcam inset's own right and bottom margins and only gets smaller.
+/// The box an avatar's circle is drawn in at its loudest: the clip's inset
+/// column at [`AVATAR_BOX_RATIO`] of its width, square, flush into the same
+/// corner — so the circle keeps the webcam inset's own margins off the frame's
+/// two edges and is simply smaller. That is the whole of the difference between
+/// an avatar's footprint and a camera's.
 ///
-/// This is the whole of the difference between an avatar's footprint and a
-/// camera's; the pulse still grows the circle concentrically *inside* this box
-/// ([`avatar_rect`]), so nothing else moves.
-pub fn avatar_box(pip: Rect) -> Rect {
-    let (w, h) = (pip.w * AVATAR_BOX_RATIO, pip.h * AVATAR_BOX_RATIO);
-    Rect {
-        x: pip.x + pip.w - w,
-        y: pip.y + pip.h - h,
-        w,
-        h,
-    }
+/// **A ratio of a ratio, not a rect shrunk about a corner**, which is what this
+/// was while there was one corner to shrink about. Shrinking a corner-flush
+/// square about the corner it is flush in *is* a corner-flush square at
+/// `AVATAR_BOX_RATIO ×` the ratio — identical to the pixel at Medium in the
+/// bottom-right — while the rect form only worked in the corner it was written
+/// for: applied to a bottom-left inset it drifted 105.6 px off the left edge at
+/// Medium/1080p, and to a top-right one it hung the same 105.6 px below the top
+/// — the box is square, so the two are one number.
+///
+/// The aspect is 1.0 and not a parameter because the avatar's image is square
+/// (avatar spec A5), and the pulse still grows the circle concentrically
+/// *inside* this box ([`avatar_rect`]), so nothing else moves.
+pub fn avatar_box(out_w: f64, out_h: f64, placement: InsetPlacement) -> Rect {
+    let ratio = AVATAR_BOX_RATIO * layout::inset_ratio(placement.size);
+    layout::corner_rect(
+        layout::corner_span(out_w, placement.corner, ratio),
+        out_h,
+        1.0,
+        placement.corner,
+    )
 }
 
 /// Where the avatar is drawn: `pip` at `level == 1.0`, and `pip` scaled about

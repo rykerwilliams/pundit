@@ -9,7 +9,8 @@ use uuid::Uuid;
 
 use pundit_core::highlight::{HighlightKey, NormRect, PlayerHighlight};
 use pundit_core::project::{
-    AspectMismatch, Clip, Inset, Project, Slate, SourceRef, SourceReferenced,
+    AspectMismatch, Clip, Inset, InsetCorner, InsetSize, Project, Slate, SourceRef,
+    SourceReferenced,
 };
 use pundit_core::scoreboard::{MatchEventKind, MatchEventRecord};
 use pundit_core::stroke::Rgba;
@@ -48,6 +49,8 @@ fn clip_on(source_index: usize) -> Clip {
         events: Vec::new(),
         show_pip: true,
         inset: Inset::Camera,
+        inset_size: InsetSize::Medium,
+        inset_corner: InsetCorner::BottomRight,
         sort_index: 0,
         created_at: "2026-09-19T00:00:00Z".into(),
         transcript: String::new(),

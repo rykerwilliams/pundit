@@ -2,10 +2,14 @@
 
 use pundit_core::avatar::avatar_box;
 use pundit_core::layout::{
-    avatar_self_view_rect, bar_rect, pip_left, pip_rect, pip_rect_over_picture, scoreboard_rects,
-    self_view_rect, stroke_line_width, Rect, BAR_HEIGHT_RATIO, PIP_WIDTH_RATIO,
+    avatar_self_view_rect, bar_rect, inset_ratio, inset_span, pip_rect, pip_rect_over_picture,
+    scoreboard_rects, self_view_rect, stroke_line_width, Rect, BAR_HEIGHT_RATIO,
     SCOREBOARD_FONT_RATIO,
 };
+use pundit_core::project::{InsetCorner, InsetPlacement, InsetSize};
+
+/// Every output size the app lays out at.
+const SIZES: [(f64, f64); 3] = [(1280.0, 720.0), (1920.0, 1080.0), (3840.0, 2160.0)];
 
 fn close(a: Rect, b: Rect) -> bool {
     [a.x - b.x, a.y - b.y, a.w - b.w, a.h - b.h]
@@ -13,10 +17,29 @@ fn close(a: Rect, b: Rect) -> bool {
         .all(|d| d.abs() < 1e-9)
 }
 
+/// All nine placements a clip can carry.
+fn placements() -> impl Iterator<Item = InsetPlacement> {
+    [InsetSize::Small, InsetSize::Medium, InsetSize::Large]
+        .into_iter()
+        .flat_map(|size| {
+            [
+                InsetCorner::BottomRight,
+                InsetCorner::BottomLeft,
+                InsetCorner::TopRight,
+            ]
+            .into_iter()
+            .map(move |corner| InsetPlacement { size, corner })
+        })
+}
+
+/// **The pixel-identity pin** (spec I8), and the only exact rect in this file.
+/// Medium in the bottom-right corner is `InsetPlacement::default()`, which is
+/// every inset the app drew before v13 and what every project written before it
+/// reads as: 1920×1080 with a 16:9 camera is 422.4 × 237.6 in the corner itself.
+/// If this moves, `inset_span` is wrong, not the numbers.
 #[test]
-fn the_pip_sits_flush_in_the_bottom_right_corner_over_the_bar() {
-    // 1920×1080 with a 16:9 camera: 422.4 × 237.6 in the corner itself.
-    let r = pip_rect(1920.0, 1080.0, 16.0 / 9.0);
+fn medium_in_the_bottom_right_corner_is_the_inset_the_app_has_always_drawn() {
+    let r = pip_rect(1920.0, 1080.0, 16.0 / 9.0, InsetPlacement::default());
     assert_eq!(
         r,
         Rect {
@@ -26,37 +49,86 @@ fn the_pip_sits_flush_in_the_bottom_right_corner_over_the_bar() {
             h: 237.6,
         }
     );
-    // Flush on both edges at every output size, and over the bar rather than
-    // on it: the row the bar starts, the inset finishes.
-    for (w, h) in [(1280.0, 720.0), (1920.0, 1080.0), (3840.0, 2160.0)] {
-        let r = pip_rect(w, h, 16.0 / 9.0);
-        assert!((r.x + r.w - w).abs() < 1e-9, "not flush right at {w}×{h}");
-        assert!((r.y + r.h - h).abs() < 1e-9, "not flush bottom at {w}×{h}");
-        assert!(r.y + r.h > bar_rect(w, h, true).y);
+}
+
+/// Every size and corner as the property rather than nine expected rects, so
+/// this cannot rot into "retune the numbers": the width is the size's ratio of
+/// the output, the inset is flush in both of its corner's edges, and the camera
+/// is neither stretched nor letterboxed inside it.
+#[test]
+fn the_inset_is_its_size_s_ratio_flush_in_its_own_corner() {
+    let aspect = 16.0 / 9.0;
+    for (w, h) in SIZES {
+        for p in placements() {
+            let r = pip_rect(w, h, aspect, p);
+            assert_eq!(r.w, inset_ratio(p.size) * w, "{p:?} at {w}×{h}");
+            assert!((r.h - r.w / aspect).abs() < 1e-12, "{p:?}: {r:?}");
+            match p.corner {
+                InsetCorner::BottomLeft => assert_eq!(r.x, 0.0, "{p:?}: {r:?}"),
+                InsetCorner::BottomRight | InsetCorner::TopRight => {
+                    assert_eq!(r.x + r.w, w, "{p:?}: {r:?}")
+                }
+            }
+            match p.corner {
+                InsetCorner::TopRight => assert_eq!(r.y, 0.0, "{p:?}: {r:?}"),
+                InsetCorner::BottomLeft | InsetCorner::BottomRight => {
+                    assert_eq!(r.y + r.h, h, "{p:?}: {r:?}");
+                    // Over the bar rather than on it: the row the bar starts,
+                    // the inset finishes.
+                    assert!(r.y + r.h > bar_rect(w, h, Some(p)).y, "{p:?}: {r:?}");
+                }
+            }
+        }
     }
 }
 
 /// **The whole bar stops where the inset stands** — background and line alike
 /// — so nothing it draws is over the coach's face and nothing it draws is under
-/// the inset. Both edges come from `pip_left`, so this pins the rule rather
-/// than an arithmetic coincidence.
+/// the inset. Asserted against `inset_span`, the function the inset's own rect
+/// comes from, so what is under test is the invariant and not two ratios that
+/// happen to agree today.
 #[test]
-fn the_bar_stops_where_the_inset_stands() {
-    let full = bar_rect(1920.0, 1080.0, false);
-    let short = bar_rect(1920.0, 1080.0, true);
-    // The same strip, ending exactly where a camera inset begins.
-    assert_eq!((short.x, short.y, short.h), (full.x, full.y, full.h));
-    assert_eq!(short.w, pip_rect(1920.0, 1080.0, 16.0 / 9.0).x);
-    assert_eq!(short.w, pip_left(1920.0));
-    // An avatar's box keeps the inset's right edge and is narrower, so the one
-    // column clears both kinds of inset.
-    let avatar = avatar_box(pip_rect(1920.0, 1080.0, 1.0));
-    assert!(short.w <= avatar.x);
+fn the_bar_meets_the_inset_in_either_bottom_corner() {
+    for (w, h) in SIZES {
+        let full = bar_rect(w, h, None);
+        for p in placements() {
+            let bar = bar_rect(w, h, Some(p));
+            let (inset_x, inset_w) = inset_span(w, p);
+            assert_eq!(
+                (bar.y, bar.h),
+                (full.y, full.h),
+                "{p:?}: the same strip, whatever it gives up"
+            );
+            match p.corner {
+                InsetCorner::BottomRight => {
+                    assert_eq!((bar.x, bar.x + bar.w), (0.0, inset_x), "{p:?}: {bar:?}")
+                }
+                // The edge moves rather than the strip widening: a bar still
+                // starting at 0 would run under the inset.
+                InsetCorner::BottomLeft => {
+                    assert_eq!((bar.x, bar.x + bar.w), (inset_x + inset_w, w), "{p:?}")
+                }
+                // Nothing is in the bottom row, which is the full-width state a
+                // clip with no inset has always had.
+                InsetCorner::TopRight => assert_eq!((bar.x, bar.w), (0.0, w), "{p:?}"),
+            }
+            // And the one column clears the avatar's box too, which is flush
+            // into the same corner and narrower: in a bottom corner they are
+            // side by side, and in the top one the bar passes below it.
+            let avatar = avatar_box(w, h, p);
+            assert!(
+                bar.x + bar.w <= avatar.x
+                    || avatar.x + avatar.w <= bar.x
+                    || avatar.y + avatar.h <= bar.y,
+                "{p:?}: the bar reaches under the avatar: {bar:?} against {avatar:?}"
+            );
+        }
+    }
 }
 
 #[test]
 fn the_text_bar_is_a_strip_along_the_bottom() {
-    let bar = bar_rect(1920.0, 1080.0, false);
+    let bar = bar_rect(1920.0, 1080.0, None);
     assert_eq!(
         bar,
         Rect {
@@ -68,9 +140,9 @@ fn the_text_bar_is_a_strip_along_the_bottom() {
     );
     // It reaches the bottom edge exactly, at every output size, and the
     // inset's column costs it width and nothing else.
-    for (w, h) in [(1280.0, 720.0), (1920.0, 1080.0), (3840.0, 2160.0)] {
-        for has_inset in [false, true] {
-            let bar = bar_rect(w, h, has_inset);
+    for (w, h) in SIZES {
+        for inset in std::iter::once(None).chain(placements().map(Some)) {
+            let bar = bar_rect(w, h, inset);
             assert_eq!(bar.y + bar.h, h);
             assert_eq!(bar.h / h, BAR_HEIGHT_RATIO);
         }
@@ -79,20 +151,23 @@ fn the_text_bar_is_a_strip_along_the_bottom() {
 
 #[test]
 fn the_pip_is_the_same_fraction_of_the_frame_at_every_output_size() {
-    let big = pip_rect(1920.0, 1080.0, 16.0 / 9.0);
-    let small = pip_rect(1280.0, 720.0, 16.0 / 9.0);
-    assert!((big.w / 1920.0 - small.w / 1280.0).abs() < 1e-12);
-    assert!((big.h / 1080.0 - small.h / 720.0).abs() < 1e-12);
-    assert!((big.x / 1920.0 - small.x / 1280.0).abs() < 1e-12);
-    assert!((big.y / 1080.0 - small.y / 720.0).abs() < 1e-12);
+    for p in placements() {
+        let big = pip_rect(1920.0, 1080.0, 16.0 / 9.0, p);
+        let small = pip_rect(1280.0, 720.0, 16.0 / 9.0, p);
+        assert!((big.w / 1920.0 - small.w / 1280.0).abs() < 1e-12, "{p:?}");
+        assert!((big.h / 1080.0 - small.h / 720.0).abs() < 1e-12, "{p:?}");
+        assert!((big.x / 1920.0 - small.x / 1280.0).abs() < 1e-12, "{p:?}");
+        assert!((big.y / 1080.0 - small.y / 720.0).abs() < 1e-12, "{p:?}");
+    }
 }
 
 #[test]
 fn a_camera_of_another_aspect_changes_the_pip_s_height_only() {
-    let wide = pip_rect(1920.0, 1080.0, 16.0 / 9.0);
-    let four_three = pip_rect(1920.0, 1080.0, 4.0 / 3.0);
+    let default = InsetPlacement::default();
+    let wide = pip_rect(1920.0, 1080.0, 16.0 / 9.0, default);
+    let four_three = pip_rect(1920.0, 1080.0, 4.0 / 3.0, default);
     assert_eq!(four_three.w, wide.w);
-    assert_eq!(four_three.w, PIP_WIDTH_RATIO * 1920.0);
+    assert_eq!(four_three.w, inset_ratio(InsetSize::Medium) * 1920.0);
     // Taller, and it grows upward: the bottom edge stays put.
     assert!(four_three.h > wide.h);
     assert!((four_three.y + four_three.h - (wide.y + wide.h)).abs() < 1e-9);
@@ -103,10 +178,9 @@ fn a_camera_of_another_aspect_changes_the_pip_s_height_only() {
 /// A 4:3 picture is pillarboxed into the export's 16:9 frame: the 1440×1080
 /// picture sits 240 px in from the left of 1920×1080. Wherever the UI draws
 /// that picture, the inset lands on it where the export puts it — which is
-/// partly past the picture's right edge, over the bar.
+/// partly past the picture's own side, over the bar, in whichever corner it is.
 #[test]
 fn over_a_4_3_picture_the_inset_lands_where_the_export_puts_it() {
-    let export = pip_rect(1920.0, 1080.0, 16.0 / 9.0);
     // The export's picture rect for a 4:3 source (media's `fit_rect`).
     let (px, pw, ph) = (240.0, 1440.0, 1080.0);
     // The same picture drawn at a third of the size, somewhere in the UI.
@@ -117,33 +191,48 @@ fn over_a_4_3_picture_the_inset_lands_where_the_export_puts_it() {
         w: pw * s,
         h: ph * s,
     };
-    let r = pip_rect_over_picture(picture, 16.0 / 9.0);
-    assert!(close(
-        r,
-        Rect {
-            x: ox + (export.x - px) * s,
-            y: oy + export.y * s,
-            w: export.w * s,
-            h: export.h * s,
+    for p in placements() {
+        let export = pip_rect(1920.0, 1080.0, 16.0 / 9.0, p);
+        let r = pip_rect_over_picture(picture, 16.0 / 9.0, p);
+        assert!(
+            close(
+                r,
+                Rect {
+                    x: ox + (export.x - px) * s,
+                    y: oy + export.y * s,
+                    w: export.w * s,
+                    h: export.h * s,
+                }
+            ),
+            "{p:?}: {r:?}"
+        );
+        // The size's fraction of the *output's* width, not the picture's.
+        assert!(
+            (r.w - inset_ratio(p.size) * picture.h * 16.0 / 9.0).abs() < 1e-9,
+            "{p:?}: {r:?}"
+        );
+        // Which is why it reaches past the picture, on the side its corner is
+        // flush to.
+        match p.corner {
+            InsetCorner::BottomLeft => assert!(r.x < picture.x, "{p:?}: {r:?}"),
+            InsetCorner::BottomRight | InsetCorner::TopRight => {
+                assert!(r.x + r.w > picture.x + picture.w, "{p:?}: {r:?}")
+            }
         }
-    ));
-    assert!(r.x + r.w > picture.x + picture.w);
-    // 22% of the *output's* width, not the picture's.
-    assert!((r.w - PIP_WIDTH_RATIO * picture.h * 16.0 / 9.0).abs() < 1e-9);
+    }
 }
 
-/// A picture wider than 16:9 is letterboxed: the inset rises off the picture
-/// by the bottom bar's height. (A 16:9 picture is the output frame itself.)
+/// A picture wider than 16:9 is letterboxed: a bottom inset rises off the
+/// picture by the bottom bar's height, and a top one rises above it by the top
+/// bar's. (A 16:9 picture is the output frame itself.)
 #[test]
 fn over_a_wide_picture_the_inset_is_placed_in_the_letterboxed_frame() {
-    let export = pip_rect(1920.0, 1080.0, 16.0 / 9.0);
     let frame = Rect {
         x: 0.0,
         y: 0.0,
         w: 1920.0,
         h: 1080.0,
     };
-    assert!(close(pip_rect_over_picture(frame, 16.0 / 9.0), export));
     // 2.4:1 at 1920 wide: 800 tall, 140 from the top of 1920×1080.
     let picture = Rect {
         x: 0.0,
@@ -151,14 +240,24 @@ fn over_a_wide_picture_the_inset_is_placed_in_the_letterboxed_frame() {
         w: 1920.0,
         h: 800.0,
     };
-    let r = pip_rect_over_picture(picture, 16.0 / 9.0);
-    assert!(close(
-        r,
-        Rect {
-            y: export.y - 140.0,
-            ..export
-        }
-    ));
+    for p in placements() {
+        let export = pip_rect(1920.0, 1080.0, 16.0 / 9.0, p);
+        assert!(
+            close(pip_rect_over_picture(frame, 16.0 / 9.0, p), export),
+            "{p:?}"
+        );
+        let r = pip_rect_over_picture(picture, 16.0 / 9.0, p);
+        assert!(
+            close(
+                r,
+                Rect {
+                    y: export.y - 140.0,
+                    ..export
+                }
+            ),
+            "{p:?}: {r:?}"
+        );
+    }
 }
 
 #[test]
@@ -289,25 +388,59 @@ fn player_picture() -> Rect {
 /// rest size, monotonicity, the clamp — is pinned in `avatar.rs`'s own tests.
 #[test]
 fn a_full_level_is_exactly_where_the_camera_goes() {
-    let pip = pip_rect_over_picture(player_picture(), 16.0 / 9.0);
-    let at = self_view_rect(player_picture(), 16.0 / 9.0, 1.0).expect("a picture to place on");
-    assert!(close(at, pip));
+    for p in placements() {
+        let pip = pip_rect_over_picture(player_picture(), 16.0 / 9.0, p);
+        let at =
+            self_view_rect(player_picture(), 16.0 / 9.0, 1.0, p).expect("a picture to place on");
+        assert!(close(at, pip), "{p:?}: {at:?}");
+    }
 }
 
-/// And an avatar take's corner is that same inset, square and cut down to the
-/// avatar's box — the render's rule, over the picture (avatar spec G2).
+/// And an avatar take's corner is the avatar's own box in the same corner — the
+/// render's rule, over the picture (avatar spec G2). `player_picture` is 16:9,
+/// so the frame it fits is itself and the box is the output-space one moved to
+/// its origin.
 #[test]
 fn an_avatar_take_is_placed_in_the_smaller_box() {
     let picture = player_picture();
-    let square = pip_rect_over_picture(picture, 1.0);
-    let at = avatar_self_view_rect(picture, 1.0).expect("a picture to place on");
-    assert!(close(at, avatar_box(square)));
-    // Which is the webcam inset's own right and bottom margins, kept.
-    assert!((at.x + at.w - (square.x + square.w)).abs() < 1e-9, "{at:?}");
-    assert!((at.y + at.h - (square.y + square.h)).abs() < 1e-9, "{at:?}");
-    // The pulse still shrinks it from there, and never grows it past the box.
-    let rest = avatar_self_view_rect(picture, 0.0).expect("a picture to place on");
-    assert!(rest.w < at.w, "{rest:?} against {at:?}");
+    for p in placements() {
+        let square = pip_rect_over_picture(picture, 1.0, p);
+        let expected = avatar_box(picture.w, picture.h, p);
+        let at = avatar_self_view_rect(picture, 1.0, p).expect("a picture to place on");
+        assert!(
+            close(
+                at,
+                Rect {
+                    x: picture.x + expected.x,
+                    y: picture.y + expected.y,
+                    ..expected
+                }
+            ),
+            "{p:?}: {at:?}"
+        );
+        // Which is the webcam inset's own margins off the frame, kept: the box
+        // is flush where the inset is flush, and smaller at the other two edges.
+        match p.corner {
+            InsetCorner::BottomLeft => assert!((at.x - square.x).abs() < 1e-9, "{p:?}: {at:?}"),
+            InsetCorner::BottomRight | InsetCorner::TopRight => {
+                assert!(
+                    (at.x + at.w - (square.x + square.w)).abs() < 1e-9,
+                    "{p:?}: {at:?}"
+                )
+            }
+        }
+        match p.corner {
+            InsetCorner::TopRight => assert!((at.y - square.y).abs() < 1e-9, "{p:?}: {at:?}"),
+            InsetCorner::BottomLeft | InsetCorner::BottomRight => assert!(
+                (at.y + at.h - (square.y + square.h)).abs() < 1e-9,
+                "{p:?}: {at:?}"
+            ),
+        }
+        assert!(at.w < square.w, "{p:?}: smaller than a camera's");
+        // The pulse still shrinks it from there, and never grows it past the box.
+        let rest = avatar_self_view_rect(picture, 0.0, p).expect("a picture to place on");
+        assert!(rest.w < at.w, "{p:?}: {rest:?} against {at:?}");
+    }
 }
 
 #[test]
@@ -318,18 +451,19 @@ fn an_avatar_take_with_nothing_to_place_on_places_nothing() {
         w: 0.0,
         h: 0.0,
     };
-    assert!(avatar_self_view_rect(empty, 1.0).is_none());
+    assert!(avatar_self_view_rect(empty, 1.0, InsetPlacement::default()).is_none());
 }
 
 #[test]
 fn nothing_to_place_on_places_nothing() {
+    let default = InsetPlacement::default();
     let empty = Rect {
         x: 0.0,
         y: 0.0,
         w: 0.0,
         h: 0.0,
     };
-    assert!(self_view_rect(empty, 16.0 / 9.0, 1.0).is_none());
-    assert!(self_view_rect(player_picture(), 0.0, 1.0).is_none());
-    assert!(self_view_rect(player_picture(), f64::NAN, 1.0).is_none());
+    assert!(self_view_rect(empty, 16.0 / 9.0, 1.0, default).is_none());
+    assert!(self_view_rect(player_picture(), 0.0, 1.0, default).is_none());
+    assert!(self_view_rect(player_picture(), f64::NAN, 1.0, default).is_none());
 }

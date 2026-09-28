@@ -8,7 +8,7 @@ use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::plan::{
     basket_plan, clip_source_duration, compilation_plan, BasketPiece, ExportTarget, PlanEntry,
 };
-use pundit_core::project::{Clip, Inset, Project, SourceRef};
+use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize, Project, SourceRef};
 
 fn clip(name: &str, sort_index: i64, tags: &[&str]) -> Clip {
     Clip {
@@ -23,6 +23,8 @@ fn clip(name: &str, sort_index: i64, tags: &[&str]) -> Clip {
         events: Vec::new(),
         show_pip: true,
         inset: Inset::Camera,
+        inset_size: InsetSize::Medium,
+        inset_corner: InsetCorner::BottomRight,
         sort_index,
         created_at: "2026-09-19T00:00:00Z".into(),
         transcript: String::new(),
