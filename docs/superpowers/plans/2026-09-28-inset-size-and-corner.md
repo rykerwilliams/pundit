@@ -11,6 +11,19 @@ and their tests, so the "signature" task's own verify step would have had to do 
 `pip_rect_at` shim pair, i.e. exactly the second source of truth this change exists
 to remove.
 
+## Where this stands (update it as tasks land)
+
+- **B1 — DONE**, committed `d1ee1cc`. 501 core tests pass, clippy clean.
+- **B2 — next.** Media.
+- **B3** — app. **B4** — close out.
+
+> **The workspace does not compile right now, and that is intended.** B1 changed
+> the geometry signatures and added two `Clip` fields; `pundit-media` and
+> `pundit-app` are fixed by B2 and B3. **Do not add a shim, a `Default` on `Clip`,
+> or anything else to make them build** — that is the second source of truth this
+> whole change exists to remove. The only gate available until B2 lands is
+> `cargo test -p pundit-core`.
+
 Every `cargo` call except `fmt` goes through
 `flock /tmp/claude-1000/cargo.lock nice -n 19 cargo …`. `pundit-core` is fast and
 needs no GStreamer; media and app builds are ~3 minutes. **Never pipe clippy or a
