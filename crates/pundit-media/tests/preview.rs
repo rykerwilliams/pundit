@@ -21,7 +21,7 @@ use gstreamer_video::prelude::*;
 use pundit_core::avatar::avatar_box;
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::layout::{pip_rect, BAR_HEIGHT_RATIO};
-use pundit_core::project::{Clip, Inset};
+use pundit_core::project::{Clip, Inset, InsetCorner, InsetPlacement, InsetSize};
 use pundit_core::stroke::{Rgba, Stroke, StrokePoint};
 use pundit_media::fixtures::{self, counter_video, read_counter, CounterKind, GrayFrame};
 use pundit_media::{
@@ -67,6 +67,8 @@ fn clip(duration: f64, show_pip: bool, events: Vec<CommentaryEvent>) -> Clip {
         events,
         show_pip,
         inset: Inset::Camera,
+        inset_size: InsetSize::Medium,
+        inset_corner: InsetCorner::BottomRight,
         sort_index: 0,
         created_at: "2026-09-19T00:00:00Z".into(),
         transcript: String::new(),
@@ -302,7 +304,12 @@ fn the_composite_places_the_pip_and_the_overlay_on_the_picture() {
     // The PiP is the recording, flush into the bottom-right corner in output
     // space -- overlapping the right bar, which is the point of putting it
     // there, and overlapping the text bar, which it is mixed over.
-    let pip = pip_rect(OUT_W as f64, OUT_H as f64, 16.0 / 9.0);
+    let pip = pip_rect(
+        OUT_W as f64,
+        OUT_H as f64,
+        16.0 / 9.0,
+        InsetPlacement::default(),
+    );
     let pip_centre = (
         (pip.x + pip.w / 2.0) as usize,
         (pip.y + pip.h / 2.0) as usize,
@@ -465,6 +472,11 @@ fn a_seek_while_the_tail_drains_keeps_the_preview_running() {
 /// or the preview never finishes: a pad requested and never fed stalls the
 /// mixer, and a video pad linked to a queue nobody feeds stalls the branch.
 /// The image is round in its box, as it is in an export.
+///
+/// **The clip's placement is deliberately not the default**, so this also pins
+/// preview reading it: preview builds its own `AvatarInset`, and left on
+/// Medium/BottomRight while the export took the clip's, a Large clip would
+/// preview somewhere it will not be exported (spec I3).
 #[test]
 fn an_avatar_clip_previews_without_stalling() {
     gst::init().unwrap();
@@ -474,8 +486,14 @@ fn an_avatar_clip_previews_without_stalling() {
     // PiP branch to want.
     let recording = fixtures::audio_only(dir.path());
     let avatar = fixtures::solid_png(dir.path(), "avatar.png", 96, 96, RED, 0xff);
+    let placement = InsetPlacement {
+        size: InsetSize::Large,
+        corner: InsetCorner::BottomLeft,
+    };
     let clip = Clip {
         inset: Inset::Avatar,
+        inset_size: placement.size,
+        inset_corner: placement.corner,
         ..clip(1.0, true, Vec::new())
     };
 
@@ -490,9 +508,9 @@ fn an_avatar_clip_previews_without_stalling() {
     running.poll_frame("the schedule a second time", |n| n >= FPS - 1.0);
     drop(running);
 
-    // A square image, so the inset is the square `pip_rect`, cut down to the
-    // avatar's own box.
-    let pip = avatar_box(pip_rect(OUT_W as f64, OUT_H as f64, 1.0));
+    // A square image, so the box is the square `avatar_box` of the clip's
+    // placement — its own, which is a Large box in the bottom-left corner.
+    let pip = avatar_box(OUT_W as f64, OUT_H as f64, placement);
     let centre = (
         (pip.x + pip.w / 2.0) as usize,
         (pip.y + pip.h / 2.0) as usize,
@@ -526,7 +544,12 @@ fn a_camera_clip_with_no_video_in_its_recording_previews_without_stalling() {
     drop(running);
 
     // The corner a webcam would have taken is the picture: no pad, no inset.
-    let pip = pip_rect(OUT_W as f64, OUT_H as f64, 16.0 / 9.0);
+    let pip = pip_rect(
+        OUT_W as f64,
+        OUT_H as f64,
+        16.0 / 9.0,
+        InsetPlacement::default(),
+    );
     picture.assert_rgb(
         "where the inset would be",
         (

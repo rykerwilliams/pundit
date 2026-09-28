@@ -23,7 +23,7 @@ use pundit_app::bus::{
     AppFiles, BasketView, Bus, BusHandle, CaptureKind, Command, Event, ExportRun, RecordingStatus,
     Snapshot, TranscriptionState, UserError,
 };
-use pundit_core::project::{Clip, Inset, Project, SourceRef};
+use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize, Project, SourceRef};
 use pundit_core::store;
 use pundit_media::{fixtures, frame_times, now_ns, probe, Frame, SinkKind, TranscribeKind};
 use uuid::Uuid;
@@ -620,6 +620,8 @@ pub fn clip(source_index: usize) -> Clip {
         events: Vec::new(),
         show_pip: true,
         inset: Inset::Camera,
+        inset_size: InsetSize::Medium,
+        inset_corner: InsetCorner::BottomRight,
         sort_index: 0,
         created_at: "2026-09-19T00:00:00Z".into(),
         transcript: String::new(),

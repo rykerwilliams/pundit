@@ -71,7 +71,12 @@ pub enum Inset {
 /// caption the app produces (spec I1). The widths themselves are
 /// [`crate::layout::inset_ratio`]'s — a stored enum is a name for a step, not a
 /// number, as [`Resolution`] is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+///
+/// `Hash`, alone among the three types here: the export keys its avatar
+/// textures on the image's path **and** the size, because a pixmap is square
+/// and sized by the size alone (`composite::export`). The corner is not in that
+/// key, and so needs none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum InsetSize {
     Small,

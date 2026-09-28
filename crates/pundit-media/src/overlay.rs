@@ -319,8 +319,21 @@ impl OverlayRenderer {
     /// The inset is not in this layer and sits **under** all of it
     /// (`composite::install_overlay_pad`), so nothing here has to give it room
     /// except the bar, which stops where it stands rather than tinting it
-    /// (`core::layout::bar_rect`). The board cannot reach it: it is 0.36 of the
-    /// width from the left edge and the inset starts at 0.78.
+    /// (`core::layout::bar_rect`).
+    ///
+    /// **The board and the inset stay apart in each of the three corners the
+    /// coach can pick** (`core::project::InsetCorner`) — and the top-left one
+    /// they cannot pick is the board's own. The two separations are different:
+    ///
+    /// - **Top-right, horizontally.** The board's tail ends at x = 0.45 of the
+    ///   width (`scoreboard_rects`); the widest inset offered starts at 0.70.
+    /// - **Both bottom corners, vertically.** The board keeps the top 0.08 of
+    ///   the frame. A Large inset is 0.30 of the height for a 16:9 camera and
+    ///   0.53 for a square one — a top edge at 0.70 and 0.47 of the height, for
+    ///   every camera aspect the app has seen. It takes a camera narrower than
+    ///   about 0.58:1 for one to reach the board's rows at all, and there the
+    ///   board is simply drawn over it: a half-hidden face, degraded and not
+    ///   corrupt, and not worth code for a shape no webcam reports.
     fn draw(&mut self, pixmap: &mut PixmapMut, frame: &OverlayFrame) {
         // The allocator hands back whatever was in that memory, and nothing
         // else clears it: `from_bytes` adopts the bytes as they are.
@@ -332,7 +345,10 @@ impl OverlayRenderer {
         // The whole bar stops where the inset stands, background and line
         // alike, so nothing this layer draws is washed over the coach's face
         // and nothing it draws is hidden by the inset either.
-        let bar = bar_rect(out_w, out_h, frame.clip.is_some_and(Clip::shows_inset));
+        // `and_then`, never `map`: the accessor is `None` for a clip with the
+        // inset switched off, and a `Some` for every clip would cut that clip's
+        // bar at a column nothing stands in.
+        let bar = bar_rect(out_w, out_h, frame.clip.and_then(Clip::inset_placement));
         if !frame.text.is_empty() {
             fill(
                 pixmap,
@@ -992,8 +1008,8 @@ fn stroke_with_edge(
 mod tests {
     use pundit_core::event::{CommentaryEvent, EventKind};
     use pundit_core::highlight::{highlight_shapes, HighlightKey, NormRect, PlayerHighlight};
-    use pundit_core::layout::{BAR_HEIGHT_RATIO, PIP_WIDTH_RATIO};
-    use pundit_core::project::Inset;
+    use pundit_core::layout::{inset_span, BAR_HEIGHT_RATIO};
+    use pundit_core::project::{Inset, InsetCorner, InsetPlacement, InsetSize};
     use pundit_core::scoreboard::{ClockDisplay, MatchFormat, TeamConfig};
     use pundit_core::stroke::{Rgba, Stroke, StrokePoint};
     use pundit_core::zoom::Zoom;
@@ -1020,6 +1036,8 @@ mod tests {
             events,
             show_pip: true,
             inset: Inset::Camera,
+            inset_size: InsetSize::Medium,
+            inset_corner: InsetCorner::BottomRight,
             sort_index: 0,
             created_at: "2026-09-19T00:00:00Z".into(),
             transcript: String::new(),
@@ -1319,7 +1337,10 @@ mod tests {
         let long = "12 / 24 | Second-half restart down the left channel, the one we \
                     talked about on Tuesday | press, transition, wide, set-piece";
         let bar_top = (720.0 - BAR_HEIGHT_RATIO * 720.0) as u32;
-        let pip_left = (1280.0 * (1.0 - PIP_WIDTH_RATIO)) as u32;
+        // Asked of `layout`, never re-derived from a ratio here: the bar's
+        // edge and the inset's come from one function, and a second spelling of
+        // it is exactly what could drift (`layout::inset_span`).
+        let pip_left = inset_span(1280.0, InsetPlacement::default()).0 as u32;
         let ink = |px: &[[u8; 4]], cols: std::ops::Range<u32>| {
             (bar_top..720)
                 .flat_map(|y| cols.clone().map(move |x| (x, y)))
@@ -1352,7 +1373,7 @@ mod tests {
         let mut renderer = OverlayRenderer::new();
         // The shipping width: the strip less the inset's column, since that is
         // what the line is actually fitted to.
-        let bar = bar_rect(1920.0, 1080.0, true);
+        let bar = bar_rect(1920.0, 1080.0, Some(InsetPlacement::default()));
         let style = Style::new((bar.h * BAR_FONT_RATIO) as f32, Weight::NORMAL);
         let max_width = bar.w as f32 - 2.0 * (bar.h * BAR_INSET_RATIO) as f32;
 
