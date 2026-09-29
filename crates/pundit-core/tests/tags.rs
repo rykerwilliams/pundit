@@ -3,7 +3,7 @@
 
 use uuid::Uuid;
 
-use pundit_core::project::{Clip, Inset, Project, Slate};
+use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize, Project, Slate};
 use pundit_core::tag::{
     tag_suggestions, tag_summaries, tag_vocabulary, take_suggestion, TagSummary, MAX_SUGGESTIONS,
 };
@@ -21,6 +21,8 @@ fn clip(tags: &[&str], duration: f64) -> Clip {
         events: Vec::new(),
         show_pip: true,
         inset: Inset::Camera,
+        inset_size: InsetSize::Medium,
+        inset_corner: InsetCorner::BottomRight,
         sort_index: 0,
         created_at: String::new(),
         transcript: String::new(),

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use pundit_app::bus::{Command, Event, RecordingStatus, UserError};
-use pundit_core::project::{Clip, Project};
+use pundit_core::project::{Clip, InsetCorner, InsetSize, Project};
 use pundit_core::store;
 use pundit_core::undo::ClipEdit;
 use pundit_core::zoom::Zoom;
@@ -168,6 +168,94 @@ fn an_edit_saves_and_is_one_undo_step() {
     let saved = p.saved();
     assert_eq!(saved.clips[0].name, "Corner");
     assert_eq!(saved.clips[0].tags, ["press", "set piece"]);
+}
+
+/// The inset's size and corner are **sticky** (#88 spec I6): what the coach
+/// last set on a clip is what the next recording is given, so `Bus::edit_clip`
+/// writes the preference back as it applies the edit. That is the whole of
+/// "pick before" — core's `add_recorded_clip` reads these two fields, and this
+/// is the only thing that ever writes them.
+///
+/// Three things are under test and each has a way of being lost: the write
+/// happens at all, it happens **before the save** (after it, the preference
+/// would survive only until some unrelated edit wrote the project again), and
+/// **undo leaves it alone** — a last-used value is not part of the document's
+/// meaning, which is why the `last_export_*` preferences sit outside the undo
+/// history too.
+#[test]
+fn an_inset_edit_is_the_placement_the_next_recording_inherits() {
+    let prefs = |project: &Project| {
+        (
+            project.preferences.last_inset_size,
+            project.preferences.last_inset_corner,
+        )
+    };
+    let (mut h, p) = Proj::open(&["a.webm"], &[0]);
+    assert_eq!(
+        prefs(&p.saved()),
+        (InsetSize::Medium, InsetCorner::BottomRight)
+    );
+
+    edit(&h, p.id(0), ClipEdit::InsetSize(InsetSize::Large));
+    let project = h.wait_changed().project;
+    assert_eq!(project.clips[0].inset_size, InsetSize::Large);
+    assert_eq!(
+        prefs(&project),
+        (InsetSize::Large, InsetCorner::BottomRight)
+    );
+
+    edit(&h, p.id(0), ClipEdit::InsetCorner(InsetCorner::BottomLeft));
+    let project = h.wait_changed().project;
+    assert_eq!(project.clips[0].inset_corner, InsetCorner::BottomLeft);
+    // On disk, not only in the event: the write-back is inside the save.
+    assert_eq!(
+        prefs(&p.saved()),
+        (InsetSize::Large, InsetCorner::BottomLeft)
+    );
+
+    // The clip goes back; the preference stays where the coach left it.
+    h.send(Command::Undo);
+    let project = h.wait_changed().project;
+    assert_eq!(project.clips[0].inset_corner, InsetCorner::BottomRight);
+    assert_eq!(prefs(&project), (InsetSize::Large, InsetCorner::BottomLeft));
+    assert_eq!(h.wait_select(), p.id(0));
+
+    // **Picking the value the clip already has is still a choice.** Slint's
+    // `ComboBoxBase::select` calls `selected` whatever was showing, and this is
+    // the only gesture that says "put my takes back in the usual corner" about a
+    // clip that is already in it -- here, undoing the sticky value the Ctrl+Z
+    // above left behind. Nothing about the document's clips changes, so the
+    // preference is the whole of the edit; behind the no-op guard it was
+    // swallowed and the next recording stayed bottom-left.
+    edit(&h, p.id(0), ClipEdit::InsetCorner(InsetCorner::BottomRight));
+    let project = h.wait_changed().project;
+    assert_eq!(project.clips[0].inset_corner, InsetCorner::BottomRight);
+    assert_eq!(
+        prefs(&project),
+        (InsetSize::Large, InsetCorner::BottomRight)
+    );
+    // On disk, as above: the write-back is inside the save.
+    assert_eq!(
+        prefs(&p.saved()),
+        (InsetSize::Large, InsetCorner::BottomRight)
+    );
+
+    // And it filed no undo step of its own -- a last-used value is not part of
+    // the document's meaning -- so the redo still waiting is the corner edit.
+    h.send(Command::Redo);
+    let project = h.wait_changed().project;
+    assert_eq!(project.clips[0].inset_corner, InsetCorner::BottomLeft);
+    assert_eq!(
+        prefs(&project),
+        (InsetSize::Large, InsetCorner::BottomRight)
+    );
+    assert_eq!(h.wait_select(), p.id(0));
+
+    h.shutdown();
+    assert_eq!(
+        prefs(&p.saved()),
+        (InsetSize::Large, InsetCorner::BottomRight)
+    );
 }
 
 #[test]

@@ -13,6 +13,24 @@ which the app was called until 0.8.0 renamed it.
 
 ## [Unreleased]
 
+### Added
+
+- **Choose how big your inset is, and which corner it sits in — per clip.** The
+  inspector has two new pickers beside "Show avatar in export": **Small /
+  Medium / Large**, and **bottom right / bottom left / top right**. Medium in the
+  bottom right is what every clip has always been, so nothing you have already
+  recorded looks any different. Use it when the action is on the side your face
+  is covering: move yourself to the other corner, or out of the way entirely by
+  going up top. The caption bar always stops where the inset stands, so your
+  words are never underneath you — which does mean a Large inset leaves a caption
+  about seven characters less room. There is no top left, because that is where
+  the scoreboard lives and you would just be sitting behind it.
+- **The last size and corner you picked is what the next recording uses.** Set it
+  on any clip and every take after that starts there, so you can decide once
+  before you record rather than fixing each clip afterwards — and the self-view
+  in the corner while you record shows you where it is actually going to end up.
+  Fixing one clip afterwards still only changes that clip.
+
 ## [0.10.0] - 2026-09-27
 
 ### Added

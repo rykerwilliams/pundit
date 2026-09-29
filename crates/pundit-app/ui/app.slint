@@ -182,7 +182,6 @@ export enum MatchTag {
     start-stop,
 }
 
-/// The inspector's text fields, for `edit-clip`.
 /// Which way `J`, `L` and the speed button move the scan speed (spec S1).
 export enum ScanStep {
     faster,
@@ -196,11 +195,36 @@ export enum SlateField {
     tags,
 }
 
+/// The inspector's text fields, for `edit-clip`.
 export enum ClipField {
     name,
     tags,
     notes,
     transcript,
+}
+
+/// How wide an inset is drawn, and which corner it is flush into (#88 spec
+/// I1, I2) — `core::project`'s `InsetSize` and `InsetCorner`, which Slint
+/// cannot take directly.
+///
+/// **These two cross as declared enums and the inspector's pickers cross as
+/// `int` indices, deliberately.** They are read by `place-self-view`, where a
+/// pair of `int`s would read as valid either way round — which is the mistake
+/// `core::project::InsetPlacement` exists to make unwritable. The pickers
+/// cannot use them: a `ComboBox`'s `current-index` needs a **two-way**
+/// binding (see `Inspector::transcript-model`), so the value the control holds
+/// has to be the index itself, and `resolution_index` / `resolution_at` in
+/// `main.rs` are the shipped shape for that.
+export enum InsetSize {
+    small,
+    medium,
+    large,
+}
+
+export enum InsetCorner {
+    bottom-right,
+    bottom-left,
+    top-right,
 }
 
 /// The selected clip's transcription, as the bus publishes it (Phase 10 S5).
@@ -496,6 +520,25 @@ component Inspector inherits Rectangle {
     in-out property <string> tags-text;
     in-out property <string> notes-text;
     in-out property <bool> show-pip;
+    /// The selected clip's inset size and corner (#88 spec I7), as **indices**
+    /// into the two pickers' models -- `main.rs`'s `inset_size_index` and
+    /// `inset_corner_index`, which is `resolution_index`'s pattern.
+    ///
+    /// **Two-way, for the reason `transcript-model` below is:** a `ComboBox`
+    /// writes its own `current-index`, which replaces any one-way binding onto
+    /// it, and from then on the next clip's value would never reach the
+    /// control. Nothing stores an index -- `ClipEdit::InsetSize` carries the
+    /// enum -- so the one that lives here lives only between a click and the
+    /// command it sends.
+    ///
+    /// **Both carry their default**, because Slint's is `0` and these are
+    /// shown before `show_clip` has ever run -- with no project open, in a
+    /// disabled inspector. `inset_size_index(InsetSize::default())` is 1
+    /// (Medium); `inset_corner_index(InsetCorner::default())` really is 0
+    /// (Bottom right), and says so here so the asymmetry doesn't read as an
+    /// oversight.
+    in-out property <int> inset-size-index: 1;
+    in-out property <int> inset-corner-index: 0;
     /// This clip was recorded with the project's avatar rather than a camera
     /// (avatar G3). One word of the checkbox above follows it; the property,
     /// the command and the undo are the one `show-pip` either way.
@@ -551,6 +594,9 @@ component Inspector inherits Rectangle {
     /// ... or lost focus, which commits.
     callback end-edit(ClipField, string);
     callback pip-toggled(bool);
+    /// A size or a corner was picked, by index into the picker's model.
+    callback inset-size-chosen(int);
+    callback inset-corner-chosen(int);
     /// Queue this clip's commentary for transcription (Phase 10 S6).
     callback transcribe-clicked();
     /// Stop the transcription running **and drop the queue behind it**.
@@ -635,6 +681,54 @@ component Inspector inherits Rectangle {
             enabled: root.enabled;
             checked <=> root.show-pip;
             toggled => { root.pip-toggled(self.checked); }
+        }
+
+        // Where that inset goes and how big (#88 spec I7), under the checkbox
+        // that says whether there is one. Not disabled when there isn't: the
+        // coach can set the placement before ticking the box, and a greyed
+        // pair here would be a second rule about `show-pip` to keep.
+        //
+        // **`min-width: 0` on both is load-bearing, not tidiness.** A
+        // `ComboBox` declares `min-width: 160px` in Slint's default style, so
+        // two of them and the gap want **326px** of the 256px this 280px
+        // column has inside its padding -- the same overflow the transcript
+        // caption row below records for a fourth control (76px past, at the
+        // window's 1100x700 minimum). Overridden to 0 and left stretching, the
+        // pair simply splits whatever the column gives and the worst case is a
+        // clipped label, visible the moment anyone opens the app, rather than
+        // a control off the edge. `horizontal-stretch` restates the widget's
+        // own default so the whole rule reads here.
+        //
+        // Vertical space is no longer scarce: the column went inside a
+        // `ScrollView` in 0.10.0, so an extra row scrolls and nothing has to
+        // give up pixels for it.
+        FieldLabel { text: "Inset size and corner"; }
+        HorizontalLayout {
+            spacing: 6px;
+            ComboBox {
+                min-width: 0;
+                horizontal-stretch: 1;
+                // 0.16 / 0.22 / 0.30 of the output width (spec I1); Medium is
+                // the width every inset the app has ever drawn had.
+                model: ["Small", "Medium", "Large"];
+                enabled: root.enabled;
+                current-index <=> root.inset-size-index;
+                selected => { root.inset-size-chosen(self.current-index); }
+
+                Tooltip { text: @markdown("How wide this clip's inset is in the export"); }
+            }
+            ComboBox {
+                min-width: 0;
+                horizontal-stretch: 1;
+                // Top-left is deliberately absent: the scoreboard is locked
+                // into it and is drawn over the inset (spec I2).
+                model: ["Bottom right", "Bottom left", "Top right"];
+                enabled: root.enabled;
+                current-index <=> root.inset-corner-index;
+                selected => { root.inset-corner-chosen(self.current-index); }
+
+                Tooltip { text: @markdown("Which corner this clip's inset sits in. The caption bar gives way to it"); }
+            }
         }
 
         if root.avatar && root.avatar-missing: Text {
@@ -2841,11 +2935,29 @@ export component AppWindow inherits Window {
     /// It picks the placement rule: an avatar is drawn in its own, smaller
     /// box (`core::layout::avatar_self_view_rect`).
     in property <bool> self-view-avatar;
+    /// Where this take's inset will land: the coach's sticky preference, which
+    /// is what `Project::add_recorded_clip` seeds the new clip from (#88 spec
+    /// I6).
+    ///
+    /// **The preference and never the selected clip's fields.** There is no
+    /// clip during a take -- `finish_recording` builds it afterwards -- so
+    /// "pick before" can only be a preference, and binding this to the clip
+    /// under the coach's cursor would show the self-view somewhere the
+    /// recording is not going to put it. Written by `start_self_view`, beside
+    /// `self-view-avatar`, from the same snapshot.
+    ///
+    /// **Both carry their default explicitly**, because a Slint enum has no
+    /// `#[default]` and falls to its **first** variant: `InsetSize`'s is
+    /// `small`, so a window nothing had fed would place the self-view one step
+    /// narrower than every inset the app has ever drawn. Spelled out, the pair
+    /// reads as `core::project::InsetPlacement::default()`.
+    in property <InsetSize> self-view-size: InsetSize.medium;
+    in property <InsetCorner> self-view-corner: InsetCorner.bottom-right;
     /// Where the inset lands on the picture (`core::layout::
     /// pip_rect_over_picture`, sized by `core::avatar::avatar_rect`), from
-    /// the content rect, the inset's aspect, the level and which kind of take
-    /// it is. Pure, like `place-picture`.
-    pure callback place-self-view(PictureRect, float, float, bool) -> PictureRect;
+    /// the content rect, the inset's aspect, the level, which kind of take
+    /// it is and where that take's inset goes. Pure, like `place-picture`.
+    pure callback place-self-view(PictureRect, float, float, bool, InsetSize, InsetCorner) -> PictureRect;
 
     // --- Zoom (spec D9; the state and the math are on the Rust side) ---
 
@@ -2859,6 +2971,15 @@ export component AppWindow inherits Window {
     /// Zero before the first layout, or with nothing loaded.
     out property <length> content-width: player.content.width;
     out property <length> content-height: player.content.height;
+    /// Where the live self-view lands on the picture, which the image below
+    /// takes its whole rect from.
+    ///
+    /// **A named property on the window rather than a local one on the image**,
+    /// for the reason `content-width` above is one: it is the only thing a
+    /// headless test can read, and reading it is what evaluates the binding —
+    /// the image is positioned absolutely, so nothing else in a window that
+    /// never renders would (`tests/self_view_placement.rs`).
+    out property <PictureRect> self-view-rect: root.place-self-view(player.content, root.self-view.width / root.self-view.height, root.self-view-level, root.self-view-avatar, root.self-view-size, root.self-view-corner);
     /// The picture's rect at `zoom`. Pure, so the binding that calls it is
     /// re-evaluated whenever an argument changes.
     pure callback place-picture(ZoomState, float, float, length, length) -> PictureRect;
@@ -2988,6 +3109,12 @@ export component AppWindow inherits Window {
     in-out property <string> clip-notes;
     in-out property <string> clip-transcript;
     in-out property <bool> clip-show-pip;
+    /// The selected clip's inset size and corner (#88 spec I7), as indices
+    /// into the inspector's two pickers -- which is where the reasoning for an
+    /// index rather than `InsetSize` / `InsetCorner` lives, and where the two
+    /// defaults below are explained.
+    in-out property <int> clip-inset-size-index: 1;
+    in-out property <int> clip-inset-corner-index: 0;
     /// The selected clip's inset is the avatar, not a camera (avatar G3):
     /// one word of the inspector's checkbox.
     in property <bool> clip-avatar;
@@ -3397,6 +3524,11 @@ export component AppWindow inherits Window {
     /// An inspector field's commit for clip `id`.
     callback edit-clip(string, ClipField, string);
     callback set-show-pip(string, bool);
+    /// Clip `id`'s inset size or corner, by index into the picker's model
+    /// (#88 spec I7). Each also makes the choice the next recording's, by the
+    /// write-back in `Bus::edit_clip`.
+    callback set-inset-size(string, int);
+    callback set-inset-corner(string, int);
     /// Queue clip `id`'s commentary for transcription (Phase 10 S6).
     callback transcribe(string);
     /// Stop the transcription running and drop the queue behind it.
@@ -4347,11 +4479,10 @@ export component AppWindow inherits Window {
                     // input: a drag that starts on it draws, as the stroke
                     // lands over the inset in the export too.
                     if root.self-view-shown: Image {
-                        property <PictureRect> at: root.place-self-view(player.content, root.self-view.width / root.self-view.height, root.self-view-level, root.self-view-avatar);
-                        x: self.at.x;
-                        y: self.at.y;
-                        width: self.at.width;
-                        height: self.at.height;
+                        x: root.self-view-rect.x;
+                        y: root.self-view-rect.y;
+                        width: root.self-view-rect.width;
+                        height: root.self-view-rect.height;
                         source: root.self-view;
                         image-fit: fill;
                     }
@@ -4658,6 +4789,8 @@ export component AppWindow inherits Window {
                                     transcript-model-enabled: root.transcript-model-enabled;
                                     transcribe-download: root.transcribe-download;
                                     show-pip <=> root.clip-show-pip;
+                                    inset-size-index <=> root.clip-inset-size-index;
+                                    inset-corner-index <=> root.clip-inset-corner-index;
                                     avatar: root.clip-avatar;
                                     avatar-missing: root.avatar-missing;
                                     begin-edit => { root.editing-clip-id = root.selected-clip; }
@@ -4676,6 +4809,18 @@ export component AppWindow inherits Window {
                                     // The selection, since a click doesn't take focus
                                     // from a field.
                                     pip-toggled(on) => { root.set-show-pip(root.selected-clip, on); }
+                                    // Off the fields first, as the speech
+                                    // model's picker below is: the popup takes
+                                    // focus from a field being edited, and the
+                                    // window's shortcuts must come back.
+                                    inset-size-chosen(index) => {
+                                        keys.focus();
+                                        root.set-inset-size(root.selected-clip, index);
+                                    }
+                                    inset-corner-chosen(index) => {
+                                        keys.focus();
+                                        root.set-inset-corner(root.selected-clip, index);
+                                    }
                                     // Off the fields first, as the Preview button
                                     // does: a click doesn't move focus, and the
                                     // machine's write is refused a re-render while

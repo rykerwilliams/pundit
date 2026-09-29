@@ -42,7 +42,12 @@ use pundit_core::highlight::{highlight_shapes, HighlightEdit};
 use pundit_core::layout::{self, avatar_self_view_rect, self_view_rect, STROKE_LINE_WIDTH};
 use pundit_core::match_entry::{self, PendingMatchEvent};
 use pundit_core::plan::{ExportTarget, ScoreboardMode};
-use pundit_core::project::{Clip, Inset, Project, Quality, Resolution, Slate, SlateEdit};
+// `project::` qualified for the two enums the window declares under the same
+// names (`bus::ScanStep`'s precedent): the bare `InsetSize` and `InsetCorner`
+// in this file are Slint's.
+use pundit_core::project::{
+    self, Clip, Inset, InsetPlacement, Project, Quality, Resolution, Slate, SlateEdit,
+};
 use pundit_core::scoreboard::{
     MatchEventKind, MatchFormat, ReelEnd, ScoreboardConfig, ScoreboardContext, ScoreboardState,
     TeamConfig,
@@ -764,6 +769,67 @@ fn quality_at(index: i32) -> Quality {
         0 => Quality::Low,
         2 => Quality::High,
         _ => Quality::Medium,
+    }
+}
+
+/// The inspector's two inset pickers (#88 spec I7), on `resolution_index`'s
+/// pattern and for its reason: a `ComboBox` holds an index, and the index has
+/// to be the property the control is two-way bound to (`app.slint`'s
+/// `Inspector::inset-size-index` says why). Nothing stores one —
+/// `ClipEdit::InsetSize` carries the enum — so it lives only between the click
+/// and the command.
+///
+/// Both matches are exhaustive, so a fourth size or corner has to be answered
+/// for here rather than quietly reading as Medium in the bottom-right.
+fn inset_size_index(size: project::InsetSize) -> i32 {
+    match size {
+        project::InsetSize::Small => 0,
+        project::InsetSize::Medium => 1,
+        project::InsetSize::Large => 2,
+    }
+}
+
+fn inset_size_at(index: i32) -> project::InsetSize {
+    match index {
+        0 => project::InsetSize::Small,
+        2 => project::InsetSize::Large,
+        _ => project::InsetSize::Medium,
+    }
+}
+
+fn inset_corner_index(corner: project::InsetCorner) -> i32 {
+    match corner {
+        project::InsetCorner::BottomRight => 0,
+        project::InsetCorner::BottomLeft => 1,
+        project::InsetCorner::TopRight => 2,
+    }
+}
+
+fn inset_corner_at(index: i32) -> project::InsetCorner {
+    match index {
+        1 => project::InsetCorner::BottomLeft,
+        2 => project::InsetCorner::TopRight,
+        _ => project::InsetCorner::BottomRight,
+    }
+}
+
+/// The window's placement enums as core's, for `place-self-view`.
+///
+/// **Enums and not the pickers' indices**, because these two arrive as
+/// separate arguments: a pair of `i32`s would read as valid either way round,
+/// which is the mistake `InsetPlacement` exists to make unwritable.
+fn inset_placement(size: InsetSize, corner: InsetCorner) -> InsetPlacement {
+    InsetPlacement {
+        size: match size {
+            InsetSize::Small => project::InsetSize::Small,
+            InsetSize::Medium => project::InsetSize::Medium,
+            InsetSize::Large => project::InsetSize::Large,
+        },
+        corner: match corner {
+            InsetCorner::BottomRight => project::InsetCorner::BottomRight,
+            InsetCorner::BottomLeft => project::InsetCorner::BottomLeft,
+            InsetCorner::TopRight => project::InsetCorner::TopRight,
+        },
     }
 }
 
@@ -1624,6 +1690,32 @@ fn wire_inspector(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             }
         }
     });
+    // The inset's size and corner (#88 spec I7), on `set-show-pip`'s template.
+    // Each is also the choice the **next** recording inherits, which the bus
+    // writes back as it applies the edit — the coach sets it once on any clip
+    // and never again (spec I6).
+    window.on_set_inset_size({
+        let bus = bus.clone();
+        move |id, index| {
+            if let Some(id) = parse_id(&id) {
+                bus.borrow().send(Command::EditClip {
+                    id,
+                    edit: ClipEdit::InsetSize(inset_size_at(index)),
+                });
+            }
+        }
+    });
+    window.on_set_inset_corner({
+        let bus = bus.clone();
+        move |id, index| {
+            if let Some(id) = parse_id(&id) {
+                bus.borrow().send(Command::EditClip {
+                    id,
+                    edit: ClipEdit::InsetCorner(inset_corner_at(index)),
+                });
+            }
+        }
+    });
     window.on_show_clip({
         let weak = window.as_weak();
         move || {
@@ -1776,19 +1868,21 @@ fn wire_zoom(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
     let notches: Vec<f32> = SNAP_NOTCHES.iter().map(|&n| n as f32).collect();
     window.set_zoom_notches(ModelRc::new(VecModel::from(notches)));
 
-    window.on_place_self_view(|content, cam_aspect, level, avatar| {
+    window.on_place_self_view(|content, cam_aspect, level, avatar, size, corner| {
         let picture = layout::Rect {
             x: content.x.into(),
             y: content.y.into(),
             w: content.width.into(),
             h: content.height.into(),
         };
+        let placement = inset_placement(size, corner);
         // One placement rule per kind of take (avatar G2): the avatar has a
         // box of its own, smaller than the inset a camera fills, and the
-        // camera's lands on `pip_rect_over_picture` as it always has.
+        // camera's lands on `pip_rect_over_picture` as it always has. Both
+        // take the placement the next recording will be given (#88 spec I6).
         let placed = match avatar {
-            true => avatar_self_view_rect(picture, level.into()),
-            false => self_view_rect(picture, cam_aspect.into(), level.into()),
+            true => avatar_self_view_rect(picture, level.into(), placement),
+            false => self_view_rect(picture, cam_aspect.into(), level.into(), placement),
         };
         // Nothing to place on before the first layout, or with no picture.
         let Some(r) = placed else {
@@ -3036,6 +3130,16 @@ fn show_clip(w: &AppWindow) {
         w.set_clip_notes(clip.map_or("", |c| &c.notes).into());
         w.set_clip_transcript(clip.map_or("", |c| &c.transcript).into());
         w.set_clip_show_pip(clip.is_some_and(|c| c.show_pip));
+        // Where this clip's inset goes and how big (#88 spec I7). Read off the
+        // fields rather than `Clip::inset_placement`, which folds `show_pip`
+        // in: the pickers say what the clip records, and the checkbox above
+        // says whether it is drawn.
+        w.set_clip_inset_size_index(inset_size_index(
+            clip.map(|c| c.inset_size).unwrap_or_default(),
+        ));
+        w.set_clip_inset_corner_index(inset_corner_index(
+            clip.map(|c| c.inset_corner).unwrap_or_default(),
+        ));
         w.set_clip_avatar(clip.is_some_and(|c| c.inset == Inset::Avatar));
     });
 }
@@ -3191,6 +3295,13 @@ fn selected_id(w: &AppWindow) -> Option<Uuid> {
 /// A camera take clears the flag and gets no picture here: `video.rs`'s
 /// frames fill the corner, and `self_view_rect` at level 1.0 places the inset
 /// exactly where it always was.
+///
+/// **It also fixes where the inset goes and how big** (#88 spec I6), from the
+/// coach's sticky preference — the value `Project::add_recorded_clip` will give
+/// the clip this take produces. Read here rather than in `show_project`
+/// because it is a property of the take, set from the same snapshot as the mode
+/// above; the inspector is disabled while recording, so nothing can move it
+/// mid-take.
 fn start_self_view(w: &AppWindow) {
     UI.with_borrow_mut(|ui| {
         ui.avatar_take = ui
@@ -3198,6 +3309,29 @@ fn start_self_view(w: &AppWindow) {
             .as_ref()
             .is_some_and(|s| s.project.avatar.is_some());
         w.set_self_view_avatar(ui.avatar_take);
+        // Where this take's inset will land (#88 spec I6): the sticky
+        // preference `add_recorded_clip` will seed the clip from, read here
+        // from the same snapshot as the mode above, because there is no clip
+        // to read it off until the take is over. Defaults with no project,
+        // where nothing is shown anyway.
+        let placement = ui
+            .snapshot
+            .as_ref()
+            .map(|s| InsetPlacement {
+                size: s.project.preferences.last_inset_size,
+                corner: s.project.preferences.last_inset_corner,
+            })
+            .unwrap_or_default();
+        w.set_self_view_size(match placement.size {
+            project::InsetSize::Small => InsetSize::Small,
+            project::InsetSize::Medium => InsetSize::Medium,
+            project::InsetSize::Large => InsetSize::Large,
+        });
+        w.set_self_view_corner(match placement.corner {
+            project::InsetCorner::BottomRight => InsetCorner::BottomRight,
+            project::InsetCorner::BottomLeft => InsetCorner::BottomLeft,
+            project::InsetCorner::TopRight => InsetCorner::TopRight,
+        });
         w.set_self_view(ui.avatar_image.clone().unwrap_or_default());
         ui.self_view_level = if ui.avatar_take { 0.0 } else { 1.0 };
         w.set_self_view_level(ui.self_view_level as f32);

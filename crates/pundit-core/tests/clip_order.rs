@@ -3,7 +3,7 @@
 
 use uuid::Uuid;
 
-use pundit_core::project::{Clip, Inset, Project};
+use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize, Project};
 use pundit_core::undo::ClipEdit;
 
 fn clip(n: u128, source_index: usize, start: f64) -> Clip {
@@ -19,6 +19,8 @@ fn clip(n: u128, source_index: usize, start: f64) -> Clip {
         events: Vec::new(),
         show_pip: true,
         inset: Inset::Camera,
+        inset_size: InsetSize::Medium,
+        inset_corner: InsetCorner::BottomRight,
         sort_index: 0,
         created_at: String::new(),
         transcript: String::new(),

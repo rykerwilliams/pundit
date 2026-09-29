@@ -24,7 +24,7 @@
 use uuid::Uuid;
 
 use crate::highlight::PlayerHighlight;
-use crate::project::{Clip, Slate};
+use crate::project::{Clip, InsetCorner, InsetSize, Slate};
 use crate::scoreboard::MatchEventRecord;
 
 /// The most actions the undo stack holds. Excess entries drop from the front
@@ -40,6 +40,14 @@ pub enum ClipEdit {
     Tags(Vec<String>),
     Notes(String),
     ShowPip(bool),
+    /// v13's two, undoable like [`ShowPip`](Self::ShowPip): the control sits
+    /// beside it in the Inspector, so anything else would be inconsistent under
+    /// the coach's hands. The sticky preference the app writes beside them is
+    /// **not** reverted, for the reason the `last_export_*` preferences sit
+    /// outside this history: a last-used value is not part of the document's
+    /// meaning.
+    InsetSize(InsetSize),
+    InsetCorner(InsetCorner),
     /// The commentary as words (Phase 10 spec S4, S7). The coach's own edit
     /// of it is an undo step like any other; the **machine's** write of one
     /// is not — it applies the edit and skips [`UndoController::push`],

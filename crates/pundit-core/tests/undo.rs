@@ -9,7 +9,7 @@
 use uuid::Uuid;
 
 use pundit_core::highlight::{HighlightKey, NormRect, PlayerHighlight};
-use pundit_core::project::{Clip, Inset, Slate};
+use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize, Slate};
 use pundit_core::scoreboard::{MatchEventKind, MatchEventRecord};
 use pundit_core::stroke::Rgba;
 use pundit_core::undo::{ClipEdit, UndoAction, UndoController, STACK_CAP};
@@ -27,6 +27,8 @@ fn clip(id: Uuid) -> Clip {
         events: Vec::new(),
         show_pip: true,
         inset: Inset::Camera,
+        inset_size: InsetSize::Medium,
+        inset_corner: InsetCorner::BottomRight,
         sort_index: 0,
         created_at: String::new(),
         transcript: String::new(),

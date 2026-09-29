@@ -98,6 +98,7 @@ fn decode_still_refuses_a_missing_file_with_a_message() {
 fn the_avatar_blit_costs() {
     use pundit_core::avatar::PULSE_GROWTH;
     use pundit_core::layout::pip_rect;
+    use pundit_core::project::InsetPlacement;
     use std::time::Instant;
     use tiny_skia::{Color, FilterQuality, Pixmap, PixmapPaint, Transform};
 
@@ -109,7 +110,7 @@ fn the_avatar_blit_costs() {
     // A 4:3 inset: the shape this was measured at while the question was open.
     // The square box the design settled on (spec A5) is larger still, so
     // keeping the original geometry only understates the answer.
-    let rect = pip_rect(out_w, out_h, 4.0 / 3.0);
+    let rect = pip_rect(out_w, out_h, 4.0 / 3.0, InsetPlacement::default());
     let mut image = Pixmap::new(rect.w.ceil() as u32, rect.h.ceil() as u32).unwrap();
     image.fill(Color::from_rgba8(200, 120, 90, 255));
     let mut frame = Pixmap::new(out_w as u32, out_h as u32).unwrap();

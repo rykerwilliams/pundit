@@ -300,9 +300,10 @@ fn overlay_branch(out_w: i32, out_h: i32) -> String {
 /// and the scoreboard — is pad 2 at z 2, over everything.
 ///
 /// **The overlay is on top because the coach's pen is what must never be
-/// hidden** (`overlay`, spec H5): the inset is flush into the bottom-right
-/// corner, so an inset above this pad would swallow every stroke and pill drawn
-/// into roughly 422×152 px of the picture. Nothing is washed for it, because
+/// hidden** (`overlay`, spec H5): the inset is flush into whichever corner its
+/// clip names, so an inset above this pad would swallow every stroke and pill
+/// drawn into as much as 576×324 px of the picture at 1080p — Large, a 16:9
+/// camera — wherever the coach put it. Nothing is washed for it, because
 /// the caption bar stops where the inset stands rather than running under it
 /// (`core::layout::bar_rect`).
 fn install_overlay_pad(mix: &gst::Element, out_w: i32, out_h: i32) -> gst::Pad {
@@ -406,9 +407,9 @@ struct Layout {
     picture: PadRect,
     /// The inset: the PiP pad's, at full size. A 1×1 rect while the entry has
     /// no inset at all, which is where its transparent filler lands,
-    /// invisibly; an avatar entry's is its image's own box (`avatar_box` of
-    /// the square `pip_rect`), which [`Schedule::inset`] then scales per frame
-    /// with the pulse.
+    /// invisibly; an avatar entry's is its image's own box
+    /// (`core::layout::avatar_box`, the clip's inset column at the avatar's own
+    /// ratio), which [`Schedule::inset`] then scales per frame with the pulse.
     pip: PadRect,
 }
 

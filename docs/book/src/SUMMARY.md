@@ -5,6 +5,7 @@
 # Guide
 
 - [Using pundit](guide/index.md)
+  - [Keyboard shortcuts](guide/shortcuts.md)
 
 # Reference
 

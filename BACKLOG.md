@@ -13,12 +13,18 @@ made things worse.
 
 ### Next, in order
 
-- **88.** The inset's size and corner, per clip. The coach (2026-09-25): "avatar
 - **85.** Recent projects, and a drawer to switch between them. The coach
 - **78.** App settings for the things an export writes. The coach (2026-09-24):
 - **96.** Every hot key should be reassignable. The coach (2026-09-25): "we need
 - **77.** An export queue across projects. The coach (2026-09-24): "i open…
 - **84.** Music under a goals reel — Openverse search, then the mixer (needs #78)
+- **102.** Snap the scrubber to events, as an option. The coach (2026-09-28):
+  "snap to events in the scrubber as an option" — which marks it covers is the
+  open question (needs #78 for the control, and #100's per-field read)
+- **104.** Double-clicking a slate should take the player to its in point, as a
+  clip row's double-click does (and a click should stop toggling the selection)
+- **105.** A slate's tag field should offer the tags already in use — the clip
+  inspector's suggestion list, lifted into one shared `TagField`
 
 ### Waiting on the coach
 
@@ -30,6 +36,9 @@ product call, or their own data.
 - **80.** The restarts — mostly done; match B's seven are the remainder
 - **81.** Task 3.6 — the *model* spike (rten vs ort, D-FINE-N); P3's own spike is done
 - **53.** 2160p export
+- **103.** A possession tracker, as an analysis pass — which output (a share, a
+  timeline, or the change moments) is the coach's call; built on P5/P6's
+  detector and kit clustering (#81)
 
 ### Open, but gated on something happening
 
@@ -96,6 +105,9 @@ problem — which is the entry, not an excuse for it.
   the coach's call (see the entry)
 - **87.** Resizable panels — shipped 2026-09-27; panels grow but do not shrink,
   and there is no keyboard path (99)
+- **88.** The inset's size and corner, per clip — shipped 2026-09-28; v13, three
+  sizes and three corners, sticky; the two preferences get a control of their own
+  with #78
 
 - 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 92, 94
 
@@ -1446,31 +1458,46 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **What was checked and needed no change:** the raster cost above. **What is
   still open:** 99 (no keyboard path to the splitters).
 
-88. **The inset's size and corner, per clip.** The coach (2026-09-25): "avatar
-  sizing and position should be settable per clip i think?" Today both are fixed:
-  `PIP_WIDTH_RATIO` and a hard, flush bottom-right corner
-  (`core/src/layout.rs`), with `AVATAR_BOX_RATIO` shrinking the avatar's circle
-  inside that box. A clip keeps only *whether* it shows an inset
-  (`Clip::show_pip`) and *which kind* (`Clip::inset`), both v10 fields.
-- **The shape:** two more fields on `Clip` — a size (a ratio, or a few named
-  steps) and a corner (one of four) — defaulted to today's values, so every
-  existing clip renders unchanged. That is a `formatVersion` bump to 12, which
-  is cheap and additive; and inspector controls beside the existing "Show avatar
-  in export" checkbox.
-- **What has to follow it:** the caption bar's width — the whole bar, background
-  and line, now stops at the inset's left edge (`layout::bar_rect` over
-  `layout::pip_left`), so a left-hand corner has to move that edge with it, not
-  just widen it — the
-  scan view's live self-view (`layout::self_view_rect` /
-  `avatar_self_view_rect` — the corner must match what the export will do), the
-  avatar's circle, and the GL 1×1 filler. The scoreboard is top-left, so a
-  top-left inset needs a rule: refuse that corner, or let them overlap.
-- **Worth deciding first:** whether a size is free (a slider) or a few steps
-  ("small / medium / large"), since a free ratio makes every clip's frame a
-  different shape and the reason the app has looked consistent so far is that
-  it has never offered one.
-- **Why deferred:** only by order — the basket is mid-build in the same files.
-- **When to revisit:** straight after the basket closes out.
+88. **The inset's size and corner, per clip — RESOLVED** (2026-09-28). Three
+  sizes (0.16 / **0.22** / 0.30 of the output width, the middle exactly today's)
+  and three corners (**bottom-right** / bottom-left / top-right), stored on the
+  clip and **sticky**: the last one the coach set seeds the next recording
+  (`Preferences::last_inset_size` / `last_inset_corner`), which is what makes
+  "pick before" reachable without the app-settings panel #78 will bring. Spec
+  `docs/superpowers/specs/2026-09-28-inset-size-and-corner-design.md`, plan
+  beside it, shipped in three commits (core, media, app).
+- **Two corrections this entry needed.** It said "a `formatVersion` bump to 12":
+  **v12 was taken** by slates, so this is **v13** — an implementation trusting
+  the entry would have written a version every 0.9.0 project already claims. And
+  its list of what must follow was missing the item that would have shipped a
+  bug: **the export built one avatar rect per run**, so a compilation mixing a
+  Small bottom-left avatar clip with a Large bottom-right one drew both in the
+  same place, with no test failing. Each entry's rect is now built in
+  `Pip::open`, pinned by
+  `media/tests/export.rs::a_run_of_mixed_placements_draws_each_avatar_in_its_own_box`.
+- **Top-left is not offered**, which answers the rule this entry asked for: the
+  scoreboard is locked there and is drawn *over* the inset, so it would not
+  corrupt anything — it would just be a half-hidden face the coach has to work
+  out. A control that appears only when no scoreboard is configured is worse than
+  one that is simply absent.
+- **Steps, not a slider**, and not for the reason a first draft gave (that a free
+  ratio would make the caption bar jitter — steps jitter too, and a per-clip
+  corner moves the bar's whole edge). The real reasons: a continuous ratio is
+  **unguessable** with no live preview of the composite, and three steps can each
+  be **measured** against the longest line the app produces (≈74 / 68 / 61
+  characters at 1080p) where a slider cannot.
+- **`avatar_box` stopped being corner arithmetic**, and that was a fix rather
+  than a tidy-up: shrinking a rect about its bottom-right corner drifts a
+  bottom-left avatar **105.6px** off the left edge and hangs a top-right one the
+  same 105.6px below the top at Medium/1080p — the same number on both axes,
+  because the box is square. It is now a ratio on a ratio, exact to the pixel
+  where Medium/BottomRight is concerned.
+- **What was checked and needed no change:** the GL 1×1 filler (it feeds a pad
+  whose rect is set in the PTS-keyed probe), and `shows_camera_pip` /
+  `shows_avatar` / `shows_inset` (they answer *whether*; this is *where*).
+  **What is still open:** nothing of this entry — but the two new preferences
+  have no control of their own, which is #78's job, where
+  `pip_for_new_recordings` would finally get one too.
 
 89. **The app's live self-view sat under the drawings; the export's inset sat
   over them — RESOLVED** (2026-09-25 review, the other way round). The inset had
@@ -1789,3 +1816,209 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   basket lives in its own file.
 - **When to revisit:** next time anything is added to `state.json`, or the first
   time a coach loses their last-project pointer for no visible reason.
+
+101. **The export test binaries abort with `corrupted size vs. prev_size` under
+  heavy concurrent load.** glibc heap corruption, `SIGABRT`, always mid-suite and
+  always at a different test, seen three times in `pundit-media --test export`
+  and once in `pundit-harness --test export` — never in a run of that suite
+  alone. Observed on 2026-09-28 during #88's gates with three other sessions
+  building on the machine (loadavg ~21); `cargo test --workspace` on a quiet
+  machine that same day was clean, 971 passed. It aborts the test *process*, so
+  `cargo test` exits 101 with **no failing test named**, which is the confusing
+  part: the run looks broken rather than flaky.
+- **Not #88's.** The aborting binary was `pundit-media`'s, built from sources
+  byte-identical to the commit before it; that suite then ran 30/30 twice,
+  cleanly, alone.
+- **Where to look:** the export path's GStreamer graph under CPU starvation —
+  llvmpipe (CI has no GPU either), the surfaceless GL display, or a buffer pool
+  freed while a probe still holds it. `GST_DEBUG` plus a `valgrind` or ASan run
+  of `--test export` under an artificial load is the experiment; a heap-corruption
+  bug is not going to be read out of the source.
+- **Why deferred:** it has never been seen on a quiet machine or in CI, and the
+  rule here is not to chase rare flakes unless the fix is free. This one is a
+  memory-safety bug somewhere in a C library boundary, which is the opposite of
+  free.
+- **When to revisit:** if it happens on a quiet machine or in CI even once — that
+  would make it a real bug rather than a load artefact — or if anything else in
+  the export path starts corrupting memory.
+
+102. **Snap the scrubber to events, as an option.** The coach (2026-09-28):
+  "snap to events in the scrubber as an option." Dragging the scrubber lands on
+  whatever frame the pixel under the cursor works out to, so getting the playhead
+  onto a goal you tagged means dragging and then nudging with the arrows.
+- **What "events" covers is the first thing to settle**, and it should be settled
+  with the coach rather than guessed: match events (`Project.match_events`) are
+  the obvious ones, but slate in/out marks, player highlights and clip starts are
+  all marks on the same footage, and snapping to all of them at once could make a
+  busy match feel like the scrubber is fighting back. A defensible first cut is
+  match events only, with the rest behind the same option if asked for.
+- **The snap radius is in pixels, not seconds.** The scrubber's seconds-per-pixel
+  changes with the window's width and the source's length, so a radius in seconds
+  would snap from half a screen away on a short clip and never on a long one. The
+  highlight-ring and slate work both key marks by the **displayed frame's** time,
+  which is what a snap should land on too.
+- **"As an option" means it has to be reachable and remembered**, which is
+  `state.json` (a property of the machine, not the project) — and see #100: that
+  file is read all-or-nothing, so a new key wants the per-field read that entry
+  describes, or it is one more value that can cost the coach their last project.
+  #78's settings panel is where the control would live.
+- **It must not fight the frame-accurate paths.** `,` / `.` step exactly one
+  frame and the arrows skip fixed amounts; both are promises about exact
+  distances, so snapping belongs to the **drag** alone, not to any keyed
+  movement.
+- **Why deferred:** filed on the day it was asked for, with #88 closing out; it
+  is a UX affordance with a real design question in it (which marks), not a bug.
+- **When to revisit:** with #78, which brings both the settings panel it needs a
+  control in and the per-field `state.json` read it should not go in without.
+
+103. **A possession tracker, as an analysis pass.** The coach (2026-09-28): "a
+  possession tracker analysis pass." Which team has the ball, over the match — so
+  a coach can see how much of the game their side had, and where it changed.
+- **What it produces is the first thing to settle with the coach**, because the
+  shapes cost very different amounts: (a) a whole-match or per-period
+  **percentage** for each side; (b) a **timeline** of spells, drawn on the
+  scrubber beside the match-event marks; (c) **change-of-possession moments**,
+  which is what the match-vision spec's Deferred list wanted for guessing where a
+  goal's build-up starts (`2026-09-22-match-vision-design.md`, "An automatic
+  guess at the move's start"). (a) tolerates noisy per-frame guesses because it
+  averages them; (b) and (c) do not.
+- **It needs the ball, and the spec already doubts the ball.** The same Deferred
+  entry says change of possession "needs ball tracking, which the ball's few
+  pixels in the wide framing make doubtful". On Trace's follow-the-play cut at
+  1080p the ball is a handful of pixels on the far side, and the detectors the
+  spec cleared for licence (D-FINE-N / DEIM-N, COCO-descended) are person-first.
+  A proxy that skips the ball — the team with more players in the half the
+  camera is framing, or the kit nearest the pan's centre — is cheaper and much
+  weaker, and would have to be measured, not assumed.
+- **It sits on the vision layer that is shelved.** Telling the teams apart is
+  P5's kit clustering (torso colour, k = 2), finding the players is its detector,
+  and following them is P6's tracker; #81 is the runtime spike none of that has
+  had. So this is not a pass that can be built next to P3's sound-and-motion
+  `Analyzer` — it is a consumer of P5/P6, and it inherits their download prompt,
+  their queue rules (a job, preempted by recording) and their stay-on-the-machine
+  promise.
+- **The bar before anything is shown** follows P3's rule: measure on the coach's
+  tagged matches first, and show nothing that fails. Truth would have to be
+  hand-marked possession on a few stretches of matches A–C, which the coach does
+  not have yet — itself a question for them. Nothing identifying goes in the repo
+  (CLAUDE.md, match analysis).
+- **Why deferred:** filed on the day it was asked for; it depends on a detector
+  and kit clustering that have not been built, and on a product call about which
+  of the three outputs is wanted.
+- **When to revisit:** when #81's spike runs and P5 or P6 is built — the kit
+  clustering and the detector are most of the work — or sooner if the coach
+  settles on (a) and a ball-free proxy is worth measuring on its own.
+
+104. **Double-clicking a slate should take the player to its in point.** The
+  coach (2026-09-28): "when i select a slate, i expect to be taken to the
+  beginning of it in the timeline? or like, if i double click it i guess?"
+  Today a slate row's click only toggles the selection (`app.slint`, the slates
+  `ListView`'s `TouchArea`) — nothing on the row moves the player, so going back
+  to watch a marked range means finding it on the scrubber by eye.
+- **Double-click, not click — the clip row's rule.** A clip row selects on click
+  and jumps on double-click (`jump-to-clip` → `Command::JumpToClip` →
+  `bus/clips.rs::jump_to_clip`); a slate row is the same kind of row in the same
+  panel and should behave the same. A single-click seek would also move the
+  picture every time the coach selects a slate only to rename or tag it. (Match
+  rows seek on a single click, but they have no selection to fight with.)
+- **The toggle has to change with it.** A slate row's click *toggles* —
+  clicking the selected row deselects it — and a double-click delivers two
+  clicks first, so as written a double-click would jump and leave the slate
+  **deselected**. Selecting on click (as the clip row does), with deselection
+  by Esc or by clicking empty space, removes that; toggling only when the
+  second click is not a double is the fiddly alternative.
+- **The bus side is `jump_to_clip`'s body with a slate's fields:**
+  `reset_skip`, pause, then `load(slate.source_index, slate.in_seconds, …,
+  Origin::Scrub)` if `seekable()` — which also switches video when the slate is
+  on another source. A `Command::JumpToSlate(Uuid)` beside `JumpToClip`, or one
+  command taking either kind of id; the first is the smaller change.
+- **Refused where the row already is:** the row's `TouchArea` is disabled while
+  recording, and `seekable()` covers a preview and a missing source. A
+  half-marked slate (`out_seconds: None`) still has an in point, so it jumps
+  like any other.
+- **Why deferred:** filed while the coach was using the app; a small UX gap, not
+  a bug, and the other session is mid-#88.
+- **When to revisit:** any time — it is a row handler and one bus command, and
+  it pairs naturally with the next slate work (#97 or #98).
+
+105. **A slate's tag field should offer the tags already in use.** The coach
+  (2026-09-28): "tags in slates should be saveable so i can select them or
+  similar." The tags *are* saved — `Slate.tags`, v12, and `tag_vocabulary` is
+  already clips ∪ slates — but nothing lets the coach **pick** one: the slate's
+  field (`slate-tags-edit` in `app.slint`, under the slates list) is a bare
+  `LineEdit`, so every tag is typed out in full, and a typo makes a second tag.
+- **The clip inspector already has the picker** (C8): its tags field calls
+  `suggest-tags` on every edit (`main.rs`, `tag_suggestions` over
+  `tag_vocabulary`), shows the list as a `Rectangle` over the fields below —
+  deliberately not a `PopupWindow`, whose `show()` would steal focus and commit
+  the field — and takes the top one on Tab, `take-suggestion` splicing it into
+  the comma-separated text. The slate field needs exactly that, not a second
+  version of it.
+- **So the fix is a component, not a copy.** The field, its suggestion state
+  (`suggestions`, `suggestions-dismissed`, `suggesting`) and the overlay live
+  inside `Inspector` today; lifting them into a `TagField` that both the
+  inspector and the slate editor use leaves one implementation of the Tab / Esc
+  rules and the focus trap. The overlay is positioned from the field's own `x`
+  and `y` as a sibling in its layout, so the component has to carry the overlay
+  with it — check the slate editor's `VerticalLayout` gives it room to draw over
+  whatever sits below (the Shoot row).
+- **Esc must still reach the field first.** The slate fields already fold into
+  the window's `text-editing` (spec S6); the suggestion list's Esc-to-dismiss
+  has to keep returning `accept` before the sheet or window sees it, as the
+  inspector's does.
+- **"Or similar" is worth asking about:** the coach may also mean clicking a
+  tag to **filter** the slates list, as the clip list's `tag-filter` does (the
+  tag overview is clips-only, by the slates spec's choice). That is a separate,
+  larger change; this entry is the picker.
+- **Why deferred:** filed while the coach was using the app; a UX gap, and the
+  other session is mid-#88.
+- **When to revisit:** with the next slate work (#104, #97, #98) — #104 touches
+  the same rows.
+
+103. **Every format field costs a hand edit in eighteen test files.** A full `Clip`
+  struct literal is written out by hand in each of `pundit-core/tests/*.rs`,
+  `pundit-harness/src/lib.rs`, and four places in `pundit-media`; `Clip` has no
+  `Default`, so adding a field breaks all of them. #88 (v13) spent 14 of its 35
+  changed files on that edit alone, setting both new fields to the values
+  `Default` already gives; v12 (slates) paid the same toll, and v14 will.
+- **The shape:** a `tests/common/mod.rs` in `pundit-core` with one
+  `fn clip_stub() -> Clip`, and one `mod common;` per file — after which a new
+  format field is a zero-test-file change.
+- **Not a `Default for Clip` in production code**, which is the tempting
+  shortcut: a document struct that can be built with a nil `Uuid` and an empty
+  recording filename is a worse hazard than the toll, and `add_recorded_clip` is
+  deliberately the one constructor.
+- **Why deferred:** it is a test-infrastructure change with no user-visible
+  effect, and doing it inside a format bump would have mixed ~20 mechanical
+  edits into a change whose diff needed to be readable. Found by #88's
+  adversarial simplification review.
+- **When to revisit:** at the **start** of the next format bump, before its
+  fields are added — that is the one moment the work pays for itself
+  immediately.
+
+104. **Nothing builds the book — not CI, and not a publish step.** `docs/book/`
+  has a `book.toml`, a `SUMMARY.md` and four pages, and **no mechanism touches
+  any of it**: the only workflows are `rust.yml` and `release.yml`, there is no
+  `gh-pages` branch and no `deploy-pages` action anywhere in `.github/`. So the
+  site `book.toml`'s `site-url = "/pundit/"` is configured for does not exist,
+  and #90 resolved that base path for a site nobody publishes.
+- **What the missing check costs:** `create-missing = false` means a `SUMMARY.md`
+  entry with no file is a **build error**, and a bad relative link between pages
+  is a broken link on a page a coach is reading. Neither is visible from the
+  source — the first person to run `mdbook build` finds both. The shortcuts page
+  (2026-09-28) was committed unbuilt for exactly this reason: `mdbook` is not on
+  this machine and nothing in CI would have caught it either.
+- **The shape, in two independent halves.** The cheap half is a CI job that runs
+  `mdbook build` on the pages the repository already has, which is a correctness
+  check and needs no decision from anyone. The other half — publishing to GitHub
+  Pages — is a product call (an unfinished guide going public, with a page that
+  says "this guide is not written yet"), so it should not be bundled with it.
+  Adding `lychee` for external links is a third, smaller step; the docs plan of
+  2026-09-22 already names all three tools and notes none is installed here.
+- **Why deferred:** the build check is small and worth doing, but it was not this
+  change's job and the publish half wants the coach's view on showing an
+  unfinished guide.
+- **When to revisit:** the build check, next time anything under `docs/book/` is
+  edited — it is the cheapest possible CI job and this entry exists because a
+  page has now shipped unverified. The publish half, once the guide covers more
+  than the keyboard.
