@@ -32,7 +32,7 @@ jobs:
   # mistake: `book.toml` sets `create-missing = false`, so a `SUMMARY.md` entry
   # with no file behind it is a hard error, and a broken relative link between
   # pages is a dead link on a page someone is reading. Neither is visible from
-  # the markdown. See BACKLOG #104 — the keyboard-shortcuts page shipped unbuilt
+  # the markdown. See BACKLOG #107 — the keyboard-shortcuts page shipped unbuilt
   # because nothing here existed yet.
   build:
     name: build the book

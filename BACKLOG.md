@@ -108,6 +108,8 @@ problem — which is the entry, not an excuse for it.
 - **88.** The inset's size and corner, per clip — shipped 2026-09-28; v13, three
   sizes and three corners, sticky; the two preferences get a control of their own
   with #78
+- **107.** The docs site — shipped 2026-09-28; CI builds the book on every change
+  and publishes it from `main` (filed as #104, renumbered for a collision)
 
 - 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 92, 94
 
@@ -1975,7 +1977,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** with the next slate work (#104, #97, #98) — #104 touches
   the same rows.
 
-103. **Every format field costs a hand edit in eighteen test files.** A full `Clip`
+106. **Every format field costs a hand edit in eighteen test files.** A full `Clip`
   struct literal is written out by hand in each of `pundit-core/tests/*.rs`,
   `pundit-harness/src/lib.rs`, and four places in `pundit-media`; `Clip` has no
   `Default`, so adding a field breaks all of them. #88 (v13) spent 14 of its 35
@@ -1996,29 +1998,28 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   fields are added — that is the one moment the work pays for itself
   immediately.
 
-104. **Nothing builds the book — not CI, and not a publish step.** `docs/book/`
-  has a `book.toml`, a `SUMMARY.md` and four pages, and **no mechanism touches
-  any of it**: the only workflows are `rust.yml` and `release.yml`, there is no
-  `gh-pages` branch and no `deploy-pages` action anywhere in `.github/`. So the
-  site `book.toml`'s `site-url = "/pundit/"` is configured for does not exist,
-  and #90 resolved that base path for a site nobody publishes.
-- **What the missing check costs:** `create-missing = false` means a `SUMMARY.md`
-  entry with no file is a **build error**, and a bad relative link between pages
-  is a broken link on a page a coach is reading. Neither is visible from the
-  source — the first person to run `mdbook build` finds both. The shortcuts page
-  (2026-09-28) was committed unbuilt for exactly this reason: `mdbook` is not on
-  this machine and nothing in CI would have caught it either.
-- **The shape, in two independent halves.** The cheap half is a CI job that runs
-  `mdbook build` on the pages the repository already has, which is a correctness
-  check and needs no decision from anyone. The other half — publishing to GitHub
-  Pages — is a product call (an unfinished guide going public, with a page that
-  says "this guide is not written yet"), so it should not be bundled with it.
-  Adding `lychee` for external links is a third, smaller step; the docs plan of
-  2026-09-22 already names all three tools and notes none is installed here.
-- **Why deferred:** the build check is small and worth doing, but it was not this
-  change's job and the publish half wants the coach's view on showing an
-  unfinished guide.
-- **When to revisit:** the build check, next time anything under `docs/book/` is
-  edited — it is the cheapest possible CI job and this entry exists because a
-  page has now shipped unverified. The publish half, once the guide covers more
-  than the keyboard.
+107. **Nothing built the book — RESOLVED** (2026-09-28). **Numbered 104 when it
+  was filed**, which collided with the slate double-click entry another session
+  added the same day; commits from 2026-09-28 cite it as #104. `docs/book/` had a
+  `book.toml`, a `SUMMARY.md` and four pages, and **nothing touched any of it** —
+  no workflow built it, there was no `gh-pages` branch and no deploy action, so
+  #90 had resolved `site-url = "/pundit/"` for a site that did not exist.
+- **What shipped:** `.github/workflows/docs.yml`, in two jobs on purpose.
+  **`build` runs on every pull request** and is the check that was missing:
+  `create-missing = false` makes a `SUMMARY.md` entry with no file a hard error,
+  and a broken relative link is a dead link on a page a coach is reading, neither
+  visible from the markdown. **`deploy` runs only from `main`**, so a pull request
+  verifies the book without publishing it — observed doing exactly that on PR #1
+  (`build` pass in 9s, `publish` skipped), then deploying from `main` in 24s.
+  The site is live at <https://rykerwilliams.github.io/pundit/>; Pages is set to
+  `build_type: workflow`, and the coach enabled it.
+- **mdbook is pinned to 0.4.40** and installed from its release tarball rather
+  than `cargo install` — seconds against minutes, and no Rust toolchain on a job
+  that needs none. The pin is deliberate: mdbook's HTML output and its
+  `SUMMARY.md` strictness both move between releases. Bump it with a local
+  `mdbook build` first.
+- **What it caught immediately:** the keyboard-shortcuts page had been committed
+  unbuilt, because nothing could build it. It is now verified on every change.
+- **What is still open:** `lychee` for external links, the third tool the
+  2026-09-22 docs plan names — worth it once the guide has outbound links worth
+  checking, and not before.
