@@ -7,6 +7,7 @@ use std::cell::Cell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use pundit_core::naming::order_videos;
 use rfd::AsyncFileDialog;
 use slint::ComponentHandle;
 
@@ -51,11 +52,15 @@ pub struct Pickers {
 impl Pickers {
     /// Shows the picker and calls `then` on the UI thread with each path the
     /// user chose — at most once for a single pick, once per file for
-    /// [`Pick::Videos`], in file-name order. Returns at once.
+    /// [`Pick::Videos`], in [`order_videos`]'s order. Returns at once, and does
+    /// not call `then` at all when the dialog is cancelled.
     ///
-    /// File-name order because a portal returns a multiple selection in no
-    /// promised order, and camera files are named by when they were shot, so
-    /// sorting them is what puts a game's halves in sequence.
+    /// **Name order, but not a byte-wise one** (`core::naming::order_videos`): a
+    /// portal returns a multiple selection in no promised order, and camera
+    /// files are named by when they were shot, so ordering by name is what puts
+    /// a game's halves in sequence — except that a ` (n)` copy suffix sorts
+    /// *before* no suffix, which silently reversed them. That rule is in core so
+    /// it is tested without a picker.
     pub fn open(&self, window: &AppWindow, pick: Pick, mut then: impl FnMut(PathBuf) + 'static) {
         if self.busy.replace(true) {
             return;
@@ -95,7 +100,7 @@ impl Pickers {
             };
             busy.set(false);
             let mut paths: Vec<PathBuf> = chosen.iter().map(|c| c.path().to_path_buf()).collect();
-            paths.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+            order_videos(&mut paths);
             for path in paths {
                 then(path);
             }
