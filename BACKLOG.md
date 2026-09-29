@@ -1995,3 +1995,30 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** at the **start** of the next format bump, before its
   fields are added — that is the one moment the work pays for itself
   immediately.
+
+104. **Nothing builds the book — not CI, and not a publish step.** `docs/book/`
+  has a `book.toml`, a `SUMMARY.md` and four pages, and **no mechanism touches
+  any of it**: the only workflows are `rust.yml` and `release.yml`, there is no
+  `gh-pages` branch and no `deploy-pages` action anywhere in `.github/`. So the
+  site `book.toml`'s `site-url = "/pundit/"` is configured for does not exist,
+  and #90 resolved that base path for a site nobody publishes.
+- **What the missing check costs:** `create-missing = false` means a `SUMMARY.md`
+  entry with no file is a **build error**, and a bad relative link between pages
+  is a broken link on a page a coach is reading. Neither is visible from the
+  source — the first person to run `mdbook build` finds both. The shortcuts page
+  (2026-09-28) was committed unbuilt for exactly this reason: `mdbook` is not on
+  this machine and nothing in CI would have caught it either.
+- **The shape, in two independent halves.** The cheap half is a CI job that runs
+  `mdbook build` on the pages the repository already has, which is a correctness
+  check and needs no decision from anyone. The other half — publishing to GitHub
+  Pages — is a product call (an unfinished guide going public, with a page that
+  says "this guide is not written yet"), so it should not be bundled with it.
+  Adding `lychee` for external links is a third, smaller step; the docs plan of
+  2026-09-22 already names all three tools and notes none is installed here.
+- **Why deferred:** the build check is small and worth doing, but it was not this
+  change's job and the publish half wants the coach's view on showing an
+  unfinished guide.
+- **When to revisit:** the build check, next time anything under `docs/book/` is
+  edited — it is the cheapest possible CI job and this entry exists because a
+  page has now shipped unverified. The publish half, once the guide covers more
+  than the keyboard.
