@@ -43,7 +43,29 @@ executing** (CLAUDE.md workflow step 5): start each task from the spec, this pla
   every call, so a rig that calls it twice for one name rewrites a file the player has
   open and the next `wait_for_error` picks up a `Playback` error instead of the refusal
   under test.
-- **T4 — `new_match.rs`, the sheet and the wiring.** Not started.
+- **T4 — `new_match.rs`, the sheet and the wiring. DONE**, committed. 24 module tests;
+  1036 workspace tests pass (every suite completed — no #101 abort this run), clippy clean,
+  fmt clean, the audit still prints exactly the four crates. Four things the plan did not
+  foresee, none of them a design change:
+  - **A callback read from a Slint binding must be declared `pure`**, which the setup
+    sheet's validators already are. The three validators and `new-match-folder` are.
+  - **A Slint `function` Rust invokes must be `public`.** `close-new-match` is;
+    `derive-new-match-folder` and `swap-new-match-teams` stay private, because
+    `open_new_match` sets the folder name itself rather than invoking the derivation —
+    an open whose home and away match the last sheet's fires neither `changed` handler,
+    and the field would keep the last match's folder name.
+  - **The ordered paths are held in Rust** (an `Rc<RefCell<Vec<PathBuf>>>` beside the
+    seeded config), not as a `[string]` on the window: `to_string_lossy` would corrupt a
+    path that is not UTF-8, and the sheet needs only the file names to show.
+  - **`SetupField` gained `out property focused`** as well as `edited()`. The sheet ORs the
+    four into one private property and writes `editing` from a `changed` on it, which is
+    the basket's imperative shape at four fields rather than one. `MatchSetupSheet` passes
+    neither, so S2 holds.
+
+  Also: `this_year()`'s fallback is **1998**, below `parse_date_in`'s year floor, so a clock
+  that cannot be read makes its range empty and no date is taken rather than every date
+  being in bounds. And item 5's wording is in, for T5's manual list to judge: the card is
+  titled **"Start a match"**.
 - **T5 — close out.** Not started.
 
 ---

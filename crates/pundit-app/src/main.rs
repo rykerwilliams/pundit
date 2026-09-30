@@ -35,6 +35,7 @@ use pundit_app::highlight_view::{self, LiveHighlight as Ring};
 use pundit_app::match_panel::{
     self, parse_hex, parse_minutes, parse_overtime_periods, parse_periods,
 };
+use pundit_app::new_match::{self, Prefill};
 use pundit_app::wheel::Wheel;
 use pundit_app::zoom_input::{self, DragPan, Viewport};
 use pundit_core::avatar;
@@ -395,6 +396,7 @@ fn main() {
     wire_highlights(&window, &bus);
     wire_fit(&window);
     wire_panels(&window, &machine_state);
+    wire_new_match(&window, &bus, &machine_state);
 
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, TICK, {
@@ -428,6 +430,171 @@ fn closing_window_size(w: &AppWindow) -> WindowSize {
     }
 }
 
+/// The New match flow's wiring (new match spec E2, I, S): the picker that opens
+/// the sheet, the sheet's validators, `Choose…`, and Create.
+///
+/// **The rules are `pundit_app::new_match`'s**, tested there with no `$HOME`,
+/// no `state.json` and no clock; this is the wiring, and it holds the one thing
+/// the sheet cannot show — the scoreboard a neighbouring project lent, whose
+/// kit and format the coach never sees and only `Set up teams…` corrects.
+fn wire_new_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, state: &AppFiles) {
+    let pickers = Pickers::default();
+    // The seeded config, which is not in the sheet: it carries the previous
+    // match's kit in each slot and the format the coach plays, and only the two
+    // names are replaced. Re-seeded by `Choose…` for the folder it picked (spec
+    // Q6, "the unit is the chosen folder"), because it is captured once at
+    // prefill and would otherwise keep the old folder's kit in silence.
+    let seed = Rc::new(RefCell::new(match_panel::blank_config()));
+    // And the ordered paths, for the same reason they are not a `[string]` on
+    // the window: `to_string_lossy` would corrupt a path that is not UTF-8, and
+    // the sheet needs only the file names to show.
+    let picked: Rc<RefCell<Vec<PathBuf>>> = Rc::new(RefCell::new(Vec::new()));
+
+    window.on_new_match({
+        let (weak, pickers, state) = (window.as_weak(), pickers.clone(), state.clone());
+        let (seed, picked) = (seed.clone(), picked.clone());
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            let (state, seed, picked) = (state.clone(), seed.clone(), picked.clone());
+            let inner = w.as_weak();
+            let pick = Pick::Videos {
+                title: "Pick the Game's Videos",
+            };
+            // `open_many`, so the whole ordered set arrives in one call: `open`
+            // calls back once per path with no defined moment at which the set
+            // is complete.
+            pickers.open_many(&w, pick, move |videos| {
+                let Some(w) = inner.upgrade() else { return };
+                open_new_match(&w, &state, &seed, &picked, videos);
+            });
+        }
+    });
+
+    window.on_choose_projects_dir({
+        let (weak, pickers, seed) = (window.as_weak(), pickers.clone(), seed.clone());
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            let seed = seed.clone();
+            let inner = w.as_weak();
+            let pick = Pick::ProjectFolder {
+                title: "Choose Where Projects Go",
+            };
+            pickers.open(&w, pick, move |folder| {
+                let Some(w) = inner.upgrade() else { return };
+                // Chosen by hand, so there is nothing left to explain.
+                w.set_new_match_provenance(SharedString::new());
+                w.set_new_match_projects_dir(folder.to_string_lossy().as_ref().into());
+                *seed.borrow_mut() = new_match::seed_scoreboard(
+                    &folder,
+                    w.get_new_match_home_name().as_str(),
+                    w.get_new_match_away_name().as_str(),
+                    this_year() + 1,
+                );
+            });
+        }
+    });
+
+    // One validator per field, each the same call Create will make, so a field
+    // can't read good and then fail to save (the setup sheet's own model).
+    window.on_valid_folder_name(|name| new_match::valid_folder_name(&name));
+    window.on_valid_projects_dir(|path| new_match::valid_projects_dir(Path::new(path.as_str())));
+    window.on_target_taken(|dir, name| new_match::target_taken(Path::new(dir.as_str()), &name));
+    window.on_new_match_folder(|date, home, away| Prefill::folder_name(&date, &home, &away).into());
+
+    window.on_create_match({
+        let (weak, bus) = (window.as_weak(), bus.clone());
+        let (seed, picked) = (seed.clone(), picked.clone());
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            let (home, away) = (w.get_new_match_home_name(), w.get_new_match_away_name());
+            // The sheet's Create is enabled only when this is `Some`, so the
+            // early return is a backstop rather than a path.
+            let Some(name) = new_match::project_name(&home, &away) else {
+                return;
+            };
+            let mut scoreboard = seed.borrow().clone();
+            scoreboard.home.name = home.trim().to_owned();
+            scoreboard.away.name = away.trim().to_owned();
+            let project_dir = Path::new(w.get_new_match_projects_dir().as_str())
+                .join(w.get_new_match_folder_name().trim());
+            bus.borrow().send(Command::NewMatch {
+                project_dir,
+                name,
+                scoreboard,
+                videos: picked.borrow().clone(),
+            });
+        }
+    });
+}
+
+/// Seeds the New match sheet from `videos` and opens it (spec I0: every
+/// inference is a prefilled, editable field).
+fn open_new_match(
+    w: &AppWindow,
+    state: &AppFiles,
+    seed: &Rc<RefCell<ScoreboardConfig>>,
+    picked: &Rc<RefCell<Vec<PathBuf>>>,
+    videos: Vec<PathBuf>,
+) {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let last = state.last_project();
+    let prefill = new_match::prefill(videos, home.as_deref(), last.as_deref(), this_year());
+    *seed.borrow_mut() = prefill.scoreboard.clone();
+    *picked.borrow_mut() = prefill.videos.clone();
+    // The coach's own club is theirs to type: nothing in a file or a folder
+    // name says which team that is. The guess goes in `away` (spec S3).
+    w.set_new_match_home_name(SharedString::new());
+    w.set_new_match_away_name(prefill.away.as_str().into());
+    w.set_new_match_date(prefill.date.as_str().into());
+    w.set_new_match_projects_dir(
+        prefill
+            .projects_dir
+            .path()
+            .to_string_lossy()
+            .as_ref()
+            .into(),
+    );
+    w.set_new_match_provenance(prefill.projects_dir.provenance().unwrap_or_default().into());
+    let rows: Vec<SharedString> = prefill
+        .videos
+        .iter()
+        .enumerate()
+        .map(|(i, path)| {
+            let name = path
+                .file_name()
+                .unwrap_or(path.as_os_str())
+                .to_string_lossy()
+                .into_owned();
+            format!("{}. {name}", i + 1).into()
+        })
+        .collect();
+    w.set_new_match_videos(ModelRc::new(VecModel::from(rows)));
+    // Set here as well as by the two `changed` handlers the names above fire:
+    // an open whose home and away are both what the last sheet had fires
+    // neither, and the field would keep the last match's folder name. The
+    // derivation is a pure function of the three, so doing it twice is the same
+    // answer. The dirty flag is already false — `close-new-match` clears it, so
+    // the field follows the teams again on every open.
+    w.set_new_match_folder_name(
+        Prefill::folder_name(&prefill.date, "", &prefill.away)
+            .as_str()
+            .into(),
+    );
+    w.set_new_match_sheet_open(true);
+}
+
+/// This year, from the local calendar: the only clock in this flow, and the
+/// reason `core::naming::parse_date_in` takes its year bound as an argument
+/// rather than reading one itself.
+///
+/// **The fallback is below the year floor that function accepts**, so a clock
+/// that cannot be read makes its range empty and *no* date is taken, rather
+/// than every date being in bounds. The folder name then comes from the two team
+/// names alone, which is spec I2's fourth tier and a legal, distinct folder.
+fn this_year() -> i32 {
+    gstreamer::glib::DateTime::now_local().map_or(1998, |now| now.year())
+}
+
 /// Turns the window's callbacks into bus commands. Values are passed on as
 /// they are: the bus is the one place that sanitizes them (BACKLOG #28).
 fn wire_callbacks(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
@@ -442,9 +609,10 @@ fn wire_callbacks(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
         move || {
             let Some(w) = weak.upgrade() else { return };
             let send = send.clone();
-            pickers.open(&w, Pick::ProjectFolder, move |folder| {
-                send(Command::OpenProject(folder))
-            });
+            let pick = Pick::ProjectFolder {
+                title: "Open Project Folder",
+            };
+            pickers.open(&w, pick, move |folder| send(Command::OpenProject(folder)));
         }
     });
     window.on_add_source({
@@ -2580,6 +2748,10 @@ fn on_event(w: &AppWindow, event: Event) {
             w.set_match_editor_paste(SharedString::new());
             w.set_volume(snapshot.project.preferences.scan_volume as f32);
             w.set_project_name(snapshot.project.name.as_str().into());
+            // The one event that says the project exists is the one that
+            // dismisses the New match sheet (spec C5) — not the click, so a
+            // failed Create leaves the sheet up with the coach's typing in it.
+            w.invoke_close_new_match();
             show_project(w, snapshot);
         }
         // The name field follows `saved-project-name`, set here, unless
@@ -2726,6 +2898,7 @@ fn on_event(w: &AppWindow, event: Event) {
         // keys.
         Event::Error(e) if e.is_notice() => {
             eprintln!("ui: notice: {e}");
+            new_match_error(w);
             let text = sentence(&e.to_string());
             // A match refusal while the editor is up goes to its own line as
             // well (spec C5): the status bar renders behind the sheet's
@@ -2737,6 +2910,7 @@ fn on_event(w: &AppWindow, event: Event) {
             show_notice(w, text);
         }
         Event::Error(e) => {
+            new_match_error(w);
             // A Start refusal goes to the basket sheet's own line as well
             // (basket spec C6): the dialog is dismissed with one key, and the
             // line is what the coach reads while fixing the piece it names.
@@ -2747,6 +2921,20 @@ fn on_event(w: &AppWindow, event: Event) {
             }
             show_error(w, &e.to_string())
         }
+    }
+}
+
+/// Re-enables the New match sheet's Create (spec S5).
+///
+/// **Wired into *both* `Event::Error` arms**, because the guarded one takes
+/// every notice before the other sees it — so wiring one would leave Create
+/// permanently dead after any notice that landed while the sheet was up. An
+/// unrelated error re-enables it too, which is benign: the bus is
+/// single-threaded, so a second `NewMatch` can only land after the first has
+/// finished, and it then refuses on the `project.json` the first one wrote.
+fn new_match_error(w: &AppWindow) {
+    if w.get_new_match_sheet_open() {
+        w.set_new_match_creating(false);
     }
 }
 
