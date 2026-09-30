@@ -27,6 +27,7 @@ use std::sync::Arc;
 use pundit_core::audio::audio_regions;
 use pundit_core::export::basket_schedule;
 use pundit_core::metadata::{basket_tags, clip_label, match_label};
+use pundit_core::naming;
 use pundit_core::plan::{clip_source_duration, BasketPiece};
 use pundit_core::project::{Preferences, Project, Quality, Resolution};
 use pundit_core::scoreboard::ScoreboardContext;
@@ -533,9 +534,9 @@ fn label_of(path: &Path) -> String {
 /// "Corners, second half, away at City" is 34.
 const MAX_STEM_BYTES: usize = 200;
 
-/// The basket's typed name as a file's stem: trimmed, `/` and `:` replaced as
-/// an export's file name does, cut to [`MAX_STEM_BYTES`], and defaulted where
-/// what is left would not make a file the coach can find.
+/// The basket's typed name as a file's stem: trimmed, `/` and `:` replaced,
+/// cut to [`MAX_STEM_BYTES`], and defaulted where what is left would not make a
+/// file the coach can find.
 ///
 /// **A leading dot is defaulted too, not just an empty name.** `"."` survives
 /// the replacement whole, and `..mp4` — or `.mp4` from `""`, were it not
@@ -546,18 +547,15 @@ const MAX_STEM_BYTES: usize = 200;
 /// Cut and defaulted **here**, rather than at [`std::fs::File::create`]: Start
 /// is the "walk away" button, and a name that fails after twenty pieces have
 /// resolved is the worst moment there is to find out (spec O1).
+///
+/// [`naming::truncate_on_boundary`] is the shared mechanism; **the character
+/// set and the budget are this site's own** and deliberately not
+/// [`naming::folder_slug`]'s (spec N2). A film's name is typed into a sheet
+/// that shows it, and 200 bytes is right for a file at the top of a folder
+/// where 64 is right for a directory that has a path built on top of it.
 fn file_stem(name: &str) -> String {
     let cleaned = name.trim().replace(['/', ':'], "-");
-    // The last character boundary within the budget, so the cut can't land
-    // inside a multi-byte character and panic.
-    let cut = cleaned
-        .char_indices()
-        .map(|(i, _)| i)
-        .chain([cleaned.len()])
-        .take_while(|&i| i <= MAX_STEM_BYTES)
-        .last()
-        .unwrap_or_default();
-    let stem = cleaned[..cut].trim_end();
+    let stem = naming::truncate_on_boundary(&cleaned, MAX_STEM_BYTES).trim_end();
     match stem.is_empty() || stem.starts_with('.') {
         true => DEFAULT_NAME.to_owned(),
         false => stem.to_owned(),

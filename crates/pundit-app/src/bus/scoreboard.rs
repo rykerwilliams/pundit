@@ -186,11 +186,11 @@ impl Bus {
     /// back-anchor flag, which is setup rather than a command of its own.
     ///
     /// Not an undo step — the history is the coach's edits, and the setup
-    /// sheet has its own Cancel. An empty team name is refused here, so the
-    /// render path never has to guard one (spec S5).
+    /// sheet has its own Cancel. Whether the config may be stored at all is
+    /// [`storable`]'s, not this method's; the refusal is a notice.
     pub(super) fn set_scoreboard(&mut self, config: ScoreboardConfig) {
-        if config.home.name.trim().is_empty() || config.away.name.trim().is_empty() {
-            return self.refuse("both teams need a name".into());
+        if let Err(reason) = storable(&config) {
+            return self.refuse(reason.into());
         }
         let Some(open) = &mut self.open else {
             return;
@@ -270,4 +270,26 @@ fn batch_notice(lines: &[BatchLine]) -> Option<String> {
         lines.len(),
         parts.join(", ")
     ))
+}
+
+/// Whether `config` may be **stored** on a project, and why not when it may
+/// not.
+///
+/// An empty team name is refused here so the render path never has to guard one
+/// (spec S5) — and one place decides it, because a project created with a
+/// scoreboard already on it (`Command::NewMatch`, spec C2) writes
+/// `scoreboard: Some(config)` straight onto a fresh [`Project`] and would
+/// otherwise walk around [`Bus::set_scoreboard`] entirely.
+///
+/// **It returns the reason, not a [`UserError`]: severity is not its to
+/// choose.** [`Bus::set_scoreboard`] wraps it as a `Scoreboard` notice, which
+/// is right for a refusal that can land over a live take; `new_match` wraps the
+/// same string in a modal, which is the only thing a coach looking at the New
+/// match sheet would see at all — a notice draws in the status line, *behind*
+/// the scrim.
+pub(super) fn storable(config: &ScoreboardConfig) -> Result<(), &'static str> {
+    match config.home.name.trim().is_empty() || config.away.name.trim().is_empty() {
+        true => Err("both teams need a name"),
+        false => Ok(()),
+    }
 }

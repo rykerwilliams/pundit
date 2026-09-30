@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use pundit_core::highlight::{HighlightKey, NormRect, PlayerHighlight};
 use pundit_core::project::{
-    AspectMismatch, Clip, Inset, InsetCorner, InsetSize, Project, Slate, SourceRef,
+    aspects_match, AspectMismatch, Clip, Inset, InsetCorner, InsetSize, Project, Slate, SourceRef,
     SourceReferenced,
 };
 use pundit_core::scoreboard::{MatchEventKind, MatchEventRecord};
@@ -448,4 +448,17 @@ fn relink_gates_against_the_first_other_source() {
             attempted: 4.0 / 3.0,
         })
     );
+}
+
+/// The pairwise rule on its own, which is what a set of picked videos is gated
+/// with before there is a project to gate against — where `check_aspect` would
+/// gate nothing at all.
+#[test]
+fn aspects_match_is_the_pairwise_rule_with_no_project_in_it() {
+    assert!(aspects_match(2.0, 2.0 * (1.0 - 0.0049)));
+    assert!(!aspects_match(2.0, 2.0 * (1.0 - 0.0051)));
+    assert!(!aspects_match(2.0, 0.0));
+    assert!(!aspects_match(0.0, 2.0));
+    assert!(!aspects_match(f64::NAN, 2.0));
+    assert!(!aspects_match(2.0, f64::NAN));
 }
