@@ -341,8 +341,13 @@ component EmptyCard inherits Rectangle {
     in property <string> title;
     in property <string> message;
     in property <string> action;
+    /// A second, demoted action beside the first. Empty on the cards that have
+    /// only one, which is why it is a string rather than a bool: the label *is*
+    /// whether there is a button.
+    in property <string> secondary;
     in property <bool> enabled: true;
     callback clicked();
+    callback secondary-clicked();
 
     background: black;
 
@@ -372,11 +377,17 @@ component EmptyCard inherits Rectangle {
 
         HorizontalLayout {
             alignment: center;
+            spacing: 8px;
             Button {
                 text: root.action;
                 primary: true;
                 enabled: root.enabled;
                 clicked => { root.clicked(); }
+            }
+            if root.secondary != "": Button {
+                text: root.secondary;
+                enabled: root.enabled;
+                clicked => { root.secondary-clicked(); }
             }
         }
     }
@@ -1521,8 +1532,9 @@ component Scrim inherits Rectangle {
 /// The card every modal in this app is drawn as: a fixed width, a height of
 /// whatever it holds, the house chrome and the heading.
 ///
-/// There are five of these -- export, the basket, match setup, the match event
-/// editor and the error dialog -- and this is the one shape they are. A sheet
+/// There are six of these -- export, the basket, New match, match setup, the
+/// match event editor and the error dialog -- and this is the one shape they
+/// are. A sheet
 /// sets its width and its title and lays its own body out as children;
 /// everything else is here, once.
 component Sheet inherits Rectangle {
@@ -2003,11 +2015,21 @@ component SetupField inherits VerticalLayout {
     in property <bool> has-swatch;
     in property <color> swatch;
     in-out property <string> text;
+    /// Whether the field has focus. The New match sheet folds these into the
+    /// window's `text-editing`, which is what makes its Esc cascade reachable;
+    /// the setup sheet ignores it, because its own Esc closes unconditionally.
+    out property <bool> focused: edit.has-focus;
     /// The swatch was clicked: open the picker over this field. It carries
     /// this field's bottom-left corner, in window coordinates, so the sheet
     /// hangs the popup where the click was rather than off a table of which
     /// field is which.
     callback pick(length, length);
+    /// The field was **typed into**, as against changed. The New match sheet's
+    /// folder name stops being re-derived from the two team names on the first
+    /// keystroke, and a `changed text` handler could not tell the two apart: it
+    /// would fire when the derivation wrote the field and kill the derivation
+    /// on the first letter of a team name. The setup sheet passes nothing.
+    callback edited();
 
     spacing: 2px;
 
@@ -2047,9 +2069,10 @@ component SetupField inherits VerticalLayout {
             }
         }
     }
-    LineEdit {
+    edit := LineEdit {
         placeholder-text: root.placeholder;
         text <=> root.text;
+        edited(text) => { root.edited(); }
     }
 }
 
@@ -2855,6 +2878,196 @@ component MatchEditorSheet inherits Sheet {
     }
 }
 
+/// The New match sheet (new match spec S1): the two teams, where projects go,
+/// the folder this match will get, and the videos in the order they will be
+/// stored.
+///
+/// **It `inherits Sheet`**, as export, the basket and the match editor do. The
+/// draft wrapped it in a `Rectangle` instead, copying `MatchSetupSheet`'s
+/// exception -- but that exception exists only because a `ColorPicker` hangs
+/// over that card as an absolutely-positioned sibling, and this sheet has none.
+///
+/// **It extracts nothing from `MatchSetupSheet`** (spec S2): with no colours in
+/// here there is no shared column to lift out, so a shipped sheet is left
+/// alone.
+///
+/// **The folder name is not derived here.** Its text is two-way bound all the
+/// way out to the window, as every field in this app is, so a `text:` binding
+/// would break the moment it is typed into; the window re-derives it
+/// imperatively from the two team names until [`edited`] says the coach has
+/// taken it over. Everything else -- the three validators and the path line --
+/// is a pure callback or a concatenation, and each validator is the same call
+/// Create will make, so a field cannot read good and then fail to save.
+component NewMatchSheet inherits Sheet {
+    in-out property <string> home-name;
+    in-out property <string> away-name;
+    in-out property <string> projects-dir;
+    in-out property <string> folder-name;
+    /// The one line under the projects folder, and only on the weakest tier:
+    /// a hint on every field is a hint on none (spec I0).
+    in property <string> provenance;
+    /// `<n>. <file name>`, already numbered and in the order the command will
+    /// store them. Read-only: the sidebar is what reorders sources, and two
+    /// orderings of one list in two places is duplication this codebase pays
+    /// for later (spec I6). No durations and no aspect either -- that means
+    /// `probe`, which blocks for up to ten seconds a file on the UI thread
+    /// (spec S4).
+    in property <[string]> videos;
+    /// Create was pressed and the sheet is waiting for `ProjectOpened`, which
+    /// is the one thing that closes it (spec C5). An `Event::Error` re-enables
+    /// it, because the alternative is a dead button after a refused Create and
+    /// a coach who has to Cancel and re-pick every video.
+    in property <bool> creating;
+    /// A field has focus, which the window folds into its own `text-editing`.
+    /// **In-out and written on change** rather than bound: this element is
+    /// destroyed when the sheet closes, and a binding that went with it would
+    /// leave the window's shortcuts switched off for good -- so
+    /// `close-new-match` clears it by hand, as the basket's and the editor's
+    /// closes do.
+    in-out property <bool> editing;
+    pure callback valid-folder-name(string) -> bool;
+    pure callback valid-projects-dir(string) -> bool;
+    /// Whether `<projects folder>/<folder name>` already holds a project. A
+    /// courtesy, not the guarantee: the guarantee is the bus's, which cannot
+    /// race (spec S5). Pure in Slint's sense — it is read from a binding — and a
+    /// `try_exists` of one path, which is the cheapest thing in this sheet.
+    pure callback target-taken(string, string) -> bool;
+    callback swap();
+    callback choose();
+    callback create();
+    callback cancel();
+    /// The folder-name field was typed into: stop re-deriving it.
+    callback folder-edited();
+
+    card-width: 560px;
+    title: "New match";
+
+    property <bool> teams-ok: root.home-name != "" && root.away-name != "";
+    property <bool> folder-ok: root.valid-folder-name(root.folder-name);
+    property <bool> dir-ok: root.valid-projects-dir(root.projects-dir);
+    property <bool> taken: root.dir-ok && root.folder-ok
+        && root.target-taken(root.projects-dir, root.folder-name);
+    property <bool> any-focused: home.focused || away.focused || dir.focused || folder.focused;
+    changed any-focused => { root.editing = self.any-focused; }
+
+    HorizontalLayout {
+        spacing: 8px;
+
+        home := SetupField {
+            label: "Home team";
+            placeholder: "Your club";
+            ok: root.home-name != "";
+            text <=> root.home-name;
+            horizontal-stretch: 1;
+        }
+        // Which team was at home is a fact about where the match was played,
+        // which is in no file and in no folder name -- so the guess goes in
+        // `away` and this is one click either way (spec S3). Watching the
+        // folder name flip is the fastest way to see which way round it wants
+        // to be.
+        VerticalLayout {
+            alignment: end;
+            Button {
+                text: "⇄";
+                accessible-label: "Swap the teams";
+                enabled: !root.creating;
+                clicked => { root.swap(); }
+                Tooltip { text: @markdown("Swap home and away"); }
+            }
+        }
+        away := SetupField {
+            label: "Away team";
+            placeholder: "Opponent";
+            ok: root.away-name != "";
+            text <=> root.away-name;
+            horizontal-stretch: 1;
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: stretch;
+
+        dir := SetupField {
+            label: "Projects folder";
+            placeholder: "Where projects go";
+            ok: root.dir-ok;
+            text <=> root.projects-dir;
+            horizontal-stretch: 1;
+        }
+        VerticalLayout {
+            alignment: end;
+            Button {
+                text: "Choose…";
+                enabled: !root.creating;
+                clicked => { root.choose(); }
+            }
+        }
+    }
+    if root.provenance != "": Text {
+        text: root.provenance;
+        color: Palette.alternate-foreground;
+        font-size: 11px;
+        wrap: word-wrap;
+    }
+
+    folder := SetupField {
+        label: "Folder name";
+        placeholder: "date-home-away";
+        ok: root.folder-ok && !root.taken;
+        text <=> root.folder-name;
+        edited => { root.folder-edited(); }
+    }
+    // The whole preview, and the reason there is no date field and no project
+    // name field (spec N1): the coach reads the path and sees both the date and
+    // what it does.
+    Text {
+        text: root.projects-dir + "/" + root.folder-name + "/";
+        color: Palette.alternate-foreground;
+        font-size: 11px;
+        wrap: word-wrap;
+    }
+    if root.taken: Text {
+        text: "That folder already holds a project. Change the folder name, or open that project instead.";
+        color: #ffcc00;
+        font-size: 11px;
+        wrap: word-wrap;
+    }
+
+    FieldLabel { text: root.videos.length == 1 ? "1 video" : root.videos.length + " videos"; }
+    // A check that the halves are the right way round, and nothing more.
+    VerticalLayout {
+        spacing: 2px;
+        for line in root.videos: Text {
+            text: line;
+            color: Palette.foreground;
+            font-size: 11px;
+            overflow: elide;
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: end;
+
+        Button {
+            text: "Cancel";
+            clicked => { root.cancel(); }
+        }
+        Button {
+            text: "Create";
+            primary: true;
+            enabled: !root.creating && root.teams-ok && root.folder-ok && root.dir-ok
+                && !root.taken && root.videos.length > 0;
+            clicked => { root.create(); }
+
+            Tooltip {
+                text: @markdown("Make the folder, name the project after both teams, and open it. The footage stays where it is.");
+            }
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "pundit";
     // Every control fits at this size. The window opens at the size it last
@@ -3251,6 +3464,50 @@ export component AppWindow inherits Window {
     /// The sheet is up. UI state: the Basket… button opens it, its own buttons
     /// and Esc close it.
     in-out property <bool> basket-sheet-open;
+
+    // --- New match (new match spec S1) ---
+    //
+    // The two names, the projects folder and the folder name are two-way, as
+    // every field in this app is. The date, the provenance line and the video
+    // list are the prefill's and read-only; `folder-dirty` and `creating` are
+    // the sheet's own state, cleared by `close-new-match`.
+    in-out property <bool> new-match-sheet-open;
+    in-out property <string> new-match-home-name;
+    in-out property <string> new-match-away-name;
+    in-out property <string> new-match-projects-dir;
+    in-out property <string> new-match-folder-name;
+    /// `YYYY-MM-DD`, or empty where nothing was found. There is no date field:
+    /// it goes into the folder name, where its consequence is visible (N1).
+    in-out property <string> new-match-date;
+    in-out property <string> new-match-provenance;
+    in-out property <[string]> new-match-videos;
+    /// The coach has typed in the folder field, so it is theirs from now on.
+    /// **Set only by that field's own `edited`** -- never by a
+    /// `changed new-match-folder-name` handler, which would self-trigger when
+    /// the derivation writes the field and so kill the derivation on the first
+    /// keystroke of a team name.
+    property <bool> new-match-folder-dirty;
+    /// In-out because the `Event::Error` arms clear it: Create disables on
+    /// the click and only an error or a close re-enables it (spec S5).
+    in-out property <bool> new-match-creating;
+    property <bool> new-match-editing;
+    /// Swapping needs somewhere to hold the first name while the second is
+    /// written over it.
+    property <string> new-match-swap;
+    changed new-match-home-name => { root.derive-new-match-folder(); }
+    changed new-match-away-name => { root.derive-new-match-folder(); }
+
+    /// Opens the video picker, which is what opens the sheet (spec E2).
+    callback new-match();
+    callback create-match();
+    callback choose-projects-dir();
+    pure callback valid-folder-name(string) -> bool;
+    pure callback valid-projects-dir(string) -> bool;
+    pure callback target-taken(string, string) -> bool;
+    /// `<date>-<home>-<away>` as one slug: the **joined** string, so the `-`
+    /// collapse absorbs a blank team name or an absent date and the 64-byte cut
+    /// applies to the whole name.
+    pure callback new-match-folder(string, string, string) -> string;
     /// The pieces waiting, whole, from the bus's `Basket` event — which
     /// arrives at startup and on every change, so **the badge's count is right
     /// with the sheet closed and with no project open**, which is the point of
@@ -3384,7 +3641,8 @@ export component AppWindow inherits Window {
     // editor's, Esc inside its paste box closes the sheet on the first press
     // and throws away a half-typed block (spec P3).
     property <bool> text-editing: name-edit.has-focus || inspector.editing || highlights.editing
-        || root.match-editor-editing || root.basket-editing || root.slate-editing;
+        || root.match-editor-editing || root.basket-editing || root.slate-editing
+        || root.new-match-editing;
 
     callback open-project();
     callback add-source();
@@ -3621,6 +3879,43 @@ export component AppWindow inherits Window {
         keys.focus();
     }
 
+    /// Closes the New match sheet, however it was closed -- Cancel, Esc or the
+    /// `ProjectOpened` that says the project exists (spec C5). It clears
+    /// `editing` by hand, as the basket's and the editor's closes do: the sheet
+    /// that sets it is about to be destroyed, and a field that had focus would
+    /// otherwise leave the window's shortcuts switched off for good.
+    ///
+    /// **`creating` and the dirty flag go with it**: without that, the next
+    /// New match… would open with a dead Create button, and a folder name that
+    /// no longer follows the teams being typed into it.
+    public function close-new-match() {
+        root.new-match-editing = false;
+        root.new-match-creating = false;
+        root.new-match-folder-dirty = false;
+        root.new-match-sheet-open = false;
+        keys.focus();
+    }
+
+    /// Re-derives the folder name from the date and the two team names, unless
+    /// the coach has taken the field over (spec N1). Imperative, on
+    /// `saved-project-name`'s pattern above, because `SetupField`'s text is
+    /// two-way bound all the way out here: a `text:` binding on it breaks the
+    /// moment the field is typed into.
+    function derive-new-match-folder() {
+        if (!root.new-match-folder-dirty) {
+            root.new-match-folder-name = root.new-match-folder(root.new-match-date,
+                root.new-match-home-name, root.new-match-away-name);
+        }
+    }
+
+    /// ⇄: exchanges the two names, and the folder name follows them.
+    function swap-new-match-teams() {
+        root.new-match-swap = root.new-match-home-name;
+        root.new-match-home-name = root.new-match-away-name;
+        root.new-match-away-name = root.new-match-swap;
+        root.derive-new-match-folder();
+    }
+
     /// One of the three match tag keys (S4), under the gate the panel's
     /// buttons share -- the cap included, which only the start/stop has: the
     /// bus refuses a tag there, and that refusal is a backstop, not something
@@ -3664,6 +3959,22 @@ export component AppWindow inherits Window {
         if (root.basket-sheet-open) {
             if (pressed && event.text == Key.Escape && !root.text-editing) {
                 root.close-basket();
+                return accept;
+            }
+            return reject;
+        }
+        // The New match sheet is modal too, and it takes the basket's shape
+        // rather than the setup sheet's: Esc closes it from *outside* a field;
+        // inside one it leaves the field first and the next Esc closes. That is
+        // the more expensive sheet to reopen -- the setup sheet costs one click
+        // on a shipped project, this one costs re-walking the file picker and
+        // re-picking every video (spec S6). The guard is only live because
+        // `new-match-editing` is folded into `text-editing` above; without the
+        // fold it is always true and the cascade is dead code. The `reject` is
+        // also what delivers Ctrl+V into the path field.
+        if (root.new-match-sheet-open) {
+            if (pressed && event.text == Key.Escape && !root.text-editing) {
+                root.close-new-match();
                 return accept;
             }
             return reject;
@@ -4601,11 +4912,17 @@ export component AppWindow inherits Window {
                         notches: root.zoom-notches;
                     }
 
+                    // New is the common case and opening an old one the
+                    // exception, so New match… is the primary action here
+                    // (spec E1). Gated exactly as the toolbar's is.
                     if !root.has-project: EmptyCard {
-                        title: "No project open";
-                        message: "Open a folder to start scanning match footage. The project file (project.json) lives inside the folder.";
-                        action: "Open Project…";
-                        clicked => { root.open-project(); }
+                        title: "Start a match";
+                        message: "Pick the game's video files and pundit makes the folder, names the project after both teams and sets the teams up. The footage stays where it is. Already have a project? Open its folder — the project file (project.json) lives inside it.";
+                        action: "New match…";
+                        secondary: "Open Project…";
+                        enabled: !root.recording;
+                        clicked => { root.new-match(); }
+                        secondary-clicked => { root.open-project(); }
                     }
                     if root.has-project && root.sources.length == 0: EmptyCard {
                         title: "No source video added";
@@ -4969,6 +5286,15 @@ export component AppWindow inherits Window {
                     HorizontalLayout {
                         spacing: 8px;
 
+                        Button {
+                            text: "New match…";
+                            enabled: !root.recording;
+                            clicked => { root.new-match(); }
+
+                            Tooltip {
+                                text: @markdown("Pick a game's video files. pundit makes the folder and names the project.");
+                            }
+                        }
                         Button {
                             text: "Open Project…";
                             enabled: !root.recording;
@@ -5479,6 +5805,42 @@ export component AppWindow inherits Window {
                     root.add-match-events();
                 }
                 close => { root.close-match-editor(); }
+            }
+        }
+
+        // --- New match sheet: modal over the whole window (spec S1) ---
+        //
+        // Z-order is file order in Slint, so this goes after the other sheets
+        // and **before** the error dialog: an error raised by Create has to be
+        // drawn over the sheet that raised it (spec C4).
+        if root.new-match-sheet-open: Scrim {
+            NewMatchSheet {
+                home-name <=> root.new-match-home-name;
+                away-name <=> root.new-match-away-name;
+                projects-dir <=> root.new-match-projects-dir;
+                folder-name <=> root.new-match-folder-name;
+                provenance: root.new-match-provenance;
+                videos: root.new-match-videos;
+                creating: root.new-match-creating;
+                editing <=> root.new-match-editing;
+                valid-folder-name(name) => { return root.valid-folder-name(name); }
+                valid-projects-dir(path) => { return root.valid-projects-dir(path); }
+                target-taken(dir, name) => { return root.target-taken(dir, name); }
+                folder-edited => { root.new-match-folder-dirty = true; }
+                swap => { root.swap-new-match-teams(); }
+                // Off the field first, as every other button in this app does.
+                choose => {
+                    keys.focus();
+                    root.choose-projects-dir();
+                }
+                // Create disables on the click and the sheet closes on
+                // `ProjectOpened` and on nothing else, so a failure leaves the
+                // sheet up with the coach's typing in it.
+                create => {
+                    root.new-match-creating = true;
+                    root.create-match();
+                }
+                cancel => { root.close-new-match(); }
             }
         }
 
