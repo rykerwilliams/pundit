@@ -38,6 +38,7 @@ use pundit_core::export::{compilation_schedule, Compilation, RateWindow, OUTPUT_
 use pundit_core::metadata::{
     clip_label, file_tags, reel_label, CalendarDate, ALL_CLIPS_LABEL, WHOLE_MATCH_LABEL,
 };
+use pundit_core::naming;
 use pundit_core::plan::{
     compilation_plan, default_scoreboard_mode, ExportTarget, PlanEntry, ScoreboardMode,
 };
@@ -189,12 +190,23 @@ pub fn export_targets(project: &Project, selected: Option<Uuid>) -> Vec<ExportTa
     rows
 }
 
-/// `<label> - <project>.mp4` (spec E6), with the two characters a file name
-/// can't safely hold replaced: `/`, which is the path separator, and `:`,
-/// which a share to a Mac or a Windows machine trips over.
+/// `<label> - <project>.mp4` (spec E6), with every character a file name
+/// can't safely hold replaced by `-`.
+///
+/// [`naming::safe_chars`] is the whole of the cleaning, and **deliberately not
+/// [`naming::folder_slug`]** (spec N2). The slug's other steps all apply to
+/// labels the coach already has: this basename is what an export's `.srt` and
+/// `.chapters.txt` are derived from, so collapsing `-` runs, trimming a
+/// trailing dot or truncating at 64 bytes would rename every future export and
+/// orphan the sidecars beside the files already written — and two long labels
+/// that differ only past byte 64 would collide as files *after*
+/// [`de_duplicate`] had found them distinct.
 fn file_name(label: &str, project_name: &str) -> String {
-    let clean = |part: &str| part.replace(['/', ':'], "-");
-    format!("{} - {}.mp4", clean(label), clean(project_name))
+    format!(
+        "{} - {}.mp4",
+        naming::safe_chars(label),
+        naming::safe_chars(project_name)
+    )
 }
 
 /// The run in progress: the jobs still to render, and what the UI was told.
@@ -819,6 +831,52 @@ mod tests {
         assert_eq!(
             file_name("4/4 press", "U13 vs. Ash: away"),
             "4-4 press - U13 vs. Ash- away.mp4"
+        );
+    }
+
+    /// The one behaviour [`naming::safe_chars`] changes: `\` and the other six
+    /// characters a share refuses were written through until now.
+    #[test]
+    fn a_file_name_replaces_the_characters_a_share_refuses() {
+        assert_eq!(
+            file_name("4\\4 press", "U13 ? Ash"),
+            "4-4 press - U13 - Ash.mp4"
+        );
+    }
+
+    /// The three axes [`naming::folder_slug`] would have added, one test each,
+    /// because each of them renames a file the coach already has (spec N2).
+    #[test]
+    fn a_file_name_collapses_no_run_of_dashes() {
+        assert_eq!(
+            file_name("4--4 press", "U13 -- Ash"),
+            "4--4 press - U13 -- Ash.mp4"
+        );
+    }
+
+    #[test]
+    fn a_file_name_trims_neither_a_trailing_dot_nor_a_trailing_space() {
+        assert_eq!(file_name("Second half.", "Game"), "Second half. - Game.mp4");
+        assert_eq!(file_name("Press ", "Game"), "Press  - Game.mp4");
+    }
+
+    #[test]
+    fn a_file_name_keeps_a_label_whole_past_64_bytes() {
+        // `de_duplicate` has already found these two distinct; a cut at byte 64
+        // would collide them into one file.
+        let label = |take: u32| {
+            format!(
+                "corner routines from the second half, away at City, long version - take {take}"
+            )
+        };
+        assert!(
+            label(1).len() > 64 && label(1)[..64] == label(2)[..64],
+            "the two labels must differ only past byte 64"
+        );
+        assert_ne!(file_name(&label(1), "Game"), file_name(&label(2), "Game"));
+        assert_eq!(
+            file_name(&label(1), "Game"),
+            format!("{} - Game.mp4", label(1))
         );
     }
 
