@@ -24,7 +24,7 @@ executing** (CLAUDE.md workflow step 5): start each task from the spec, this pla
 
 ## Where this stands (update it as tasks land)
 
-- **T1 — core naming and the aspect primitive.** Not started.
+- **T1 — core naming and the aspect primitive. DONE**, committed. 524 core tests pass, clippy clean, the audit still prints exactly the four crates. It corrected spec I4: `opponent_from` capitalizes each word's first letter and leaves the rest as typed, where the draft said title-case.
 - **T2 — the shipped-code touches.** Not started.
 - **T3 — `Command::NewMatch` and the harness proof.** Not started.
 - **T4 — `new_match.rs`, the sheet and the wiring.** Not started.
@@ -65,7 +65,7 @@ the rule. Break it on purpose, run both, say what you saw.
 ## T1. Core: the naming vocabulary and the aspect primitive
 
 **Files:** `crates/pundit-core/src/naming.rs` (tests inline, in the `mod tests` at
-`naming.rs:65`, as `order_videos`' are), `src/metadata.rs`, `src/project.rs`.
+`naming.rs:296` after T1's own additions moved it down, as `order_videos`' are), `src/metadata.rs`, `src/project.rs`.
 
 **Gate:** `flock … cargo test -p pundit-core`,
 `flock … cargo clippy -p pundit-core --all-targets -- -D warnings`,

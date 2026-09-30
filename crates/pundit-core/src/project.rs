@@ -221,6 +221,27 @@ pub struct AspectMismatch {
     pub attempted: f64,
 }
 
+/// The aspect gate's rule for two aspects, with no project in it (macOS
+/// `aspectsMatch`): both `> 0.0` and `|a − b| / max(a, b) < 0.005`.
+///
+/// **A `bool`, not a `Result`:** [`AspectMismatch`] carries both numbers, and a
+/// caller of this function is already holding them.
+///
+/// It is public because the pairwise rule has a caller of its own.
+/// [`Project::check_aspect`] gates a candidate against a **stored** source and
+/// returns `Ok(())` when there is none — but a set of videos picked for a
+/// project that does not exist yet has to be gated against each other, and at
+/// that moment there is no `Project` and cannot be: a [`SourceRef`] needs a
+/// `relative_path`, which needs a canonical folder nothing has created. A gate
+/// written there against `check_aspect` would therefore gate **nothing at
+/// all**, and hand-coding the tolerance at the call site would be a second
+/// definition of one rule.
+pub fn aspects_match(existing: f64, candidate: f64) -> bool {
+    existing > 0.0
+        && candidate > 0.0
+        && (existing - candidate).abs() / existing.max(candidate) < 0.005
+}
+
 /// One tagged moment with its commentary recording.
 ///
 /// A clip **is** a recording: `recording_filename` is not optional, so clips
@@ -607,7 +628,7 @@ impl Project {
     /// the intent of macOS's relink gate, which in practice never ran. Stored
     /// aspects are used, so the gate works while other sources are missing.
     ///
-    /// Rule (macOS `aspectsMatch`): both aspects > 0 and
+    /// Rule ([`aspects_match`], macOS `aspectsMatch`): both aspects > 0 and
     /// `|a − b| / max(a, b) < 0.005`. The 0.5% absorbs phone footage that lands
     /// a pixel off (1920×1078) without admitting a genuinely different aspect.
     /// A NaN aspect fails the `> 0` test and so mismatches.
@@ -625,7 +646,7 @@ impl Project {
             return Ok(());
         };
         let (a, b) = (reference.display_aspect, candidate);
-        if a > 0.0 && b > 0.0 && (a - b).abs() / a.max(b) < 0.005 {
+        if aspects_match(a, b) {
             Ok(())
         } else {
             Err(AspectMismatch {

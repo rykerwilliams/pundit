@@ -3,7 +3,7 @@
 //! for a project that has no scoreboard to draw them from — then the same for
 //! a basket, which spans matches and so tells the truth about fewer of them.
 
-use pundit_core::metadata::{basket_tags, file_tags, match_label, CalendarDate};
+use pundit_core::metadata::{basket_tags, file_tags, match_label, match_name, CalendarDate};
 use pundit_core::plan::ExportTarget;
 use pundit_core::project::{Project, SourceRef};
 use pundit_core::recording::PendingClip;
@@ -305,5 +305,29 @@ fn the_match_label_names_the_teams_then_the_project_then_untitled() {
     assert_eq!(
         match_label(&project("Saturday league", Some(("   ", "Athletic")))),
         "Saturday league"
+    );
+}
+
+/// N4: the name a new project gets and the name an export derives are one
+/// function, so the sheet can build it from two fields being typed into before
+/// any project exists. The `&Project` form is a wrapper over this one, and
+/// [`match_label`] reaches it — which is how the two are held together here.
+#[test]
+fn a_match_is_named_from_two_typed_names_and_the_project_agrees() {
+    assert_eq!(
+        match_name("Rovers", "  Athletic  "),
+        Some("Rovers v Athletic".to_owned())
+    );
+    assert_eq!(match_name("   ", "Athletic"), None);
+    assert_eq!(match_name("Rovers", ""), None);
+    // The capitalization is the coach's: only a folder slug lowercases.
+    assert_eq!(
+        match_name("FC Rovers", "athletic"),
+        Some("FC Rovers v athletic".to_owned())
+    );
+    let configured = project("Saturday league", Some(("Rovers", "Athletic")));
+    assert_eq!(
+        match_label(&configured),
+        match_name("Rovers", "Athletic").unwrap()
     );
 }

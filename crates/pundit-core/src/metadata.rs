@@ -114,7 +114,7 @@ pub fn file_tags(project: &Project, target: &ExportTarget, date: Option<Calendar
     let phrase = target_phrase(project, target);
     let project_name = project.name.trim();
     FileTags {
-        title: match match_name(project) {
+        title: match project_match_name(project) {
             Some(match_name) => format!("{match_name} — {phrase}"),
             None => sentence_case(&phrase),
         },
@@ -193,7 +193,7 @@ fn basket_keywords(matches: &[&Project]) -> Vec<String> {
 /// Not the project's folder name: the coach's folders are called things like
 /// `20260917-canfield`, which names nothing a viewer knows.
 pub fn match_label(project: &Project) -> String {
-    match_name(project)
+    project_match_name(project)
         .or_else(|| match project.name.trim() {
             "" => None,
             name => Some(name.to_owned()),
@@ -201,16 +201,32 @@ pub fn match_label(project: &Project) -> String {
         .unwrap_or_else(|| UNTITLED.to_owned())
 }
 
-/// `"Rovers v Athletic"`, or `None` where no scoreboard names the teams — a
-/// title then falls back to what the export is, since inventing "Home v Away"
-/// for a file someone else will read is worse than saying nothing.
+/// `"Rovers v Athletic"`, or `None` where either side has no name — a title
+/// then falls back to what the export is, since inventing "Home v Away" for a
+/// file someone else will read is worse than saying nothing.
 ///
-/// A blank team name (only a project file edited by hand has one) counts as no
-/// scoreboard, rather than producing `" v Athletic"`.
-fn match_name(project: &Project) -> Option<String> {
-    let config = project.scoreboard.as_ref()?;
-    let (home, away) = (config.home.name.trim(), config.away.name.trim());
+/// **Two strings rather than a project**, because the New match sheet needs the
+/// name live from two fields being typed into, at a moment when no `Project`
+/// exists and cannot (spec N4). So one function decides how a match is written
+/// down whether it is being created or exported, and a project created by that
+/// flow carries the name the exporter would have derived for it anyway.
+///
+/// The capitalization is the coach's as typed; only a folder lowercases
+/// ([`crate::naming::folder_slug`]). A blank name (only a project file edited
+/// by hand has one) counts as no teams rather than producing `" v Athletic"`.
+///
+/// [`match_label`] is a **different** fallback chain — teams, else the
+/// project's own name, else [`UNTITLED`] — and the two must not be conflated.
+pub fn match_name(home: &str, away: &str) -> Option<String> {
+    let (home, away) = (home.trim(), away.trim());
     (!home.is_empty() && !away.is_empty()).then(|| format!("{home} v {away}"))
+}
+
+/// [`match_name`] for a project, whose two names are its scoreboard's. `None`
+/// where it has no scoreboard at all.
+fn project_match_name(project: &Project) -> Option<String> {
+    let config = project.scoreboard.as_ref()?;
+    match_name(&config.home.name, &config.away.name)
 }
 
 /// What the title calls this target, as a phrase that follows the match name:
