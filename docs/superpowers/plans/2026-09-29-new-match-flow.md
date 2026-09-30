@@ -441,6 +441,16 @@ thing in this sheet and a timer would be the fix being worse than the problem.
   the opponent and the video order before pressing Create; ⇄ Swap rewriting the folder
   name and the path line live, and typing in the folder field stopping it; Esc leaving a
   field first and closing the sheet second; **and the empty card's new message**.
+- **Carried over from earlier work, and batched here because they are the same kind of
+  thing** — nobody has looked at either on screen:
+  - **#88's two inspector pickers and the live self-view.** Pick Large / bottom-left on
+    a clip, confirm the pickers hold when the selection moves, and glance at the
+    self-view corner while recording. Reading a `ComboBox`'s state in a test needs debug
+    info in the production build, so this one genuinely cannot be automated.
+  - **Whether any existing project has its halves reversed.** The copy-suffix sort fix
+    (`core::naming::order_videos`) stops it happening again and repairs nothing already
+    made; the symptom is a match clock out by about a half. The correction is dragging
+    the sources in the sidebar.
 - **`CLAUDE.md`**: fold the flow into the project-lifecycle material — it is a convention
   now. What belongs there and nowhere else: that a project folder is created by **one**
   command and never by a sequence, and why (the aspect gate fires between sources, so a
