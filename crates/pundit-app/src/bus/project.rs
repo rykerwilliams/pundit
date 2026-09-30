@@ -9,9 +9,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use pundit_core::project::Project;
+use pundit_core::project::{aspects_match, Project};
+use pundit_core::scoreboard::ScoreboardConfig;
 use pundit_core::store::{self, StoreError};
-use pundit_media::decode_still;
+use pundit_media::{decode_still, probe, Probe};
 
 use super::{Bus, Event, Open, Snapshot, UserError};
 
@@ -86,6 +87,200 @@ impl Bus {
         }
         open.project.name = name.to_owned();
         self.project_changed();
+    }
+
+    /// Creates a project in `project_dir` from `videos`, in the order given,
+    /// and opens it (spec C2).
+    ///
+    /// **One command rather than a sequence of the existing four, because the
+    /// aspect gate fires between sources.** As `OpenProject` + `AddSource` × n,
+    /// a second half whose shape differs is refused *after* the first has been
+    /// probed, pushed, saved and published — leaving a named folder holding one
+    /// of a game's two halves, and the folder name is the one thing this flow
+    /// cannot correct afterwards. So: **nothing touches the disk until every
+    /// video has been accepted**, which makes a refused Create leave the coach
+    /// in the project he was in, with the sheet still up and his typing in it.
+    ///
+    /// Three things about it are easy to write down wrongly:
+    ///
+    /// - **The pre-disk gate is [`aspects_match`], not
+    ///   [`Project::check_aspect`].** `check_aspect` gates a candidate against
+    ///   a *stored* source and returns `Ok(())` when there is none, so gating
+    ///   the pushes below would gate nothing at all on a project that does not
+    ///   exist yet, and gating them *as well* would run one rule twice over the
+    ///   same numbers — the second time after both `create_dir`s, which is too
+    ///   late for the refusal this command exists for.
+    /// - **An existing folder is refused only for its `project.json`; an empty
+    ///   one is adopted.** That is what [`Bus::open_project`] already does, and
+    ///   it is what lets the coach point this flow at the empty folder he made
+    ///   by hand. Keyed on `create_dir`'s `AlreadyExists` instead, it would
+    ///   recreate the very thing the flow exists to fix.
+    /// - **`create_dir`, never `create_dir_all`.** At most two directories are
+    ///   ever made — the projects folder's leaf and the match folder under it —
+    ///   so a typo in the hand-editable path (spec W3) leaves one stray
+    ///   directory under a folder that already existed rather than a tree.
+    ///
+    /// **Nothing is rolled back** if `store::write` fails (spec C3): the folder
+    /// is then an empty one, which the next Create adopts. The two `remove_dir`s
+    /// a draft had were *unreliable rather than impossible* — `store::write`
+    /// creates `recordings/` first and writes `.project.json.tmp` before
+    /// renaming it, so a failure while serializing rolls back cleanly while
+    /// `ENOSPC`, `EIO` or a dropped mount leaves the temp file and the folder
+    /// removal returns `ENOTEMPTY`. A rollback that covers the cheap failures
+    /// and not the expensive ones is worse than none. Creating a project is not
+    /// an undo step either, as opening one is not: [`Bus::commit`] clears the
+    /// history.
+    ///
+    /// **Every refusal is a modal [`UserError::Io`] naming the file or path at
+    /// fault.** The coach picked several videos in one dialog and is looking at
+    /// a sheet waiting for an answer, so "the file has no video stream" has to
+    /// say *which* file — which neither `ProbeError` nor
+    /// [`UserError::AspectMismatch`] can, and whose "the project's other
+    /// videos" is not even true here, there being no project yet. Those two
+    /// stay what `add_source` and relink raise, where both are true.
+    pub(super) fn new_match(
+        &mut self,
+        project_dir: PathBuf,
+        name: String,
+        scoreboard: ScoreboardConfig,
+        videos: Vec<PathBuf>,
+    ) {
+        match self.built_new_match(&project_dir, &name, &scoreboard, &videos) {
+            Ok((folder, project)) => self.commit(folder, project),
+            Err(e) => self.emit(Event::Error(e)),
+        }
+    }
+
+    /// [`Bus::new_match`]'s steps 1 to 7, so that every refusal is one `?` and
+    /// the commit is the only thing left to do on success. Takes `&self`: it
+    /// writes to the disk and nothing to the bus.
+    fn built_new_match(
+        &self,
+        project_dir: &Path,
+        name: &str,
+        scoreboard: &ScoreboardConfig,
+        videos: &[PathBuf],
+    ) -> Result<(PathBuf, Project), UserError> {
+        let io = |e: std::io::Error, path: &Path| UserError::Io(format!("{}: {e}", path.display()));
+
+        // 1. An export or a preview must not have the project swapped
+        // underneath it — and the export sheet is meant to be closed while a
+        // run continues, so `New match…` is clickable mid-export.
+        self.refuse_if_busy()?;
+
+        if !project_dir.is_absolute() {
+            return Err(UserError::Io(format!(
+                "not a full path: {}",
+                project_dir.display()
+            )));
+        }
+        // `file_name` *is* the "exactly one `Component::Normal`" check: it is
+        // the last component, which can hold no separator, and it is `None`
+        // for a path ending in `/` or `..`.
+        if project_dir.file_name().is_none() {
+            return Err(UserError::Io(format!(
+                "{} doesn't name a folder to create",
+                project_dir.display()
+            )));
+        }
+        let Some(projects_dir) = project_dir.parent() else {
+            return Err(UserError::Io(format!(
+                "{} has no folder to go in",
+                project_dir.display()
+            )));
+        };
+        // W3: the projects folder is hand-editable, so it may not exist yet —
+        // but its parent must, because only its leaf is ever created.
+        if !projects_dir.is_dir() && !projects_dir.parent().is_some_and(Path::is_dir) {
+            return Err(UserError::Io(format!(
+                "{} can't be created: the folder it would go in doesn't exist",
+                projects_dir.display()
+            )));
+        }
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(UserError::Io("the project needs a name".into()));
+        }
+        if videos.is_empty() {
+            return Err(UserError::Io("pick the game's video files first".into()));
+        }
+        // The one place that decides whether a scoreboard may be stored, so
+        // that writing `scoreboard: Some(config)` onto a fresh project can't
+        // walk around `Bus::set_scoreboard`'s guard. A modal here, where
+        // `set_scoreboard` makes it a notice: this one lands behind the sheet's
+        // scrim otherwise, and the coach is waiting on an answer.
+        if let Err(reason) = super::scoreboard::storable(scoreboard) {
+            return Err(UserError::Io(reason.into()));
+        }
+
+        // 2. Probe every video, each gated against the first — the same
+        // reference `check_aspect` takes, and the same rule.
+        let mut probed: Vec<(&Path, Probe)> = Vec::with_capacity(videos.len());
+        for path in videos {
+            let this =
+                probe(path).map_err(|e| UserError::Io(format!("{}: {e}", path.display())))?;
+            if let Some(&(first, reference)) = probed.first() {
+                if !aspects_match(reference.display_aspect, this.display_aspect) {
+                    return Err(UserError::Io(format!(
+                        "{} is {:.3}:1 but {} is {:.3}:1 — a match's videos all have to be \
+                         the same shape",
+                        first.display(),
+                        reference.display_aspect,
+                        path.display(),
+                        this.display_aspect,
+                    )));
+                }
+            }
+            probed.push((path.as_path(), this));
+        }
+
+        // 3. The projects folder's leaf, and only if it is missing.
+        if !projects_dir.is_dir() {
+            std::fs::create_dir(projects_dir).map_err(|e| io(e, projects_dir))?;
+        }
+        // 4. The match folder. An empty one is adopted; only a `project.json`
+        // inside it refuses.
+        match std::fs::create_dir(project_dir) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // `create_dir` says `AlreadyExists` for a regular file of the
+                // same name too, and the `project.json` probe below would then
+                // find nothing and leave `store::write` to fail with a
+                // confusing `ENOTDIR`. One `is_dir` on a branch that is
+                // reading the filesystem anyway, as `open_project` guards it.
+                if !project_dir.is_dir() {
+                    return Err(UserError::Io(format!(
+                        "{} is a file, not a folder",
+                        project_dir.display()
+                    )));
+                }
+                if project_dir.join(store::PROJECT_FILENAME).exists() {
+                    return Err(UserError::Io(format!(
+                        "{} already holds a project — open that instead",
+                        project_dir.display()
+                    )));
+                }
+            }
+            Err(e) => return Err(io(e, project_dir)),
+        }
+
+        // 5. Canonical on both sides, because the kernel resolves `..`
+        // physically and a cloud-sync mount may be reached through a symlink.
+        let folder = project_dir.canonicalize().map_err(|e| io(e, project_dir))?;
+
+        // 6. The project, in memory. Every aspect has already been gated.
+        let mut project = Project::new(name);
+        project.scoreboard = Some(scoreboard.clone());
+        for (path, this) in probed {
+            project
+                .source_videos
+                .push(super::sources::source_ref(&folder, path, this)?);
+        }
+
+        // 7. `recordings/`, then `project.json` through a temp file and a
+        // rename.
+        store::write(&folder, &mut project)?;
+        Ok((folder, project))
     }
 
     /// Makes `project` in `folder` the open project and resets everything

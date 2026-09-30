@@ -77,6 +77,19 @@ pub enum Command {
     // Project.
     /// Open the project in a folder, creating one if it has no `project.json`.
     OpenProject(PathBuf),
+    /// Creates `project_dir`, writes a project into it naming `videos` in the
+    /// order given, and opens it. All or nothing: nothing is created until
+    /// every video has been probed and accepted (spec C1).
+    ///
+    /// Every field is the New match sheet's, captured when Create was pressed.
+    /// Nothing here is read from the pipeline, so the caller-captured
+    /// timestamp rule has nothing to bite on.
+    NewMatch {
+        project_dir: PathBuf,
+        name: String,
+        scoreboard: ScoreboardConfig,
+        videos: Vec<PathBuf>,
+    },
     /// Reopen the last successfully opened project, if it still exists. Never
     /// creates one.
     RestoreLastProject,
@@ -934,6 +947,12 @@ impl Bus {
         }
         match cmd {
             Command::OpenProject(folder) => self.open_project(folder),
+            Command::NewMatch {
+                project_dir,
+                name,
+                scoreboard,
+                videos,
+            } => self.new_match(project_dir, name, scoreboard, videos),
             Command::RestoreLastProject => self.restore_last_project(),
             Command::RenameProject(name) => self.rename_project(name),
             Command::AddSource(path) => self.add_source(path),
