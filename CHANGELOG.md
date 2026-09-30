@@ -31,6 +31,18 @@ which the app was called until 0.8.0 renamed it.
   in the corner while you record shows you where it is actually going to end up.
   Fixing one clip afterwards still only changes that clip.
 
+### Fixed
+
+- **Two halves added at once could go into a project backwards.** If you picked
+  both files in one **Add Source Video…** and the second was a copy — the kind a
+  browser or file manager names `… (1).mp4` — they were added in the wrong order,
+  with nothing on screen to say so. Because the order of the videos *is* the match
+  timeline, that put the match clock out by about a half, moved every clip's
+  position in the game, and burned the wrong time into any export. A copy now
+  follows the file it is a copy of. **This does not repair a project you have
+  already made:** if you think one is affected, drag the videos into the right
+  order in the sidebar and the clock follows.
+
 ## [0.10.0] - 2026-09-27
 
 ### Added
