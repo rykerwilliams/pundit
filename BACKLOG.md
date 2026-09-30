@@ -1007,6 +1007,22 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   15 s bound, so the timeout is not merely too short *here*. Twelve rounds of
   the `transport` binary under the same load were clean too (its fixture
   encodes time out at that load, which is the noise you will see).
+- **Fourth sighting, 2026-09-30 — and the discriminator below could not be
+  applied, because CI throws the evidence away.** GitHub run 36655386922, on a
+  **docs-only** pull request (two markdown files), so nothing in the change can be
+  implicated: `a_skip_burst_across_a_source_boundary_lands_on_the_accumulated_target`
+  again, again `Position { source_index: 0, target_abs: Some(0.0) }` with no settle
+  inside the bound. **Measured, on this laptop:** that test's run prints
+  `bus: loaded …` **three times under `--nocapture` and zero times without it** —
+  libtest captures the bus thread's stderr, and `rust.yml` runs a plain
+  `cargo test --workspace`. So every marker this entry's discriminator keys on is
+  discarded before it reaches a log, and has been for all four sightings.
+- **What that means for the fix below:** the next step is not `GST_DEBUG`, it is
+  making the failure **carry its own evidence**, exactly as #75's resolution did for
+  the replay margin — have the rig collect the bus's diagnostic lines and include
+  them in the timeout's panic message, rather than hoping a log survives. `--nocapture`
+  in CI is the cheap alternative and a worse one: it interleaves every test's output
+  in a parallel run, so the lines cannot be attributed to the test that failed.
 - **When to revisit:** the next occurrence, which is now decidable from the
   failing test's captured stderr:
   - **`bus: loaded …` present** → the preroll finished and the *seek's*
