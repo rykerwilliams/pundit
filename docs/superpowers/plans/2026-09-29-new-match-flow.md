@@ -26,7 +26,23 @@ executing** (CLAUDE.md workflow step 5): start each task from the spec, this pla
 
 - **T1 — core naming and the aspect primitive. DONE**, committed. 524 core tests pass, clippy clean, the audit still prints exactly the four crates. It corrected spec I4: `opponent_from` capitalizes each word's first letter and leaves the rest as typed, where the draft said title-case.
 - **T2 — the shipped-code touches. DONE**, two commits, gated apart — `5109d55` the export rename alone, then the other three. 998 workspace tests pass, clippy clean, fmt clean at both. It added a **fourth** test to commit (a): under the shipped `replace(['/', ':'])` all three of the cases named below still pass, so they separate `safe_chars` from `folder_slug` but not from the code being replaced — `a_file_name_replaces_the_characters_a_share_refuses` is the only one that fails on the old body. Sabotage confirmed the plan's claim about the shipped test exactly (`all-clips - game.mp4`), and the byte-64 case fails its `assert_ne` with both long labels collapsing to one identical file name.
-- **T3 — `Command::NewMatch` and the harness proof.** Not started.
+- **T3 — `Command::NewMatch` and the harness proof. DONE**, committed. 14 new harness
+  tests; 968 workspace tests pass, clippy clean, fmt clean, the audit still prints exactly
+  the four crates. Both sabotage proofs came out as the plan asked: making `AlreadyExists`
+  a refusal on its own failed **`an_empty_folder_is_adopted` alone** (13 of 14 still
+  green, the `project.json` refusal among them), and swapping the probe loop with the two
+  `create_dir`s left `["mismatched"]` standing in the projects folder — the stranded
+  folder the flow exists to fix — caught by three tests. **It corrects spec C3's error
+  variants:** every refusal is `UserError::Io`, not `Source` or `AspectMismatch`, because
+  C2 and C3 both say the message must name the file and neither of those variants can,
+  and `AspectMismatch`'s "the project's other videos" is not true when there is no project
+  yet. Nothing observable changes by it — all three are modal, `main.rs` dispatches on
+  `is_notice` alone — and both variants stay what `add_source` and relink raise.
+  Two notes for whoever writes T4: `Snapshot::missing` is one flag **per source**, so
+  `is_empty()` is not "nothing missing"; and `fixtures::webm` re-runs its pipeline on
+  every call, so a rig that calls it twice for one name rewrites a file the player has
+  open and the next `wait_for_error` picks up a `Playback` error instead of the refusal
+  under test.
 - **T4 — `new_match.rs`, the sheet and the wiring.** Not started.
 - **T5 — close out.** Not started.
 
