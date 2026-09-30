@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use gstreamer as gst;
 use pundit_core::project::{Project, SourceRef};
-use pundit_media::{probe, Origin};
+use pundit_media::{probe, Origin, Probe};
 
 use super::{Bus, Event, UserError};
 
@@ -216,6 +216,19 @@ fn probed_source(
 ) -> Result<SourceRef, UserError> {
     let probe = probe(path)?;
     project.check_aspect(probe.display_aspect, excluding)?;
+    source_ref(folder, path, probe)
+}
+
+/// A probed `path` as the `SourceRef` to store in the project at `folder`.
+///
+/// **Split out of [`probed_source`] because `relative_path` needs a canonical
+/// project folder** and `Command::NewMatch` has none until it has accepted
+/// every video: it probes and gates the whole set *before* it creates a
+/// directory, so the probe and this cannot stay welded together. The gate the
+/// probe half runs is `Project::check_aspect`, which compares against a
+/// *stored* source and would pass vacuously on a project that does not exist
+/// yet — `project::aspects_match` is what the command gates with instead.
+pub(super) fn source_ref(folder: &Path, path: &Path, probe: Probe) -> Result<SourceRef, UserError> {
     let io = |e: std::io::Error| UserError::Io(format!("{}: {e}", path.display()));
     let canonical = path.canonicalize().map_err(io)?;
     let relative_path = relative_path(&canonical, folder).ok_or_else(|| {

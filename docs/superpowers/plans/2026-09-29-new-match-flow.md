@@ -25,7 +25,7 @@ executing** (CLAUDE.md workflow step 5): start each task from the spec, this pla
 ## Where this stands (update it as tasks land)
 
 - **T1 — core naming and the aspect primitive. DONE**, committed. 524 core tests pass, clippy clean, the audit still prints exactly the four crates. It corrected spec I4: `opponent_from` capitalizes each word's first letter and leaves the rest as typed, where the draft said title-case.
-- **T2 — the shipped-code touches.** Not started.
+- **T2 — the shipped-code touches. DONE**, two commits, gated apart — `5109d55` the export rename alone, then the other three. 998 workspace tests pass, clippy clean, fmt clean at both. It added a **fourth** test to commit (a): under the shipped `replace(['/', ':'])` all three of the cases named below still pass, so they separate `safe_chars` from `folder_slug` but not from the code being replaced — `a_file_name_replaces_the_characters_a_share_refuses` is the only one that fails on the old body. Sabotage confirmed the plan's claim about the shipped test exactly (`all-clips - game.mp4`), and the byte-64 case fails its `assert_ne` with both long labels collapsing to one identical file name.
 - **T3 — `Command::NewMatch` and the harness proof.** Not started.
 - **T4 — `new_match.rs`, the sheet and the wiring.** Not started.
 - **T5 — close out.** Not started.
