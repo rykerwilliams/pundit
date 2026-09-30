@@ -1017,6 +1017,15 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   libtest captures the bus thread's stderr, and `rust.yml` runs a plain
   `cargo test --workspace`. So every marker this entry's discriminator keys on is
   discarded before it reaches a log, and has been for all four sightings.
+- **Fifth sighting, minutes after the fourth, and the rate estimate above is no
+  longer true.** GitHub run 36657306149, the same docs-only branch one push later:
+  `a_pause_right_after_a_skip_is_anchored_at_the_skip_target` this time, same panic
+  site (`pundit-harness/src/lib.rs:164`), same settle timeout. So **two of three
+  workspace runs** on a branch that changes only markdown, where this entry says
+  "roughly once in seven runs" — and each recovered on a re-run of the failed job.
+  The failing test is whichever one happens to open a project at the wrong moment,
+  which is the entry's own conclusion ("every failure so far is `Rig::open`'s
+  settle") holding across five sightings and three different test names.
 - **What that means for the fix below:** the next step is not `GST_DEBUG`, it is
   making the failure **carry its own evidence**, exactly as #75's resolution did for
   the replay margin — have the rig collect the bus's diagnostic lines and include
