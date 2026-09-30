@@ -120,8 +120,10 @@ impl Bus {
     ///   so a typo in the hand-editable path (spec W3) leaves one stray
     ///   directory under a folder that already existed rather than a tree.
     ///
-    /// **Nothing is rolled back** if `store::write` fails (spec C3): the folder
-    /// is then an empty one, which the next Create adopts. The two `remove_dir`s
+    /// **Nothing is rolled back** if a step after the directories fails (spec
+    /// C3) — the canonicalize, a `SourceRef` whose path is not UTF-8, or
+    /// `store::write`: the folder is then an empty one, which the next Create
+    /// adopts. The two `remove_dir`s
     /// a draft had were *unreliable rather than impossible* — `store::write`
     /// creates `recordings/` first and writes `.project.json.tmp` before
     /// renaming it, so a failure while serializing rolls back cleanly while
@@ -131,21 +133,24 @@ impl Bus {
     /// an undo step either, as opening one is not: [`Bus::commit`] clears the
     /// history.
     ///
-    /// **Every refusal is a modal [`UserError::Io`] naming the file or path at
-    /// fault.** The coach picked several videos in one dialog and is looking at
-    /// a sheet waiting for an answer, so "the file has no video stream" has to
-    /// say *which* file — which neither `ProbeError` nor
-    /// [`UserError::AspectMismatch`] can, and whose "the project's other
-    /// videos" is not even true here, there being no project yet. Those two
-    /// stay what `add_source` and relink raise, where both are true.
+    /// **Every refusal is a modal, and every refusal of its own is a
+    /// [`UserError::Io`] naming the file or path at fault.** The coach picked
+    /// several videos in one dialog and is looking at a sheet waiting for an
+    /// answer, so "the file has no video stream" has to say *which* file — which
+    /// neither `ProbeError` nor [`UserError::AspectMismatch`] can, and whose
+    /// "the project's other videos" is not even true here, there being no
+    /// project yet. Those two stay what `add_source` and relink raise, where
+    /// both are true. The two refusals this borrows are not `Io`:
+    /// [`Bus::refuse_if_busy`]'s `CantExport` and `store::write`'s own error.
+    /// Both are modal, which is what the reasoning above needs, and the second
+    /// is wrapped here so that it names its folder too.
     pub(super) fn new_match(
         &mut self,
         project_dir: PathBuf,
-        name: String,
         scoreboard: ScoreboardConfig,
         videos: Vec<PathBuf>,
     ) {
-        match self.built_new_match(&project_dir, &name, &scoreboard, &videos) {
+        match self.built_new_match(&project_dir, &scoreboard, &videos) {
             Ok((folder, project)) => self.commit(folder, project),
             Err(e) => self.emit(Event::Error(e)),
         }
@@ -157,7 +162,6 @@ impl Bus {
     fn built_new_match(
         &self,
         project_dir: &Path,
-        name: &str,
         scoreboard: &ScoreboardConfig,
         videos: &[PathBuf],
     ) -> Result<(PathBuf, Project), UserError> {
@@ -174,9 +178,13 @@ impl Bus {
                 project_dir.display()
             )));
         }
-        // `file_name` *is* the "exactly one `Component::Normal`" check: it is
-        // the last component, which can hold no separator, and it is `None`
-        // for a path ending in `/` or `..`.
+        // `file_name` is `None` for `/` and for a path ending in `..`, which
+        // is what this rejects. It is **not** the "exactly one
+        // `Component::Normal`" check — `a/b` and `a/` both have one, since
+        // `Components` discards a trailing separator. That check is
+        // `new_match::valid_folder_name`'s, upstream; the weaker one here still
+        // cannot make more than two directories, because only `create_dir` is
+        // used and only twice.
         if project_dir.file_name().is_none() {
             return Err(UserError::Io(format!(
                 "{} doesn't name a folder to create",
@@ -197,21 +205,18 @@ impl Bus {
                 projects_dir.display()
             )));
         }
-        let name = name.trim();
-        if name.is_empty() {
-            return Err(UserError::Io("the project needs a name".into()));
-        }
         if videos.is_empty() {
             return Err(UserError::Io("pick the game's video files first".into()));
         }
-        // The one place that decides whether a scoreboard may be stored, so
-        // that writing `scoreboard: Some(config)` onto a fresh project can't
-        // walk around `Bus::set_scoreboard`'s guard. A modal here, where
-        // `set_scoreboard` makes it a notice: this one lands behind the sheet's
-        // scrim otherwise, and the coach is waiting on an answer.
-        if let Err(reason) = super::scoreboard::storable(scoreboard) {
-            return Err(UserError::Io(reason.into()));
-        }
+        // The one place that decides both whether a scoreboard may be stored and
+        // what a project carrying it is called, so that writing
+        // `scoreboard: Some(config)` onto a fresh project can neither walk
+        // around `Bus::set_scoreboard`'s guard nor invent a second spelling of
+        // `<Home> v <Away>`. A modal here, where `set_scoreboard` makes it a
+        // notice: this one lands behind the sheet's scrim otherwise, and the
+        // coach is waiting on an answer.
+        let name = super::scoreboard::storable(scoreboard)
+            .map_err(|reason| UserError::Io(reason.into()))?;
 
         // 2. Probe every video, each gated against the first — the same
         // reference `check_aspect` takes, and the same rule.
@@ -278,8 +283,11 @@ impl Bus {
         }
 
         // 7. `recordings/`, then `project.json` through a temp file and a
-        // rename.
-        store::write(&folder, &mut project)?;
+        // rename. Named, like every other refusal here: `StoreError` carries the
+        // file name it could not write but not the folder, so a read-only match
+        // folder reached the coach as a bare "Permission denied".
+        store::write(&folder, &mut project)
+            .map_err(|e| UserError::Io(format!("{}: {e}", folder.display())))?;
         Ok((folder, project))
     }
 

@@ -66,7 +66,21 @@ executing** (CLAUDE.md workflow step 5): start each task from the spec, this pla
   that cannot be read makes its range empty and no date is taken rather than every date
   being in bounds. And item 5's wording is in, for T5's manual list to judge: the card is
   titled **"Start a match"**.
-- **T5 — close out.** Not started.
+- **T5 — close out. DONE.** The `verify` skill green (fmt, clippy `-D warnings`, 1039
+  workspace tests, the audit's four crates); the adversarial pass run as two parallel
+  reviewers on `e0f2716..143b2e3`; `CLAUDE.md`, `BACKLOG.md` #108 and `CHANGELOG.md`
+  written. **Both reviewers' first finding was the same bug** — the sheet's untrimmed
+  `!= ""` against `match_name`'s trim, leaving Create dead — which I reproduced myself
+  before acting on it. Applied: that fix (by making `storable` answer "may this be
+  stored" and "what is it called" in one call and dropping `name` from the command, so
+  the duplication that caused it is gone rather than patched); `BesideLastProject`
+  checked to exist; `seed_scoreboard` one pass and looking past a neighbour with no
+  scoreboard; `basket::file_stem` on `safe_chars`; `store::write`'s refusal naming its
+  folder; `valid_folder_name`'s length clause dropped (it refused names the bus would
+  have accepted); one `Pickers` for the window; one `Draft` cell; the derivation in one
+  place; `open_many` as the shared body; `close-new-match` a no-op when shut; and four
+  doc comments that stated things the code did not do. Skipped, with reasons in #108:
+  collapsing `ProjectsDir` to two variants, and de-duplicating the doc prose.
 
 ---
 

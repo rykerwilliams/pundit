@@ -1534,8 +1534,8 @@ component Scrim inherits Rectangle {
 ///
 /// There are six of these -- export, the basket, New match, match setup, the
 /// match event editor and the error dialog -- and this is the one shape they
-/// are. A sheet
-/// sets its width and its title and lays its own body out as children;
+/// are. A sheet sets its width and its title and lays its own body out as
+/// children;
 /// everything else is here, once.
 component Sheet inherits Rectangle {
     /// The card's width. Wide enough for the widest thing in it, and no
@@ -2925,6 +2925,12 @@ component NewMatchSheet inherits Sheet {
     /// `close-new-match` clears it by hand, as the basket's and the editor's
     /// closes do.
     in-out property <bool> editing;
+    /// Whether a team name is one the bus will accept. **Not `!= ""`**: the
+    /// rule trims, and an untrimmed comparison here marked a field of one space
+    /// good, enabled Create and then sent nothing — leaving the button dead
+    /// until the coach cancelled and re-picked every video. It is the same call
+    /// Create makes (spec S5), which is only true because it is Rust's.
+    pure callback team-named(string) -> bool;
     pure callback valid-folder-name(string) -> bool;
     pure callback valid-projects-dir(string) -> bool;
     /// Whether `<projects folder>/<folder name>` already holds a project. A
@@ -2942,7 +2948,8 @@ component NewMatchSheet inherits Sheet {
     card-width: 560px;
     title: "New match";
 
-    property <bool> teams-ok: root.home-name != "" && root.away-name != "";
+    property <bool> home-ok: root.team-named(root.home-name);
+    property <bool> away-ok: root.team-named(root.away-name);
     property <bool> folder-ok: root.valid-folder-name(root.folder-name);
     property <bool> dir-ok: root.valid-projects-dir(root.projects-dir);
     property <bool> taken: root.dir-ok && root.folder-ok
@@ -2956,7 +2963,7 @@ component NewMatchSheet inherits Sheet {
         home := SetupField {
             label: "Home team";
             placeholder: "Your club";
-            ok: root.home-name != "";
+            ok: root.home-ok;
             text <=> root.home-name;
             horizontal-stretch: 1;
         }
@@ -2978,7 +2985,7 @@ component NewMatchSheet inherits Sheet {
         away := SetupField {
             label: "Away team";
             placeholder: "Opponent";
-            ok: root.away-name != "";
+            ok: root.away-ok;
             text <=> root.away-name;
             horizontal-stretch: 1;
         }
@@ -3057,7 +3064,7 @@ component NewMatchSheet inherits Sheet {
         Button {
             text: "Create";
             primary: true;
-            enabled: !root.creating && root.teams-ok && root.folder-ok && root.dir-ok
+            enabled: !root.creating && root.home-ok && root.away-ok && root.folder-ok && root.dir-ok
                 && !root.taken && root.videos.length > 0;
             clicked => { root.create(); }
 
@@ -3491,9 +3498,6 @@ export component AppWindow inherits Window {
     /// the click and only an error or a close re-enables it (spec S5).
     in-out property <bool> new-match-creating;
     property <bool> new-match-editing;
-    /// Swapping needs somewhere to hold the first name while the second is
-    /// written over it.
-    property <string> new-match-swap;
     changed new-match-home-name => { root.derive-new-match-folder(); }
     changed new-match-away-name => { root.derive-new-match-folder(); }
 
@@ -3501,6 +3505,7 @@ export component AppWindow inherits Window {
     callback new-match();
     callback create-match();
     callback choose-projects-dir();
+    pure callback team-named(string) -> bool;
     pure callback valid-folder-name(string) -> bool;
     pure callback valid-projects-dir(string) -> bool;
     pure callback target-taken(string, string) -> bool;
@@ -3889,6 +3894,12 @@ export component AppWindow inherits Window {
     /// New match… would open with a dead Create button, and a folder name that
     /// no longer follows the teams being typed into it.
     public function close-new-match() {
+        // Every `ProjectOpened` calls this, including the startup restore and a
+        // plain `Open Project…`, and it ends in `keys.focus()` — so without this
+        // guard an unrelated open steals focus for a sheet that was never up.
+        if (!root.new-match-sheet-open) {
+            return;
+        }
         root.new-match-editing = false;
         root.new-match-creating = false;
         root.new-match-folder-dirty = false;
@@ -3901,7 +3912,7 @@ export component AppWindow inherits Window {
     /// `saved-project-name`'s pattern above, because `SetupField`'s text is
     /// two-way bound all the way out here: a `text:` binding on it breaks the
     /// moment the field is typed into.
-    function derive-new-match-folder() {
+    public function derive-new-match-folder() {
         if (!root.new-match-folder-dirty) {
             root.new-match-folder-name = root.new-match-folder(root.new-match-date,
                 root.new-match-home-name, root.new-match-away-name);
@@ -3910,9 +3921,9 @@ export component AppWindow inherits Window {
 
     /// ⇄: exchanges the two names, and the folder name follows them.
     function swap-new-match-teams() {
-        root.new-match-swap = root.new-match-home-name;
+        let held = root.new-match-home-name;
         root.new-match-home-name = root.new-match-away-name;
-        root.new-match-away-name = root.new-match-swap;
+        root.new-match-away-name = held;
         root.derive-new-match-folder();
     }
 
@@ -5823,6 +5834,7 @@ export component AppWindow inherits Window {
                 videos: root.new-match-videos;
                 creating: root.new-match-creating;
                 editing <=> root.new-match-editing;
+                team-named(name) => { return root.team-named(name); }
                 valid-folder-name(name) => { return root.valid-folder-name(name); }
                 valid-projects-dir(path) => { return root.valid-projects-dir(path); }
                 target-taken(dir, name) => { return root.target-taken(dir, name); }

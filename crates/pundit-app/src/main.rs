@@ -35,7 +35,7 @@ use pundit_app::highlight_view::{self, LiveHighlight as Ring};
 use pundit_app::match_panel::{
     self, parse_hex, parse_minutes, parse_overtime_periods, parse_periods,
 };
-use pundit_app::new_match::{self, Prefill};
+use pundit_app::new_match::{self, Draft};
 use pundit_app::wheel::Wheel;
 use pundit_app::zoom_input::{self, DragPan, Viewport};
 use pundit_core::avatar;
@@ -390,13 +390,14 @@ fn main() {
     // The one pen width, from core: the live stroke layer and the highlight
     // rings are drawn with it, and it never changes while the window is up.
     window.set_stroke_line_width(STROKE_LINE_WIDTH as f32);
-    wire_callbacks(&window, &bus);
+    let pickers = Pickers::default();
+    wire_callbacks(&window, &bus, &pickers);
     wire_zoom(&window, &bus);
     wire_drawing(&window, &bus);
     wire_highlights(&window, &bus);
     wire_fit(&window);
     wire_panels(&window, &machine_state);
-    wire_new_match(&window, &bus, &machine_state);
+    wire_new_match(&window, &bus, &machine_state, &pickers);
 
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, TICK, {
@@ -437,25 +438,28 @@ fn closing_window_size(w: &AppWindow) -> WindowSize {
 /// no `state.json` and no clock; this is the wiring, and it holds the one thing
 /// the sheet cannot show — the scoreboard a neighbouring project lent, whose
 /// kit and format the coach never sees and only `Set up teams…` corrects.
-fn wire_new_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, state: &AppFiles) {
-    let pickers = Pickers::default();
-    // The seeded config, which is not in the sheet: it carries the previous
-    // match's kit in each slot and the format the coach plays, and only the two
-    // names are replaced. Re-seeded by `Choose…` for the folder it picked (spec
-    // Q6, "the unit is the chosen folder"), because it is captured once at
-    // prefill and would otherwise keep the old folder's kit in silence.
-    let seed = Rc::new(RefCell::new(match_panel::blank_config()));
-    // And the ordered paths, for the same reason they are not a `[string]` on
-    // the window: `to_string_lossy` would corrupt a path that is not UTF-8, and
-    // the sheet needs only the file names to show.
-    let picked: Rc<RefCell<Vec<PathBuf>>> = Rc::new(RefCell::new(Vec::new()));
+fn wire_new_match(
+    window: &AppWindow,
+    bus: &Rc<RefCell<BusHandle>>,
+    state: &AppFiles,
+    pickers: &Pickers,
+) {
+    // **One `Pickers` for the window**, passed in rather than made here: its
+    // `busy` flag is an `Rc<Cell<bool>>` shared by every clone precisely so one
+    // dialog is up at a time, and a second instance would let New match… and the
+    // Open Project… beside it on the empty card each open one.
+    let pickers = pickers.clone();
+    // What the sheet cannot show, and what Create needs: the kit and format a
+    // neighbour lent, and the ordered paths. One cell, because they are written
+    // together and read together.
+    let draft = Rc::new(RefCell::new(Draft::default()));
 
     window.on_new_match({
         let (weak, pickers, state) = (window.as_weak(), pickers.clone(), state.clone());
-        let (seed, picked) = (seed.clone(), picked.clone());
+        let draft = draft.clone();
         move || {
             let Some(w) = weak.upgrade() else { return };
-            let (state, seed, picked) = (state.clone(), seed.clone(), picked.clone());
+            let (state, draft) = (state.clone(), draft.clone());
             let inner = w.as_weak();
             let pick = Pick::Videos {
                 title: "Pick the Game's Videos",
@@ -465,16 +469,17 @@ fn wire_new_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, state: &AppF
             // is complete.
             pickers.open_many(&w, pick, move |videos| {
                 let Some(w) = inner.upgrade() else { return };
-                open_new_match(&w, &state, &seed, &picked, videos);
+                open_new_match(&w, &state, &draft, videos);
             });
         }
     });
 
     window.on_choose_projects_dir({
-        let (weak, pickers, seed) = (window.as_weak(), pickers.clone(), seed.clone());
+        let (weak, pickers) = (window.as_weak(), pickers.clone());
+        let draft = draft.clone();
         move || {
             let Some(w) = weak.upgrade() else { return };
-            let seed = seed.clone();
+            let draft = draft.clone();
             let inner = w.as_weak();
             let pick = Pick::ProjectFolder {
                 title: "Choose Where Projects Go",
@@ -484,44 +489,43 @@ fn wire_new_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, state: &AppF
                 // Chosen by hand, so there is nothing left to explain.
                 w.set_new_match_provenance(SharedString::new());
                 w.set_new_match_projects_dir(folder.to_string_lossy().as_ref().into());
-                *seed.borrow_mut() = new_match::seed_scoreboard(
-                    &folder,
-                    w.get_new_match_home_name().as_str(),
-                    w.get_new_match_away_name().as_str(),
-                    this_year() + 1,
-                );
+                // The seed is the *chosen* folder's, and it is invisible in the
+                // sheet — so without this a coach who picks a different projects
+                // folder silently keeps the old folder's kit.
+                draft.borrow_mut().scoreboard =
+                    new_match::seed_scoreboard(&folder, this_year() + 1);
             });
         }
     });
 
     // One validator per field, each the same call Create will make, so a field
     // can't read good and then fail to save (the setup sheet's own model).
+    window.on_team_named(|name| new_match::team_named(&name));
     window.on_valid_folder_name(|name| new_match::valid_folder_name(&name));
     window.on_valid_projects_dir(|path| new_match::valid_projects_dir(Path::new(path.as_str())));
     window.on_target_taken(|dir, name| new_match::target_taken(Path::new(dir.as_str()), &name));
-    window.on_new_match_folder(|date, home, away| Prefill::folder_name(&date, &home, &away).into());
+    window
+        .on_new_match_folder(|date, home, away| new_match::folder_name(&date, &home, &away).into());
 
     window.on_create_match({
-        let (weak, bus) = (window.as_weak(), bus.clone());
-        let (seed, picked) = (seed.clone(), picked.clone());
+        let (weak, bus, draft) = (window.as_weak(), bus.clone(), draft.clone());
         move || {
             let Some(w) = weak.upgrade() else { return };
-            let (home, away) = (w.get_new_match_home_name(), w.get_new_match_away_name());
-            // The sheet's Create is enabled only when this is `Some`, so the
-            // early return is a backstop rather than a path.
-            let Some(name) = new_match::project_name(&home, &away) else {
-                return;
-            };
-            let mut scoreboard = seed.borrow().clone();
-            scoreboard.home.name = home.trim().to_owned();
-            scoreboard.away.name = away.trim().to_owned();
-            let project_dir = Path::new(w.get_new_match_projects_dir().as_str())
-                .join(w.get_new_match_folder_name().trim());
+            // **No refusal of its own, and so no way to leave Create dead.**
+            // The project's name is the bus's to build from the scoreboard
+            // (spec N4), so there is nothing here that can fail to produce one
+            // and return without sending — which is what left the button
+            // disabled when the sheet's gate and `match_name` disagreed about
+            // whitespace.
+            let draft = draft.borrow();
+            let mut scoreboard = draft.scoreboard.clone();
+            scoreboard.home.name = w.get_new_match_home_name().trim().to_owned();
+            scoreboard.away.name = w.get_new_match_away_name().trim().to_owned();
             bus.borrow().send(Command::NewMatch {
-                project_dir,
-                name,
+                project_dir: Path::new(w.get_new_match_projects_dir().as_str())
+                    .join(w.get_new_match_folder_name().trim()),
                 scoreboard,
-                videos: picked.borrow().clone(),
+                videos: draft.videos.clone(),
             });
         }
     });
@@ -532,15 +536,16 @@ fn wire_new_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, state: &AppF
 fn open_new_match(
     w: &AppWindow,
     state: &AppFiles,
-    seed: &Rc<RefCell<ScoreboardConfig>>,
-    picked: &Rc<RefCell<Vec<PathBuf>>>,
+    draft: &Rc<RefCell<Draft>>,
     videos: Vec<PathBuf>,
 ) {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let last = state.last_project();
     let prefill = new_match::prefill(videos, home.as_deref(), last.as_deref(), this_year());
-    *seed.borrow_mut() = prefill.scoreboard.clone();
-    *picked.borrow_mut() = prefill.videos.clone();
+    *draft.borrow_mut() = Draft {
+        scoreboard: prefill.scoreboard.clone(),
+        videos: prefill.videos.clone(),
+    };
     // The coach's own club is theirs to type: nothing in a file or a folder
     // name says which team that is. The guess goes in `away` (spec S3).
     w.set_new_match_home_name(SharedString::new());
@@ -569,17 +574,13 @@ fn open_new_match(
         })
         .collect();
     w.set_new_match_videos(ModelRc::new(VecModel::from(rows)));
-    // Set here as well as by the two `changed` handlers the names above fire:
-    // an open whose home and away are both what the last sheet had fires
-    // neither, and the field would keep the last match's folder name. The
-    // derivation is a pure function of the three, so doing it twice is the same
-    // answer. The dirty flag is already false — `close-new-match` clears it, so
-    // the field follows the teams again on every open.
-    w.set_new_match_folder_name(
-        Prefill::folder_name(&prefill.date, "", &prefill.away)
-            .as_str()
-            .into(),
-    );
+    // Invoked rather than derived a second time here: the rule and its dirty
+    // guard live in one place. It is needed at all because an open whose home
+    // and away are both what the last sheet had fires neither `changed` handler,
+    // and the field would keep the last match's folder name. The flag is already
+    // false — `close-new-match` clears it, so the field follows the teams again
+    // on every open.
+    w.invoke_derive_new_match_folder();
     w.set_new_match_sheet_open(true);
 }
 
@@ -597,12 +598,12 @@ fn this_year() -> i32 {
 
 /// Turns the window's callbacks into bus commands. Values are passed on as
 /// they are: the bus is the one place that sanitizes them (BACKLOG #28).
-fn wire_callbacks(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
+fn wire_callbacks(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, pickers: &Pickers) {
     let send = |bus: &Rc<RefCell<BusHandle>>| {
         let bus = bus.clone();
         move |cmd: Command| bus.borrow().send(cmd)
     };
-    let pickers = Pickers::default();
+    let pickers = pickers.clone();
 
     window.on_open_project({
         let (weak, pickers, send) = (window.as_weak(), pickers.clone(), send(bus));

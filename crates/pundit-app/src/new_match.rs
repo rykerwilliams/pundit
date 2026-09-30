@@ -18,7 +18,7 @@
 
 use std::path::{Path, PathBuf};
 
-use pundit_core::metadata::{self, CalendarDate, APP_NAME};
+use pundit_core::metadata::{CalendarDate, APP_NAME};
 use pundit_core::naming;
 use pundit_core::scoreboard::ScoreboardConfig;
 use pundit_core::store;
@@ -29,10 +29,6 @@ use crate::match_panel::blank_config;
 /// app-named directory: four candidates, the match folder itself being the
 /// first (spec W1's depth table).
 const WALK_CANDIDATES: usize = 4;
-
-/// How long a folder name this flow proposes may be, in bytes — the budget
-/// [`naming::folder_slug`] cuts at.
-const FOLDER_NAME_BYTES: usize = 64;
 
 /// Where the projects folder was found, and so what the sheet says about it.
 ///
@@ -46,7 +42,13 @@ pub enum ProjectsDir {
     /// decisive answer, and the coach's own pattern.
     Found(PathBuf),
     /// Spec W2: the folder of the project last opened is *in* a projects
-    /// folder, so its parent is one. A fact, not an inference.
+    /// folder, so its parent is one. A fact, not an inference — **which is why
+    /// it is checked**: `last_project` is a stored path with no existence
+    /// guarantee (`RestoreLastProject` says "if it still exists" for the same
+    /// reason), and an unchecked one would silently re-create a projects folder
+    /// the coach had deleted, with no line saying it had proposed a directory
+    /// that is not there. A stale one falls through to [`ProjectsDir::Proposed`],
+    /// which carries that line.
     BesideLastProject(PathBuf),
     /// Spec W2's floor: an app-named directory **beside the footage**, which
     /// does not exist yet. The one tier that proposes something the coach has
@@ -114,19 +116,31 @@ pub fn projects_dir_for(
         }
         candidate = dir.parent();
     }
-    if let Some(parent) = last_project.and_then(Path::parent) {
+    if let Some(parent) = last_project.and_then(Path::parent).filter(|p| p.is_dir()) {
         return ProjectsDir::BesideLastProject(parent.to_owned());
     }
     ProjectsDir::Proposed(match_folder.parent().unwrap_or(match_folder).join(APP_NAME))
 }
 
-/// The scoreboard the newest neighbouring project lends, with `home` and `away`
-/// substituted (spec I5).
+/// The scoreboard the newest neighbouring project lends (spec I5).
 ///
 /// One `read_dir` of `projects_dir`, its subfolders **by the date in their
-/// names, descending**, and the first whose `project.json` [`store::read`]
-/// accepts. A file that is unreadable, legacy or too new is passed over in
-/// silence: this is a prefill, not an operation.
+/// names, descending**, and the first that has a scoreboard to lend. A file that
+/// is unreadable, legacy or too new is passed over in silence: this is a
+/// prefill, not an operation.
+///
+/// **"The first that has one", not "the first that reads".** Spec I5 says the
+/// latter, and it is the weaker reading of its own sentence: a project made by
+/// pointing `Open Project…` at a folder carries `scoreboard: None` until
+/// `Set up teams…` is used, so the newest thing in the folder is quite often a
+/// project with nothing to lend — and stopping there would hand back
+/// [`blank_config`] while the match before it had exactly the kit and format
+/// this tier exists to pass on. Looking past it is also one pass rather than
+/// two, since the config comes out of the same read that accepted the file.
+///
+/// **The names are not substituted here.** They are the sheet's, typed after
+/// this runs, and every reader of the result overwrites both — so doing it here
+/// was work that could only ever be undone.
 ///
 /// **Recency is the folder name's date, and nothing is stat-ed at all.**
 /// `project.json` is rewritten on every edit, so its mtime means "last opened",
@@ -145,22 +159,11 @@ pub fn projects_dir_for(
 /// What is inherited is a **whole valid config** — the previous match's kit in
 /// each slot and the format the coach plays — so only the two names are
 /// replaced and `Set up teams…` corrects the rest.
-pub fn seed_scoreboard(
-    projects_dir: &Path,
-    home: &str,
-    away: &str,
-    max_year: i32,
-) -> ScoreboardConfig {
-    let mut config = newest_neighbour(projects_dir, max_year)
-        .and_then(|folder| store::read(&folder).ok())
-        .and_then(|project| project.scoreboard)
-        .unwrap_or_else(blank_config);
-    config.home.name = home.to_owned();
-    config.away.name = away.to_owned();
-    config
+pub fn seed_scoreboard(projects_dir: &Path, max_year: i32) -> ScoreboardConfig {
+    lent_scoreboard(projects_dir, max_year).unwrap_or_else(blank_config)
 }
 
-/// A folder beside the one being created, as [`newest_neighbour`] orders them.
+/// A folder beside the one being created, as [`lent_scoreboard`] orders them.
 struct Neighbour {
     /// The date in its name as a comparable tuple, because `Option<T>` orders
     /// `None` below every `Some` — which, sorted descending, *is* "dated before
@@ -170,8 +173,9 @@ struct Neighbour {
     folder: PathBuf,
 }
 
-/// The neighbouring project folders, newest first, and the first that reads.
-fn newest_neighbour(projects_dir: &Path, max_year: i32) -> Option<PathBuf> {
+/// The neighbouring project folders, newest first, and the first scoreboard one
+/// of them has to lend.
+fn lent_scoreboard(projects_dir: &Path, max_year: i32) -> Option<ScoreboardConfig> {
     let mut neighbours: Vec<Neighbour> = std::fs::read_dir(projects_dir)
         .into_iter()
         .flatten()
@@ -191,8 +195,33 @@ fn newest_neighbour(projects_dir: &Path, max_year: i32) -> Option<PathBuf> {
     neighbours.sort_by(|a, b| b.date.cmp(&a.date).then_with(|| b.name.cmp(&a.name)));
     neighbours
         .into_iter()
-        .map(|n| n.folder)
-        .find(|folder| store::read(folder).is_ok())
+        .find_map(|n| store::read(&n.folder).ok()?.scoreboard)
+}
+
+/// What the New match sheet cannot show, and what Create needs: the kit and
+/// format a neighbour lent, and the videos in the order they will be stored.
+///
+/// **The paths are held here rather than as a `[string]` on the window**, since
+/// `to_string_lossy` would corrupt one that is not UTF-8 and the sheet needs only
+/// the file names to show. One struct because the two are written together, at
+/// prefill, and read together, at Create.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Draft {
+    pub scoreboard: ScoreboardConfig,
+    pub videos: Vec<PathBuf>,
+}
+
+/// A draft with nothing in it yet. Hand-written, because `ScoreboardConfig` has
+/// no `Default` on purpose — [`blank_config`] is the one this app means by an
+/// empty scoreboard, and it is what the sheet opens with when no neighbour has
+/// one to lend.
+impl Default for Draft {
+    fn default() -> Self {
+        Draft {
+            scoreboard: blank_config(),
+            videos: Vec::new(),
+        }
+    }
 }
 
 /// Everything the New match sheet opens with, derived from the videos the coach
@@ -211,21 +240,32 @@ pub struct Prefill {
     /// The coach's own club goes in `home`, so the guess prefills `away` (spec
     /// S3, the coach's own decision) — and ⇄ is one click either way.
     pub away: String,
-    /// The scoreboard a neighbour lent, with both names already substituted.
+    /// The kit and the format a neighbour lent. **Not the names** — those are
+    /// the sheet's, typed after this runs, and the bus builds the project's own
+    /// name from them.
     pub scoreboard: ScoreboardConfig,
     /// The videos, in the order the command will store them.
     pub videos: Vec<PathBuf>,
 }
 
-impl Prefill {
-    /// `<date>-<home>-<away>` as one slug (spec N1).
-    ///
-    /// **The joined string is slugged, not each part separately**, so the `-`
-    /// collapse absorbs a blank team name or an absent date and the 64-byte cut
-    /// applies to the whole name.
-    pub fn folder_name(date: &str, home: &str, away: &str) -> String {
-        naming::folder_slug(&format!("{date}-{home}-{away}"))
-    }
+/// `<date>-<home>-<away>` as one slug (spec N1).
+///
+/// **The joined string is slugged, not each part separately**, so the `-`
+/// collapse absorbs a blank team name or an absent date and the 64-byte cut
+/// applies to the whole name.
+pub fn folder_name(date: &str, home: &str, away: &str) -> String {
+    naming::folder_slug(&format!("{date}-{home}-{away}"))
+}
+
+/// Whether a team name is one a project can be stored with: non-blank after
+/// trimming, which is `bus::scoreboard::storable`'s test and so **the same call
+/// Create makes** (spec S5).
+///
+/// It is here rather than written into the sheet because Slint has no test path
+/// in this crate — and an untrimmed `!= ""` there is exactly the bug this
+/// replaced: a field of one space read good, enabled Create, and sent nothing.
+pub fn team_named(name: &str) -> bool {
+    !name.trim().is_empty()
 }
 
 /// What the sheet opens with, for `videos` as the picker handed them over.
@@ -235,12 +275,11 @@ impl Prefill {
 /// bound is `now + 1` — an argument, because core has no clock and neither does
 /// this rule's test.
 pub fn prefill(
-    videos: Vec<PathBuf>,
+    mut videos: Vec<PathBuf>,
     home: Option<&Path>,
     last_project: Option<&Path>,
     this_year: i32,
 ) -> Prefill {
-    let mut videos = videos;
     naming::order_videos(&mut videos);
     let max_year = this_year + 1;
     let match_folder = common_ancestor(&videos);
@@ -252,7 +291,7 @@ pub fn prefill(
     let date = match_date(&videos, &match_folder, max_year)
         .map(|d| format!("{:04}-{:02}-{:02}", d.year, d.month, d.day))
         .unwrap_or_default();
-    let scoreboard = seed_scoreboard(projects_dir.path(), "", &away, max_year);
+    let scoreboard = seed_scoreboard(projects_dir.path(), max_year);
     Prefill {
         match_folder,
         projects_dir,
@@ -334,16 +373,8 @@ fn mtime_date(path: &Path) -> Option<CalendarDate> {
     })
 }
 
-/// The project's name, `<Home> v <Away>` — [`metadata::match_name`], so that one
-/// function decides how a match is written down whether it is being created or
-/// exported (spec N4).
-pub fn project_name(home: &str, away: &str) -> Option<String> {
-    metadata::match_name(home, away)
-}
-
-/// Whether `name` is a folder name this flow may create: non-blank, within the
-/// slug's byte budget, and exactly one `Component::Normal` — no `/`, no `..`,
-/// not `.` (spec S5).
+/// Whether `name` is a folder name this flow may create: non-blank, and exactly
+/// one `Component::Normal` — no `/`, no `..`, not `.` (spec S5).
 ///
 /// **`file_name() == name` is the whole component test**, and it is stricter
 /// than the bus's on purpose. The bus checks that the joined path *has* a
@@ -352,11 +383,15 @@ pub fn project_name(home: &str, away: &str) -> Option<String> {
 /// what gets created. A field that read good on `a/b` and then created `b` would
 /// be "a field can't read good and then fail to save" failing in the other
 /// direction.
+///
+/// **No length check**, though the name this flow *proposes* is cut at
+/// [`naming::folder_slug`]'s 64 bytes. That budget is a proposal, not a limit —
+/// the filesystem's is 255 — and the bus has no length refusal either, so
+/// marking a hand-typed 70-byte name bad would be the same contract failing the
+/// other way: a field reading bad on something that would have saved.
 pub fn valid_folder_name(name: &str) -> bool {
     let name = name.trim();
-    !name.is_empty()
-        && naming::truncate_on_boundary(name, FOLDER_NAME_BYTES) == name
-        && Path::new(name).file_name().is_some_and(|last| last == name)
+    !name.is_empty() && Path::new(name).file_name().is_some_and(|last| last == name)
 }
 
 /// Whether `path` is a projects folder this flow may write in: absolute, and
@@ -550,6 +585,32 @@ mod tests {
         assert_eq!(found.provenance(), None);
     }
 
+    /// A `last_project` whose folder has gone falls through to `Proposed`, which
+    /// carries the line. Unchecked it silently re-created a projects folder the
+    /// coach had deleted, and said nothing — and if the grandparent had gone too
+    /// the field went red with no line to read, because this tier has none.
+    #[test]
+    fn a_stale_last_project_falls_through_rather_than_being_taken_as_fact() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        tree(root, &["games/match", "elsewhere/pundit"]);
+        let last = root.join("elsewhere/pundit/2026-09-21-athletic");
+        std::fs::create_dir_all(&last).unwrap();
+        let footage = root.join("games/match");
+
+        // While it is there, it is the answer and needs no explaining.
+        assert_eq!(
+            projects_dir_for(&footage, None, Some(&last)),
+            ProjectsDir::BesideLastProject(root.join("elsewhere/pundit"))
+        );
+
+        // Gone, and the whole projects folder with it.
+        std::fs::remove_dir_all(root.join("elsewhere")).unwrap();
+        let found = projects_dir_for(&footage, None, Some(&last));
+        assert_eq!(found, ProjectsDir::Proposed(root.join("games/pundit")));
+        assert!(found.provenance().is_some());
+    }
+
     /// Spec W2's floor: an app-named directory **beside** the footage, never
     /// the bare parent — which would propose projects as siblings of the match
     /// folder, the opposite of the pattern this flow keeps. It is the one tier
@@ -577,10 +638,10 @@ mod tests {
         neighbour(projects, "2026-09-21-athletic", 0x222222);
         neighbour(projects, "2026-07-14-town", 0x333333);
 
-        let seeded = seed_scoreboard(projects, "City", "United", MAX_YEAR);
+        let seeded = seed_scoreboard(projects, MAX_YEAR);
         assert_eq!(seeded.home.primary_color, kit(0x222222));
-        assert_eq!(seeded.home.name, "City");
-        assert_eq!(seeded.away.name, "United");
+        // The names come with it and are the sheet's to overwrite.
+        assert_eq!(seeded.home.name, "Old Home");
     }
 
     /// The decisive half of "recency is the folder name's date": `project.json`
@@ -595,7 +656,7 @@ mod tests {
         // Written second, so its mtime is the newer one.
         neighbour(projects, "2025-10-05-rovers", 0x444444);
 
-        let seeded = seed_scoreboard(projects, "City", "United", MAX_YEAR);
+        let seeded = seed_scoreboard(projects, MAX_YEAR);
         assert_eq!(seeded.home.primary_color, kit(0x222222));
     }
 
@@ -609,9 +670,7 @@ mod tests {
         neighbour(projects, "2024-04-04-rovers", 0x666666);
 
         assert_eq!(
-            seed_scoreboard(projects, "City", "United", MAX_YEAR)
-                .home
-                .primary_color,
+            seed_scoreboard(projects, MAX_YEAR).home.primary_color,
             kit(0x666666)
         );
 
@@ -621,11 +680,30 @@ mod tests {
         neighbour(only.path(), "athletic", 0x777777);
         neighbour(only.path(), "friendly", 0x555555);
         assert_eq!(
-            seed_scoreboard(only.path(), "City", "United", MAX_YEAR)
-                .home
-                .primary_color,
+            seed_scoreboard(only.path(), MAX_YEAR).home.primary_color,
             kit(0x555555)
         );
+    }
+
+    /// **A newest neighbour that reads but has nothing to lend is looked past.**
+    /// A project made by pointing `Open Project…` at a folder carries
+    /// `scoreboard: None` until `Set up teams…` is used, and it would be the
+    /// newest thing in the folder — so stopping at "the first that reads" would
+    /// hand back the blank config while the match before it had exactly the kit
+    /// and format this tier exists to pass on.
+    #[test]
+    fn a_neighbour_with_no_scoreboard_is_looked_past() {
+        let tmp = TempDir::new().unwrap();
+        let projects = tmp.path();
+        neighbour(projects, "2026-09-21-athletic", 0x222222);
+        // Newer, readable, and nothing to lend.
+        let bare = projects.join("2026-09-28-friendly");
+        std::fs::create_dir_all(&bare).unwrap();
+        store::write(&bare, &mut Project::new("Friendly")).unwrap();
+
+        let seeded = seed_scoreboard(projects, MAX_YEAR);
+        assert_eq!(seeded.home.primary_color, kit(0x222222));
+        assert_ne!(seeded.home.primary_color, blank_config().home.primary_color);
     }
 
     /// Unreadable, legacy and too-new files are passed over in silence: this is
@@ -651,7 +729,7 @@ mod tests {
         }
         neighbour(projects, "2026-09-21-athletic", 0x222222);
 
-        let seeded = seed_scoreboard(projects, "City", "United", MAX_YEAR);
+        let seeded = seed_scoreboard(projects, MAX_YEAR);
         assert_eq!(seeded.home.primary_color, kit(0x222222));
     }
 
@@ -662,11 +740,9 @@ mod tests {
     fn no_readable_neighbour_gives_the_blank_config() {
         let tmp = TempDir::new().unwrap();
         for projects in [tmp.path().to_owned(), tmp.path().join("not-created-yet")] {
-            let seeded = seed_scoreboard(&projects, "City", "United", MAX_YEAR);
+            let seeded = seed_scoreboard(&projects, MAX_YEAR);
             assert_eq!(seeded.home.primary_color, blank_config().home.primary_color);
             assert_eq!(seeded.format, blank_config().format);
-            assert_eq!(seeded.home.name, "City");
-            assert_eq!(seeded.away.name, "United");
         }
     }
 
@@ -739,8 +815,6 @@ mod tests {
         let videos = files(&tmp.path().join("170918-city_reserves"), &["a.mp4"]);
         let got = prefill(videos, None, None, 2026);
         assert_eq!(got.away, "City Reserves");
-        assert_eq!(got.scoreboard.away.name, "City Reserves");
-        assert_eq!(got.scoreboard.home.name, "");
     }
 
     /// A folder of digits alone yields nothing rather than a wrong guess.
@@ -778,20 +852,17 @@ mod tests {
     #[test]
     fn the_folder_name_slugs_the_joined_string() {
         assert_eq!(
-            Prefill::folder_name("2026-09-21", "City FC", "Rovers United"),
+            folder_name("2026-09-21", "City FC", "Rovers United"),
             "2026-09-21-city-fc-rovers-united"
         );
         assert_eq!(
-            Prefill::folder_name("2026-09-21", "", "Athletic"),
+            folder_name("2026-09-21", "", "Athletic"),
             "2026-09-21-athletic"
         );
-        assert_eq!(
-            Prefill::folder_name("", "City", "Athletic"),
-            "city-athletic"
-        );
-        assert_eq!(Prefill::folder_name("", "", ""), "");
+        assert_eq!(folder_name("", "City", "Athletic"), "city-athletic");
+        assert_eq!(folder_name("", "", ""), "");
         // The cut applies to the whole name, and never leaves a trailing `-`.
-        let long = Prefill::folder_name("2026-09-21", &"a".repeat(40), &"b".repeat(40));
+        let long = folder_name("2026-09-21", &"a".repeat(40), &"b".repeat(40));
         assert!(long.len() <= 64, "{long:?} is {} bytes", long.len());
         assert!(!long.ends_with('-'), "{long:?}");
     }
@@ -801,18 +872,11 @@ mod tests {
         for good in ["athletic", "2026-09-21-city-v-rovers", "a b", "..c"] {
             assert!(valid_folder_name(good), "{good:?}");
         }
-        for bad in [
-            "",
-            "   ",
-            ".",
-            "..",
-            "/",
-            "a/b",
-            "../a",
-            "a/",
-            "./a",
-            &"x".repeat(65),
-        ] {
+        // Longer than the name this flow *proposes* — `folder_slug` cuts at 64 —
+        // but the filesystem's limit is 255 and the bus has no length refusal, so
+        // a hand-typed long name must not be marked bad.
+        assert!(valid_folder_name(&"x".repeat(65)));
+        for bad in ["", "   ", ".", "..", "/", "a/b", "../a", "a/", "./a"] {
             assert!(!valid_folder_name(bad), "{bad:?}");
         }
     }
@@ -845,13 +909,14 @@ mod tests {
     }
 
     #[test]
-    fn the_project_name_is_both_teams_or_nothing() {
-        assert_eq!(project_name("City", "Rovers"), Some("City v Rovers".into()));
-        assert_eq!(
-            project_name("  City  ", "Rovers"),
-            Some("City v Rovers".into())
-        );
-        assert_eq!(project_name("City", "   "), None);
-        assert_eq!(project_name("", "Rovers"), None);
+    fn a_team_is_named_only_when_it_is_more_than_whitespace() {
+        for named in ["City", " City ", "1"] {
+            assert!(team_named(named), "{named:?}");
+        }
+        // The case that was shipped as `!= ""` in Slint, marked good, enabled
+        // Create and sent nothing.
+        for blank in ["", " ", "\t", "   "] {
+            assert!(!team_named(blank), "{blank:?}");
+        }
     }
 }

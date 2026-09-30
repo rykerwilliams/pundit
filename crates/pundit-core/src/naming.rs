@@ -79,9 +79,16 @@ fn split_copy(name: &str) -> (&str, u32, &str) {
 /// a Mac or a Windows machine trips over". The set was short by seven. The
 /// coach's projects live on a cloud-sync mount, and exFAT, NTFS and SMB reject
 /// `" * ? < > |` and `\` as well, so a name this laptop's ext4 writes
-/// perfectly well is a file the share it is going to cannot hold. **`\` is the
-/// one that changes an existing behaviour:** on Linux a backslash in a clip
-/// name is a legal file name today.
+/// perfectly well is a file the share it is going to cannot hold.
+///
+/// **Seven of them change an existing behaviour, not one.** `\`, `*`, `?`, `"`,
+/// `<`, `>` and `|` are every one of them legal in a Linux file name and were
+/// written through verbatim until now. So a clip or project name holding any of
+/// them is exported under a new name from here on — and since an export's
+/// basename is what its `.srt` and `.chapters.txt` are derived from, the sidecars
+/// beside the file already on disk are left behind under the old one. That is
+/// the trade, taken deliberately: a file the share the exports live on cannot
+/// hold, against one rename of one already-exported file.
 ///
 /// Control characters go too. They are legal in a POSIX name and there is no
 /// dialog, terminal or player that shows one honestly.
