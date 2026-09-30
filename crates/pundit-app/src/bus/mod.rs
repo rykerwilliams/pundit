@@ -84,9 +84,14 @@ pub enum Command {
     /// Every field is the New match sheet's, captured when Create was pressed.
     /// Nothing here is read from the pipeline, so the caller-captured
     /// timestamp rule has nothing to bite on.
+    ///
+    /// **The project's name is not a field**, because it is not the sheet's to
+    /// send: it is `<Home> v <Away>` unconditionally (spec N4), so it comes off
+    /// `scoreboard` in the bus. Carried here as well it would be derived data
+    /// beside the thing it derives from, free to disagree with it — and the
+    /// caller would need a rule of its own for when it cannot be built.
     NewMatch {
         project_dir: PathBuf,
-        name: String,
         scoreboard: ScoreboardConfig,
         videos: Vec<PathBuf>,
     },
@@ -949,10 +954,9 @@ impl Bus {
             Command::OpenProject(folder) => self.open_project(folder),
             Command::NewMatch {
                 project_dir,
-                name,
                 scoreboard,
                 videos,
-            } => self.new_match(project_dir, name, scoreboard, videos),
+            } => self.new_match(project_dir, scoreboard, videos),
             Command::RestoreLastProject => self.restore_last_project(),
             Command::RenameProject(name) => self.rename_project(name),
             Command::AddSource(path) => self.add_source(path),

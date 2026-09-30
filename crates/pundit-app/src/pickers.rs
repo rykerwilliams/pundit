@@ -59,7 +59,7 @@ impl Pickers {
     /// *before* no suffix, which silently reversed them. That rule is in core so
     /// it is tested without a picker.
     pub fn open(&self, window: &AppWindow, pick: Pick, mut then: impl FnMut(PathBuf) + 'static) {
-        self.show(window, pick, move |paths| {
+        self.open_many(window, pick, move |paths| {
             for path in paths {
                 then(path);
             }
@@ -81,19 +81,16 @@ impl Pickers {
     /// cancelled dialog would then call back with an empty one, which the
     /// project-folder, single-video, relink and avatar pickers would all have
     /// to learn to ignore — and three of those raise an error on it.
+    ///
+    /// This is both shapes' body: one picker at a time, awaited on the event
+    /// loop, the paths ordered, and `then` skipped entirely on an empty
+    /// selection — which is what a cancel is.
     pub fn open_many(
         &self,
         window: &AppWindow,
         pick: Pick,
         then: impl FnOnce(Vec<PathBuf>) + 'static,
     ) {
-        self.show(window, pick, then);
-    }
-
-    /// Both shapes' body: one picker at a time, awaited on the event loop, the
-    /// paths ordered, and `then` skipped entirely on an empty selection —
-    /// which is what a cancel is.
-    fn show(&self, window: &AppWindow, pick: Pick, then: impl FnOnce(Vec<PathBuf>) + 'static) {
         if self.busy.replace(true) {
             return;
         }

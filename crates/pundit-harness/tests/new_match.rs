@@ -126,11 +126,12 @@ impl Rig {
         ]
     }
 
-    /// Sends the command the sheet's Create button sends.
-    fn create(&self, project_dir: &Path, name: &str, teams: (&str, &str), videos: Vec<PathBuf>) {
+    /// Sends the command the sheet's Create button sends. **There is no name
+    /// argument**: the project is called `<Home> v <Away>`, which the bus builds
+    /// off the scoreboard it has to validate anyway (spec N4).
+    fn create(&self, project_dir: &Path, teams: (&str, &str), videos: Vec<PathBuf>) {
         self.h.send(Command::NewMatch {
             project_dir: project_dir.to_owned(),
-            name: name.into(),
             scoreboard: config(teams.0, teams.1),
             videos,
         });
@@ -197,7 +198,7 @@ fn read_bytes(path: &Path) -> Vec<u8> {
 fn a_new_match_makes_the_folder_writes_the_project_and_opens_it() {
     let mut rig = Rig::new();
     let folder = rig.match_dir("2026-09-27-city-v-rovers");
-    rig.create(&folder, "City v Rovers", ("City", "Rovers"), rig.halves());
+    rig.create(&folder, ("City", "Rovers"), rig.halves());
 
     let opened = rig.h.wait_opened();
     let p = &opened.project;
@@ -238,9 +239,9 @@ fn a_missing_projects_folder_is_created_leaf_only() {
     let mut rig = Rig::without_projects_dir();
     assert!(!rig.projects().exists());
     let folder = rig.match_dir("saturday");
-    rig.create(&folder, "Saturday", ("City", "Rovers"), rig.halves());
+    rig.create(&folder, ("City", "Rovers"), rig.halves());
 
-    assert_eq!(rig.h.wait_opened().project.name, "Saturday");
+    assert_eq!(rig.h.wait_opened().project.name, "City v Rovers");
     assert!(rig.projects().is_dir());
     assert_eq!(entries(&rig.projects()), ["saturday"]);
     rig.h.shutdown();
@@ -255,10 +256,10 @@ fn an_empty_folder_is_adopted() {
     let folder = rig.match_dir("stranded");
     std::fs::create_dir(&folder).unwrap();
 
-    rig.create(&folder, "Adopted", ("City", "Rovers"), rig.halves());
+    rig.create(&folder, ("City", "Rovers"), rig.halves());
 
     let opened = rig.h.wait_opened();
-    assert_eq!(opened.project.name, "Adopted");
+    assert_eq!(opened.project.name, "City v Rovers");
     assert_eq!(
         names(&opened.project),
         ["first half.webm", "second half.webm"]
@@ -275,11 +276,11 @@ fn an_empty_folder_is_adopted() {
 fn a_folder_holding_a_project_is_refused_and_its_file_untouched() {
     let mut rig = Rig::new();
     let folder = rig.match_dir("taken");
-    rig.create(&folder, "First", ("City", "Rovers"), rig.halves());
+    rig.create(&folder, ("City", "Rovers"), rig.halves());
     rig.h.wait_opened();
     let before = read_bytes(&folder.join(PROJECT_FILENAME));
 
-    rig.create(&folder, "Second", ("Town", "United"), rig.halves());
+    rig.create(&folder, ("Town", "United"), rig.halves());
     assert_eq!(
         rig.h.wait_for_error(),
         UserError::Io(format!(
@@ -309,7 +310,7 @@ fn a_file_where_the_folder_should_go_is_refused() {
     let folder = rig.match_dir("not-a-folder");
     std::fs::write(&folder, b"").unwrap();
 
-    rig.create(&folder, "Nope", ("City", "Rovers"), rig.halves());
+    rig.create(&folder, ("City", "Rovers"), rig.halves());
     assert_eq!(
         rig.h.wait_for_error(),
         UserError::Io(format!("{} is a file, not a folder", folder.display()))
@@ -326,7 +327,7 @@ fn a_file_where_the_folder_should_go_is_refused() {
 fn a_blank_team_name_is_refused_and_nothing_is_created() {
     let mut rig = Rig::new();
     let folder = rig.match_dir("blank");
-    rig.create(&folder, "Blank", ("City", "   "), rig.halves());
+    rig.create(&folder, ("City", "   "), rig.halves());
 
     assert_eq!(
         rig.h.wait_for_error(),
@@ -338,17 +339,11 @@ fn a_blank_team_name_is_refused_and_nothing_is_created() {
 
 /// The cheap argument checks, before anything is probed or created.
 #[test]
-fn a_blank_name_and_an_empty_video_list_are_refused() {
+fn an_empty_video_list_and_a_relative_path_are_refused() {
     let mut rig = Rig::new();
     let folder = rig.match_dir("args");
 
-    rig.create(&folder, "   ", ("City", "Rovers"), rig.halves());
-    assert_eq!(
-        rig.h.wait_for_error(),
-        UserError::Io("the project needs a name".into())
-    );
-
-    rig.create(&folder, "Named", ("City", "Rovers"), Vec::new());
+    rig.create(&folder, ("City", "Rovers"), Vec::new());
     assert_eq!(
         rig.h.wait_for_error(),
         UserError::Io("pick the game's video files first".into())
@@ -356,7 +351,6 @@ fn a_blank_name_and_an_empty_video_list_are_refused() {
 
     rig.create(
         Path::new("projects/relative"),
-        "Named",
         ("City", "Rovers"),
         rig.halves(),
     );
@@ -380,7 +374,6 @@ fn a_video_that_cant_be_probed_creates_nothing() {
 
     rig.create(
         &folder,
-        "Unprobeable",
         ("City", "Rovers"),
         vec![rig.video("first half.webm", 320, 180), notes.clone()],
     );
@@ -406,7 +399,6 @@ fn a_second_video_of_a_different_shape_creates_no_folder_holding_the_first() {
 
     rig.create(
         &folder,
-        "Mismatched",
         ("City", "Rovers"),
         vec![wide.clone(), tall.clone()],
     );
@@ -432,7 +424,7 @@ fn a_projects_folder_whose_parent_is_missing_creates_no_tree() {
     let projects = missing.join("pundit");
     let folder = projects.join("saturday");
 
-    rig.create(&folder, "Saturday", ("City", "Rovers"), rig.halves());
+    rig.create(&folder, ("City", "Rovers"), rig.halves());
     assert_eq!(
         rig.h.wait_for_error(),
         UserError::Io(format!(
@@ -455,7 +447,7 @@ fn a_read_only_projects_folder_is_refused() {
         return;
     }
     let folder = rig.match_dir("saturday");
-    rig.create(&folder, "Saturday", ("City", "Rovers"), rig.halves());
+    rig.create(&folder, ("City", "Rovers"), rig.halves());
 
     let prefix = format!("{}: ", folder.display());
     match rig.h.wait_for_error() {
@@ -464,6 +456,49 @@ fn a_read_only_projects_folder_is_refused() {
     }
     assert_nothing_created(&rig.projects());
     drop(read_only);
+    rig.h.shutdown();
+}
+
+/// The one documented failure that **does** leave something behind (spec C3): a
+/// step after the two `create_dir`s fails, nothing is rolled back, and the folder
+/// is then an empty one — which the next Create adopts. A read-only *match*
+/// folder is what reaches it: `store::write` cannot write into it.
+///
+/// Every other refusal test asserts the projects folder is empty, so without this
+/// one the state the doc comment describes has no test at all.
+#[test]
+fn a_write_that_fails_after_the_folder_is_made_leaves_one_the_next_create_adopts() {
+    let mut rig = Rig::new();
+    let folder = rig.match_dir("saturday");
+    std::fs::create_dir(&folder).unwrap();
+    let read_only = ReadOnly::new(&folder);
+    if !read_only.enforced() {
+        eprintln!("skipped: the read-only mode isn't enforced (running as root?)");
+        return;
+    }
+    let videos = rig.halves();
+
+    rig.create(&folder, ("City", "Rovers"), videos.clone());
+    let prefix = format!("{}: ", folder.display());
+    match rig.h.wait_for_error() {
+        UserError::Io(msg) => assert!(msg.starts_with(&prefix), "{msg:?}"),
+        e => panic!("expected a modal Io naming the folder, got {e:?}"),
+    }
+    // The folder is there and empty: nothing was rolled back, and nothing was
+    // written into it.
+    assert!(folder.is_dir());
+    assert!(!folder.join(PROJECT_FILENAME).exists());
+
+    // And the next Create adopts it, which is what makes the no-rollback choice
+    // safe rather than merely cheap.
+    drop(read_only);
+    rig.create(&folder, ("City", "Rovers"), videos);
+    let opened = rig.h.wait_opened();
+    assert_eq!(opened.project.name, "City v Rovers");
+    assert_eq!(
+        names(&opened.project),
+        ["first half.webm", "second half.webm"]
+    );
     rig.h.shutdown();
 }
 
@@ -478,36 +513,33 @@ fn the_open_project_survives_every_refusal() {
     // One project in the projects folder, so the "already holds a project"
     // refusal has something to refuse.
     let taken = rig.match_dir("taken");
-    rig.create(&taken, "Taken", ("City", "Rovers"), vec![wide.clone()]);
+    rig.create(&taken, ("City", "Rovers"), vec![wide.clone()]);
     rig.h.wait_opened();
 
     let (existing, project) = rig.open_existing(&[("a.webm", 2)]);
     let mut before = read_bytes(&existing.join(PROJECT_FILENAME));
 
-    for (why, dir, name, both, videos) in [
+    for (why, dir, both, videos) in [
         (
             "a blank team name",
             rig.match_dir("blank"),
-            "Blank",
             ("City", ""),
             vec![wide.clone()],
         ),
         (
             "a mismatched shape",
             rig.match_dir("mismatched"),
-            "Mismatched",
             ("City", "Rovers"),
             vec![wide.clone(), tall.clone()],
         ),
         (
             "a folder that holds a project",
             taken.clone(),
-            "Again",
             ("City", "Rovers"),
             vec![wide.clone()],
         ),
     ] {
-        rig.create(&dir, name, both, videos);
+        rig.create(&dir, both, videos);
         let err = rig.h.wait_for_error();
         assert!(matches!(err, UserError::Io(_)), "{why}: {err:?}");
         assert_eq!(
@@ -565,7 +597,7 @@ fn new_match_during_an_export_is_refused_and_the_run_finishes() {
     });
     assert!(rig.h.wait_export().is_running());
 
-    rig.create(&new, "Mid export", ("City", "Rovers"), videos);
+    rig.create(&new, ("City", "Rovers"), videos);
     assert_eq!(
         rig.h.wait_for_error(),
         UserError::CantExport("an export is running".into())
@@ -615,7 +647,7 @@ fn new_match_while_recording_is_dropped() {
         "{live:?}"
     );
 
-    rig.create(&new, "Mid take", ("City", "Rovers"), videos);
+    rig.create(&new, ("City", "Rovers"), videos);
     rig.h.send(Command::StopRecording);
     rig.h.wait_changed();
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Idle);

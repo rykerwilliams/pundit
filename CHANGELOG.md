@@ -15,6 +15,34 @@ which the app was called until 0.8.0 renamed it.
 
 ### Added
 
+- **One button starts a match.** **New match…** — in the toolbar, and the big
+  button on the empty window when nothing is open — asks for the game's video
+  files and then shows you everything it worked out from them, with every line
+  editable before anything is made: which `pundit` folder the project goes in,
+  what the match folder will be called, the opponent's name, and the videos in
+  the order they will play. Type your own club in, press **Create**, and you have
+  a project named after both teams with the scoreboard already set up from your
+  last match's colours and format. **Your footage does not move** — not copied,
+  not renamed, not touched; the project just points at where it already is.
+  - It finds the projects folder by looking for a folder called `pundit` at or
+    just above the videos, which is the way you already keep them. If there
+    isn't one it offers the folder your last project was in, and failing that a
+    `pundit` folder beside the footage — and says so, so you can point it
+    somewhere else with **Choose…**.
+  - It reads the date out of the file names or the folder name and puts it at the
+    front of the folder name, `2026-09-21-city-athletic`, which is what keeps a
+    season in order. A four-digit year on its own is never taken as a date, so an
+    age-group folder named for a birth year doesn't date your match to a decade
+    ago.
+  - The opponent comes from the match folder's name and goes in the **away**
+    slot, with your club in **home**. **⇄** swaps them, and the folder name
+    changes as you watch — which is the quickest way to see which way round you
+    want it. Type in the folder name yourself and it stops following the teams.
+  - If the folder you name already holds a project it says so and refuses; an
+    **empty** folder is used as it is, so a folder you made by hand is fine to
+    point at. And nothing at all is created until every video has been checked —
+    if the second half turns out to be a different shape from the first, you get
+    told and there is no half-made project left behind.
 - **Choose how big your inset is, and which corner it sits in — per clip.** The
   inspector has two new pickers beside "Show avatar in export": **Small /
   Medium / Large**, and **bottom right / bottom left / top right**. Medium in the
@@ -33,6 +61,14 @@ which the app was called until 0.8.0 renamed it.
 
 ### Fixed
 
+- **An exported file could be named something a shared drive refuses.** Export
+  file names are built from the clip or tag name, and only `/` and `:` were being
+  replaced. A name holding `\`, `*`, `?`, `"`, `<`, `>` or `|` wrote a file fine
+  on this machine and then failed to copy to a Mac, a Windows machine or a
+  network share — which is where the exports go. All of them become `-` now.
+  Nothing else about the name changes: the capitals, the spaces and the length are
+  exactly as they were, so a file you have already exported keeps its name and its
+  subtitle and chapter files beside it.
 - **Two halves added at once could go into a project backwards.** If you picked
   both files in one **Add Source Video…** and the second was a copy — the kind a
   browser or file manager names `… (1).mp4` — they were added in the wrong order,

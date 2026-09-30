@@ -29,6 +29,7 @@
 //! refusal.
 
 use pundit_core::match_entry::{self, BatchLine, BatchVerdict, LineVerdict, PendingMatchEvent};
+use pundit_core::metadata;
 use pundit_core::project::Project;
 use pundit_core::scoreboard::{
     MatchEventKind, MatchEventRecord, ReelEnd, ScoreboardConfig, START_STOP_CAP_REFUSAL,
@@ -272,8 +273,8 @@ fn batch_notice(lines: &[BatchLine]) -> Option<String> {
     ))
 }
 
-/// Whether `config` may be **stored** on a project, and why not when it may
-/// not.
+/// What a project carrying `config` is **called**, or why `config` cannot be
+/// stored on one at all.
 ///
 /// An empty team name is refused here so the render path never has to guard one
 /// (spec S5) — and one place decides it, because a project created with a
@@ -281,15 +282,23 @@ fn batch_notice(lines: &[BatchLine]) -> Option<String> {
 /// `scoreboard: Some(config)` straight onto a fresh [`Project`] and would
 /// otherwise walk around [`Bus::set_scoreboard`] entirely.
 ///
+/// **"Storable" and "named" are one rule, so this is one function.** A
+/// scoreboard may be stored iff both teams have a name, and `<Home> v <Away>`
+/// from [`metadata::match_name`] is exactly what a pair that does produces
+/// (spec N4) — so a separate predicate would be a second definition of the same
+/// test over the same two strings. It **was** one, briefly, and the two
+/// disagreed: the New match sheet's Create was gated on an untrimmed `!= ""` in
+/// Slint while this trimmed, so a team named `" "` marked its field good,
+/// enabled Create, and sent nothing — leaving the button dead until the coach
+/// cancelled and re-picked every video. With the name coming from here there is
+/// nothing for a caller to derive and so nothing to disagree with.
+///
 /// **It returns the reason, not a [`UserError`]: severity is not its to
 /// choose.** [`Bus::set_scoreboard`] wraps it as a `Scoreboard` notice, which
 /// is right for a refusal that can land over a live take; `new_match` wraps the
 /// same string in a modal, which is the only thing a coach looking at the New
 /// match sheet would see at all — a notice draws in the status line, *behind*
 /// the scrim.
-pub(super) fn storable(config: &ScoreboardConfig) -> Result<(), &'static str> {
-    match config.home.name.trim().is_empty() || config.away.name.trim().is_empty() {
-        true => Err("both teams need a name"),
-        false => Ok(()),
-    }
+pub(super) fn storable(config: &ScoreboardConfig) -> Result<String, &'static str> {
+    metadata::match_name(&config.home.name, &config.away.name).ok_or("both teams need a name")
 }

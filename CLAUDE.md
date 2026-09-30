@@ -295,6 +295,59 @@ silently. If you need a media type in core, you need a different design.
   leaves no backup to block the next try; never a hard link (exFAT and FAT
   have none).
 
+**A project folder is created by ONE command and never by a sequence**
+(`Command::NewMatch` → `bus/project.rs::new_match`; spec
+`docs/superpowers/specs/2026-09-24-new-match-flow-design.md`). The reason is the
+aspect gate: it fires **between** sources, so as `OpenProject` + `AddSource` × n a
+second half whose shape differs is refused *after* the first has been probed,
+pushed, saved and published — leaving a named folder holding one of a game's two
+halves, and the folder name is the one thing that flow cannot correct afterwards.
+So nothing touches the disk until every video has been probed and accepted, and a
+refused Create leaves the coach in the project he was in.
+- **An existing folder is *adopted*; the refusal is keyed on `project.json`**, as
+  `open_project` distinguishes the two. Keyed on `create_dir`'s `AlreadyExists`
+  instead it would refuse the empty stranded folder a coach made by hand, which is
+  one of the things the flow exists to fix. The two rules are tested **apart**, on
+  purpose: a change that fails both has broken the command rather than proven the
+  rule.
+- **`create_dir`, never `create_dir_all`.** At most two directories are ever made
+  — the projects folder's leaf and the match folder under it — so a typo in the
+  hand-editable projects path leaves one stray directory under a folder that
+  already existed rather than a tree.
+- **The pre-disk gate is `project::aspects_match`,** the pairwise rule;
+  `Project::check_aspect` is the stored-project wrapper over it and returns
+  `Ok(())` when there is no stored source, so it would gate **nothing at all** on a
+  project that does not exist yet.
+- **The projects folder is found by walking up for `core::metadata::APP_NAME`** —
+  the coach's own pattern, a `pundit` folder with projects inside it — four
+  candidates, stopping at the filesystem root or at home inclusive. Then the
+  folder the last project was in (**checked to exist**: `last_project` is a stored
+  path, and an unchecked one silently re-creates a projects folder the coach
+  deleted), then an app-named directory *beside* the footage, which is the one tier
+  that carries a provenance line.
+- **A project's name is `<Home> v <Away>`, and the bus builds it** from the
+  scoreboard it has to validate anyway: `bus::scoreboard::storable` answers "may
+  this be stored" and "what is it called" in one call, because they are one rule
+  over the same two strings. `Command::NewMatch` carries **no** name field. Two
+  spellings of it is not hypothetical — an untrimmed `!= ""` in the sheet against
+  `match_name`'s trim left Create enabled, sending nothing, and dead until the
+  coach cancelled and re-picked every video.
+- **`core::naming` holds a name's rules, and `safe_chars` and `folder_slug` are
+  deliberately not one pipeline.** `safe_chars` replaces the nine characters a
+  share refuses plus controls and does **nothing else**; an export's file name and
+  a basket film's stem take it, because an export's basename is what its `.srt` and
+  `.chapters.txt` are derived from, so collapsing, trimming or truncating would
+  orphan the sidecars beside files already written and make two long labels collide
+  *after* de-duplication had found them distinct. `folder_slug` is the whole
+  pipeline and only a folder takes it. `truncate_on_boundary` is shared; the
+  budgets (200 for a film, 64 for a folder) are each site's own.
+- **`naming::parse_date_in` takes its year bound as an argument** because core has
+  no clock — and note that a `SystemTime::now()` in core would sail through the
+  dependency audit, since a clock adds no dependency. That signature is the only
+  thing enforcing the rule.
+- **The flow stores nothing of its own and bumps no version.** No `state.json` key
+  (W2 reads the `last_project` #85 already keeps) and no field on any stored struct.
+
 **One avatar image per project, copied into the project folder.** It is
 `<project>/avatar.<ext>` beside `project.json`, and `Project.avatar` holds its
 **file name** — which *is* avatar mode (the format rules above).
@@ -527,8 +580,8 @@ whatever project is open, and resolved at Start.
   per match, not one per piece** (`basket::distinct_matches`), and the sheet's name and
   pickers follow the bus only while the sheet is closed — never under the
   coach's hands.
-- **The film's name is cleaned before anything runs**: trimmed, `/` and `:`
-  replaced, cut to 200 bytes, and defaulted to `Basket` when what is left is
+- **The film's name is cleaned before anything runs**: trimmed, `naming::safe_chars`
+  applied, cut to 200 bytes, and defaulted to `Basket` when what is left is
   empty or starts with a dot (which would give a hidden `.mp4`). Start is the
   "walk away" button, so a name must not fail at `File::create` after twenty
   pieces have resolved; an existing film is suffixed ` (2)`, never overwritten.

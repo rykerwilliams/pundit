@@ -548,13 +548,18 @@ const MAX_STEM_BYTES: usize = 200;
 /// is the "walk away" button, and a name that fails after twenty pieces have
 /// resolved is the worst moment there is to find out (spec O1).
 ///
-/// [`naming::truncate_on_boundary`] is the shared mechanism; **the character
-/// set and the budget are this site's own** and deliberately not
-/// [`naming::folder_slug`]'s (spec N2). A film's name is typed into a sheet
-/// that shows it, and 200 bytes is right for a file at the top of a folder
-/// where 64 is right for a directory that has a path built on top of it.
+/// **The character set is [`naming::safe_chars`], as an export's is**; only the
+/// budget and the leading-dot default are this site's own, and they are
+/// deliberately not [`naming::folder_slug`]'s (spec N2). A film's name is typed
+/// into a sheet that shows it, and 200 bytes is right for a file at the top of a
+/// folder where 64 is right for a directory that has a path built on top of it.
+/// The exFAT/NTFS/SMB argument for the characters, though, applies to a film at
+/// least as hard as to an export: this is the one name in the app the coach types
+/// fresh, and the film is what gets sent on. Nothing already written is renamed —
+/// the stem is recomputed from the typed name at every Start, and there is no
+/// sidecar beside a film to orphan.
 fn file_stem(name: &str) -> String {
-    let cleaned = name.trim().replace(['/', ':'], "-");
+    let cleaned = naming::safe_chars(name.trim());
     let stem = naming::truncate_on_boundary(&cleaned, MAX_STEM_BYTES).trim_end();
     match stem.is_empty() || stem.starts_with('.') {
         true => DEFAULT_NAME.to_owned(),
@@ -705,6 +710,12 @@ mod tests {
         // character is replaced still leaves a stem to find the file by.
         assert_eq!(file_stem("2nd half v. City"), "2nd half v. City");
         assert_eq!(file_stem("/"), "-");
+        // The character set is an export's, not just `/` and `:`: a film named
+        // for a question is one the coach can copy to the share (spec N2's
+        // argument, which applies here at least as hard).
+        assert_eq!(file_stem("Corners?"), "Corners-");
+        assert_eq!(file_stem("U13 <> Ash"), "U13 -- Ash");
+        assert_eq!(file_stem("back\\four"), "back-four");
     }
 
     /// **A very long name is cut before the file is created, not at

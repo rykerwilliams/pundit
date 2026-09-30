@@ -2048,3 +2048,53 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **What is still open:** `lychee` for external links, the third tool the
   2026-09-22 docs plan names — worth it once the guide has outbound links worth
   checking, and not before.
+
+108. **New match: one sheet that makes the folder and names the project —
+  RESOLVED** (2026-09-30). **It had no backlog entry of its own, which is why it
+  was invisible for five days** while its spec aged against ~115 commits — that is
+  the thing worth recording here, more than the feature. A spec with no entry is a
+  spec nobody is reminded of.
+- **What shipped:** `Command::NewMatch` → `bus/project.rs::new_match`, one
+  transaction that probes and gates every video *before* it makes a directory;
+  `pundit_app::new_match` for the prefill rules (the `APP_NAME` walk, the date
+  tiers, the opponent, the neighbour's scoreboard); `core::naming`'s
+  `safe_chars` / `folder_slug` / `truncate_on_boundary` / `parse_date_in` /
+  `opponent_from`; `NewMatchSheet`; and "New match…" in the toolbar and as the
+  empty card's primary action. Five tasks, five PRs (#5, #7, #8 and this one),
+  every CI check green first time.
+- **Two bugs the shipped code had, both found by the adversarial pass and both
+  now unreachable rather than patched.** (a) The sheet gated Create on an
+  untrimmed `!= ""` while `match_name` trims, so a team named `" "` marked its
+  field good, enabled Create, and sent nothing — leaving the button dead until the
+  coach cancelled and re-picked every video. Fixed by making "storable" and
+  "named" one function in the bus and dropping `name` from the command, so there
+  is no caller-side derivation left to disagree. (b) `ProjectsDir::BesideLastProject`
+  claimed to be "a fact, not an inference" without checking, so a stale
+  `last_project` silently re-created a projects folder the coach had deleted.
+- **One bug shipped ahead of the spec and is already fixed:** the picker sorted
+  `Hudson (1).mp4` before `Hudson.mp4` and reversed a game's halves
+  (`core::naming::order_videos`, `df253ef`). It repairs nothing already made.
+- **What the spec got wrong and the code corrected, kept as the record:** C3's
+  error variants (every refusal is a modal `UserError::Io` naming the file, because
+  neither `ProbeError` nor `AspectMismatch` can name one and the latter's "the
+  project's other videos" is untrue when there is no project); I5's "the first
+  neighbour that `store::read` accepts" (it is the first that has a **scoreboard**
+  to lend — a project opened by pointing at a folder carries none until
+  `Set up teams…` is used, and it would be the newest thing in the folder); and
+  I4's "title-case", corrected in T1 to capitalizing each word's first letter only,
+  so `FC` survives. §R of the spec keeps the six defects the review passes found in
+  the drafts.
+- **#85's recents list is next, and it shares `last_project` with W2** — #85 grows
+  that field into a short `Vec<PathBuf>` and this flow reads the head of it, so
+  neither needs a `state.json` key of its own. Do #85 next.
+- **Deferred 3 is cheap now:** the export's date is the first source file's mtime,
+  which in the coach's trees runs one to two days after the match. With every
+  folder this flow creates named `YYYY-MM-DD-…`, `naming::parse_date_in` on the
+  project folder's name is a better answer and needs no stored field.
+- **Two review findings deliberately skipped**, so they are not re-found as new:
+  collapsing `ProjectsDir`'s three variants to two (the tiers are three different
+  justifications and the tests name them; a struct would make "which tier" untestable
+  without rebuilding the path the code built), and de-duplicating the prose that
+  states the `safe_chars`-is-not-`folder_slug` and `check_aspect`-gates-nothing
+  arguments at four and five sites (this codebase's style is reasoning at the site
+  on purpose; the specific places the prose had **drifted** were corrected instead).
