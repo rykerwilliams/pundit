@@ -94,9 +94,13 @@ malformed `recentProjects`. Under **S2** a malformed field is indistinguishable
 from a missing one, so keying on absence would have lost the last-project pointer
 — the exact symptom #100 exists to stop.
 
-**The `last_project` struct field stays, as a read-only seed**, with a doc
-comment saying so: it is never written, and removing it would break the upgrade
-it exists for. It is **dated**, on `state::adopt_old_name`'s pattern — a new
+**The `last_project` struct field stays, as a read-only seed** — and it takes
+`#[serde(skip_serializing)]`, because without it `save` re-serialises the whole
+`State` and rewrites `lastProject` at its pre-upgrade value forever. With it the
+field is genuinely read-only and the key self-cleans out of the file on the first
+save; the named cost is that a downgrade after any save gets no restore at launch,
+which is one folder-pick. Removing the field would break the upgrade it exists
+for. It is **dated**, on `state::adopt_old_name`'s pattern — a new
 BACKLOG entry deletes it once no installation predating this version is left,
 the shape `CLAUDE.md` already uses for #93.
 
@@ -134,7 +138,9 @@ helper and one attribute per field, leaving `struct State` as the single schema:
 fn lenient<'de, D, T>(d: D) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,
-    T: serde::Deserialize<'de> + Default,
+    // **`DeserializeOwned`, not `Deserialize<'de>`**: `&Value` is a deserializer
+    // for a local borrow, which the outer `'de` does not supply (E0597).
+    T: serde::de::DeserializeOwned + Default,
 {
     let value = serde_json::Value::deserialize(d)?;
     if let Ok(parsed) = T::deserialize(&value) {
@@ -349,9 +355,13 @@ that comment's own precedent put the overflow.
 **The chrome is `devices-popup`'s, and the position is NOT.** `devices-popup` is
 `x: parent.width - self.width - 8px`, right-anchored — correct for `Devices…`,
 which sits at the row's right end, and ~1000px wrong for a button at the left
-end, because the bar is full width. So the `PopupWindow` is declared **as a child
-of the `Recent ▾` button**, which is how this file already attaches `Tooltip`s,
-with `x: 0; y: -self.height - 8px`. What is copied from `devices-popup` is the
+end, because the bar is full width. So the button is **wrapped in a
+`HorizontalLayout` holding nothing else, with the `PopupWindow` as its sibling**
+and `x: 0; y: -self.height - 8px`, plus an explicit `width`. **A `PopupWindow`
+cannot be a child of a `Button`** — no style's `Button` has a `@children` slot,
+and `Tooltip` is placeable there only because it is a builtin flagged
+`@can_be_declared_without_children_slot`, which `PopupWindow` is not. The plan's
+T4 item 3 has the form that builds. What is copied from `devices-popup` is the
 `Rectangle` of `Palette.background` with the house border and radius.
 
 **The button's handler is `keys.focus(); recent-popup.show();`** — in that order,
@@ -461,7 +471,7 @@ switching cheap. One line in the bus and one condition per button, and
 |---|---|
 | `pundit-core` | **Nothing new.** `metadata::match_label` is already the one way a match is written down; `store::read` (`store.rs:97`) already answers "can this project be read". |
 | `pundit-media` | **Nothing.** |
-| `pundit-app` | `bus/state.rs`: `lenient` and the per-field attributes (**S2**), `recent_projects` with its empty-list fallback, `push_recent_project`, `last_project` as the derived head, and `set_last_project` **deleted**. `write`'s doc comment changes subject: *any* path in the list being non-UTF-8 fails the whole document, so that open is not remembered — self-limiting, since the next setter re-reads a clean file. `bus/project.rs`: `commit` pushes; the failed restore stops forgetting (**E2**); `open_project` gains `refuse_if_busy` (**O4**). A new `pub mod recents;`: resolving a stored list into rows. `main.rs`: the popover's rows, read through `machine_state` (`main.rs:370`) — which exists so the window's *geometry* is written through it, so this is a **new use** of that handle and not its stated purpose. UI: the button, the `PopupWindow` as its child, and `!root.previewing` on two buttons. |
+| `pundit-app` | `bus/state.rs`: `lenient` and the per-field attributes (**S2**), `recent_projects` with its empty-list fallback, `push_recent_project`, `last_project` as the derived head, and `set_last_project` **deleted**. `write`'s doc comment changes subject: *any* path in the list being non-UTF-8 fails the whole document, so that open is not remembered — self-limiting, since the next setter re-reads a clean file. `bus/project.rs`: `commit` pushes; the failed restore stops forgetting (**E2**); `open_project` gains `refuse_if_busy` (**O4**). A new `pub mod recents;`: resolving a stored list into rows. `main.rs`: the popover's rows, read through `machine_state` (`main.rs:370`) — whose comment says it exists so the window's *geometry* is written through it, which is already narrower than its uses, since `open_new_match` reads `last_project()` through it at `main.rs:543`. Widen that comment rather than noting a new use. UI: the button in a wrapper with the `PopupWindow` beside it, and `!root.previewing` on **both** `Open Project…` buttons. |
 | `pundit-harness` | That `commit` pushes, and that a failed restore keeps the entry. |
 
 **The rules live in the app library, not `main.rs`**, which is wiring and has no
@@ -548,9 +558,13 @@ folders.**
    at once, and it is **exactly what `store::read` deliberately rejected** —
    *"Map NotFound on the read itself rather than testing `exists()` first: one
    syscall, no TOCTOU window, and the distinction is made in one place"*
-   (`store.rs:98-99`). Honest comparison: the New match sheet reads one file on
-   open and its spec declined the read-every-project version. Seven few-KB reads
-   on a local disk are sub-millisecond; on a stalled mount they are seven stalls.
+   (`store.rs:99-100`). Honest comparison: the New match sheet reads one file on
+   open and its spec declined the read-every-project version. **And "few-KB" is wrong**: `Clip` carries `events: Vec<CommentaryEvent>` —
+   every pen point of every commentary take — and `transcript: String`, all of
+   which `store::read` fully deserialises, so a used project's file is not small.
+   Seven of them on a local disk are still expected to be fast and on a stalled
+   mount are seven stalls, but **nothing here has been timed**: the plan's manual
+   list times the popover against the real tree and records the file sizes.
    If it is ever felt the answer is **Deferred 2** (resolve on the bus), not a
    cached name.
 2. **#100's fix touches every reader of `state.json`** — the last project, the
@@ -640,6 +654,15 @@ design bugs were found independently of each other.
 **Four things the draft left for an implementer to invent**, now specified: the
 popover's anchor, `keys.focus()` before `show()`, the transport row's budget, and
 whether `set_last_project` survives (it does not).
+
+**Five more facts its own plan's review passes corrected in this document**,
+rather than leaving the spec and the plan disagreeing: a `PopupWindow` cannot be a
+child of a `Button` (**P1**); `lenient`'s printed body does not compile under
+`T: Deserialize<'de>` and needs `DeserializeOwned` (**S2** — the plan carries the
+corrected bound, since this block is what an implementer pastes); `last_project`
+is written on every save unless it is `skip_serializing` (**S1**); `project.json`
+is not "a few KB" (**Risk 1**); and reading `state.json` through `machine_state`
+was already happening (**Crate responsibilities**).
 
 **And two it priced as measurements when nothing had been measured** — the cap's
 320px and the transport row's fit. Both are now called estimates and are on the
