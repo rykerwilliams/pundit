@@ -1026,6 +1026,22 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   The failing test is whichever one happens to open a project at the wrong moment,
   which is the entry's own conclusion ("every failure so far is `Rig::open`'s
   settle") holding across five sightings and three different test names.
+- **Sixth sighting, 2026-10-01**, GitHub run 36903730880 on the recents T1 branch:
+  `a_skip_burst_across_a_source_boundary_lands_on_the_accumulated_target` again,
+  the same panic site and the same `Position { source_index: 0, target_abs:
+  Some(0.0) }` with no settle inside the bound. The rerun of the failed job was
+  green, as every rerun has been. **The branch changed `bus/state.rs`'s serde
+  attributes and one markdown paragraph** — and unlike sightings four and five, it
+  *does* touch the open path, since `Rig::open` reaches `AppFiles::read` through
+  `commit`. So it was measured rather than waved away: the per-field read costs
+  **6.2 us against the old 3.3 us** on a full document carrying eight recents,
+  a 2.9 us increase against a 15 s bound and a 348 ms measured worst-case open.
+  Five millionths of the margin. Five clean local runs of the suite besides.
+- **The rate is now three of four workspace runs failing across two branches**,
+  against this entry's original "roughly once in seven". Whatever changed on the
+  runners between 2026-09-25 and now matters more than the original estimate, and
+  the discriminator below has still never been applied, for the reason the fourth
+  sighting records: CI captures the stderr it needs and throws it away.
 - **What that means for the fix below:** the next step is not `GST_DEBUG`, it is
   making the failure **carry its own evidence**, exactly as #75's resolution did for
   the replay margin — have the rig collect the bus's diagnostic lines and include
