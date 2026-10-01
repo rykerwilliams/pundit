@@ -29,38 +29,77 @@ const FILE: &str = "state.json";
 /// **Every field defaults**, and a file written by a later version keeps the
 /// fields this one doesn't know only insofar as it rewrites the whole
 /// document — it doesn't. A lost field costs a re-open or a re-pick.
+///
+/// **Two attributes carry the whole of BACKLOG #100, and a new field needs
+/// neither.** `default` is on the **container**, so an absent key reads as
+/// [`State::default()`]'s value for it — `deserialize_with` is not called for a
+/// key that isn't there, and a field-level `default` beside it would be the
+/// same rule written twice. [`lenient`] is on each field, so a value this build
+/// can't read costs that field and **not the document**: before it, one bad
+/// `panels` took the last project, the pen and the speech model with it.
 #[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 struct State {
-    #[serde(default)]
+    #[serde(deserialize_with = "lenient")]
     last_project: Option<PathBuf>,
     /// [`WhisperModel::label`], not the enum: the file is hand-readable, and
     /// a label this version doesn't know reads as the default rather than
     /// throwing the whole document away.
-    #[serde(default)]
+    #[serde(deserialize_with = "lenient")]
     whisper_model: Option<String>,
     /// [`Pen::label`], for the same reasons.
-    #[serde(default)]
+    #[serde(deserialize_with = "lenient")]
     pen: Option<String>,
-    #[serde(default)]
+    #[serde(deserialize_with = "lenient")]
     window: Option<WindowSize>,
     /// No `Option`: [`PanelWidths`]'s own container default already fills a
     /// file that doesn't mention the panels, so a second "absent" state would
     /// mean the same thing twice.
-    #[serde(default)]
+    #[serde(deserialize_with = "lenient")]
     panels: PanelWidths,
+}
+
+/// Any value this build can't read falls back to the field's default, so one
+/// bad value costs that field and not the whole document (BACKLOG #100).
+///
+/// **`DeserializeOwned`, not `Deserialize<'de>`.** `&Value` is a deserializer
+/// for a borrow of the local `value`, which is strictly shorter than the outer
+/// `'de` — `Deserialize<'de>` does not supply it and the function does not
+/// compile (E0597, *"argument requires that `value` is borrowed for `'de`"*).
+///
+/// **It moves the loss from the document to the field, and no further.** One
+/// malformed *element* would still cost a whole list, because a `Vec` fails
+/// whole — the bargain `bus/basket.rs` already strikes for its `pieces`, and
+/// struck for the reason this file's own header gives: what is lost here is a
+/// re-pick, never a format change. And it does nothing about a lost *update*:
+/// every setter is `read` then [`AppFiles::save`] over the whole document, and
+/// there are two [`AppFiles`] handles, so a bus-side write interleaving with a
+/// UI-side one still loses a field. The write is a temp file and a rename, so
+/// nothing tears.
+fn lenient<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    let value = serde_json::Value::deserialize(d)?;
+    if let Ok(parsed) = T::deserialize(&value) {
+        return Ok(parsed);
+    }
+    eprintln!("bus: ignoring an unreadable state.json value: {value}");
+    Ok(T::default())
 }
 
 /// The main window's size, in logical pixels.
 ///
 /// `default` is on the **container**, so a **partial object** —
-/// `{"window": {"width": 1600}}` — reads as 1600x960 rather than throwing the
-/// whole document, the last project, the pen and the speech model with it, away
-/// at [`AppFiles::read`]. A missing field is the one shape of that it closes:
-/// measured, `{"width": 1600, "height": -1}` still costs the document, as does
-/// a `window` that is not an object at all. Field-level `#[serde(default)]`
-/// would be the hazard `project.rs` names: it resolves to `Default::default()`,
-/// i.e. a height of `0`, which `main.rs` hands straight to `set_size`.
+/// `{"window": {"width": 1600}}` — reads as 1600x960, keeping the width the
+/// coach actually stored. **That is a finer grain than [`lenient`] reaches and
+/// is why this attribute stays**: `lenient` rescues the rest of the *document*
+/// from a bad `window`, but it hands back `None` and loses the 1600 with it.
+/// Field-level `#[serde(default)]` would be the hazard `project.rs` names: it
+/// resolves to `Default::default()`, i.e. a height of `0`, which `main.rs`
+/// hands straight to `set_size` — so the hand-written [`Default`] impl below is
+/// load-bearing, not decoration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WindowSize {
@@ -85,8 +124,10 @@ impl Default for WindowSize {
 /// One field holding both, because they are read and written together and a
 /// file with one but not the other is a state nobody wants to reason about.
 /// `default` is on the container for [`WindowSize`]'s reason and reaches exactly
-/// as far: a partial `{"panels": {"sidebar": 400}}` survives, while `"wide"`,
-/// `-5`, `1.5` and `null` each still cost the whole document.
+/// as far: a partial `{"panels": {"sidebar": 400}}` keeps the 400, which
+/// [`lenient`] would not. `"wide"`, `{"sidebar": -5}`, `{"sidebar": 1.5}` and
+/// `null` each cost **this field alone** — they used to cost the document
+/// (BACKLOG #100), and `lenient` is what changed that.
 ///
 /// **Unlike [`WindowSize`], a field-level one here would be merely untidy**, and
 /// the asymmetry is worth knowing. The layout bounds a stored `0` back up to
@@ -251,6 +292,12 @@ impl AppFiles {
     ///
     /// **Every write reads first**, so a field one setter doesn't know about
     /// survives the other's write: the document is rewritten whole.
+    ///
+    /// The `eprintln!` below is now reached only by a document [`lenient`]
+    /// never sees a field of: `"{not json"`, `"hello"`, `5`, `true`, `null`, a
+    /// truncated file and an empty one. **A JSON array is not one of them** —
+    /// a derived struct deserialises from a sequence positionally, so `[1,2]`
+    /// parses as all-defaults and logs through `lenient` twice instead.
     fn read(&self) -> State {
         let Some(path) = self.path.as_ref() else {
             return State::default();
@@ -600,13 +647,13 @@ mod tests {
         assert_eq!(state.last_project(), Some(PathBuf::from("/p/game")));
     }
 
-    /// **The container-level `#[serde(default)]` is what this pins.** `read`
-    /// throws the whole document away on any parse error and every setter
-    /// rewrites it, so a half-written object — a hand edit, a build that wrote
-    /// one field of two — used to cost the last project, the pen and the speech
-    /// model as well. Observed before the attribute was added: the `window` half
-    /// failed on its very first assertion, `serde` reporting
-    /// `missing field 'height'` and `last_project` coming back `None`.
+    /// **`WindowSize`'s and `PanelWidths`' own container `#[serde(default)]` is
+    /// what this pins, and it is finer-grained than `lenient`.** A half-written
+    /// object — a hand edit, a build that wrote one field of two — keeps the
+    /// field it *does* carry: `{"width": 1600}` reads as 1600x960, not as the
+    /// default pair. `lenient` alone would give back `None` here and lose the
+    /// 1600, so the two attributes are not redundant and neither replaces the
+    /// other.
     ///
     /// The missing field reads as its **real** default — 960, not the `0` a
     /// field-level attribute would resolve to and `main.rs` would hand to
@@ -649,6 +696,45 @@ mod tests {
         }
     }
 
+    /// **BACKLOG #100: one bad value costs that value and nothing else.**
+    /// These are the five shapes #100 measured as still costing the whole
+    /// document after the container defaults of #87 — so each one here also
+    /// carries a good `lastProject`, `pen` and `whisperModel`, and the point of
+    /// the test is that those three survive.
+    ///
+    /// `lenient` is what makes them survive. Without it on the named field the
+    /// cross-case assertions below fail with `last_project` coming back `None`.
+    #[test]
+    fn one_unreadable_value_costs_that_field_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppFiles::in_config_dir(dir.path());
+        std::fs::create_dir_all(dir.path().join(APP_DIR)).unwrap();
+        let file = dir.path().join(APP_DIR).join(FILE);
+        let rest = r#""lastProject":"/p/game","pen":"blue","whisperModel":"base.en""#;
+        for bad in [
+            r#""panels":"wide""#,
+            r#""panels":{"sidebar":-5}"#,
+            r#""panels":{"sidebar":1.5}"#,
+            r#""panels":null"#,
+            r#""window":{"height":-1}"#,
+        ] {
+            let text = format!("{{{rest},{bad}}}");
+            std::fs::write(&file, &text).unwrap();
+            assert_eq!(
+                state.last_project(),
+                Some(PathBuf::from("/p/game")),
+                "{text}"
+            );
+            assert_eq!(state.pen(), Pen::Blue, "{text}");
+            assert_eq!(state.whisper_model(), WhisperModel::Base, "{text}");
+            // And the bad field itself is simply its default.
+            assert_eq!(state.panel_widths(), PanelWidths::default(), "{text}");
+            assert_eq!(state.window_size(), WindowSize::default(), "{text}");
+        }
+    }
+
+    /// A document `lenient` never sees a field of — not JSON at all — which is
+    /// the class `read`'s own log still covers.
     #[test]
     fn corrupt_file_reads_as_none() {
         let dir = tempfile::tempdir().unwrap();
