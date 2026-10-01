@@ -190,11 +190,19 @@ chosen speech model, the pen, the window's size and **the two side columns'
 widths** live in `$XDG_CONFIG_HOME/pundit/state.json` — every one of them a
 property of this machine and none of the project's;
 point `XDG_CONFIG_HOME` elsewhere when testing so the real one isn't
-touched. **That file is read all-or-nothing** (any `serde_json` error returns the
-defaults for the whole document, and every setter rewrites it), which is why each
-struct in it carries `#[serde(default)]` on the **container** — never on the
-fields, where it would resolve to `0` rather than to the hand-written `Default`.
-One shape of the hazard remains: see BACKLOG #100. With
+touched. **That file is read per field** (BACKLOG #100): a value this build can't
+read falls back to that field's own default and costs the **document** nothing.
+Two attributes do it — `bus/state.rs`'s `lenient` deserializer on each field of
+`State`, and `#[serde(default)]` on the **container**, because `deserialize_with`
+is not called for an absent key and a field-level default beside it would be the
+same rule written twice. The container defaults on `WindowSize` and `PanelWidths`
+**stay, and are not redundant**: they rescue a *partial object* —
+`{"window": {"width": 1600}}` keeps the 1600 — which the per-field read does not,
+and their hand-written `Default` impls are what stop a height of `0` reaching
+`set_size`. **Two things this does not fix:** one malformed *element* still costs
+a whole list, which is the bargain `bus/basket.rs` strikes for its `pieces`; and
+a lost *update* between the bus's `AppFiles` handle and `main.rs`'s is untouched,
+since every setter still rewrites the whole document. With
 the monitor off (DPMS), playback slows unless run with `vblank_mode=0`
 (BACKLOG #36).
 
