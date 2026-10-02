@@ -30,8 +30,6 @@ made things worse.
 - **119.** A slate's in/out can't be previewed or adjusted — `SlateEdit` is
   `Name | Tags` only, and "preview" here is a scan with a stop point, not the
   preview pipeline; share the stop with #114
-- **116.** The pen is too skinny — try doubling `STROKE_LINE_WIDTH`; no format
-  change, but it thickens the highlight rings too, which is a decision
 - **117.** An arrow head at the end of a drawn line — right-drag or Shift+drag
   (both free), a v14 field, and the head's geometry in core so both drawers agree
 - **110.** The scoreboard over the picture disappears during a take — it shows
@@ -2554,8 +2552,17 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** soon — it is the coach's direct complaint about the main
   window, and the Match panel alone is a small first step.
 
-116. **The pen is too skinny.** The coach (2026-10-02): "pen width is a bit
-  skinny sometimes." `core::layout::STROKE_LINE_WIDTH` is **0.005** — half a
+116. **The pen is too skinny — RESOLVED, shipped 2026-10-02.** The coach asked
+  for "current plus one thicker option", and that is what shipped:
+  `PenWidth { Normal, Thick }` with Thick at `0.01` (~11 px at 1080p against
+  5.4), two dots in the pen row drawn at the widths themselves, remembered
+  machine-wide in `state.json` like the pen. Nothing already drawn changed —
+  `Stroke` carries its own `line_width`, so no format bump and no migration —
+  and the width is captured at pen-down, so changing it mid-drag cannot alter
+  what is on screen. **Highlight rings deliberately do not follow it**, and that
+  turned out to be forced rather than chosen: see the note below. The original
+  report follows. The coach (2026-10-02): "pen width is a bit skinny
+  sometimes." `core::layout::STROKE_LINE_WIDTH` is **0.005** — half a
   percent of the picture's height, so about **5.4 px at 1080p** and 3.6 px at
   720p. On a pitch full of players that is thin, and it is thinner still in an
   export watched on a phone.

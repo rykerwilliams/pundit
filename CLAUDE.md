@@ -95,8 +95,17 @@ build it packaged and fails on anything but `-mavx2` without `-march=native`.
 
 **Which model runs is the coach's, machine-wide.** The inspector's transcript
 row has a picker (`base.en` / `small.en`, default `small.en`), remembered in
-`state.json` and never in `project.json` — a `Preferences` field would be a
-format change every existing project fails `store::read`'s version guard on.
+`state.json` and never in `project.json`, because **which model is fast enough
+is a property of this machine and not of the match** — a project carried to
+another computer should not bring a model choice with it. (This used to say a
+`Preferences` field would be "a format change every existing project fails
+`store::read`'s version guard on", which is **false**: `read` accepts
+`MIN_READABLE..=CURRENT`, so a newer build reads every older file and
+`Preferences`' container default fills a key it hasn't got. The real cost of a
+`Preferences` field is the **forward** direction — the first save re-stamps the
+version and an *older* build then refuses the file, which is what the
+`project.json.v<old>` backup exists for. The conclusion was right; the reason
+was not.)
 Switching models leaves a job *transcribing* alone (a whisper cancel costs
 ~12 s of CPU) but preempts one still *downloading* (that stops within 100 ms),
 which restarts on the new model; the queue behind it picks the new one up. `$PUNDIT_WHISPER_MODEL`

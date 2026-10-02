@@ -5,10 +5,19 @@
 //! the window was and how wide its two side columns are. **None is a
 //! project's.** The model describes how fast this machine is, not the match,
 //! the pen, the window and its columns are the coach's habit, and
-//! `Preferences` lives
-//! in `project.json`, where a new field is a format change that
-//! [`store::read`](pundit_core::store::read)'s exact-version guard would
-//! make every existing project unreadable for.
+//! `Preferences` lives in `project.json`, which is where a setting belonging to
+//! the **match** goes.
+//!
+//! **There is no "exact-version guard", and this comment used to claim one.**
+//! [`store::read`](pundit_core::store::read) accepts
+//! `MIN_READABLE_FORMAT_VERSION..=CURRENT_FORMAT_VERSION`, so a build with a new
+//! `Preferences` field reads every older project and the container's
+//! `#[serde(default)]` fills the key it hasn't got. What a format bump actually
+//! costs is the **forward** direction: the first save re-stamps the version and
+//! an older build then refuses the file — which is exactly what the
+//! `project.json.v<old>` backup is for. So the reason a setting lives *here*
+//! rather than in `project.json` is what it describes, never a read that would
+//! fail.
 //!
 //! Losing this file only costs the user a re-open and a re-pick, so every
 //! failure here is logged and otherwise ignored.
