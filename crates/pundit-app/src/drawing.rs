@@ -20,7 +20,7 @@
 //! when something downstream gets round to it.
 
 use pundit_core::layout::{STROKE_LINE_WIDTH, STROKE_LINE_WIDTH_THICK};
-use pundit_core::stroke::{Rgba, Stroke, StrokePoint};
+use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use uuid::Uuid;
 
 /// A point is kept only once this long has passed since the last kept one.
@@ -150,6 +150,11 @@ pub struct InProgress {
     /// one gesture, so changing the pen mid-drag must not change what is
     /// already drawn.
     line_width: f64,
+    /// Whether Shift was held at pen-down (BACKLOG #117), which is what makes
+    /// this stroke an arrow. Captured once, for the colour's reason — and
+    /// because Shift released mid-drag must not un-arrow a gesture the coach
+    /// started as one.
+    end: StrokeEnd,
     /// `(x, y)` in content-rect logical pixels, `t` in seconds from
     /// `start_ns`. Never empty: the press is the first point.
     points: Vec<(f64, f64, f64)>,
@@ -158,11 +163,19 @@ pub struct InProgress {
 impl InProgress {
     /// The pen went down at `(x, y)`, which becomes the first point, at
     /// `t = 0`, drawing in `color` at `line_width`.
-    pub fn start(start_ns: u64, x: f64, y: f64, color: Rgba, line_width: f64) -> InProgress {
+    pub fn start(
+        start_ns: u64,
+        x: f64,
+        y: f64,
+        color: Rgba,
+        line_width: f64,
+        end: StrokeEnd,
+    ) -> InProgress {
         InProgress {
             start_ns,
             color,
             line_width,
+            end,
             points: vec![(x, y, 0.0)],
         }
     }
@@ -221,6 +234,7 @@ impl InProgress {
             id: Uuid::new_v4(),
             color: self.color,
             line_width: self.line_width,
+            end: self.end,
             // macOS didn't clamp, so a drag past the edge drew into the
             // letterbox bars on export.
             points: self
@@ -290,7 +304,14 @@ mod tests {
 
     #[test]
     fn a_move_needs_both_the_time_and_the_distance() {
-        let mut ip = InProgress::start(0, 10.0, 10.0, Pen::default().color(), STROKE_LINE_WIDTH);
+        let mut ip = InProgress::start(
+            0,
+            10.0,
+            10.0,
+            Pen::default().color(),
+            STROKE_LINE_WIDTH,
+            StrokeEnd::Plain,
+        );
         assert!(!ip.moved(200.0, 10.0, S / 240)); // far enough, too soon
         assert!(!ip.moved(10.5, 10.0, S)); // long enough, too close
         assert_eq!(ip.points, vec![(10.0, 10.0, 0.0)]);
@@ -300,7 +321,14 @@ mod tests {
 
     #[test]
     fn a_rejected_move_doesnt_become_the_reference() {
-        let mut ip = InProgress::start(0, 10.0, 10.0, Pen::default().color(), STROKE_LINE_WIDTH);
+        let mut ip = InProgress::start(
+            0,
+            10.0,
+            10.0,
+            Pen::default().color(),
+            STROKE_LINE_WIDTH,
+            StrokeEnd::Plain,
+        );
         // Rejected on distance. Were it kept as the reference, the next move
         // would be measured from it and rejected too.
         ip.moved(10.5, 10.0, S);
@@ -316,6 +344,7 @@ mod tests {
             100.0,
             Pen::default().color(),
             STROKE_LINE_WIDTH,
+            StrokeEnd::Plain,
         );
         let (host_ns, stroke) = release(ip, 250.0, 100.0, 9 * S);
         assert_eq!(stroke.points.len(), 1);
@@ -327,7 +356,14 @@ mod tests {
 
     #[test]
     fn a_release_that_fails_the_distance_gate_still_moves_the_last_time() {
-        let mut ip = InProgress::start(0, 10.0, 10.0, Pen::default().color(), STROKE_LINE_WIDTH);
+        let mut ip = InProgress::start(
+            0,
+            10.0,
+            10.0,
+            Pen::default().color(),
+            STROKE_LINE_WIDTH,
+            StrokeEnd::Plain,
+        );
         ip.moved(500.0, 250.0, S);
         // Held still for five seconds before lifting: without this the
         // stroke would be stamped five seconds early and clear early on
@@ -341,7 +377,14 @@ mod tests {
 
     #[test]
     fn a_release_that_moved_far_enough_is_appended() {
-        let mut ip = InProgress::start(0, 10.0, 10.0, Pen::default().color(), STROKE_LINE_WIDTH);
+        let mut ip = InProgress::start(
+            0,
+            10.0,
+            10.0,
+            Pen::default().color(),
+            STROKE_LINE_WIDTH,
+            StrokeEnd::Plain,
+        );
         ip.moved(500.0, 250.0, S);
         let (host_ns, stroke) = release(ip, 800.0, 250.0, 2 * S);
         assert_eq!(stroke.points.len(), 3);
@@ -360,6 +403,7 @@ mod tests {
             0.0,
             Pen::default().color(),
             STROKE_LINE_WIDTH,
+            StrokeEnd::Plain,
         );
         ip.moved(400.0, 300.0, start_ns + S / 2);
         let (host_ns, stroke) = release(ip, 900.0, 300.0, start_ns + 3 * S);
@@ -371,7 +415,14 @@ mod tests {
     fn coordinates_are_clamped_to_the_content_rect() {
         // The pointer is grabbed on press, so a drag off the picture keeps
         // delivering moves; they draw along the edge.
-        let mut ip = InProgress::start(0, -40.0, -10.0, Pen::default().color(), STROKE_LINE_WIDTH);
+        let mut ip = InProgress::start(
+            0,
+            -40.0,
+            -10.0,
+            Pen::default().color(),
+            STROKE_LINE_WIDTH,
+            StrokeEnd::Plain,
+        );
         ip.moved(1400.0, 900.0, S);
         let (_, stroke) = release(ip, 1400.0, 900.0, 2 * S);
         assert_eq!((stroke.points[0].x, stroke.points[0].y), (0.0, 0.0));
@@ -380,7 +431,14 @@ mod tests {
 
     #[test]
     fn a_finished_stroke_carries_the_line_width_and_the_auto_clear() {
-        let ip = InProgress::start(0, 1.0, 1.0, Pen::default().color(), STROKE_LINE_WIDTH);
+        let ip = InProgress::start(
+            0,
+            1.0,
+            1.0,
+            Pen::default().color(),
+            STROKE_LINE_WIDTH,
+            StrokeEnd::Plain,
+        );
         let (_, stroke) = ip.release(1.0, 1.0, S, (1000.0, 500.0), Some(5.0));
         assert_eq!(stroke.line_width, STROKE_LINE_WIDTH);
         assert_eq!(stroke.auto_clear_after_seconds, Some(5.0));
@@ -392,13 +450,27 @@ mod tests {
     #[test]
     fn each_stroke_keeps_the_pen_it_was_started_with() {
         let (_, red) = release(
-            InProgress::start(0, 1.0, 1.0, Pen::Red.color(), STROKE_LINE_WIDTH),
+            InProgress::start(
+                0,
+                1.0,
+                1.0,
+                Pen::Red.color(),
+                STROKE_LINE_WIDTH,
+                StrokeEnd::Plain,
+            ),
             1.0,
             1.0,
             S,
         );
         let (_, yellow) = release(
-            InProgress::start(2 * S, 1.0, 1.0, Pen::Yellow.color(), STROKE_LINE_WIDTH),
+            InProgress::start(
+                2 * S,
+                1.0,
+                1.0,
+                Pen::Yellow.color(),
+                STROKE_LINE_WIDTH,
+                StrokeEnd::Plain,
+            ),
             1.0,
             1.0,
             3 * S,
@@ -483,7 +555,15 @@ mod tests {
             "M 400.00 200.00 L 400.00 200.00"
         );
         assert_eq!(
-            InProgress::start(0, 3.0, 4.0, Pen::default().color(), STROKE_LINE_WIDTH).commands(),
+            InProgress::start(
+                0,
+                3.0,
+                4.0,
+                Pen::default().color(),
+                STROKE_LINE_WIDTH,
+                StrokeEnd::Plain
+            )
+            .commands(),
             "M 3.00 4.00 L 3.00 4.00"
         );
     }

@@ -18,7 +18,7 @@ use pundit_core::scoreboard::{
     MatchEventKind, MatchEventRecord, MatchFormat, ScoreboardConfig, TeamConfig,
 };
 use pundit_core::store::{self, StoreError, CURRENT_FORMAT_VERSION, MIN_READABLE_FORMAT_VERSION};
-use pundit_core::stroke::Rgba;
+use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 
 fn sample_clip() -> Clip {
     Clip {
@@ -424,6 +424,88 @@ fn a_v11_file_loads_under_the_current_version() {
     assert_eq!(value["slates"][0]["name"], json!("corner routine"));
     assert_eq!(value["slates"][0]["outSeconds"], json!(880.0));
     assert_eq!(value["clips"][0]["slateId"], serde_json::Value::Null);
+}
+
+/// F1, for v14. A v13 file's strokes carry no `end` key: it loads, every stroke
+/// reads as the plain line it was drawn as, and the next save stamps the current
+/// version and keeps the v13 file beside it. Every bump owes this test.
+///
+/// **The backup is also what pins the bump itself**, as the v12 test below says:
+/// every version assertion in this file reads `CURRENT_FORMAT_VERSION`, so none
+/// of them can tell 13 from 14, and `store::write` only keeps a copy of a file
+/// *older* than what it writes — so the literal `v13` here is what fails if the
+/// constant never moved.
+#[test]
+fn a_v13_file_loads_under_the_current_version() {
+    let dir = TempDir::new().unwrap();
+    // The shared sample carries no stroke, so this test brings its own rather
+    // than changing a fixture forty-two other assertions read.
+    let mut project = sample_project();
+    project.clips[0].events.push(CommentaryEvent::new(
+        1.5,
+        EventKind::Stroke(Stroke {
+            id: Uuid::nil(),
+            color: Rgba::RED,
+            line_width: 0.005,
+            points: vec![
+                StrokePoint {
+                    x: 0.1,
+                    y: 0.2,
+                    t: 0.0,
+                },
+                StrokePoint {
+                    x: 0.3,
+                    y: 0.2,
+                    t: 0.1,
+                },
+            ],
+            auto_clear_after_seconds: None,
+            end: StrokeEnd::Arrow,
+        }),
+    ));
+    let mut raw = serde_json::to_value(project).unwrap();
+    raw["formatVersion"] = json!(13);
+
+    // Every stroke event, stripped of the key v14 writes. The one pushed above
+    // is deliberately an `Arrow`, so a stripped key reading back as `Plain`
+    // cannot be mistaken for the value having survived.
+    let mut stripped = 0;
+    for clip in raw["clips"].as_array_mut().unwrap() {
+        for event in clip["events"].as_array_mut().unwrap() {
+            if let Some(stroke) = event.get_mut("kind").and_then(|k| k.get_mut("stroke")) {
+                stroke
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("end")
+                    .expect("v14 writes the key this test removes");
+                stripped += 1;
+            }
+        }
+    }
+    assert!(stripped > 0, "the sample project needs a stroke to strip");
+    write_raw(dir.path(), raw);
+
+    let mut p = store::read(dir.path()).expect("a v13 file loads");
+    for clip in &p.clips {
+        for event in &clip.events {
+            if let EventKind::Stroke(s) = &event.kind {
+                assert_eq!(
+                    s.end,
+                    StrokeEnd::Plain,
+                    "a stroke drawn before v14 is a plain line"
+                );
+            }
+        }
+    }
+
+    // The save stamps v14 and keeps the v13 file beside it.
+    store::write(dir.path(), &mut p).unwrap();
+    assert_eq!(p.format_version, CURRENT_FORMAT_VERSION);
+    assert!(
+        dir.path().join("project.json.v13").is_file(),
+        "the first save keeps the older file"
+    );
+    assert_eq!(store::read(dir.path()).unwrap(), p);
 }
 
 /// F1, for v13. A v12 file has neither inset key on a clip and neither sticky

@@ -21,7 +21,7 @@ use gstreamer_video::prelude::*;
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::layout::{avatar_box, bar_rect, pip_rect};
 use pundit_core::project::{Clip, Inset, InsetCorner, InsetPlacement, InsetSize};
-use pundit_core::stroke::{Rgba, Stroke, StrokePoint};
+use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_media::fixtures::{self, counter_video, read_counter, CounterKind, GrayFrame};
 use pundit_media::{
     Frame, FrameMailbox, Gl, Preview, PreviewJob, PreviewMessage, PreviewPosition, PreviewStats,
@@ -95,6 +95,7 @@ fn bar(y: f64, color: Rgba) -> CommentaryEvent {
             line_width: 0.05,
             points,
             auto_clear_after_seconds: None,
+            end: StrokeEnd::Plain,
         }),
     )
 }

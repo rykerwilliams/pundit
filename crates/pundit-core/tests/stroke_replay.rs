@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize};
-use pundit_core::stroke::{Rgba, Stroke, StrokePoint};
+use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_core::stroke_replay::visible_strokes;
 
 fn clip(events: Vec<CommentaryEvent>) -> Clip {
@@ -59,6 +59,7 @@ fn stroke_ev(
             line_width: 0.006,
             points,
             auto_clear_after_seconds: auto_clear,
+            end: StrokeEnd::Plain,
         }),
     )
 }

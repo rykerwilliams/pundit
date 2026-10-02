@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize};
-use pundit_core::stroke::{Rgba, Stroke, StrokePoint};
+use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_core::timeline::{playback_segments, source_time, PlaybackSegment, SegmentKind};
 use pundit_core::zoom::Zoom;
 
@@ -107,6 +107,7 @@ fn non_transport_events_do_not_move_source_time() {
             t: 0.0,
         }],
         auto_clear_after_seconds: None,
+        end: StrokeEnd::Plain,
     };
     let c = clip(
         10.0,

@@ -1989,6 +1989,14 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   rule here is not to chase rare flakes unless the fix is free. This one is a
   memory-safety bug somewhere in a C library boundary, which is the opposite of
   free.
+- **Fifth sighting, 2026-10-02**, during #117's gates at load average **12.8**
+  with another session building: `pundit-media --test export`, SIGABRT, and
+  **a different glibc diagnostic** — `malloc(): mismatching next->prev_size
+  (unsorted)` rather than the `corrupted size vs. prev_size` recorded above.
+  Same class (the free-list metadata is wrong), different detection point, which
+  is what a heap written through at an arbitrary offset looks like. The suite
+  then passed **30/30 alone in 44 s at the same load**, so the entry's "never in
+  a run of that suite alone" still holds across five sightings.
 - **When to revisit:** if it happens on a quiet machine or in CI even once — that
   would make it a real bug rather than a load artefact — or if anything else in
   the export path starts corrupting memory.

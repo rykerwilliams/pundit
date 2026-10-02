@@ -1026,7 +1026,7 @@ mod tests {
     use pundit_core::layout::{inset_span, BAR_HEIGHT_RATIO};
     use pundit_core::project::{Inset, InsetCorner, InsetPlacement, InsetSize};
     use pundit_core::scoreboard::{ClockDisplay, MatchFormat, TeamConfig};
-    use pundit_core::stroke::{Rgba, Stroke, StrokePoint};
+    use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
     use pundit_core::zoom::Zoom;
     use uuid::Uuid;
 
@@ -1080,6 +1080,7 @@ mod tests {
                 line_width,
                 points,
                 auto_clear_after_seconds: auto_clear,
+                end: StrokeEnd::Plain,
             }),
         )
     }
@@ -1964,6 +1965,7 @@ mod tests {
                     })
                     .collect(),
                 auto_clear_after_seconds: None,
+                end: StrokeEnd::Plain,
             }),
         );
         let config = scoreboard_config();

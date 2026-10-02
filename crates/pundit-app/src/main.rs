@@ -45,6 +45,7 @@ use pundit_core::layout::{self, avatar_self_view_rect, self_view_rect};
 use pundit_core::match_entry::{self, PendingMatchEvent};
 use pundit_core::metadata;
 use pundit_core::plan::{ExportTarget, ScoreboardMode};
+use pundit_core::stroke::StrokeEnd;
 // `project::` qualified for the two enums the window declares under the same
 // names (`bus::ScanStep`'s precedent): the bare `InsetSize` and `InsetCorner`
 // in this file are Slint's.
@@ -2465,15 +2466,25 @@ fn wire_recents(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, state: &AppFil
 fn wire_drawing(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
     window.on_draw_press({
         let weak = window.as_weak();
-        move |x, y| {
+        move |x, y, shift| {
             let (Some(w), Some(x), Some(y)) = (weak.upgrade(), finite(x), finite(y)) else {
                 return;
             };
             let now_ns = now_ns();
+            // Shift at pen-down draws an arrow (BACKLOG #117). The modifier
+            // rather than a second mouse button, because `TouchArea.pressed`
+            // is the primary button only — a right-drag's `moved` would never
+            // fire, so it would need a second drag implementation beside the
+            // one that works.
+            let end = if shift {
+                StrokeEnd::Arrow
+            } else {
+                StrokeEnd::Plain
+            };
             UI.with_borrow_mut(|ui| {
                 // The pen as it is now: the whole stroke keeps it.
                 let start =
-                    InProgress::start(now_ns, x, y, ui.pen.color(), ui.pen_width.fraction());
+                    InProgress::start(now_ns, x, y, ui.pen.color(), ui.pen_width.fraction(), end);
                 // A press already draws its dot.
                 w.set_drawing_ink(slint_color(ui.pen.color()));
                 w.set_drawing_path(start.commands().into());
