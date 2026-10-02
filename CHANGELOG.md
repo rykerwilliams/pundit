@@ -15,6 +15,22 @@ which the app was called until 0.8.0 renamed it.
 
 ### Added
 
+- **Switch between the matches you have been in, from one button.**
+  **Recent ▾**, in the toolbar beside **Open Project…**, drops down the last
+  eight projects you had open — **newest first, and each one named after the
+  match rather than its folder**. So you see *Rovers v Athletic* instead of
+  `20260917-canfield`, and when two matches are against the same opponent the
+  folder name shows underneath to tell them apart. One click switches. The
+  project you are in is ticked, and that row does nothing if you click it.
+  - **A project whose folder has gone goes grey instead of vanishing** — and it
+    is still there to click. That is deliberate: if a match lives on a drive you
+    have not plugged in this morning, you want to see it sitting there, plug the
+    drive in, and click it. If every row is grey the list says so, because "my
+    projects are gone" and "my drive is not plugged in" should not look the same.
+  - Opening a project is now refused while an export is running or a preview is
+    open, with a message saying which — it used to be allowed, and the run would
+    carry on rendering from the project you had just left.
+
 - **One button starts a match.** **New match…** — in the toolbar, and the big
   button on the empty window when nothing is open — asks for the game's video
   files and then shows you everything it worked out from them, with every line

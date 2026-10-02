@@ -249,10 +249,14 @@ export struct DeviceRow {
 
 /// One row of the Recent popover (recents spec D1, D2, D3).
 ///
-/// **The path is not here.** `open-recent(int)` carries the index and Rust
-/// re-reads `state.json` to resolve it, so a row cannot hold a path that has
-/// gone stale against the list.
+/// **The row carries its folder and the click sends it back**, which is
+/// `DeviceRow`'s shipped pattern (`node-name`, straight through
+/// `choose-camera`). An index would be the staleness it was meant to avoid: the
+/// rows are built from one list, so an index resolved against a later one opens
+/// a project the coach never read.
 export struct RecentRow {
+    /// The project's folder, sent back by `open-recent`.
+    folder: string,
     /// Line one, always populated: the match's name, or the folder's own name
     /// where the project could not be read.
     label: string,
@@ -544,7 +548,7 @@ component RecentChoice inherits Rectangle {
 component RecentList inherits VerticalLayout {
     in property <[RecentRow]> rows;
     in property <bool> none-resolved;
-    callback chosen(int);
+    callback chosen(string);
 
     spacing: 4px;
 
@@ -558,18 +562,20 @@ component RecentList inherits VerticalLayout {
         color: Palette.alternate-foreground;
         wrap: word-wrap;
     }
-    if root.rows.length > 0 && root.none-resolved: Text {
+    // No `rows.length > 0` here: `recents::none_resolved` is false for an empty
+    // list by construction, and one invariant in two places is one too many.
+    if root.none-resolved: Text {
         text: "None of these could be read. If they live on an external drive, plug it in.";
         color: Palette.alternate-foreground;
         wrap: word-wrap;
         font-size: 11px;
     }
-    for row[i] in root.rows: RecentChoice {
+    for row in root.rows: RecentChoice {
         label: row.label;
         second-line: row.second-line;
         ticked: row.ticked;
         dimmed: row.dimmed;
-        clicked => { root.chosen(i); }
+        clicked => { root.chosen(row.folder); }
     }
 }
 
@@ -3805,9 +3811,8 @@ export component AppWindow inherits Window {
     /// `list-devices`, which is the same shape — the rows are read on open, so
     /// a project renamed or deleted since last time shows as it is now.
     callback list-recents();
-    /// A row of the Recent popover was picked, by **index** into
-    /// `recent-rows`: Rust re-reads `state.json` to resolve it (recents O1).
-    callback open-recent(int);
+    /// A row of the Recent popover was picked: its folder (recents O1).
+    callback open-recent(string);
     /// A row of the popover's camera or microphone list was picked: its
     /// `node-name`, empty for the system default.
     callback choose-camera(string);
@@ -5453,13 +5458,22 @@ export component AppWindow inherits Window {
                         // The wrapper holds nothing but the button, so `x: 0`
                         // anchors where the button is — `devices-popup`'s
                         // right-anchored `parent.width - self.width` would be
-                        // ~1000px wrong at this end of the row. It costs no
-                        // layout: `lower_popups` runs before `lower_layouts`,
-                        // so the popup contributes no constraint, and both
-                        // `lower_layout` and `optimize_useless_rectangles`
-                        // special-case `has_popup_child`. A HorizontalLayout
-                        // rather than a Rectangle, which would take stretch
-                        // and not propagate the button's minimum.
+                        // ~1000px wrong at this end of the row. **It costs no
+                        // layout, and the reason is one pass, not three:**
+                        // `lower_popups` removes the popup from its parent's
+                        // `children` outright and sets `has_popup_child`
+                        // (`lower_popups.rs`), so by the time `lower_layouts`
+                        // runs there is nothing of it left to constrain
+                        // anything. (An earlier version of this comment also
+                        // cited `lower_layout` and `optimize_useless_rectangles`
+                        // for special-casing that flag. They do — but one is
+                        // inside the `Row`-in-a-`GridLayout` arm and the other
+                        // only ever visits Rectangles, so neither applies to a
+                        // `HorizontalLayout`. Decorative citations make a
+                        // comment look better verified than it is.)
+                        // A HorizontalLayout rather than a Rectangle, which
+                        // would take stretch and not propagate the button's
+                        // minimum.
                         HorizontalLayout {
                             Button {
                                 text: "Recent ▾";
@@ -5496,7 +5510,7 @@ export component AppWindow inherits Window {
                                         RecentList {
                                             rows: root.recent-rows;
                                             none-resolved: root.recents-none-resolved;
-                                            chosen(i) => { root.open-recent(i); }
+                                            chosen(folder) => { root.open-recent(folder); }
                                         }
                                     }
                                 }

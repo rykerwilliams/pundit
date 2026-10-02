@@ -2339,7 +2339,7 @@ fn wire_panels(window: &AppWindow, state: &AppFiles) {
 }
 
 /// The Recent popover (recents spec P1-P5, O1): the rows on open, and the
-/// index a click carries turned back into a folder.
+/// folder a click carries back.
 fn wire_recents(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, state: &AppFiles) {
     window.on_list_recents({
         let weak = window.as_weak();
@@ -2347,28 +2347,25 @@ fn wire_recents(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, state: &AppFil
         move || {
             let Some(w) = weak.upgrade() else { return };
             let paths = state.recent_projects();
-            // **The open project's row comes from the snapshot, not from
-            // disk** (spec D2): a rename stands in memory while a failed save
-            // leaves the old name on `project.json`, and the popover must
-            // agree with the window title. It also saves that row's read.
-            let rows = UI.with_borrow(|ui| {
-                let open = ui
-                    .snapshot
+            // **The open project's row is the snapshot's, not a read** (spec
+            // D2): a rename stands in memory while a failed save leaves the old
+            // name on `project.json`, and the popover must agree with the
+            // window title. The pair is cloned out so that `rows`' reads — one
+            // `project.json` per other row — do not run inside the `UI` borrow.
+            let open = UI.with_borrow(|ui| {
+                ui.snapshot
                     .as_ref()
-                    .map(|s| (s.folder.as_path(), metadata::match_label(&s.project)));
-                recents::rows(
-                    &paths,
-                    open.as_ref()
-                        .map(|(folder, label)| (*folder, label.as_str())),
-                )
+                    .map(|s| (s.folder.clone(), metadata::match_label(&s.project)))
             });
-            // Slint cannot fold over a model, so "every row is dimmed" is
-            // computed here. It is what tells the coach "the drive those
-            // projects are on isn't mounted" from "there are no projects".
-            w.set_recents_none_resolved(!rows.is_empty() && rows.iter().all(|r| !r.resolved));
+            let rows = recents::rows(
+                &paths,
+                open.as_ref().map(|(f, l)| (f.as_path(), l.as_str())),
+            );
+            w.set_recents_none_resolved(recents::none_resolved(&rows));
             let rows: Vec<RecentRow> = rows
                 .iter()
                 .map(|r| RecentRow {
+                    folder: r.path.to_string_lossy().as_ref().into(),
                     label: r.label.as_str().into(),
                     second_line: r.second_line.as_str().into(),
                     ticked: r.open,
@@ -2379,19 +2376,12 @@ fn wire_recents(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, state: &AppFil
         }
     });
     window.on_open_recent({
-        let (state, bus) = (state.clone(), bus.clone());
-        move |index| {
-            // **The list is re-read rather than cached.** Every `AppFiles`
-            // accessor re-parses the file on every call, so one more read on a
-            // click is in keeping — and it removes the only way an index and a
-            // list could disagree. `get` rather than `[]`: a stale index must
-            // not panic the app.
-            let Ok(index) = usize::try_from(index) else {
-                return;
-            };
-            if let Some(folder) = state.recent_projects().get(index) {
-                bus.borrow().send(Command::OpenProject(folder.clone()));
-            }
+        let bus = bus.clone();
+        // The row carries its own folder, so there is no list to re-read and no
+        // index to go stale — `choose-camera`'s shape exactly.
+        move |folder| {
+            bus.borrow()
+                .send(Command::OpenProject(PathBuf::from(folder.as_str())))
         }
     });
 }

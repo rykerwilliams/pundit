@@ -185,10 +185,11 @@ lets GStreamer import decoded frames without a CPU copy. It logs the decoder,
 the caps entering `glupload` and the GL platform on every source load (`bus:
 loaded …` on stderr); that line is the zero-copy diagnostic, and on the
 reference laptop it reads `vah265dec` / `memory:DMABuf` / `egl`.
-`scripts/linux-gate-check.sh` measures decode throughput. The last project, the
-chosen speech model, the pen, the window's size and **the two side columns'
-widths** live in `$XDG_CONFIG_HOME/pundit/state.json` — every one of them a
-property of this machine and none of the project's;
+`scripts/linux-gate-check.sh` measures decode throughput. **The projects the
+coach has had open** (newest first, capped at 8), the chosen speech model, the
+pen, the window's size and **the two side columns' widths** live in
+`$XDG_CONFIG_HOME/pundit/state.json` — every one of them a property of this
+machine and none of the project's;
 point `XDG_CONFIG_HOME` elsewhere when testing so the real one isn't
 touched. **That file is read per field** (BACKLOG #100): a value this build can't
 read falls back to that field's own default and costs the **document** nothing.
@@ -202,7 +203,18 @@ and their hand-written `Default` impls are what stop a height of `0` reaching
 `set_size`. **Two things this does not fix:** one malformed *element* still costs
 a whole list, which is the bargain `bus/basket.rs` strikes for its `pieces`; and
 a lost *update* between the bus's `AppFiles` handle and `main.rs`'s is untouched,
-since every setter still rewrites the whole document. With
+since every setter still rewrites the whole document.
+
+**`last_project` is the derived head of `recent_projects`, never a second
+stored copy** (#85): `push_recent_project` is the only writer, `set_last_project`
+is deleted, and `==` on the canonical path `commit` stores is the whole
+de-duplication. The old `lastProject` key survives as a **read-only seed** —
+filled into an empty list once in `read`, and `#[serde(skip_serializing)]` so it
+self-cleans out of the file on the first save. It is dated: BACKLOG #109 deletes
+it. **The seeding belongs in `read` and not in the accessor**, measured: every
+setter is read-then-save over the raw field, so seeded in the accessor the first
+save of *any* setting — a pen change included — writes an empty list and no old
+key, and the coach's projects are gone. With
 the monitor off (DPMS), playback slows unless run with `vblank_mode=0`
 (BACKLOG #36).
 

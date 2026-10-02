@@ -12,24 +12,27 @@ use std::path::{Path, PathBuf};
 
 use pundit_core::{metadata, store};
 
-/// How many projects the popover remembers (spec S3).
-///
-/// Eight, which is an estimate rather than a measurement: a row is two lines,
-/// so eight stand about 320px over the player. The coach has three projects and
-/// a season has twenty-odd, and a list you scroll is a picker — which they
-/// already have.
-pub const RECENT_PROJECTS: usize = 8;
-
 /// One row of the popover.
 ///
-/// The row's **path does not reach Slint** — the callback carries the index, and
-/// `main.rs` re-reads the list to resolve it. So this type is the whole of what
-/// a row knows.
+/// **The path reaches Slint and the click carries it back**, which is
+/// `DeviceRow`'s shipped pattern (`node-name`, the stored preference, straight
+/// through `choose-camera`). An earlier version sent the row's *index* and
+/// re-read the list to resolve it, on the reasoning that this "removes the only
+/// way an index and a list could disagree" — exactly backwards. The index **is**
+/// the disagreement: the rows were built from one list and the index resolved
+/// against another, so a stale index opens a project the coach never read, where
+/// a stale path opens the one they pointed at. No UTF-8 cost either, because
+/// `Path`'s `Serialize` refuses a non-UTF-8 path
+/// (`serde_core-1.0.229/src/ser/impls.rs:912-915`), so one can never be in the
+/// stored list to begin with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Row {
     pub path: PathBuf,
-    /// Line one, **always populated**: the match's name where the project
-    /// resolved, the folder's own file name where it did not.
+    /// Line one, **never empty**: the match's name where the project resolved,
+    /// the folder's own file name where it did not — and the whole path where
+    /// there is no file name at all (`/`, or a path ending in `..`, which only
+    /// a hand-edited `state.json` can hold, since `store::write` cannot create a
+    /// project at either).
     ///
     /// Never empty-as-a-signal. An earlier draft left it empty for an
     /// unresolved row, which draws a blank first line with the folder name
@@ -82,6 +85,18 @@ pub struct Row {
 /// disabled state on a greyed, unreachable row — and the one row the coach most
 /// needs, to retry once the drive is mounted, is the one that would refuse.
 ///
+/// **The match is canonical, not textual**, and that is load-bearing rather than
+/// tidy. Spec S4 priced a second entry for one project as costing "one duplicate
+/// row": it costs more than that. The ticked row is the one row the popover
+/// refuses to click, because `commit` `remove_dir_all`s the incoming project's
+/// own `recordings/.trash` — so a second *path* for the open project would be a
+/// row labelled identically to the ticked one, indistinguishable to the coach,
+/// and fully clickable. `==` cannot see that two paths are one project;
+/// `canonicalize` can, and the row is already paying a `store::read`, so the
+/// extra syscall is free. A path that will not canonicalize (it is gone) falls
+/// back to `==`, which is right: it cannot be the open project, since that one
+/// resolved.
+///
 /// **No injected reader.** The one valuable test here needs four real
 /// [`store::StoreError`]s — absent, malformed, legacy, too new — which a stub
 /// cannot produce honestly. `new_match::lent_scoreboard` is the comparable
@@ -93,12 +108,13 @@ pub fn rows(paths: &[PathBuf], open: Option<(&Path, &str)>) -> Vec<Row> {
             let folder_name = path
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
+                .unwrap_or_else(|| path.to_string_lossy().into_owned());
 
+            let is_open = open.is_some_and(|(folder, _)| same_project(folder, path));
             // The open project's label comes from the caller; every other
             // row's from its own `project.json`.
             let (label, resolved) = match open {
-                Some((folder, label)) if folder == path.as_path() => (label.to_owned(), true),
+                Some((_, label)) if is_open => (label.to_owned(), true),
                 _ => match store::read(path) {
                     Ok(project) => (metadata::match_label(&project), true),
                     // Gone, unreadable, legacy or too new: the folder name
@@ -109,7 +125,7 @@ pub fn rows(paths: &[PathBuf], open: Option<(&Path, &str)>) -> Vec<Row> {
             };
 
             Row {
-                open: open.is_some_and(|(folder, _)| folder == path.as_path()),
+                open: is_open,
                 second_line: if folder_name == label {
                     String::new()
                 } else {
@@ -121,6 +137,28 @@ pub fn rows(paths: &[PathBuf], open: Option<(&Path, &str)>) -> Vec<Row> {
             }
         })
         .collect()
+}
+
+/// Whether `path` is the project open at `folder`, which is already canonical
+/// (`Bus::commit` stores it that way).
+///
+/// Textual first, so the common case costs nothing; `canonicalize` only when
+/// they differ, which is what catches one project reachable by two paths — a
+/// mount visible twice, or an entry stored when `canonicalize` failed.
+fn same_project(folder: &Path, path: &Path) -> bool {
+    folder == path || path.canonicalize().is_ok_and(|p| p == folder)
+}
+
+/// Whether every row is dimmed — the difference between "no projects" and "the
+/// drive those projects are on isn't mounted" (spec P5).
+///
+/// **An empty list is not "none resolved"**, which is the whole point of the
+/// distinction and the reason this is a function here rather than an expression
+/// in `main.rs`: `all` is vacuously true on an empty slice, so the empty case
+/// has to be written down, and written down where it can be tested. Slint has no
+/// fold over a model, so the flag is computed in Rust either way.
+pub fn none_resolved(rows: &[Row]) -> bool {
+    !rows.is_empty() && rows.iter().all(|r| !r.resolved)
 }
 
 #[cfg(test)]
@@ -264,23 +302,6 @@ mod tests {
         assert!(rows[0].open);
     }
 
-    /// No open project at all — a first launch, a refused `pundit <folder>` run,
-    /// or a launch whose restore failed.
-    #[test]
-    fn with_no_open_project_no_row_is_ticked() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = project_at(
-            dir.path(),
-            "20260917-rovers-athletic",
-            Some(("Rovers", "Athletic")),
-        );
-
-        let rows = rows(&[path], None);
-
-        assert!(!rows[0].open);
-        assert!(rows[0].resolved);
-    }
-
     /// **Spec D3, and the design bug the spec's review found.** After a launch
     /// whose restore failed, the head is a project that is **not** open — so the
     /// tick follows the path, and the head is dimmed, unticked and still
@@ -304,6 +325,73 @@ mod tests {
 
         assert!(rows[1].open, "the ticked row is the one whose path matches");
         assert!(rows[1].resolved);
+    }
+
+    /// **One project reached by two paths is the same project**, so the second
+    /// row is ticked too — and therefore not clickable.
+    ///
+    /// Without the canonical comparison it would be a row labelled identically
+    /// to the ticked one, indistinguishable to the coach, whose click would
+    /// `remove_dir_all` the open project's own `recordings/.trash`. Spec S4
+    /// priced a duplicate entry as costing "one duplicate row"; this is what it
+    /// actually costs.
+    #[test]
+    fn a_second_path_to_the_open_project_is_also_ticked() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = project_at(
+            dir.path(),
+            "20260917-rovers-athletic",
+            Some(("Rovers", "Athletic")),
+        );
+        // A symlinked route to the same folder stands in for the real causes: a
+        // mount visible twice, or an entry stored on a day `canonicalize` failed.
+        let alias = dir.path().join("by-another-name");
+        std::os::unix::fs::symlink(&real, &alias).unwrap();
+        let open = real.canonicalize().unwrap();
+
+        let rows = rows(&[alias, real], Some((&open, "Rovers v Athletic")));
+
+        assert!(rows[0].open, "the alias is recognised as the open project");
+        assert!(rows[1].open, "and so is the canonical path");
+    }
+
+    /// A path with no file name shows the path itself, never a blank line. Only
+    /// a hand-edited `state.json` can hold one, since `store::write` cannot
+    /// create a project at `/`.
+    #[test]
+    fn a_path_with_no_file_name_still_has_a_label() {
+        let rows = rows(&[PathBuf::from("/")], None);
+
+        assert_eq!(rows[0].label, "/");
+        assert!(!rows[0].resolved);
+    }
+
+    /// **An empty list is not "none resolved".** That distinction is the whole
+    /// reason the flag exists, and `all` is vacuously true on an empty slice —
+    /// which is why this is a function with a test rather than an expression in
+    /// `main.rs`.
+    #[test]
+    fn none_resolved_separates_no_projects_from_an_unmounted_drive() {
+        let dir = tempfile::tempdir().unwrap();
+        let good = project_at(
+            dir.path(),
+            "20260917-rovers-athletic",
+            Some(("Rovers", "Athletic")),
+        );
+        let gone = dir.path().join("not-here");
+
+        assert!(
+            !none_resolved(&rows(&[], None)),
+            "no projects is not a drive problem"
+        );
+        assert!(
+            none_resolved(&rows(std::slice::from_ref(&gone), None)),
+            "every row dimmed"
+        );
+        assert!(
+            !none_resolved(&rows(&[gone, good], None)),
+            "one readable project is enough"
+        );
     }
 
     /// An empty list is an empty list, not a row.

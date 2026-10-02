@@ -13,18 +13,27 @@ made things worse.
 
 ### Next, in order
 
-- **85.** Recent projects, and a drawer to switch between them. The coach
 - **78.** App settings for the things an export writes. The coach (2026-09-24):
 - **96.** Every hot key should be reassignable. The coach (2026-09-25): "we need
 - **77.** An export queue across projects. The coach (2026-09-24): "i open…
 - **84.** Music under a goals reel — Openverse search, then the mixer (needs #78)
 - **102.** Snap the scrubber to events, as an option. The coach (2026-09-28):
   "snap to events in the scrubber as an option" — which marks it covers is the
-  open question (needs #78 for the control, and #100's per-field read)
+  open question (needs #78 for the control; **#100's per-field read has landed**)
 - **104.** Double-clicking a slate should take the player to its in point, as a
   clip row's double-click does (and a click should stop toggling the selection)
 - **105.** A slate's tag field should offer the tags already in use — the clip
   inspector's suggestion list, lifted into one shared `TagField`
+- **110.** The scoreboard over the picture disappears during a take — it shows
+  while watching and in a preview; not yet reproduced, and no code gates it on
+  recording
+- **114.** Shooting a slate doesn't stop at its out point — pause the footage
+  there and keep recording is the likely shape; the coach picks
+- **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
+  clip, sticky for the next recording, as #88's inset size and corner are (v14)
+- **113.** Fold panels away once they've done their job — a collapsible header
+  per section (Match, Project, Sources first), folded state in `state.json`;
+  folds, not tabs
 
 ### Waiting on the coach
 
@@ -54,7 +63,7 @@ problem — which is the entry, not an excuse for it.
 - **29.** Long-GOP 4K scrubbing on low-power iGPUs
 - **30.** Re-measure SkipCoordinator's burst window against real…
 - **31.** GL re-setup after a window hide
-- **32.** Recents list and a menu bar
+- **32.** Recents list and a menu bar — recents shipped as #85; the menu bar stays open
 - **33.** Pinch-to-zoom
 - **34.** Rotated source videos
 - **35.** Physical-key bindings for A/D and digits
@@ -295,12 +304,27 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   export window), or if a Wayland user reports a black player after
   minimize/restore.
 
-### 32. Recents list and a menu bar
-- **Why deferred:** macOS had neither; restore-last-project covers the common
-  case, and a third entry point for Open/Add adds UI surface without adding
-  capability.
-- **When to revisit:** When the user works across several projects regularly,
-  or if Linux users expect a File menu.
+### 32. Recents list and a menu bar — the recents half is DONE; the menu bar stays open
+- **The recents list shipped** (2026-10-02) as #85, which is the entry that
+  carried it: a `Recent ▾` popover off the transport row. **This entry's own
+  "when to revisit" was that feature's premise** — the coach works across three
+  tagged matches in two clubs and goes back and forth — so it is recorded here
+  rather than left for the next person to dig the same ground, which is what this
+  backlog exists to stop.
+- **What this entry got right and wrong.** Right: "restore-last-project covers
+  the common case" — it does, and #85 kept `last_project` as the derived head of
+  the list rather than replacing it. Wrong: "a third entry point for Open/Add
+  adds UI surface without adding capability." The popover adds no entry point for
+  *Add* at all, and for *Open* it is not a third door to the same room — it says
+  what each project **is** (its match name, not its folder) and switches in one
+  click, which the folder picker cannot do.
+- **The menu bar is still open and still deferred**, on this entry's original
+  reasoning: macOS had none, and nothing in the app needs one. #96 (rebindable
+  hot keys) owns the keyboard question, and #85 deliberately added **no**
+  keyboard path to its popover for that reason.
+- **When to revisit (menu bar only):** if Linux users expect a File menu, or if
+  #96 concludes that a discoverable list of commands is the answer to the
+  keyboard question.
 
 ### 33. Pinch-to-zoom
 - **Why deferred:** winit 0.30 delivers pinch gestures only on macOS/iOS, so
@@ -1137,11 +1161,26 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   carry both positions, and subtracting them is where the 54 ms comes from. What
   was missing was the margin on the *passing* runs, which is what makes an
   outlier recognisable as one.)
-- **When to revisit:** on the next sighting, which will now print its own
-  margin. If it is ~54 ms again, the cause is a discrete stall worth chasing (a
-  seek landing late, or the recording thread descheduled) rather than a
-  tolerance to adjust. A coach reporting a take whose replay drifts from where
-  they paused is what would make it urgent.
+- **Third sighting, 2026-10-02 — and it is the first to carry its own margin,
+  which is what the measurement above was for.** During #85's T5 close-out, in a
+  full `cargo test --workspace` with a clippy run and another session's build on
+  the machine: **`skip-burst replay margin: 0.0826s (tolerance 0.05s)`**. The
+  suite then passed alone, 12/12 in 3.40 s, and the full workspace passed on the
+  rerun (1055 tests).
+- **82.6 ms is NOT the ~54 ms this entry predicted, and that is informative.**
+  Both earlier flakes came in at 54 ms, which this entry read as "an outlier with
+  its own cause" — one discrete ~50 ms stall. A third sighting at 82.6 ms, half
+  again as large, is harder to explain that way: it looks more like a
+  heavy-tailed distribution under contention than a single repeatable stall. So
+  the discriminator this entry set up has fired and come back **against** its own
+  hypothesis. What it still rules out is a tolerance problem: 82.6 ms is nine
+  times the measured median of 8.9 ms, so widening the tolerance to swallow it
+  would mean accepting a margin an order of magnitude past normal.
+- **When to revisit:** a fourth sighting, now worth plotting rather than
+  comparing to 54 ms — three points at 54, 54 and 82.6 ms suggest recording the
+  margin on *every* CI run (it is already printed under `--nocapture`) so the
+  tail can be seen rather than inferred from failures alone. A coach reporting a
+  take whose replay drifts from where they paused is what would make it urgent.
 
 76. **`a_cancelled_copy_leaves_nothing`'s fixtures sit on the 30 s EOS bound.**
   That test generates two 1280×720 × 900-frame H.264 sources, and
@@ -1408,34 +1447,47 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** after #78, which is where the key field lives. Nothing
   further is needed from the coach.
 
-85. **Recent projects, and a drawer to switch between them.** The coach
-  (2026-09-24): "'recent projects' menu or similar? also could have a project
-  drawer to switch between recents? good for working with several project and
-  going back and forth." They have three tagged matches in two clubs and move
-  between them; today every switch is **Open Project…** and a folder picker.
-- **Most of it exists.** `bus/state.rs` already keeps `last_project` in
-  `state.json` (machine-wide, no format bump) and `restore_last_project` opens
-  it at launch. A recents list is that field grown into a short `Vec<PathBuf>`,
-  written where it is written now — in `open_project`, which is the one place a
-  project is opened.
-- **The list needs a name per entry, and the folder is the wrong one.** Two of
-  the coach's projects are called `20260917-canfield` and
-  `2016B vs Hudson 2026-09-19`; a drawer wants the project's own `name` and
-  ideally its teams. Either store the name beside the path when it is opened
-  (cheap, can go stale) or `store::read` each entry when the drawer opens (a
-  handful of small reads, always right — and it is how a missing project gets
-  greyed out rather than failing on click).
-- **The drawer is the bigger half:** where it lives (a panel beside the sources,
-  or a sheet), what a row shows, and what happens to unsaved state on a switch —
-  today a project change goes through `open_project`, which is already the
-  all-or-nothing path, so the switch itself is not the risk.
-- **Why deferred:** nothing is blocked; it is friction, not a gap. It is also
-  the natural companion to the **New match…** flow
-  (`docs/superpowers/specs/2026-09-24-new-match-flow-design.md`), which creates
-  the projects this would switch between — build them in that order.
-- **When to revisit:** with the New match… flow, or the first time the coach
-  says the picker is slowing them down again.
-
+85. **Recent projects, and a drawer to switch between them — RESOLVED**
+  (2026-10-02, five tasks across PRs #11-#14). The coach (2026-09-24):
+  "'recent projects' menu or similar? also could have a project drawer to switch
+  between recents? good for working with several project and going back and
+  forth." **The coach offered two readings — a menu "or similar", and a project
+  drawer — and the popover is the one chosen**, off a `Recent ▾` button in the
+  transport row: no panel to give width to, and it closes on a click.
+  Spec `docs/superpowers/specs/2026-10-01-recent-projects-design.md`,
+  plan `docs/superpowers/plans/2026-10-01-recent-projects.md`.
+- **The bigger half turned out to be storage, not UI.** This entry guessed the
+  drawer would be ("where it lives, what a row shows, what happens to unsaved
+  state"); in the event the UI was one task of five, and the work was in
+  `state.json`: growing `last_project` into `recent_projects` with the old key
+  kept as a dated read-only seed (#109), and making the file read **per field**
+  first (#100), which had to land before anything was added to it.
+- **What shipped:** `last_project` is now the *derived head* of
+  `recent_projects: Vec<PathBuf>` (cap 8), `set_last_project` is deleted so
+  `push_recent_project` is the only writer, a row is the match's name over its
+  folder name (shown only where they differ), rows are read when the popover
+  opens except the open project's (from the snapshot already in hand), the
+  ticked row is a **path** match and is the one row that is not clickable, a
+  project that will not read is **dimmed but still clickable**, a failed restore
+  **keeps** its entry, and `open_project` gained the `refuse_if_busy` guard it
+  never had.
+- **This entry's own prediction about the name was right and its options were
+  not quite:** it offered "store the name beside the path" or "`store::read`
+  each entry". The second was chosen, for the reason it gave (a stored name goes
+  stale), but with one exception it did not foresee — the **open** project's row
+  comes from memory, not from a read, because a rename stands in memory while a
+  failed save leaves the old name on disk.
+- **Two bugs the design reviews caught before they shipped**, both recorded in
+  the spec's and plan's own `§R` sections: the migration keyed on the absent key
+  rather than the empty value (which would have lost the pointer for a document
+  holding a good `lastProject` beside a bad list — #100's symptom reintroduced
+  by its own fix), and `push_recent_project` mutating the raw field, which
+  measured out as losing the coach's project list on the first save of **any**
+  setting after the upgrade, a pen change included.
+- **Deferred out of it, deliberately:** deleted clips surviving a project switch
+  (spec Deferred 5 — a feature, not a fix), resolving rows on the bus rather
+  than the UI thread (Deferred 2, if the open is ever felt), and a keyboard path
+  to the popover, which is #96's question and not this feature's.
 86. **The basket: a cut that spans matches — RESOLVED, shipped in 0.7.0.** The
   first half described below is built: `bus/basket.rs`, its own `basket.json`,
   the Basket… sheet, `core::plan::basket_plan`, and one film whose pieces each
@@ -1855,21 +1907,47 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** with #96, or if the coach asks to resize without the mouse.
 
 100. **`state.json` is read all-or-nothing, so one bad value still costs the
-  whole file.** #87 added container-level `#[serde(default)]` to `PanelWidths`
-  and `WindowSize`, which rescues a **partial** object — but measured, every one
-  of these still returns `State::default()` and so loses the last project, the
-  pen and the speech model: `"panels":"wide"`, `"panels":{"sidebar":-5}`,
-  `"panels":{"sidebar":1.5}`, `"panels":null`, `"window":{"height":-1}`.
-  `AppFiles::read` gives up on any `serde_json` error for the document, and every
-  setter rewrites it.
-- **Why deferred:** the real fix is a per-field read (parse to a
-  `serde_json::Map`, take each key independently, keep the defaults for whatever
-  fails), about 15 lines in one place, which would retire the whole class rather
-  than one shape of it. That is worth doing on its own merits and was not #87's
-  to do. It is also why `CLAUDE.md` gives this exact hazard as the reason the
-  basket lives in its own file.
-- **When to revisit:** next time anything is added to `state.json`, or the first
-  time a coach loses their last-project pointer for no visible reason.
+  whole file — RESOLVED** (2026-10-02, PR #11, as T1 of #85). All five measured
+  shapes now cost their own field and nothing else: `"panels":"wide"`,
+  `"panels":{"sidebar":-5}`, `"panels":{"sidebar":1.5}`, `"panels":null`,
+  `"window":{"height":-1}`. It landed first and alone because this entry's
+  trigger was *"next time anything is added to `state.json`"* and #85's T3 adds
+  a field.
+- **Two attributes, and it is a net deletion.** `#[serde(default)]` moved to the
+  **container** of `State` — `deserialize_with` is not called for an absent key,
+  so the five field-level copies went — and a `lenient` deserializer went on
+  each field: parse to a `serde_json::Value`, try the field's own type, and on
+  failure log the value and take the default. A new field now needs **one**
+  attribute rather than two. The hand-written fix this entry proposed (a
+  `serde_json::Map` walk) was **rejected**: it would have put every camelCase key
+  name in `read` as a string literal beside a `rename_all` struct that already
+  declares them — a second copy of the schema with nothing keeping it in step.
+- **`lenient` is bounded `DeserializeOwned`, not `Deserialize<'de>`.** The
+  latter does not compile: `&Value` is a deserializer for a borrow strictly
+  shorter than the outer `'de` (E0597, *"argument requires that `value` is
+  borrowed for `'de`"*). Checked against this repo's own serde, both ways.
+- **The container defaults on `WindowSize` and `PanelWidths` STAY, and are not
+  redundant.** They rescue a *partial object* — `{"window":{"width":1600}}` keeps
+  the 1600 — which the per-field read does not; `lenient` alone hands back `None`
+  and loses it. Their hand-written `Default` impls are still what stop a `0`
+  height reaching `set_size`.
+- **What this does NOT cover, so that "retires the whole class" is not claimed
+  for something that doesn't:** one malformed **element** still costs a whole
+  list, because a `Vec` fails whole — the bargain `bus/basket.rs` already strikes
+  for its `pieces`, accepted for the same reason (a re-pick, not a format
+  change). And **lost updates are untouched**: every setter is read-then-save
+  over the whole document and there are two `AppFiles` handles (the bus's and
+  `main.rs`'s `machine_state`), so a bus-side push interleaving with a UI-side
+  `set_panel_widths` still loses one field. The write is a temp file and a
+  rename, so nothing tears, and the cost is one list entry.
+- **Measured side effect worth knowing:** a derived struct deserialises from a
+  JSON **array** positionally, so `[1,2]` now reads as all-defaults and logs
+  through `lenient` twice. `read`'s own log is therefore narrower than it was —
+  `"{not json"`, `"hello"`, `5`, `true`, `null`, a truncated file, an empty one.
+- **It does not change why the basket is its own file.** `CLAUDE.md` gave this
+  hazard as the reason (basket spec H1); the per-field read softens it but the
+  file-of-its-own argument stands on the **element** case above, which is exactly
+  what a basket's `pieces` is.
 
 101. **The export test binaries abort with `corrupted size vs. prev_size` under
   heavy concurrent load.** glibc heap corruption, `SIGABRT`, always mid-suite and
@@ -1912,18 +1990,24 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   highlight-ring and slate work both key marks by the **displayed frame's** time,
   which is what a snap should land on too.
 - **"As an option" means it has to be reachable and remembered**, which is
-  `state.json` (a property of the machine, not the project) — and see #100: that
-  file is read all-or-nothing, so a new key wants the per-field read that entry
-  describes, or it is one more value that can cost the coach their last project.
-  #78's settings panel is where the control would live.
+  `state.json` (a property of the machine, not the project). **The #100 half of
+  this is now unblocked** (2026-10-02): that file is read **per field**, so a new
+  key here is one attribute — `#[serde(deserialize_with = "lenient")]`, with the
+  container `default` already in place — and a value this build cannot read costs
+  that key alone rather than the coach's last project. Read #100's resolution for
+  the one case it does not cover: a malformed *element* still costs a whole list,
+  so if this option ever stores a **set** of mark kinds rather than a bool, that
+  is the shape to know about. #78's settings panel is still where the control
+  would live.
 - **It must not fight the frame-accurate paths.** `,` / `.` step exactly one
   frame and the arrows skip fixed amounts; both are promises about exact
   distances, so snapping belongs to the **drag** alone, not to any keyed
   movement.
 - **Why deferred:** filed on the day it was asked for, with #88 closing out; it
   is a UX affordance with a real design question in it (which marks), not a bug.
-- **When to revisit:** with #78, which brings both the settings panel it needs a
-  control in and the per-field `state.json` read it should not go in without.
+- **When to revisit:** with #78, which brings the settings panel it needs a
+  control in. The per-field `state.json` read it should not go in without has
+  landed, so #78 is now the only gate.
 
 103. **A possession tracker, as an analysis pass.** The coach (2026-09-28): "a
   possession tracker analysis pass." Which team has the ball, over the match — so
@@ -2137,10 +2221,291 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   earlier gets no project restored at launch and an empty popover — one
   folder-pick each, but for no reason at all. It costs one `Option<PathBuf>`, one
   attribute and a four-line block to keep.
-- **The named cost of keeping it**, so nobody has to re-derive it: a *downgrade*
-  to a build predating the list, after any save, gets no restore at launch. One
-  folder-pick.
+- **The named cost of keeping it, traced rather than guessed:** a build
+  predating the list has no `recent_projects` field, so its first setter rewrites
+  the document and drops the **whole list**, not just the head — and
+  `lastProject` is already gone by then, so a downgrade that only changes a pen
+  leaves neither key. The cost of a downgrade after any save is therefore the
+  list, permanently, plus a re-pick of the project to restore. (An earlier
+  version of this entry said "no restore at launch — one folder-pick", which
+  understated it.) Nothing else is unrecoverable.
 - **When to revisit:** once no installation predating the recents list is left to
   upgrade — `state::adopt_old_name`'s pattern, which #93 dates the same way. Delete
   the field, the attribute, the seeding block in `read` and that one test; nothing
   else reads it.
+
+110. **The scoreboard over the picture disappears during a take.** The coach
+  (2026-10-02): "when i am previewing the video i see the clock. when im
+  recording, i don't." Asked, they confirmed it **shows while watching** too. A
+  take is where the coach talks over the game, so it is where the clock is most
+  useful to them — and an export of that take *will* burn it in, so they record
+  blind to something the viewer will see.
+- **So the board is configured, a period is tagged and the scan board works**;
+  what goes missing is specific to a take. That rules out "no clock before
+  kick-off" and "the Match panel's clock".
+- **Not yet reproduced, and a read of the code finds no recording gate.** The
+  scan board (`show_board` in `main.rs`, drawn by the `Image` over
+  `player.content` in `app.slint`) is hidden only while **previewing** or
+  **scrubbing**; its key comes from `scan_abs` → `shown_position` →
+  `ScoreboardContext::state_at`, with nothing testing `recording`. Nothing in
+  the player stack covers it either: the self-view, the highlight/stroke layer
+  and the empty cards all sit **under** the board's `Image`, and none has a
+  background over the content rect. So the cause is in state, not layout. Where
+  to look, in order:
+  - **Log the tick's `board` key across the start of a take** (computed once a
+    tick at `let board = match (shown, content, &ui.scoreboard)`): which arm
+    goes to `None` — `shown`, `content`, `ui.scoreboard`, the `scrubbing` guard
+    — or whether `state_at` itself returns `None` for the frames recorded over.
+  - **`shown_position`'s inputs during a take** — `ui.shown_stream_time` and
+    `ui.target_abs`. A take starts with a seek (a slate's in point, or the skip
+    coordinator's reset), and a `target_abs` that never clears would send every
+    tick through `locate` instead of the shown frame.
+  - **Whether the window's `scoreboard` image is cleared** by something on the
+    recording path; today `show_board` is the only writer of `set_scoreboard`.
+  - **The #88 inset** shipped the same week: a per-clip corner and size for the
+    self-view during a take. Check a take whose sticky inset corner is the
+    top-left, where the board sits.
+- **Answered in the same message:** the export does carry the clock — burned in
+  on every clip and reel, and on the whole match unless **Scoreboard: Separate
+  track** is chosen, where it rides as a `tx3g` track and an `.srt`.
+- **Why deferred:** filed while the coach was recording; needs a reproduction
+  before a fix can be chosen.
+- **When to revisit:** next — it is a visible gap on the app's main path.
+
+114. **Shooting a slate doesn't stop at its out point.** The coach (2026-10-02):
+  "when i record a clip, it doesn't stop at the end of the clip." Shooting a
+  slate seeks to its in point and starts the take (`start_recording`'s `from`),
+  and from there the game video plays on past `out_seconds` until the coach
+  presses Stop — so they have to watch for the end themselves while talking.
+- **This is the spec's choice, and the coach disagrees with it.** Slates spec
+  S5: "`out_seconds` is **advisory** … a take that runs past it is still the
+  take. Binding it would mean stopping a recording the coach is still talking
+  over." That reasoning is about the *recording*; it does not require the
+  *footage* to run on. The coach's expectation is the range they marked.
+- **The shapes, from least to most taken out of the coach's hands:**
+  - **(a) Pause the game video at the out point, keep recording.** The picture
+    holds on the range's last frame while the coach finishes the sentence, and
+    Stop ends the take as now. A commentary pause is already an ordinary event
+    in a take (every recording opens with one), so the clip replays and exports
+    with no special case — and this keeps S5's reason intact. Probably the
+    answer.
+  - **(b) Stop the take at the out point**, perhaps after a short grace. What
+    the coach literally said, and exactly what S5 warns against: it cuts off a
+    sentence mid-word.
+  - **(c) Only signal it** — the scrubber's range, a countdown, a flash at the
+    out point — and leave both running.
+- **What a stop has to respect:** a skip or scrub during the take can move the
+  footage past (or back before) the out point on purpose — the coach went there
+  — so the trigger is **crossing** the out point while playing forward, once,
+  not "position > out". A half-marked slate (`out_seconds: None`) has no end and
+  behaves as today. Recording from the playhead (R, not a slate) is unchanged.
+- **The pause has to be the take's own pause**, logged with the caller-captured
+  timestamp rule (CLAUDE.md's bus contract) — a pause issued by the bus with its
+  own clock is the drift that puts drawings behind the ball. Which side detects
+  the crossing (the UI tick, which already knows the shown frame, or the bus) is
+  the design question in it.
+- **Confirm with the coach that "clip" here means a slate's take** — a plain
+  `R` take has no end to stop at.
+- **The coach thought (c) already existed** ("i thought we were signaling the
+  end of the slate during recording", same day). It does not, and never did: the
+  slates spec has no out-point signal anywhere, the commit titled "the mark that
+  is live during a take" (`39e741e`) is about `i`/`o` *marking* during a take,
+  and slates are not drawn on the scrubber at all — `main.rs` shows them only in
+  the Slates list (`slate_range`). So the take gives no sign of where the range
+  ends, which is why it feels like it "doesn't stop". Even if (a) or (b) is
+  chosen, a visible end — the range on the scrubber during the take, at least —
+  is probably part of the answer.
+- **Why deferred:** filed while the coach was recording; it overturns a spec
+  decision, so the shape is theirs to pick.
+- **When to revisit:** with the other slate work (#104, #105), once the coach
+  picks (a), (b) or (c).
+
+115. **The caption bar should be switchable off in an export.** The coach
+  (2026-10-02), over a screenshot of an exported clip whose bar reads
+  `1 / 1 | possession2`: "this title should be toggleable in exported clips."
+  Today every encoded export draws the text bar — `PlanEntry::text`
+  (`"<n> / <total> | <name> | tag1, tag2"`, `core/src/plan.rs`) in the strip
+  `layout::bar_rect` gives it along the bottom, stopping at the inset — and
+  nothing turns it off. On a one-clip export the `1 / 1` says nothing, and a
+  working name like `possession2` is the coach's filing, not a title for a
+  viewer.
+- **Where the switch lives is the first question**, and the three homes cost
+  different amounts:
+  - **Per export, on the export sheet** — a checkbox beside the Resolution /
+    Quality / Scoreboard pickers, remembered by the same write-back. Matches
+    what was asked ("in exported clips") and how the other export choices
+    work. Remembered in `Preferences` it is a `formatVersion` bump (v14, with
+    the every-readable-version test); remembered machine-wide it is
+    `state.json`, the cheap home #78 describes.
+  - **Per clip, in the inspector** — beside "Show webcam in export", as
+    `show_pip` is. Lets one clip carry a title and another not, but is a
+    `Clip` field (format bump; an `Option`, never a field-level-defaulted
+    `bool`, per CLAUDE.md's format rules) and a control on every clip for what
+    is probably a whole-export decision.
+  - **App-wide, with #78's settings** — "the things an export writes", which is
+    exactly what #78 is; cheapest to store, least discoverable until #78 has a
+    screen.
+- **The coach answered (same day): "per clip or in general"** — not the export
+  sheet. That is exactly the shape #88 shipped for the inset's size and corner,
+  and it should be copied, not reinvented:
+  - **A `Clip` field** (`show_caption`, or whatever fits `show_pip`'s naming),
+    with a checkbox in the inspector beside "Show webcam in export". Format
+    bump to v14; per CLAUDE.md's rules a field added to an existing struct is
+    an `Option` with a field-level `#[serde(default)]` — `None` reading as
+    shown, which is what every v7–v13 clip was — never a defaulted `bool`.
+  - **"In general" is the sticky last-used preference**, as
+    `Preferences::last_inset_size` / `last_inset_corner` are (v13): written back
+    whenever a clip's switch changes, and seeding the next recording in
+    `Project::add_recorded_clip`. So turning the bar off on one clip is also
+    "pick it before" for every clip after it, with no settings screen. (Not
+    `pip_for_new_recordings`'s shape: the `project.rs` comment on
+    `last_inset_size` says why — that one has no control and only tests write
+    it.) A preference added to `Preferences` takes no field attribute — the
+    container's `#[serde(default)]` fills it.
+  - **Existing clips** keep their bar until changed; turning it off on many at
+    once is #45's multi-select.
+  - **The reel and the basket have no clip to carry the switch** (a reel's
+    entries have `clip_id: None`; a basket piece is a clip in another project),
+    so they keep their bars — which is right anyway, since theirs carry the
+    score and the match. A basket piece honouring its own clip's switch is the
+    one open sub-question.
+- **What it touches when off:** the bar's background and its line both go
+  (the 60% black is the bar, not decoration), on **preview and export alike** —
+  the shared composite draws it in one place, and a preview that shows a bar the
+  export won't draw breaks "preview is the export". The **chapters keep their
+  words** — they are the same names, but a chapter is navigation, not a burned-in
+  title. `bar_rect`'s inset rule simply has nothing to apply to.
+- **Which targets it applies to:** a single clip and All Clips are the case
+  asked about. A **goals reel**'s bar carries the running score
+  (`3 / 6 | Rovers goal | 2-1`) and a **basket**'s names the match each piece
+  came from — both carry information the picture does not, so whether one
+  switch covers them, or the reel and basket keep theirs, is part of the same
+  question. The whole match in track mode is a stream copy and has no bar
+  already.
+- **A lighter variant worth offering the coach:** keep the bar but drop the
+  `1 / 1` when the export has one entry — the position is meaningless there.
+  That needs no switch at all, and may be most of the complaint.
+- **Why deferred:** filed while the coach was exporting; a UX option with a
+  storage decision in it.
+- **When to revisit:** any time — the coach has picked the shape, and #88 is the
+  template for every piece of it (field, preference, inspector control, format
+  test). The open sub-question is only the basket.
+
+111. **Re-opening the project that is already open destroys its trash and undo
+  history.** `Bus::open_project` runs `commit` unconditionally, and `commit`
+  clears `self.history` and `clips::empty_trash`es both the outgoing and the
+  incoming folder — a `remove_dir_all` of `recordings/.trash`. For a *switch*
+  that is correct and deliberate (the history is in-memory, so the trash it held
+  is unreachable anyway). For a **re-open of the same folder** it means a clip
+  deleted a moment ago, still restorable by Undo, is gone for good with no
+  warning.
+- **Found by the #85 review** (2026-10-02), which also closed the one new door
+  the recents popover opened: the ticked row is not clickable, and
+  `recents::same_project` now compares **canonically**, so a second path to the
+  open project is recognised and ticked too rather than being an
+  identically-labelled clickable row.
+- **The remaining door is `Open Project…`'s folder picker**, where nothing stops
+  the coach choosing the folder already open. Pre-existing and unchanged by #85,
+  but the popover makes switching habitual, so it sits beside a flow built on
+  the opposite assumption.
+- **Why deferred:** the fix — an early return in `open_project` when the
+  resolved folder is already open — changes shipped behaviour that a test
+  deliberately pins (`clips.rs`'s `opening_empties_the_trash_and_the_history`
+  re-opens the same folder and asserts the trash is gone), and it removes the
+  only path there is for re-reading a project from disk. Both are defensible to
+  change, neither is this feature's call to make.
+- **When to revisit:** when the coach loses a deleted clip they meant to undo,
+  or alongside any work that gives the app a deliberate "reload from disk". The
+  test would split into "a switch empties both trashes" and "a re-open of the
+  open project changes nothing", which leaves the suite stronger.
+
+112. **A refused project open says "can't export".** `Bus::refuse_if_busy`
+  returns `UserError::CantExport`, whose `Display` is `"can't export: {0}"`, so a
+  coach who clicks a recent project while an export runs gets a modal reading
+  **"can't export: an export is running"** — a sentence about an operation they
+  did not ask for. `#85`'s T3 added that guard to `open_project` (spec O4) and
+  inherited the wording; `New match…` has carried the same wart since the New
+  match flow shipped.
+- **Gating the buttons is the wrong fix and is explicitly ruled out.**
+  `built_new_match`'s own comment states the decision: the export sheet is meant
+  to be closed while a run continues, so `New match…` stays clickable
+  mid-export. The transport row follows it. The refusal's wording is what is
+  wrong.
+- **Why deferred:** the fix is a `UserError::Busy(&'static str)` with
+  `#[error("{0}")]`, or having `refuse_if_busy` return the reason and let each
+  caller choose its variant — four call sites plus assertions in `export.rs`,
+  `basket.rs` and `preview.rs`. Small but wider than the feature it was found
+  in, and the wart predates it.
+- **When to revisit:** next time anything touches `refuse_if_busy`'s callers, or
+  the first time a coach asks why opening a project talks about exporting.
+
+113. **Put panels away once they've done their job — folding sections.** The
+  coach (2026-10-02): "i was trying to get some stuff put away a bit. after the
+  events have been put in, i don't really need that to be in front any more ya
+  know? that is why was asking about drawers and such" — and before it, "can we
+  not make tabs or similar constructs in slint". The Match panel's job is mostly
+  done once a match is tagged, but it stays full height under the inspector for
+  the rest of the project's life.
+- **Today nothing folds.** The right column is one `ScrollView` stacking the
+  inspector (or the tag overview), then `MatchPanel`, then `HighlightsPanel`,
+  all always shown (`app.slint`, the `ScrollView` above `inspector :=`); the
+  left column stacks the game videos, the slates and the clips the same way.
+  There is no collapse, disclosure or tab construct anywhere in the UI.
+- **The coach chose folding sections** (same day: "i like the folding sections
+  yeah").
+- **Recommended shape: a fold per section, not tabs.** A clickable header with a
+  chevron on each section (Match, Highlights, Slates, Game videos — and probably
+  Clips) that hides the body and keeps the header. A fold is better here than a
+  tab strip because the sections are not alternatives: the coach wants several
+  open at once, and wants to push away *one* without losing the others. A small
+  `Section` component (header + `if expanded` body) is the whole construct, and
+  every panel already has a title row to become its header. Slint does have
+  `TabWidget` in std-widgets (1.18, what we build with) if a later layout wants
+  tabs — but nothing in the app uses it today.
+- **A folded header should still say something.** The Match header folded can
+  keep the score and clock on its one line (`3 – 1 · 62:14`) — the thing the
+  coach glances at — and Highlights / Slates a count. Folding is then putting
+  away the *rows*, not the information.
+- **The keys keep working when folded.** `z` / `x` / `v`, `i` / `o` and the
+  highlight keys are window keys, not panel buttons, so a folded Match panel
+  still tags. Worth one line of the UI saying so, or the coach may unfold to
+  tag.
+- **Folding must not destroy a field mid-edit.** The slate fields lost typing
+  and left every shortcut dead when a rebuild removed them while focused
+  (`0172fdd`, and the comment above `slate-name-edit`). A fold that removes a
+  section with a focused field has to commit it first — or hide the body
+  (`visible: false`) rather than remove it, which is the inspector's rule
+  already. The Match panel has no fields (its editor is a sheet), so it is the
+  easy first one; Slates is the one with the hazard.
+- **Where the folded state lives:** per machine, `state.json`, beside the column
+  widths (#87) — how the coach likes the window laid out is a property of this
+  machine, not of the project, and #100's per-field read has landed so a new key
+  there no longer risks the rest of the file. Remembered per section, not per
+  project. (Auto-folding Match once a match has events was considered and is
+  worse: the panel moving on its own under the coach's hands is the thing every
+  sheet in this app is careful not to do.)
+- **The left column's top two as well** (the coach, same day): "same with the
+  project config and sources. don't really need those handy." That is the
+  **Project** section (its title and the project-name `LineEdit`,
+  `name-edit :=` in `app.slint`) and **Sources** (the game-video list, with its
+  `×` remove buttons and the missing-file state). Both are set up once per
+  match and then sit at the top of the column — the most prominent place in it
+  — for the rest of the project's life. So the column the coach actually works
+  in (Slates, Clips) starts halfway down.
+  - **Project** has the field hazard above: the name field must commit before a
+    fold removes it, or be hidden rather than removed. Folded, the header can
+    just *be* the project's name.
+  - **Sources folded must not hide a problem.** A missing or relinkable video
+    is shown on its row today; folded, the header has to carry it (a warning
+    mark, "1 missing") or a coach could export against a source they never see
+    is gone. The empty-state card over the player already covers "no sources",
+    so only the missing case needs the header.
+  - **Adding a source** should stay reachable folded — a `+` on the header, or
+    the existing menu path — since adding the second half's video is the one
+    thing a coach does to Sources after setup.
+- **Related:** #85's Recent popover was the other half of "drawers" in the same
+  conversation, and has shipped.
+- **Why deferred:** filed while the coach was using the app; a layout change
+  across both columns.
+- **When to revisit:** soon — it is the coach's direct complaint about the main
+  window, and the Match panel alone is a small first step.
