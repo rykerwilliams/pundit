@@ -20,7 +20,7 @@ use gstreamer::glib;
 use pundit_media::WhisperModel;
 use serde::{Deserialize, Serialize};
 
-use crate::drawing::Pen;
+use crate::drawing::{Pen, PenWidth};
 
 /// The app's own directory under whichever XDG base directory is in play.
 pub(super) const APP_DIR: &str = "pundit";
@@ -87,6 +87,11 @@ struct State {
     /// [`Pen::label`], for the same reasons.
     #[serde(deserialize_with = "lenient")]
     pen: Option<String>,
+    /// [`PenWidth::label`] (BACKLOG #116), for the same reasons again. One
+    /// attribute rather than two, which is what moving `default` to the
+    /// container bought.
+    #[serde(deserialize_with = "lenient")]
+    pen_width: Option<String>,
     #[serde(deserialize_with = "lenient")]
     window: Option<WindowSize>,
     /// No `Option`: [`PanelWidths`]'s own container default already fills a
@@ -320,6 +325,24 @@ impl AppFiles {
     pub fn set_pen(&self, pen: Pen) {
         let mut state = self.read();
         state.pen = Some(pen.label().to_owned());
+        self.save(&state);
+    }
+
+    /// How thick the pen draws (BACKLOG #116). A file that doesn't say, or
+    /// names a width this version doesn't have, reads as the default — which is
+    /// the width every drawing before this feature was made at.
+    pub fn pen_width(&self) -> PenWidth {
+        self.read()
+            .pen_width
+            .as_deref()
+            .and_then(PenWidth::from_label)
+            .unwrap_or_default()
+    }
+
+    /// Remembers `width` for every project on this machine.
+    pub fn set_pen_width(&self, width: PenWidth) {
+        let mut state = self.read();
+        state.pen_width = Some(width.label().to_owned());
         self.save(&state);
     }
 
@@ -858,6 +881,31 @@ mod tests {
                 "{text}"
             );
         }
+    }
+
+    /// The width is machine-wide like the pen, and an unknown one reads as the
+    /// default — which is the width every drawing before #116 was made at, so a
+    /// file this build can't read never thickens anybody's pen.
+    #[test]
+    fn remembers_the_pen_width_and_defaults_an_unknown_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppFiles::in_config_dir(dir.path());
+        assert_eq!(state.pen_width(), PenWidth::Normal);
+
+        state.set_pen_width(PenWidth::Thick);
+        assert_eq!(
+            AppFiles::in_config_dir(dir.path()).pen_width(),
+            PenWidth::Thick,
+            "what a relaunch sees"
+        );
+
+        std::fs::write(
+            dir.path().join(APP_DIR).join(FILE),
+            r#"{"pen":"blue","penWidth":"enormous"}"#,
+        )
+        .unwrap();
+        assert_eq!(state.pen_width(), PenWidth::Normal);
+        assert_eq!(state.pen(), Pen::Blue, "and it costs the pen nothing");
     }
 
     /// The panels likewise, and today's widths until one is dragged.
