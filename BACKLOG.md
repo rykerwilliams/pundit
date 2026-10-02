@@ -24,6 +24,12 @@ made things worse.
   clip row's double-click does (and a click should stop toggling the selection)
 - **105.** A slate's tag field should offer the tags already in use — the clip
   inspector's suggestion list, lifted into one shared `TagField`
+- **120.** Filter slates by tag, then work through all of them with that tag —
+  the thematic pass ("all these clips are corner kicks"); the filter is nearly
+  free, the queue wants #114's stop-at-out first
+- **119.** A slate's in/out can't be previewed or adjusted — `SlateEdit` is
+  `Name | Tags` only, and "preview" here is a scan with a stop point, not the
+  preview pipeline; share the stop with #114
 - **116.** The pen is too skinny — try doubling `STROKE_LINE_WIDTH`; no format
   change, but it thickens the highlight rings too, which is a decision
 - **117.** An arrow head at the end of a drawn line — right-drag or Shift+drag
@@ -2690,3 +2696,106 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   projects *live* at once rather than reachable in one click — comparing two
   matches side by side would be that, and would be a different feature (two
   pictures, not two tabs).
+119. **A slate's in and out cannot be previewed or adjusted.** The coach
+  (2026-10-02), asking whether it was filed: "preview slate and end in/out
+  times". Two gaps, and neither is in the backlog anywhere — #104 is navigation
+  (double-click jumps to the in point), #114 is a *take* not stopping at the out
+  point, #97 is typing slates in and #98 is exporting them as a film.
+- **Adjusting the marks: there is no way at all today.** `SlateEdit` is
+  `Name | Tags` (`core/src/project.rs:436`) — nothing touches `in_seconds` or
+  `out_seconds` after `o` closes the range, so a slate marked a second late is
+  deleted and re-marked. **This needs no format change**: both fields already
+  exist and `Project::edit_slate` is already the one mutation path, so it is two
+  new `SlateEdit` variants. Note `purge_for_source_change`'s staleness test is a
+  deliberately **exhaustive** match, which is what stops a new edit kind being
+  admitted in silence — so adding variants is safe by construction there.
+  - **The control is the open question**, not the plumbing: nudge buttons on the
+    row, a draggable pair on the scrubber (the marks are already drawn there),
+    or "re-mark from the playhead" — which is the cheapest and reads as `i`/`o`
+    again with the slate selected.
+- **Previewing a slate is NOT the preview pipeline, and that is the useful
+  thing to know.** `Command::OpenPreview(Uuid)` takes a **clip** id and
+  composites that clip's recording against the game video; a slate has no
+  recording, so there is nothing to composite. What the coach wants is the game
+  video played from `in` to `out` and stopped — a **scan with a stop point**,
+  which costs a seek and a deadline, not a GL graph.
+- **So it shares its machinery with #114**, and they should be built together:
+  #114 wants a take's footage to stop at the out point, this wants a scan to.
+  One "play this range and stop" is both features, and #114 already enumerates
+  the shapes (pause the footage, keep recording) and the hazard (a coach still
+  talking). Doing them apart would mean writing the stop twice.
+- **Why deferred:** filed on the day it was asked for; the plumbing for the
+  adjust half is small but the control is a design question, and the preview half
+  should wait for #114 so the stop is written once.
+- **When to revisit:** with #114, which is the entry to read first.
+
+120. **Filter slates by tag, then work through all the slates with that tag.**
+  The coach (2026-10-02): "i want to be able to filter slates on tags too, then
+  record all the slates with that tag. the use case is like 'all these clips are
+  corner kicks' or similar." A **thematic pass** over a match: mark the ranges
+  while watching, tag them, then sit down and talk over every corner in one go.
+  This is the workflow slates were for and the half that was never built.
+- **The filter half is nearly free and has a precedent to copy.** Slates already
+  carry `tags` (`SlateEdit::Tags`), and `tag_vocabulary` is deliberately
+  clips ∪ slates so a tag invented on a slate autocompletes. The clips list
+  already filters by tag through the window's `tag-filter` (spec C8), so the
+  Slates panel wants the same control and the same shape. Nothing in core or the
+  format changes.
+- **The "record them all" half cannot be a batch job, and that is the design.**
+  Every take needs the coach's **voice**, so there is nothing to automate — what
+  they are describing is a **guided queue**: jump to the next unshot slate with
+  this tag, record, stop, jump to the next. "Has this one been shot?" is already
+  answerable and already cheap: it is a scan of the clips for
+  `Clip.slate_id == slate.id`, which `project.rs:294` says in so many words and
+  which stays right across a delete, an undo and a re-record.
+- **It leans hard on #114, and is the reason that entry matters more than it
+  looks.** Today a take runs past the slate's out point until Stop is pressed.
+  In a one-at-a-time workflow that is a mild annoyance; in a pass over eight
+  corners it is the whole experience — the coach would be watching for each end
+  while talking, eight times. **#114 (and #119's preview) share the same
+  "play this range and stop" machinery, so all three want building together**
+  and this one should be scheduled after #114 rather than beside it.
+- **Only TIMED slates belong in it, and the take must not be "free record"**
+  (the coach, clarifying the same day): "it should only show the timed slates,
+  and not 'free record' like the current slate recording action."
+  - **"Timed" means `out_seconds.is_some()`.** `i` stores a slate with
+    `out_seconds: None` on the first press, deliberately, so a half-marked range
+    is a row the coach can finish or delete rather than UI state that vanishes
+    with the app. Those rows are **excluded from the queue**: a pass through the
+    corners is a pass through ranges, and a range with no end has nothing to
+    work through. They stay in the list to be finished — this is the queue's
+    filter, not a change to what a slate is.
+  - **So this mode's take is bounded, and that is the opposite of today's.**
+    Shooting a slate now seeks to the in point and then runs free until Stop
+    (which is #114's complaint). In a themed pass the coach is explicitly asking
+    for the range to govern: the footage ends where the slate ends. **This makes
+    #114 a prerequisite rather than a neighbour** — it is not "nicer with", it is
+    the behaviour being asked for, and #114's own shapes (pause the footage at
+    out, keep recording) are the menu.
+  - **Both modes have to go on existing, which is a real design point.** The
+    free-running take is right when the coach marked an in point and wants to
+    talk for as long as it takes; the bounded one is right for a pass. So the
+    bound belongs to **the pass**, not to the slate — the same slate shot either
+    way behaves differently, and nothing is stored to say which.
+- **The open questions, which are the coach's:**
+  - **Auto-advance or a button?** After Stop, does it jump to the next slate by
+    itself, or wait? Auto-advance is the "walk away" version and is what the use
+    case suggests; waiting is safer and is what every other sheet in this app
+    does (nothing moves under the coach's hands). A middle shape: it advances and
+    **pauses** there, so the next take starts when the coach presses R.
+  - **What order?** `slates_sorted` exists for reading and is time order; the
+    stored order is the marked order. Time order is almost certainly right for a
+    pass through a match, but it is worth saying so rather than inheriting
+    whichever the list happens to use.
+  - **Does it skip slates already shot?** Yes by default — the point is to get
+    through the unshot ones — but a re-record of one that came out badly is the
+    obvious second need, so the queue should be "unshot with this tag" with a
+    way to include the rest.
+  - **Does the filter drive the queue, or is the queue its own thing?** Cheapest
+    and clearest: the queue *is* the filtered list, so what the coach sees is
+    what they will work through.
+- **Why deferred:** the filter half could ship on its own tomorrow, but the
+  valuable half wants #114's stop first, and the questions above are the coach's
+  rather than guessable.
+- **When to revisit:** after #114. Then this, #119 and #114 are one piece of
+  work: mark, check, adjust, and talk through a themed set.
