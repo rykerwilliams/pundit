@@ -36,12 +36,14 @@ use pundit_app::match_panel::{
     self, parse_hex, parse_minutes, parse_overtime_periods, parse_periods,
 };
 use pundit_app::new_match::{self, Draft};
+use pundit_app::recents;
 use pundit_app::wheel::Wheel;
 use pundit_app::zoom_input::{self, DragPan, Viewport};
 use pundit_core::avatar;
 use pundit_core::highlight::{highlight_shapes, HighlightEdit};
 use pundit_core::layout::{self, avatar_self_view_rect, self_view_rect, STROKE_LINE_WIDTH};
 use pundit_core::match_entry::{self, PendingMatchEvent};
+use pundit_core::metadata;
 use pundit_core::plan::{ExportTarget, ScoreboardMode};
 // `project::` qualified for the two enums the window declares under the same
 // names (`bus::ScanStep`'s precedent): the bare `InsetSize` and `InsetCorner`
@@ -364,9 +366,13 @@ fn main() {
     let panels = state.panel_widths();
     window.set_sidebar_width(panels.sidebar as f32);
     window.set_inspector_width(panels.inspector as f32);
-    // A second handle on the same file: the bus takes the one above, and this
-    // one is what the window's own geometry is written through — the panel
-    // widths on a drag's release, the size once the bus is gone.
+    // A second handle on the same file, for everything the UI thread reads or
+    // writes of it directly: the window's own geometry (the panel widths on a
+    // drag's release, the size once the bus is gone), the New match flow's
+    // projects-folder tier, and the Recent popover's list. The bus takes the
+    // one above. Both are cheap clones of a path, and every accessor re-reads
+    // the file, so neither holds state the other can contradict — see
+    // `AppFiles`' own note on what a per-field read does *not* fix.
     let machine_state = state.clone();
 
     let weak = window.as_weak();
@@ -398,6 +404,7 @@ fn main() {
     wire_fit(&window);
     wire_panels(&window, &machine_state);
     wire_new_match(&window, &bus, &machine_state, &pickers);
+    wire_recents(&window, &bus, &machine_state);
 
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, TICK, {
@@ -2327,6 +2334,64 @@ fn wire_panels(window: &AppWindow, state: &AppFiles) {
                 sidebar: w.get_sidebar_width().round() as u32,
                 inspector: w.get_inspector_width().round() as u32,
             });
+        }
+    });
+}
+
+/// The Recent popover (recents spec P1-P5, O1): the rows on open, and the
+/// index a click carries turned back into a folder.
+fn wire_recents(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, state: &AppFiles) {
+    window.on_list_recents({
+        let weak = window.as_weak();
+        let state = state.clone();
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            let paths = state.recent_projects();
+            // **The open project's row comes from the snapshot, not from
+            // disk** (spec D2): a rename stands in memory while a failed save
+            // leaves the old name on `project.json`, and the popover must
+            // agree with the window title. It also saves that row's read.
+            let rows = UI.with_borrow(|ui| {
+                let open = ui
+                    .snapshot
+                    .as_ref()
+                    .map(|s| (s.folder.as_path(), metadata::match_label(&s.project)));
+                recents::rows(
+                    &paths,
+                    open.as_ref()
+                        .map(|(folder, label)| (*folder, label.as_str())),
+                )
+            });
+            // Slint cannot fold over a model, so "every row is dimmed" is
+            // computed here. It is what tells the coach "the drive those
+            // projects are on isn't mounted" from "there are no projects".
+            w.set_recents_none_resolved(!rows.is_empty() && rows.iter().all(|r| !r.resolved));
+            let rows: Vec<RecentRow> = rows
+                .iter()
+                .map(|r| RecentRow {
+                    label: r.label.as_str().into(),
+                    second_line: r.second_line.as_str().into(),
+                    ticked: r.open,
+                    dimmed: !r.resolved,
+                })
+                .collect();
+            w.set_recent_rows(ModelRc::new(VecModel::from(rows)));
+        }
+    });
+    window.on_open_recent({
+        let (state, bus) = (state.clone(), bus.clone());
+        move |index| {
+            // **The list is re-read rather than cached.** Every `AppFiles`
+            // accessor re-parses the file on every call, so one more read on a
+            // click is in keeping — and it removes the only way an index and a
+            // list could disagree. `get` rather than `[]`: a stale index must
+            // not panic the app.
+            let Ok(index) = usize::try_from(index) else {
+                return;
+            };
+            if let Some(folder) = state.recent_projects().get(index) {
+                bus.borrow().send(Command::OpenProject(folder.clone()));
+            }
         }
     });
 }
