@@ -12,7 +12,9 @@
 
 use std::path::{Path, PathBuf};
 
-use pundit_app::bus::{Command, Event, ExportRun, RecordingStatus, TargetState, UserError};
+use pundit_app::bus::{
+    AppFiles, Command, Event, ExportRun, RecordingStatus, TargetState, UserError,
+};
 use pundit_core::layout::scoreboard_rects;
 use pundit_core::plan::ExportTarget;
 use pundit_core::project::{Quality, Resolution};
@@ -257,6 +259,50 @@ fn cancel_leaves_the_targets_already_written_alone() {
     assert_eq!(done.targets[2].state, TargetState::Cancelled);
     assert_eq!(outputs(&rig.exports), ["t0 - Game.mp4"]);
     rig.h.shutdown();
+}
+
+/// **A project open is refused while a run is going** (spec O4), and nothing is
+/// pushed to the recents list.
+///
+/// Before this guard there was none: a running export kept rendering from the
+/// project the coach had just left, while `commit` emptied that project's trash
+/// and cleared its history underneath it.
+///
+/// It lives here rather than in `project_and_sources.rs` because the export
+/// scaffolding is here — that file has no `ExportTarget`, no `wait_export` and
+/// no clip with a real recording behind it.
+#[test]
+fn a_project_open_is_refused_while_a_run_is_going() {
+    let mut rig = Rig::open(&[10.0]);
+    let elsewhere = rig.tmp.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    // `Rig::open_full` opens `<tmp>/project`; `commit` stored it canonical.
+    let opened = rig.tmp.path().join("project").canonicalize().unwrap();
+
+    rig.export(vec![ExportTarget::AllClips]);
+    assert!(rig.h.wait_export().is_running());
+
+    rig.h.send(Command::OpenProject(elsewhere.clone()));
+    assert_eq!(
+        rig.h.wait_for_error(),
+        UserError::CantExport("an export is running".into())
+    );
+
+    rig.h.send(Command::CancelExport);
+    assert_eq!(outcome(&mut rig.h).targets[0].state, TargetState::Cancelled);
+
+    let config = rig.tmp.path().join("config");
+    let rest = rig.h.shutdown();
+    assert!(
+        !rest.iter().any(|e| matches!(e, Event::ProjectOpened(_))),
+        "the refused open published nothing: {rest:#?}"
+    );
+    let recents = AppFiles::in_config_dir(&config).recent_projects();
+    assert_eq!(recents, [opened], "the refused folder was not pushed");
+    assert!(
+        !elsewhere.join("project.json").exists(),
+        "nothing was written"
+    );
 }
 
 /// One run at a time, and never alongside a recording.
