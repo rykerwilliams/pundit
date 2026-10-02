@@ -648,6 +648,73 @@ component FieldLabel inherits Text {
     font-size: 11px;
 }
 
+/// A foldable section's header (BACKLOG #113): a chevron, the title, and what
+/// the section still says when it is folded away.
+///
+/// **It replaces a [`FieldLabel`] in a panel's existing title row**, so the
+/// panel keeps its own buttons beside it — a generic wrapper could not, because
+/// Slint gives a component one `@children` slot and those buttons live in the
+/// same row as the title.
+///
+/// **`summary` is what makes folding "put the rows away" rather than "hide the
+/// section".** The Match panel folded still shows the score and clock, which is
+/// the line the coach glances at; Sources folded still says a video is missing,
+/// which is the one thing that must not be hidden — a coach could otherwise
+/// export against a source they never saw was gone.
+component FoldHeader inherits Rectangle {
+    in property <string> title;
+    in property <bool> expanded;
+    /// Shown only when folded, after the title.
+    in property <string> summary;
+    /// Draws `summary` as a warning rather than as information.
+    in property <bool> summary-warns;
+    callback toggled();
+
+    horizontal-stretch: 1;
+    // A `Rectangle` rather than a layout, so the `TouchArea` can fill the whole
+    // header: inside a `HorizontalLayout` it would be laid out as a cell and
+    // take width from the title.
+    height: row.preferred-height;
+    border-radius: 4px;
+    background: touch.has-hover ? Palette.selection-background : transparent;
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        // The focus drop is the caller's: `keys` is the window's id and is not
+        // in scope here, and a panel with a field has to commit it before
+        // folding anyway.
+        clicked => { root.toggled(); }
+    }
+
+    row := HorizontalLayout {
+        spacing: 6px;
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                // One glyph, turned: the direction *is* the state.
+                text: root.expanded ? "⌄" : "›";
+                color: Palette.alternate-foreground;
+                font-size: 11px;
+                width: 10px;
+                horizontal-alignment: center;
+            }
+        }
+        FieldLabel {
+            text: root.title;
+            vertical-alignment: center;
+            horizontal-stretch: root.summary == "" || root.expanded ? 1 : 0;
+        }
+        if !root.expanded && root.summary != "": FieldLabel {
+            text: root.summary;
+            color: root.summary-warns ? Palette.foreground : Palette.alternate-foreground;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
 /// The selected clip's fields (Phase 3 C7). The window renders them through
 /// the `in-out` properties, and the fields report focus and commits; which
 /// clip a commit is for is the window's business.
@@ -1148,18 +1215,27 @@ component MatchPanel inherits VerticalLayout {
     callback trim(string, ReelTrim);
     callback setup();
     callback edit-events();
+    /// Folded away (BACKLOG #113). The header stays and keeps the score and
+    /// clock — the line the coach glances at — so folding puts the *rows*
+    /// away, not the information.
+    in property <bool> expanded: true;
+    callback toggle-fold();
 
     padding: 12px;
     spacing: 6px;
 
     HorizontalLayout {
         spacing: 8px;
-        FieldLabel {
-            text: "Match";
-            vertical-alignment: center;
-            horizontal-stretch: 1;
+        FoldHeader {
+            title: "Match";
+            expanded: root.expanded;
+            summary: root.configured ? root.score + " · " + root.clock : "";
+            toggled => { root.toggle-fold(); }
         }
-        Button {
+        // Folded, the buttons go and the summary carries the information: at
+        // the column's 280px minimum a chevron, a title, a score, a clock and
+        // two buttons do not fit, and both buttons open a sheet anyway.
+        if root.expanded: Button {
             text: "Edit events…";
             enabled: root.can-edit;
             clicked => { root.edit-events(); }
@@ -1168,7 +1244,7 @@ component MatchPanel inherits VerticalLayout {
                 text: @markdown("Type or paste match events: one line each, `2 14:05 home goal`");
             }
         }
-        Button {
+        if root.expanded: Button {
             text: root.configured ? "Setup…" : "Set up teams…";
             clicked => { root.setup(); }
 
@@ -1177,151 +1253,155 @@ component MatchPanel inherits VerticalLayout {
             }
         }
     }
+    // Folded, only the header above remains (BACKLOG #113).
+    if root.expanded: VerticalLayout {
+        spacing: 6px;
 
-    if !root.configured: Text {
-        text: "No teams yet. The clock and score are drawn into previews and exports once they're set up.";
-        color: Palette.alternate-foreground;
-        font-size: 11px;
-        wrap: word-wrap;
-    }
-    if root.configured: HorizontalLayout {
-        spacing: 8px;
-        Text {
-            text: root.score;
-            color: Palette.foreground;
-            overflow: elide;
-            vertical-alignment: center;
-            horizontal-stretch: 1;
+        if !root.configured: Text {
+            text: "No teams yet. The clock and score are drawn into previews and exports once they're set up.";
+            color: Palette.alternate-foreground;
+            font-size: 11px;
+            wrap: word-wrap;
         }
-        Text {
-            text: root.clock;
-            color: Palette.foreground;
-            font-family: "monospace";
-            vertical-alignment: center;
-        }
-    }
-
-    Button {
-        text: "Home goal  (Z)";
-        enabled: root.can-tag;
-        clicked => { root.tag(MatchTag.home-goal); }
-    }
-    Button {
-        text: "Away goal  (X)";
-        enabled: root.can-tag;
-        clicked => { root.tag(MatchTag.away-goal); }
-    }
-    Button {
-        text: "Start / stop  (V)";
-        enabled: root.can-tag && !root.at-cap;
-        clicked => { root.tag(MatchTag.start-stop); }
-    }
-    if root.at-cap: Text {
-        text: "Every period of this format is tagged. Delete a start/stop, or change the format, to tag another.";
-        color: Palette.alternate-foreground;
-        font-size: 11px;
-        wrap: word-wrap;
-    }
-
-    FieldLabel { text: "Events"; }
-    if root.rows.length == 0: Text {
-        text: "Nothing tagged yet.";
-        color: Palette.alternate-foreground;
-        font-size: 11px;
-    }
-    // A height of its own, so a long match scrolls rather than pushing the
-    // inspector out of the column.
-    ListView {
-        height: min(168px, root.lines * 28px);
-        for row in root.rows: VerticalLayout {
-            HorizontalLayout {
-                height: 28px;
-                spacing: 6px;
-
-                Text {
-                    text: row.time;
-                    color: Palette.alternate-foreground;
-                    font-family: "monospace";
-                    font-size: 11px;
-                    vertical-alignment: center;
-                }
-                Text {
-                    text: row.label;
-                    color: row.role-less ? Palette.alternate-foreground : Palette.foreground;
-                    font-size: 11px;
-                    overflow: elide;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                }
-                VerticalLayout {
-                    alignment: center;
-                    Button {
-                        text: "→";
-                        accessible-label: "Seek";
-                        enabled: root.can-edit;
-                        clicked => { root.seek(row.id); }
-
-                        Tooltip {
-                            text: @markdown("Play the game video from here");
-                        }
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    Button {
-                        text: "×";
-                        accessible-label: "Delete";
-                        enabled: root.can-edit;
-                        clicked => { root.remove(row.id); }
-
-                        Tooltip {
-                            text: @markdown("Delete this event (undoable)");
-                        }
-                    }
-                }
+        if root.configured: HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: root.score;
+                color: Palette.foreground;
+                overflow: elide;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
             }
-            // A goal's reel span (R3), on a line of its own: the column has
-            // no room for it beside the row. The buttons are glyphs, as the
-            // row's are, with their names in the tooltips.
-            if row.reel-span != "": HorizontalLayout {
-                height: 28px;
-                spacing: 4px;
+            Text {
+                text: root.clock;
+                color: Palette.foreground;
+                font-family: "monospace";
+                vertical-alignment: center;
+            }
+        }
 
-                Text {
-                    text: "Reel " + row.reel-span;
-                    color: Palette.alternate-foreground;
-                    font-size: 11px;
-                    overflow: elide;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
+        Button {
+            text: "Home goal  (Z)";
+            enabled: root.can-tag;
+            clicked => { root.tag(MatchTag.home-goal); }
+        }
+        Button {
+            text: "Away goal  (X)";
+            enabled: root.can-tag;
+            clicked => { root.tag(MatchTag.away-goal); }
+        }
+        Button {
+            text: "Start / stop  (V)";
+            enabled: root.can-tag && !root.at-cap;
+            clicked => { root.tag(MatchTag.start-stop); }
+        }
+        if root.at-cap: Text {
+            text: "Every period of this format is tagged. Delete a start/stop, or change the format, to tag another.";
+            color: Palette.alternate-foreground;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
+
+        FieldLabel { text: "Events"; }
+        if root.rows.length == 0: Text {
+            text: "Nothing tagged yet.";
+            color: Palette.alternate-foreground;
+            font-size: 11px;
+        }
+        // A height of its own, so a long match scrolls rather than pushing the
+        // inspector out of the column.
+        ListView {
+            height: min(168px, root.lines * 28px);
+            for row in root.rows: VerticalLayout {
+                HorizontalLayout {
+                    height: 28px;
+                    spacing: 6px;
+
+                    Text {
+                        text: row.time;
+                        color: Palette.alternate-foreground;
+                        font-family: "monospace";
+                        font-size: 11px;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: row.label;
+                        color: row.role-less ? Palette.alternate-foreground : Palette.foreground;
+                        font-size: 11px;
+                        overflow: elide;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Button {
+                            text: "→";
+                            accessible-label: "Seek";
+                            enabled: root.can-edit;
+                            clicked => { root.seek(row.id); }
+
+                            Tooltip {
+                                text: @markdown("Play the game video from here");
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Button {
+                            text: "×";
+                            accessible-label: "Delete";
+                            enabled: root.can-edit;
+                            clicked => { root.remove(row.id); }
+
+                            Tooltip {
+                                text: @markdown("Delete this event (undoable)");
+                            }
+                        }
+                    }
                 }
-                ReelButton {
-                    text: "⇤";
-                    name: "Reel starts here";
-                    tip: @markdown("Reel starts here: the goal's entry begins at this frame");
-                    enabled: root.can-edit;
-                    clicked => { root.trim(row.id, ReelTrim.start-here); }
-                }
-                ReelButton {
-                    text: "↺";
-                    name: "Reset reel start";
-                    tip: @markdown("Reset the reel start to the default");
-                    enabled: root.can-edit;
-                    clicked => { root.trim(row.id, ReelTrim.reset-start); }
-                }
-                ReelButton {
-                    text: "⇥";
-                    name: "Reel ends here";
-                    tip: @markdown("Reel ends here: the goal's entry stops at this frame");
-                    enabled: root.can-edit;
-                    clicked => { root.trim(row.id, ReelTrim.end-here); }
-                }
-                ReelButton {
-                    text: "↺";
-                    name: "Reset reel end";
-                    tip: @markdown("Reset the reel end to the default");
-                    enabled: root.can-edit;
-                    clicked => { root.trim(row.id, ReelTrim.reset-end); }
+                // A goal's reel span (R3), on a line of its own: the column has
+                // no room for it beside the row. The buttons are glyphs, as the
+                // row's are, with their names in the tooltips.
+                if row.reel-span != "": HorizontalLayout {
+                    height: 28px;
+                    spacing: 4px;
+
+                    Text {
+                        text: "Reel " + row.reel-span;
+                        color: Palette.alternate-foreground;
+                        font-size: 11px;
+                        overflow: elide;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    ReelButton {
+                        text: "⇤";
+                        name: "Reel starts here";
+                        tip: @markdown("Reel starts here: the goal's entry begins at this frame");
+                        enabled: root.can-edit;
+                        clicked => { root.trim(row.id, ReelTrim.start-here); }
+                    }
+                    ReelButton {
+                        text: "↺";
+                        name: "Reset reel start";
+                        tip: @markdown("Reset the reel start to the default");
+                        enabled: root.can-edit;
+                        clicked => { root.trim(row.id, ReelTrim.reset-start); }
+                    }
+                    ReelButton {
+                        text: "⇥";
+                        name: "Reel ends here";
+                        tip: @markdown("Reel ends here: the goal's entry stops at this frame");
+                        enabled: root.can-edit;
+                        clicked => { root.trim(row.id, ReelTrim.end-here); }
+                    }
+                    ReelButton {
+                        text: "↺";
+                        name: "Reset reel end";
+                        tip: @markdown("Reset the reel end to the default");
+                        enabled: root.can-edit;
+                        clicked => { root.trim(row.id, ReelTrim.reset-end); }
+                    }
                 }
             }
         }
@@ -3571,6 +3651,12 @@ export component AppWindow inherits Window {
     /// choice and remembers it across sessions.
     in property <[color]> pen-colors;
     in property <int> pen-index;
+    /// Which panel sections are open (BACKLOG #113), from `state.json`. One
+    /// property each rather than a struct, because `MatchPanel` takes only its
+    /// own and Slint binds a property, not a field of one.
+    in property <bool> match-expanded: true;
+    in property <bool> project-expanded: true;
+    in property <bool> sources-expanded: true;
     /// Which of the two pen widths is chosen (BACKLOG #116), an index into the
     /// control's order. `int` for `pen-index`'s reason.
     in property <int> pen-width-index;
@@ -3982,6 +4068,10 @@ export component AppWindow inherits Window {
     callback clear-drawings();
     /// A swatch was clicked: draw with the pen at this index from now on.
     callback pick-pen(int);
+    /// A section's header was clicked (BACKLOG #113): its name, which Rust
+    /// turns into the one `Folds` field. A string rather than three callbacks,
+    /// so a new foldable section needs no new plumbing.
+    callback toggle-fold(string);
     /// A pen width was picked (BACKLOG #116), by index into the control's
     /// order. It changes the next stroke, never one already drawn.
     callback pick-pen-width(int);
@@ -4428,13 +4518,29 @@ export component AppWindow inherits Window {
                         padding: 12px;
                         spacing: 8px;
 
-                        Text {
-                            text: "Project";
-                            color: Palette.alternate-foreground;
-                            font-size: 11px;
+                        FoldHeader {
+                            title: "Project";
+                            expanded: root.project-expanded;
+                            // Folded, the header is the project's name, which
+                            // is the whole of what this section says.
+                            summary: root.saved-project-name;
+                            toggled => {
+                                keys.focus();
+                                root.toggle-fold("project");
+                            }
                         }
 
+                        // **`visible`, not `if`.** A fold that *removed* this
+                        // would take a focused `LineEdit` out from under the
+                        // coach mid-edit, which is the bug `0172fdd` fixed for
+                        // the slate fields: typing was lost and every shortcut
+                        // went dead. Dropping focus in `toggled` above is the
+                        // other half — together they mean a half-typed rename
+                        // is committed-or-reverted by the field's own
+                        // `has-focus` rule before it goes.
                         name-edit := LineEdit {
+                            visible: root.project-expanded;
+                            height: root.project-expanded ? self.preferred-height : 0px;
                             enabled: root.has-project && !root.recording;
                             placeholder-text: root.has-project ? "" : "No project";
                             text <=> root.project-name;
@@ -4452,13 +4558,38 @@ export component AppWindow inherits Window {
                             }
                         }
 
-                        Text {
-                            text: "Sources";
-                            color: Palette.alternate-foreground;
-                            font-size: 11px;
+                        HorizontalLayout {
+                            spacing: 6px;
+                            FoldHeader {
+                                title: "Sources";
+                                expanded: root.sources-expanded;
+                                // **Folded must not hide a problem**: a coach
+                                // could otherwise export against a source they
+                                // never saw was gone. The count is the one
+                                // thing the header has to carry.
+                                summary: root.missing-index >= 0
+                                    ? "1 missing" : root.sources.length + " videos";
+                                summary-warns: root.missing-index >= 0;
+                                toggled => {
+                                    keys.focus();
+                                    root.toggle-fold("sources");
+                                }
+                            }
+                            // Adding the second half's video is the one thing a
+                            // coach does to Sources after setup, so it stays
+                            // reachable folded.
+                            if !root.sources-expanded: Button {
+                                text: "+";
+                                enabled: root.has-project && !root.recording;
+                                clicked => { keys.focus(); root.add-source(); }
+
+                                Tooltip {
+                                    text: @markdown("Add a source video");
+                                }
+                            }
                         }
 
-                        ListView {
+                        if root.sources-expanded: ListView {
                             for source[index] in root.sources: Rectangle {
                                 height: 48px;
                                 background: drop.has-drag ? Palette.selection-background : transparent;
@@ -5332,6 +5463,11 @@ export component AppWindow inherits Window {
                             }
 
                             MatchPanel {
+                                expanded: root.match-expanded;
+                                toggle-fold => {
+                                    keys.focus();
+                                    root.toggle-fold("match");
+                                }
                                 configured: root.match-configured;
                                 score: root.match-score;
                                 clock: root.match-clock;
