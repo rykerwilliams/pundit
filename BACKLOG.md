@@ -36,7 +36,8 @@ made things worse.
 - **114.** Shooting a slate doesn't stop at its out point — pause the footage
   there and keep recording is the likely shape; the coach picks
 - **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
-  clip, sticky for the next recording, as #88's inset size and corner are (v14).
+  clip, sticky for the next recording, as #88's inset size and corner are (v15 —
+  v14 went to #117's arrowhead).
   **Three states, not two:** off, whole entry, or the first few seconds
 
 ### Waiting on the coach
@@ -2138,7 +2139,10 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   `pundit-harness/src/lib.rs`, and four places in `pundit-media`; `Clip` has no
   `Default`, so adding a field breaks all of them. #88 (v13) spent 14 of its 35
   changed files on that edit alone, setting both new fields to the values
-  `Default` already gives; v12 (slates) paid the same toll, and v14 will.
+  `Default` already gives; v12 (slates) paid the same toll. **v14 (#117's
+  arrowhead) did NOT** — it added a field to `Stroke`, not to `Clip`, and still
+  cost ten construction sites across four crates, which is the same shape of toll
+  one struct down. The next `Clip` field pays the full price.
 - **The shape:** a `tests/common/mod.rs` in `pundit-core` with one
   `fn clip_stub() -> Clip`, and one `mod common;` per file — after which a new
   format field is a zero-test-file change.
@@ -2354,7 +2358,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   - **Per export, on the export sheet** — a checkbox beside the Resolution /
     Quality / Scoreboard pickers, remembered by the same write-back. Matches
     what was asked ("in exported clips") and how the other export choices
-    work. Remembered in `Preferences` it is a `formatVersion` bump (v14, with
+    work. Remembered in `Preferences` it is a `formatVersion` bump (v15, with
     the every-readable-version test); remembered machine-wide it is
     `state.json`, the cheap home #78 describes.
   - **Per clip, in the inspector** — beside "Show webcam in export", as
@@ -2395,7 +2399,8 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   and it should be copied, not reinvented:
   - **A `Clip` field** (`show_caption`, or whatever fits `show_pip`'s naming),
     with a checkbox in the inspector beside "Show webcam in export". Format
-    bump to v14; per CLAUDE.md's rules a field added to an existing struct is
+    bump to v15 (v14 went to #117's arrowhead); per CLAUDE.md's rules a field
+    added to an existing struct is
     an `Option` with a field-level `#[serde(default)]` — `None` reading as
     shown, which is what every v7–v13 clip was — never a defaulted `bool`.
   - **"In general" is the sticky last-used preference**, as
@@ -2614,7 +2619,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   burns in, which is exactly what spec H6 forbids. Making them agree would mean
   **storing the width on the highlight**, as its colour already is and for the
   same reason that doc gives ("a project must draw the same ring on a build whose
-  swatches differ") — a v14 field for a thing nobody asked for.
+  swatches differ") — a format field for a thing nobody asked for.
 - **So this is a stroke-only choice, and that is why it stays cheap.** `Stroke`
   carries its own `line_width` and is stored, so an export honours whatever each
   stroke was drawn at with no new machinery. Rings keep
