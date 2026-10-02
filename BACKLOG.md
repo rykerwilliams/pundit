@@ -2750,6 +2750,28 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   while talking, eight times. **#114 (and #119's preview) share the same
   "play this range and stop" machinery, so all three want building together**
   and this one should be scheduled after #114 rather than beside it.
+- **Only TIMED slates belong in it, and the take must not be "free record"**
+  (the coach, clarifying the same day): "it should only show the timed slates,
+  and not 'free record' like the current slate recording action."
+  - **"Timed" means `out_seconds.is_some()`.** `i` stores a slate with
+    `out_seconds: None` on the first press, deliberately, so a half-marked range
+    is a row the coach can finish or delete rather than UI state that vanishes
+    with the app. Those rows are **excluded from the queue**: a pass through the
+    corners is a pass through ranges, and a range with no end has nothing to
+    work through. They stay in the list to be finished — this is the queue's
+    filter, not a change to what a slate is.
+  - **So this mode's take is bounded, and that is the opposite of today's.**
+    Shooting a slate now seeks to the in point and then runs free until Stop
+    (which is #114's complaint). In a themed pass the coach is explicitly asking
+    for the range to govern: the footage ends where the slate ends. **This makes
+    #114 a prerequisite rather than a neighbour** — it is not "nicer with", it is
+    the behaviour being asked for, and #114's own shapes (pause the footage at
+    out, keep recording) are the menu.
+  - **Both modes have to go on existing, which is a real design point.** The
+    free-running take is right when the coach marked an in point and wants to
+    talk for as long as it takes; the bounded one is right for a pass. So the
+    bound belongs to **the pass**, not to the slate — the same slate shot either
+    way behaves differently, and nothing is stored to say which.
 - **The open questions, which are the coach's:**
   - **Auto-advance or a button?** After Stop, does it jump to the next slate by
     itself, or wait? Auto-advance is the "walk away" version and is what the use
