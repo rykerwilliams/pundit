@@ -99,6 +99,10 @@ struct State {
     /// mean the same thing twice.
     #[serde(deserialize_with = "lenient")]
     panels: PanelWidths,
+    /// No `Option`, for `panels`' reason: [`Folds`]' own container default
+    /// already fills a file that doesn't mention them.
+    #[serde(deserialize_with = "lenient")]
+    folds: Folds,
 }
 
 /// Any value this build can't read falls back to the field's default, so one
@@ -195,6 +199,28 @@ impl Default for PanelWidths {
             inspector: 280,
         }
     }
+}
+
+/// Which panel sections the coach has folded away (BACKLOG #113).
+///
+/// `default` is on the **container** for [`PanelWidths`]' reason, and the
+/// derived `Default` is right here rather than hand-written: **every section
+/// starts open**, which is what the app has always looked like and what a file
+/// written before this feature means.
+///
+/// **Bools, which the format rules forbid in `project.json` and allow here.**
+/// The hazard there is a field-level `#[serde(default)]` resolving to `false`
+/// where `false` is not what an older file means; here the container fills from
+/// `Default` and `false` — open — is exactly what it means.
+///
+/// One struct rather than three keys, so a new foldable section is one field and
+/// the whole set reads and writes together.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Folds {
+    pub match_panel: bool,
+    pub project: bool,
+    pub sources: bool,
 }
 
 /// Where the app's own files live — three things, which is why this is not
@@ -356,6 +382,20 @@ impl AppFiles {
     pub fn set_window_size(&self, size: WindowSize) {
         let mut state = self.read();
         state.window = Some(size);
+        self.save(&state);
+    }
+
+    /// Which sections are folded away (BACKLOG #113). A file that doesn't say
+    /// reads as all open, which is what the app looked like before it.
+    pub fn folds(&self) -> Folds {
+        self.read().folds
+    }
+
+    /// Remembers `folds` for every project on this machine — how the coach
+    /// likes the window laid out, like the column widths beside it.
+    pub fn set_folds(&self, folds: Folds) {
+        let mut state = self.read();
+        state.folds = folds;
         self.save(&state);
     }
 
@@ -906,6 +946,33 @@ mod tests {
         .unwrap();
         assert_eq!(state.pen_width(), PenWidth::Normal);
         assert_eq!(state.pen(), Pen::Blue, "and it costs the pen nothing");
+    }
+
+    /// Folds are machine-wide like the widths, and a file from before them
+    /// reads as every section open — which is what the app looked like.
+    #[test]
+    fn remembers_the_folds_and_defaults_to_every_section_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppFiles::in_config_dir(dir.path());
+        assert_eq!(state.folds(), Folds::default());
+        assert!(!Folds::default().match_panel, "open is the default");
+
+        let folded = Folds {
+            match_panel: true,
+            project: true,
+            sources: false,
+        };
+        state.set_folds(folded);
+        assert_eq!(AppFiles::in_config_dir(dir.path()).folds(), folded);
+
+        // And a bad value costs the folds alone (BACKLOG #100).
+        std::fs::write(
+            dir.path().join(APP_DIR).join(FILE),
+            r#"{"pen":"blue","folds":"all"}"#,
+        )
+        .unwrap();
+        assert_eq!(state.folds(), Folds::default());
+        assert_eq!(state.pen(), Pen::Blue);
     }
 
     /// The panels likewise, and today's widths until one is dragged.

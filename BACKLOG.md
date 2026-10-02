@@ -2600,15 +2600,20 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   draw? maybe with some other click?" Pointing at where a player **should have
   gone** is most of what a coach's pen is for, and a bare line does not say which
   end is the destination.
-- **The input is already free, which is the part that makes this cheap.** The
-  picture's drawing `TouchArea` explicitly ignores every button but the left one
-  (`app.slint`: `if (event.button != PointerEventButton.left) { return; }`), and
-  the draw area reads no modifiers. So **right-drag** or **Shift+drag** is
-  available with no key to reassign and nothing to take away from #96. The
-  coach's own "maybe with some other click" points at the right-drag reading.
-  Right-drag is the better of the two if a context menu is never wanted on the
-  picture; Shift+drag is the safer reservation. **Ask the coach which hand they
-  would rather use.**
+- **ANSWERED by the coach (2026-10-02): Shift+drag.** Both were free — the
+  drawing `TouchArea` ignores every button but the left one and reads no
+  modifiers — but they are not equally cheap, and that decided it:
+  - **Shift+drag reuses the whole existing path.** Read `event.modifiers.shift`
+    at pen-down, keep it on `InProgress` beside the colour and the width, and
+    the move-tracking, the clamping and the logging are all unchanged.
+  - **Right-drag would have meant a second drag implementation.**
+    `TouchArea.pressed` is the **primary button only** — `app.slint` says so in
+    its own comment, "Only while a button is down; `pressed` is the primary
+    one" — so the `moved` handler that follows the pen would never fire for a
+    right-drag, and it would have to be hand-rolled off `pointer-event` beside
+    the path that already works. It would also have ruled out a right-click
+    context menu on the picture for good.
+  - So the arrow rides on the modifier, and right-click stays unspent.
 - **It IS a format change, unlike #116.** `Stroke` has no shape or kind field, so
   an arrow needs one and that means **v14** plus a test that every readable
   version still loads, per the rules in `project.rs`'s header. The type matters:

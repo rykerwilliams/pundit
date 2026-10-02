@@ -24,8 +24,8 @@ use uuid::Uuid;
 
 use pundit_app::bus::{
     self, export_targets, whisper, whisper_model_override, AppFiles, BasketView, Bus, BusHandle,
-    CaptureKind, Command, Event, ExportRun, ExportTargetRun, Finish, PanelWidths, RecordingStatus,
-    Snapshot, Stage, TargetState, TranscriptionState, WindowSize,
+    CaptureKind, Command, Event, ExportRun, ExportTargetRun, Finish, Folds, PanelWidths,
+    RecordingStatus, Snapshot, Stage, TargetState, TranscriptionState, WindowSize,
 };
 use pundit_app::color_picker;
 use pundit_app::drawing::{path_commands, InProgress, Pen, PenWidth};
@@ -407,6 +407,7 @@ fn main() {
     wire_new_match(&window, &bus, &machine_state, &pickers);
     wire_recents(&window, &bus, &machine_state);
     wire_pen_width(&window, &machine_state);
+    wire_folds(&window, &machine_state);
 
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, TICK, {
@@ -2338,6 +2339,48 @@ fn wire_panels(window: &AppWindow, state: &AppFiles) {
             });
         }
     });
+}
+
+/// The folding panel sections (BACKLOG #113).
+///
+/// **The window's own layout, so it is written through the UI thread's
+/// `AppFiles`** and never the bus — the same reason the panel widths are, and
+/// the bus has nothing to do with how the coach likes the columns stacked.
+///
+/// One callback carrying a name, so a new foldable section is a field on
+/// [`Folds`], a property, and one arm here.
+fn wire_folds(window: &AppWindow, state: &AppFiles) {
+    show_folds(window, state.folds());
+    window.on_toggle_fold({
+        let (weak, state) = (window.as_weak(), state.clone());
+        move |section| {
+            let Some(w) = weak.upgrade() else { return };
+            let mut folds = state.folds();
+            // Unknown names are ignored rather than defaulted: a stale Slint
+            // build naming a section this one doesn't have must not silently
+            // fold a different one.
+            match section.as_str() {
+                "match" => folds.match_panel = !folds.match_panel,
+                "project" => folds.project = !folds.project,
+                "sources" => folds.sources = !folds.sources,
+                other => {
+                    eprintln!("ui: no foldable section called {other}");
+                    return;
+                }
+            }
+            state.set_folds(folds);
+            show_folds(&w, folds);
+        }
+    });
+}
+
+/// The one writer of the three fold properties, so a stored set and what is on
+/// screen cannot disagree. **Folded is `true` in the file and `false` on the
+/// window** — the file stores what the coach put away, the window what it draws.
+fn show_folds(w: &AppWindow, folds: Folds) {
+    w.set_match_expanded(!folds.match_panel);
+    w.set_project_expanded(!folds.project);
+    w.set_sources_expanded(!folds.sources);
 }
 
 /// The pen's width (BACKLOG #116).
