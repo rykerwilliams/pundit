@@ -4041,7 +4041,11 @@ export component AppWindow inherits Window {
     /// Drawing (Phase 6 D2): the pen went down at (x, y) over the picture,
     /// moved with it down, and came up. Content-rect relative, and the last
     /// two may be outside it: Slint grabs the pointer on press.
-    callback draw-press(length, length);
+    /// The pen went down. The third argument is **Shift at pen-down**, which
+    /// makes the stroke an arrow (BACKLOG #117) — read here rather than in Rust
+    /// because only the event carries it, and captured once because Shift
+    /// released mid-drag must not un-arrow a gesture the coach began as one.
+    callback draw-press(length, length, bool);
     callback draw-move(length, length);
     callback draw-release(length, length);
     /// The grab was taken away mid-stroke (see the drawing area): whatever is
@@ -5260,7 +5264,7 @@ export component AppWindow inherits Window {
                             }
                             if (event.kind == PointerEventKind.down) {
                                 keys.focus();
-                                root.draw-press(self.mouse-x, self.mouse-y);
+                                root.draw-press(self.mouse-x, self.mouse-y, event.modifiers.shift);
                             }
                             if (event.kind == PointerEventKind.up) {
                                 root.draw-release(self.mouse-x, self.mouse-y);

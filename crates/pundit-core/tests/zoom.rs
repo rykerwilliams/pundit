@@ -3,7 +3,7 @@
 use uuid::Uuid;
 
 use pundit_core::event::{CommentaryEvent, EventKind};
-use pundit_core::stroke::{Rgba, Stroke, StrokePoint};
+use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_core::zoom::{zoom_at, Zoom, SNAP_NOTCHES};
 
 fn approx(a: f64, b: f64) -> bool {
@@ -295,6 +295,7 @@ fn non_zoom_events_are_ignored() {
             t: 0.0,
         }],
         auto_clear_after_seconds: None,
+        end: StrokeEnd::Plain,
     };
     let evs = [
         CommentaryEvent::new(0.5, EventKind::Stroke(stroke)),

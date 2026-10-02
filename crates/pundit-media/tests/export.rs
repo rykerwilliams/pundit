@@ -30,7 +30,7 @@ use pundit_core::project::{
 use pundit_core::scoreboard::{
     MatchEventKind, MatchFormat, ScoreboardConfig, ScoreboardContext, TeamConfig,
 };
-use pundit_core::stroke::{Rgba, Stroke, StrokePoint};
+use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_core::zoom::Zoom;
 use pundit_media::fixtures::{
     self, assert_export_tags, block_centre, counter_video, counter_video_with, decode_counters,
@@ -778,6 +778,7 @@ fn stroke_between(x0: f64, x1: f64, y: f64, color: Rgba) -> CommentaryEvent {
             line_width: 0.05,
             points,
             auto_clear_after_seconds: None,
+            end: StrokeEnd::Plain,
         }),
     )
 }

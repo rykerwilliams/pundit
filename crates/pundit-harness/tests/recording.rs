@@ -11,7 +11,7 @@ use pundit_app::bus::{CaptureKind, Command, Event, RecordingStatus, UserError};
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::project::{Clip, Project};
 use pundit_core::store;
-use pundit_core::stroke::{Rgba, Stroke, StrokePoint};
+use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_core::timeline;
 use pundit_core::zoom::Zoom;
 use pundit_harness::{write_project, Harness, FRAME};
@@ -162,6 +162,7 @@ fn a_stroke() -> Stroke {
             },
         ],
         auto_clear_after_seconds: Some(5.0),
+        end: StrokeEnd::Plain,
     }
 }
 

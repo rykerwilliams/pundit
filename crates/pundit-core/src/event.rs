@@ -166,7 +166,7 @@ impl<'de> Deserialize<'de> for EventKind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stroke::{Rgba, StrokePoint};
+    use crate::stroke::{Rgba, StrokeEnd, StrokePoint};
     use serde_json::json;
     use uuid::Uuid;
 
@@ -228,6 +228,7 @@ mod tests {
                 t: 0.0,
             }],
             auto_clear_after_seconds: Some(3.0),
+            end: StrokeEnd::Plain,
         }))
         .unwrap();
         assert!(s.contains(r#""lineWidth":0.006"#), "got {s}");
@@ -275,6 +276,7 @@ mod tests {
                 t: 0.0,
             }],
             auto_clear_after_seconds: Some(3.0),
+            end: StrokeEnd::Plain,
         });
         assert_eq!(rt(s.clone()), s);
     }

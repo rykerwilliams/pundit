@@ -36,6 +36,29 @@ pub struct StrokePoint {
     pub t: f64,
 }
 
+/// How a stroke ends (v14, BACKLOG #117).
+///
+/// **An enum rather than an `arrow: bool`**, and the rule it satisfies is
+/// `project.rs`'s: a field added to an existing struct takes a field-level
+/// `#[serde(default)]` only when its `Default` is what an older file *means*.
+/// `Plain` is what every v7–v13 stroke was, so it qualifies on the same grounds
+/// `Inset` defaults to `Camera` — and an enum says that in the type where a
+/// defaulted `bool` would be leaning on the letter of the rule against its
+/// stated reason.
+///
+/// It also leaves room for an end that is neither (a circle, a double head)
+/// without a second field to disagree with this one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StrokeEnd {
+    /// A plain line, which is every stroke drawn before v14.
+    #[default]
+    Plain,
+    /// An arrowhead at the last point, pointing where the pen was going.
+    /// Drawn from [`arrow_head`], never by either drawer's own arithmetic.
+    Arrow,
+}
+
 /// A complete freehand stroke.
 ///
 /// The `.stroke` event that carries one is appended when the stroke
@@ -53,6 +76,11 @@ pub struct Stroke {
     /// first point — at which this stroke disappears. `None` = persist until a
     /// `ClearAll`.
     pub auto_clear_after_seconds: Option<f64>,
+    /// v14. How the stroke ends: a plain line, or an arrowhead at its last
+    /// point. Field-level default because [`StrokeEnd::Plain`] is exactly what
+    /// a v7–v13 stroke was.
+    #[serde(default)]
+    pub end: StrokeEnd,
 }
 
 // --------------------------------------------------------------- arrow head
