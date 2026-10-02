@@ -1026,6 +1026,33 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   The failing test is whichever one happens to open a project at the wrong moment,
   which is the entry's own conclusion ("every failure so far is `Rig::open`'s
   settle") holding across five sightings and three different test names.
+- **Sixth sighting, 2026-10-01**, GitHub run 36903730880 on the recents T1 branch:
+  `a_skip_burst_across_a_source_boundary_lands_on_the_accumulated_target` again,
+  the same panic site and the same `Position { source_index: 0, target_abs:
+  Some(0.0) }` with no settle inside the bound. The rerun of the failed job was
+  green, as every rerun has been. **The branch changed `bus/state.rs`'s serde
+  attributes and one markdown paragraph** — and unlike sightings four and five, it
+  *does* touch the open path, since `Rig::open` reaches `AppFiles::read` through
+  `commit`. So it was measured rather than waved away: the per-field read costs
+  **6.2 us against the old 3.3 us** on a full document carrying eight recents,
+  a 2.9 us increase against a 15 s bound and a 348 ms measured worst-case open.
+  Five millionths of the margin. Five clean local runs of the suite besides.
+- **Seventh sighting, the same day, on the recents T2 branch** (run 36908259836):
+  `a_seek_in_the_final_second_stays_in_its_source` — the *first* sighting's test —
+  same panic site, same `Position { source_index: 0, target_abs: Some(0.0) }`. That
+  branch adds a new module nothing calls yet, so again nothing can be implicated.
+- **Do not read a rate off 2026-10-01 without separating the two causes**, which is
+  a mistake this entry made for a few hours. Of six workspace runs that day, **two
+  failed to this flake and two to a slow Ubuntu mirror** — `azure.archive.ubuntu.com`
+  at roughly 1-2 s per 50 KB package, so `Install build dependencies` alone took
+  **34m25s of the job's 40-minute budget** on run 36908259836 and never finished at
+  all on 36898454417. Those two are **not** sightings of this bug: the step that
+  failed was apt, not `cargo test`. The flake's own rate that day was two of six,
+  which is near this entry's original "roughly once in seven" and does **not**
+  support the "three of four" this entry briefly claimed.
+- **The discriminator below has still never been applied once**, across all seven
+  sightings, for the reason the fourth records: CI captures the stderr it needs and
+  throws it away.
 - **What that means for the fix below:** the next step is not `GST_DEBUG`, it is
   making the failure **carry its own evidence**, exactly as #75's resolution did for
   the replay margin — have the rig collect the bus's diagnostic lines and include
