@@ -30,8 +30,6 @@ made things worse.
 - **119.** A slate's in/out can't be previewed or adjusted — `SlateEdit` is
   `Name | Tags` only, and "preview" here is a scan with a stop point, not the
   preview pipeline; share the stop with #114
-- **117.** An arrow head at the end of a drawn line — right-drag or Shift+drag
-  (both free), a v14 field, and the head's geometry in core so both drawers agree
 - **110.** The scoreboard over the picture disappears during a take — it shows
   while watching and in a preview; not yet reproduced, and no code gates it on
   recording
@@ -40,9 +38,6 @@ made things worse.
 - **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
   clip, sticky for the next recording, as #88's inset size and corner are (v14).
   **Three states, not two:** off, whole entry, or the first few seconds
-- **113.** Fold panels away once they've done their job — a collapsible header
-  per section (Match, Project, Sources first), folded state in `state.json`;
-  folds, not tabs
 
 ### Waiting on the coach
 
@@ -2489,7 +2484,22 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** next time anything touches `refuse_if_busy`'s callers, or
   the first time a coach asks why opening a project talks about exporting.
 
-113. **Put panels away once they've done their job — folding sections.** The
+113. **Put panels away once they've done their job — PARTLY SHIPPED
+  2026-10-02.** **Match, Project and Sources fold**, with their state in
+  `state.json` beside the column widths; a folded header keeps what the section
+  still says (Match the score and clock, Project the project's name, Sources a
+  `1 missing` warning or a count, with a `+` that stays reachable). Nothing
+  auto-folds, as this entry asked. The Project name field is **hidden rather
+  than removed**, which is this task's one hazard: removing a focused `LineEdit`
+  is the bug `0172fdd` fixed for the slate fields.
+- **STILL OPEN: Highlights, Slates and Clips.** Slates is the one that needs
+  care, for the same reason Project did — it has fields, and `visible`-not-`if`
+  is the treatment. Match had none, which is why it went first.
+- **When to revisit (the rest):** next time the right column is touched. The
+  `FoldHeader` component and the `Folds` struct are both in place, so each
+  remaining section is a header, a field and one arm in `wire_folds`.
+
+  The original report follows. The
   coach (2026-10-02): "i was trying to get some stuff put away a bit. after the
   events have been put in, i don't really need that to be in front any more ya
   know? that is why was asking about drawers and such" — and before it, "can we
@@ -2616,7 +2626,30 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** next, with #117 — an arrow's head should be sized off the
   stroke's own `line_width`, so it follows whichever width is chosen for free.
 
-117. **An arrow head at the end of a drawn line.** The coach (2026-10-02): "i
+117. **An arrow head at the end of a drawn line — RESOLVED, shipped
+  2026-10-02** in three parts (PRs #21, #25, #26). **Shift+drag** draws a
+  stroke that ends in a filled arrowhead. The geometry is
+  `core::stroke::arrow_head`, one pure function both drawers take their three
+  corners from — the live Slint layer and tiny-skia's burn-in — so the head the
+  coach draws over is the head the export writes;
+  `the_head_under_the_pen_is_the_head_that_gets_logged` pins exactly that.
+  `StrokeEnd { Plain, Arrow }` is a v14 field, `Plain` being what every v7–v13
+  stroke was.
+- **Three things worth keeping, because they are not obvious:** the direction
+  comes from a **distance walked back** along the path rather than the last two
+  points, which can be one logical pixel apart under `MIN_DISTANCE`; the head is
+  sized off the stroke's own `line_width`, so #116's thicker pen gets a bigger
+  head with nothing wired up; and `arrow_head` takes an **aspect**, because x is
+  normalized to frame width and y to height, so a direction read straight out of
+  that pair is skewed — at 16:9 by 1.78, which tilted every barb until it was
+  fixed.
+- **Not yet seen on screen, which is the only work left:**
+  `ARROW_HEAD_LENGTH_RATIO = 5.0` and `ARROW_HEAD_HALF_WIDTH_RATIO = 2.0` give a
+  27 px head at the default pen on 1080p, 54 px at the thick one, 43.6 degrees
+  included. Reasoned, not measured; retuning the head is those two constants and
+  nothing else.
+
+  The original report follows. The coach (2026-10-02): "i
   wonder if there is an easy way to put an arrow head at the end of the line i
   draw? maybe with some other click?" Pointing at where a player **should have
   gone** is most of what a coach's pen is for, and a bare line does not say which
