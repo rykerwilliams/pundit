@@ -19,7 +19,7 @@
 //! clock — the bus contract: a timestamp is captured at the input event, not
 //! when something downstream gets round to it.
 
-use pundit_core::layout::STROKE_LINE_WIDTH;
+use pundit_core::layout::{STROKE_LINE_WIDTH, STROKE_LINE_WIDTH_THICK};
 use pundit_core::stroke::{Rgba, Stroke, StrokePoint};
 use uuid::Uuid;
 
@@ -44,6 +44,48 @@ pub enum Pen {
     Blue,
     White,
     Pink,
+}
+
+/// How thick the pen draws (BACKLOG #116).
+///
+/// Two, because the coach asked for "current plus one thicker option" — so
+/// [`PenWidth::Normal`] is what every drawing before this was made at, and
+/// nothing already drawn changes: [`Stroke::line_width`] is per stroke and
+/// stored, so an export honours whatever each one was drawn at.
+///
+/// On [`Pen`]'s shape, down to the label round-trip, because they are the same
+/// kind of thing: a UI choice remembered machine-wide in `state.json`, read back
+/// by name so a value this build doesn't know reads as the default rather than
+/// costing the document.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum PenWidth {
+    #[default]
+    Normal,
+    Thick,
+}
+
+impl PenWidth {
+    /// In the control's order.
+    pub const ALL: [PenWidth; 2] = [PenWidth::Normal, PenWidth::Thick];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            PenWidth::Normal => "normal",
+            PenWidth::Thick => "thick",
+        }
+    }
+
+    pub fn from_label(label: &str) -> Option<PenWidth> {
+        PenWidth::ALL.into_iter().find(|w| w.label() == label)
+    }
+
+    /// The fraction of the picture's height to stroke at.
+    pub const fn fraction(self) -> f64 {
+        match self {
+            PenWidth::Normal => STROKE_LINE_WIDTH,
+            PenWidth::Thick => STROKE_LINE_WIDTH_THICK,
+        }
+    }
 }
 
 impl Pen {
@@ -104,6 +146,10 @@ pub struct InProgress {
     start_ns: u64,
     /// The pen's colour when it went down, which the whole stroke keeps.
     color: Rgba,
+    /// Its width when it went down, kept for the colour's reason: a stroke is
+    /// one gesture, so changing the pen mid-drag must not change what is
+    /// already drawn.
+    line_width: f64,
     /// `(x, y)` in content-rect logical pixels, `t` in seconds from
     /// `start_ns`. Never empty: the press is the first point.
     points: Vec<(f64, f64, f64)>,
@@ -111,11 +157,12 @@ pub struct InProgress {
 
 impl InProgress {
     /// The pen went down at `(x, y)`, which becomes the first point, at
-    /// `t = 0`, drawing in `color`.
-    pub fn start(start_ns: u64, x: f64, y: f64, color: Rgba) -> InProgress {
+    /// `t = 0`, drawing in `color` at `line_width`.
+    pub fn start(start_ns: u64, x: f64, y: f64, color: Rgba, line_width: f64) -> InProgress {
         InProgress {
             start_ns,
             color,
+            line_width,
             points: vec![(x, y, 0.0)],
         }
     }
@@ -173,7 +220,7 @@ impl InProgress {
         let stroke = Stroke {
             id: Uuid::new_v4(),
             color: self.color,
-            line_width: STROKE_LINE_WIDTH,
+            line_width: self.line_width,
             // macOS didn't clamp, so a drag past the edge drew into the
             // letterbox bars on export.
             points: self
@@ -243,7 +290,7 @@ mod tests {
 
     #[test]
     fn a_move_needs_both_the_time_and_the_distance() {
-        let mut ip = InProgress::start(0, 10.0, 10.0, Pen::default().color());
+        let mut ip = InProgress::start(0, 10.0, 10.0, Pen::default().color(), STROKE_LINE_WIDTH);
         assert!(!ip.moved(200.0, 10.0, S / 240)); // far enough, too soon
         assert!(!ip.moved(10.5, 10.0, S)); // long enough, too close
         assert_eq!(ip.points, vec![(10.0, 10.0, 0.0)]);
@@ -253,7 +300,7 @@ mod tests {
 
     #[test]
     fn a_rejected_move_doesnt_become_the_reference() {
-        let mut ip = InProgress::start(0, 10.0, 10.0, Pen::default().color());
+        let mut ip = InProgress::start(0, 10.0, 10.0, Pen::default().color(), STROKE_LINE_WIDTH);
         // Rejected on distance. Were it kept as the reference, the next move
         // would be measured from it and rejected too.
         ip.moved(10.5, 10.0, S);
@@ -263,7 +310,13 @@ mod tests {
 
     #[test]
     fn a_click_is_one_point_stamped_at_the_release() {
-        let ip = InProgress::start(7 * S, 250.0, 100.0, Pen::default().color());
+        let ip = InProgress::start(
+            7 * S,
+            250.0,
+            100.0,
+            Pen::default().color(),
+            STROKE_LINE_WIDTH,
+        );
         let (host_ns, stroke) = release(ip, 250.0, 100.0, 9 * S);
         assert_eq!(stroke.points.len(), 1);
         assert_eq!(stroke.points[0].t, 2.0);
@@ -274,7 +327,7 @@ mod tests {
 
     #[test]
     fn a_release_that_fails_the_distance_gate_still_moves_the_last_time() {
-        let mut ip = InProgress::start(0, 10.0, 10.0, Pen::default().color());
+        let mut ip = InProgress::start(0, 10.0, 10.0, Pen::default().color(), STROKE_LINE_WIDTH);
         ip.moved(500.0, 250.0, S);
         // Held still for five seconds before lifting: without this the
         // stroke would be stamped five seconds early and clear early on
@@ -288,7 +341,7 @@ mod tests {
 
     #[test]
     fn a_release_that_moved_far_enough_is_appended() {
-        let mut ip = InProgress::start(0, 10.0, 10.0, Pen::default().color());
+        let mut ip = InProgress::start(0, 10.0, 10.0, Pen::default().color(), STROKE_LINE_WIDTH);
         ip.moved(500.0, 250.0, S);
         let (host_ns, stroke) = release(ip, 800.0, 250.0, 2 * S);
         assert_eq!(stroke.points.len(), 3);
@@ -301,7 +354,13 @@ mod tests {
     #[test]
     fn the_pen_up_time_back_computes_the_press() {
         let start_ns = 1_234_567_891_011_u64;
-        let mut ip = InProgress::start(start_ns, 0.0, 0.0, Pen::default().color());
+        let mut ip = InProgress::start(
+            start_ns,
+            0.0,
+            0.0,
+            Pen::default().color(),
+            STROKE_LINE_WIDTH,
+        );
         ip.moved(400.0, 300.0, start_ns + S / 2);
         let (host_ns, stroke) = release(ip, 900.0, 300.0, start_ns + 3 * S);
         let last_t = stroke.points.last().unwrap().t;
@@ -312,7 +371,7 @@ mod tests {
     fn coordinates_are_clamped_to_the_content_rect() {
         // The pointer is grabbed on press, so a drag off the picture keeps
         // delivering moves; they draw along the edge.
-        let mut ip = InProgress::start(0, -40.0, -10.0, Pen::default().color());
+        let mut ip = InProgress::start(0, -40.0, -10.0, Pen::default().color(), STROKE_LINE_WIDTH);
         ip.moved(1400.0, 900.0, S);
         let (_, stroke) = release(ip, 1400.0, 900.0, 2 * S);
         assert_eq!((stroke.points[0].x, stroke.points[0].y), (0.0, 0.0));
@@ -321,7 +380,7 @@ mod tests {
 
     #[test]
     fn a_finished_stroke_carries_the_line_width_and_the_auto_clear() {
-        let ip = InProgress::start(0, 1.0, 1.0, Pen::default().color());
+        let ip = InProgress::start(0, 1.0, 1.0, Pen::default().color(), STROKE_LINE_WIDTH);
         let (_, stroke) = ip.release(1.0, 1.0, S, (1000.0, 500.0), Some(5.0));
         assert_eq!(stroke.line_width, STROKE_LINE_WIDTH);
         assert_eq!(stroke.auto_clear_after_seconds, Some(5.0));
@@ -333,13 +392,13 @@ mod tests {
     #[test]
     fn each_stroke_keeps_the_pen_it_was_started_with() {
         let (_, red) = release(
-            InProgress::start(0, 1.0, 1.0, Pen::Red.color()),
+            InProgress::start(0, 1.0, 1.0, Pen::Red.color(), STROKE_LINE_WIDTH),
             1.0,
             1.0,
             S,
         );
         let (_, yellow) = release(
-            InProgress::start(2 * S, 1.0, 1.0, Pen::Yellow.color()),
+            InProgress::start(2 * S, 1.0, 1.0, Pen::Yellow.color(), STROKE_LINE_WIDTH),
             1.0,
             1.0,
             3 * S,
@@ -424,7 +483,7 @@ mod tests {
             "M 400.00 200.00 L 400.00 200.00"
         );
         assert_eq!(
-            InProgress::start(0, 3.0, 4.0, Pen::default().color()).commands(),
+            InProgress::start(0, 3.0, 4.0, Pen::default().color(), STROKE_LINE_WIDTH).commands(),
             "M 3.00 4.00 L 3.00 4.00"
         );
     }

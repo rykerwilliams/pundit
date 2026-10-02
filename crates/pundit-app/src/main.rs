@@ -28,7 +28,7 @@ use pundit_app::bus::{
     Snapshot, Stage, TargetState, TranscriptionState, WindowSize,
 };
 use pundit_app::color_picker;
-use pundit_app::drawing::{path_commands, InProgress, Pen};
+use pundit_app::drawing::{path_commands, InProgress, Pen, PenWidth};
 use pundit_app::fit::{fit_window, Fit};
 use pundit_app::format::{finish_at, format_hms, format_hms_tenths, sentence};
 use pundit_app::highlight_view::{self, LiveHighlight as Ring};
@@ -41,7 +41,7 @@ use pundit_app::wheel::Wheel;
 use pundit_app::zoom_input::{self, DragPan, Viewport};
 use pundit_core::avatar;
 use pundit_core::highlight::{highlight_shapes, HighlightEdit};
-use pundit_core::layout::{self, avatar_self_view_rect, self_view_rect, STROKE_LINE_WIDTH};
+use pundit_core::layout::{self, avatar_self_view_rect, self_view_rect};
 use pundit_core::match_entry::{self, PendingMatchEvent};
 use pundit_core::metadata;
 use pundit_core::plan::{ExportTarget, ScoreboardMode};
@@ -175,6 +175,8 @@ struct UiState {
     drawing: Option<InProgress>,
     /// The pen a new stroke is drawn with, as `state.json` remembers it.
     pen: Pen,
+    /// How thick the next stroke is drawn (BACKLOG #116).
+    pen_width: PenWidth,
     /// The content rect the window's `live-paths` were built for: their
     /// commands are in its pixels, so a resize has to rebuild them.
     paths_rect: (f64, f64),
@@ -297,6 +299,7 @@ impl Default for UiState {
             live_strokes: Vec::new(),
             drawing: None,
             pen: Pen::default(),
+            pen_width: PenWidth::default(),
             paths_rect: (0.0, 0.0),
             highlight_rings: Vec::new(),
             shown_stream_time: None,
@@ -350,6 +353,7 @@ fn main() {
         Pen::ALL.map(|p| slint_color(p.color())).to_vec(),
     )));
     set_pen(&window, state.pen());
+    set_pen_width(&window, state.pen_width());
     // The size the window last closed at. Whether it was maximised isn't
     // kept: winit asks for that straight after mapping the window, before the
     // window manager has taken it on, and Cinnamon's drops the request. A
@@ -393,9 +397,6 @@ fn main() {
     let preview_position = bus.preview_position().clone();
     let bus = Rc::new(RefCell::new(bus));
     video::install(&window, bus.clone());
-    // The one pen width, from core: the live stroke layer and the highlight
-    // rings are drawn with it, and it never changes while the window is up.
-    window.set_stroke_line_width(STROKE_LINE_WIDTH as f32);
     let pickers = Pickers::default();
     wire_callbacks(&window, &bus, &pickers);
     wire_zoom(&window, &bus);
@@ -405,6 +406,7 @@ fn main() {
     wire_panels(&window, &machine_state);
     wire_new_match(&window, &bus, &machine_state, &pickers);
     wire_recents(&window, &bus, &machine_state);
+    wire_pen_width(&window, &machine_state);
 
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, TICK, {
@@ -2338,6 +2340,34 @@ fn wire_panels(window: &AppWindow, state: &AppFiles) {
     });
 }
 
+/// The pen's width (BACKLOG #116).
+///
+/// **Its own wiring because it needs the file handle, not the bus.** The width
+/// reaches a stroke through `InProgress::start` on this thread, so the bus has
+/// nothing to hold — unlike the pen, where `Command::SetPen` exists because the
+/// bus stores it for the recording's event log. So it is written here, through
+/// the UI thread's own `AppFiles`, exactly as the panel widths are.
+fn wire_pen_width(window: &AppWindow, state: &AppFiles) {
+    window.on_pick_pen_width({
+        let (weak, state) = (window.as_weak(), state.clone());
+        move |index| {
+            let (Some(w), Some(&width)) = (
+                weak.upgrade(),
+                usize::try_from(index)
+                    .ok()
+                    .and_then(|i| PenWidth::ALL.get(i)),
+            ) else {
+                return;
+            };
+            // **New strokes only**, as the swatch row is: every stroke on
+            // screen or in the log already carries its own `line_width`, which
+            // is what an export draws it at.
+            set_pen_width(&w, width);
+            state.set_pen_width(width);
+        }
+    });
+}
+
 /// The Recent popover (recents spec P1-P5, O1): the rows on open, and the
 /// folder a click carries back.
 fn wire_recents(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, state: &AppFiles) {
@@ -2399,7 +2429,8 @@ fn wire_drawing(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             let now_ns = now_ns();
             UI.with_borrow_mut(|ui| {
                 // The pen as it is now: the whole stroke keeps it.
-                let start = InProgress::start(now_ns, x, y, ui.pen.color());
+                let start =
+                    InProgress::start(now_ns, x, y, ui.pen.color(), ui.pen_width.fraction());
                 // A press already draws its dot.
                 w.set_drawing_ink(slint_color(ui.pen.color()));
                 w.set_drawing_path(start.commands().into());
@@ -2764,6 +2795,18 @@ fn set_pen(w: &AppWindow, pen: Pen) {
     UI.with_borrow_mut(|ui| ui.pen = pen);
     let index = Pen::ALL.iter().position(|&p| p == pen).unwrap_or(0);
     w.set_pen_index(index as i32);
+}
+
+/// The one place the pen's width changes (BACKLOG #116), on `set_pen`'s shape.
+///
+/// It writes `stroke-line-width` too, which is what the **live** layer draws
+/// the stroke under the pen at — so the line on screen is the line the stroke
+/// will be logged with, and the export will burn in.
+fn set_pen_width(w: &AppWindow, width: PenWidth) {
+    UI.with_borrow_mut(|ui| ui.pen_width = width);
+    let index = PenWidth::ALL.iter().position(|&p| p == width).unwrap_or(0);
+    w.set_pen_width_index(index as i32);
+    w.set_stroke_line_width(width.fraction() as f32);
 }
 
 /// A stored colour as Slint's.

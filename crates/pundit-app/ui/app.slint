@@ -3571,6 +3571,9 @@ export component AppWindow inherits Window {
     /// choice and remembers it across sessions.
     in property <[color]> pen-colors;
     in property <int> pen-index;
+    /// Which of the two pen widths is chosen (BACKLOG #116), an index into the
+    /// control's order. `int` for `pen-index`'s reason.
+    in property <int> pen-width-index;
 
     // --- Export (Phase 8 E8): the sheet is the only export UI ---
 
@@ -3979,6 +3982,9 @@ export component AppWindow inherits Window {
     callback clear-drawings();
     /// A swatch was clicked: draw with the pen at this index from now on.
     callback pick-pen(int);
+    /// A pen width was picked (BACKLOG #116), by index into the control's
+    /// order. It changes the next stroke, never one already drawn.
+    callback pick-pen-width(int);
     /// Drag-to-reorder payload: a row index of the named list ("sources" or
     /// "clips") to and from `data-transfer`; -1 when it's another list's.
     pure callback drag-payload(string, int) -> data-transfer;
@@ -5678,6 +5684,47 @@ export component AppWindow inherits Window {
                                         clicked => {
                                             keys.focus();
                                             root.pick-pen(index);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // How thick the pen draws (BACKLOG #116: "current plus
+                        // one thicker option"). Two dots at the widths
+                        // themselves rather than a label, because the choice is
+                        // about how a line looks — and on the swatch row's own
+                        // shape, since it is the same kind of pick.
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 0;
+
+                            HorizontalLayout {
+                                spacing: 4px;
+
+                                for dot[index] in [6px, 12px]: VerticalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: 22px;
+                                        height: 22px;
+                                        border-radius: self.width / 2;
+                                        border-width: 2px;
+                                        border-color: index == root.pen-width-index
+                                            ? Palette.foreground : transparent;
+
+                                        Rectangle {
+                                            width: dot;
+                                            height: dot;
+                                            border-radius: self.width / 2;
+                                            background: root.pen-colors[root.pen-index];
+                                            border-width: 1px;
+                                            border-color: #00000066;
+                                        }
+                                        TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => {
+                                                keys.focus();
+                                                root.pick-pen-width(index);
+                                            }
                                         }
                                     }
                                 }

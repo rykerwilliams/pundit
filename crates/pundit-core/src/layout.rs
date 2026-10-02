@@ -499,12 +499,31 @@ pub fn scoreboard_rects(out_w: f64, out_h: f64) -> ScoreboardRects {
     }
 }
 
-/// The pen's width, as a fraction of the picture's height — the **one** pen
-/// width. Every drawer takes it from here: the app's live stroke layer, the
+/// The pen's width, as a fraction of the picture's height — **the default of
+/// two** (BACKLOG #116), and still the only width a **ring** is ever stroked at.
+///
+/// Three drawers take it from here: the app's live stroke layer, the
 /// [`Stroke::line_width`](crate::stroke::Stroke::line_width) a new drawing is
 /// logged with, and a highlight's ring, which is stroked at the same weight so
 /// it reads like a drawn ellipse.
+///
+/// **A thicker pen does not thicken a ring, and that is forced rather than
+/// chosen.** `highlight_shapes` is called by the export and the preview, which
+/// burn the ring in and cannot see the coach's stored choice, and
+/// [`PlayerHighlight`](crate::highlight::PlayerHighlight) carries no width — so
+/// a chosen width here would make the live ring differ from the one the export
+/// burns in, which spec H6 forbids. A stroke has no such problem: it carries its
+/// own `line_width` and is stored, so an export honours whatever each drawing
+/// was made at.
 pub const STROKE_LINE_WIDTH: f64 = 0.005;
+
+/// The thicker pen (BACKLOG #116), twice [`STROKE_LINE_WIDTH`]: the coach asked
+/// for "current plus one thicker option", so today's width stays and this joins
+/// it. About 11 px at 1080p against the default's 5.4, which is the difference
+/// between a line read on a laptop and one read on a phone.
+///
+/// **Strokes only.** See [`STROKE_LINE_WIDTH`] for why a ring cannot follow.
+pub const STROKE_LINE_WIDTH_THICK: f64 = 0.01;
 
 /// A stroke's line width in pixels, from [`crate::stroke::Stroke::line_width`].
 ///

@@ -53,6 +53,14 @@ product call, or their own data.
   timeline, or the change moments) is the coach's call; built on P5/P6's
   detector and kit clustering (#81)
 
+### Considered and not doing
+
+Kept so the same ground is not dug twice; each says what would change the answer.
+
+- **118.** Tabs for several projects open at once — its cheap form is #85's
+  popover again, its fast form spends scarce decoders on instant switching
+  nobody has asked for, and the basket, #77 and #85 already cover the needs
+
 ### Open, but gated on something happening
 
 Each says in its own words what would make it worth doing: a coach reporting the
@@ -2592,3 +2600,48 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** after #116, and once the coach has said right-drag or
   Shift+drag. A spec is worth writing for this one — it touches the format, both
   drawers and the input map.
+
+118. **Tabs, to have several projects open at once — CONSIDERED AND NOT DOING**
+  (2026-10-02). The coach, thinking about #113's folding panels: "what about
+  using tabs to have multiple projects open? would that impact resources? is
+  that dumb?" Not dumb, and the answer is written down here so it is not
+  re-litigated from scratch.
+- **The resource cost is decoders, not memory.** A project is a `project.json`
+  and some metadata; what costs is the **player pipeline** — `decodebin3`, a
+  hardware decoder, a DMABuf pool and GL textures. This codebase already treats
+  those as scarce on purpose: the basket's export holds **at most two** decoders
+  open and drops each as soon as no entry still reads it, because freeing a
+  DMABuf pool while a probe holds it is a hazard CI's llvmpipe never shows. N
+  live tabs means N VA-API decode sessions, which are finite.
+- **But the deciding argument is that there are only two buildable versions, and
+  neither pays:**
+  - **One pipeline, reload on tab switch.** That is exactly what switching a
+    project already does, so a tab buys a persistent row instead of a dropdown —
+    the recents popover (#85) in a different shape, at the price of per-tab undo
+    history and per-tab trash lifetime.
+  - **N pipelines live, so switching is instant.** Now N decoders are paid for
+    the one thing the cheap version lacks.
+- **So the question reduces to "does a project switch feel slow?", which is
+  measurable and has not been measured.** If it is already quick, tabs buy
+  nothing; if it is slow, the fix is to make the *switch* faster, not to keep two
+  projects warm. **That measurement is the only thing that would change this
+  answer.**
+- **The harder cost is correctness, not resources.** `Bus.open` is
+  `Option<Open>` — exactly one — and `commit` clears `self.history` and empties
+  the trash of **both** folders on every switch, deliberately, because undo is
+  in-memory so the trash it held becomes unreachable. Two open projects means
+  per-tab history, per-tab trash lifetime, and an answer to "what does Undo do
+  after a tab switch?" That is real design, and it is the same ground #111 is
+  on.
+- **The needs tabs would serve are already served three other ways**, which is
+  the strongest reason not to add a fourth: the **basket** (#86) spans matches to
+  cut one film from several, **#77** is an export queue across projects, and
+  **#85**'s popover switches between them. 
+- **Why not doing:** it is a fourth answer to needs three shipped features
+  already cover, its cheap form is the popover again, and its expensive form
+  spends scarce decoders on instant switching nobody has shown is wanted.
+- **When to revisit:** if a project switch is measured as slow enough to
+  interrupt the coach, or if a workflow turns up that genuinely needs two
+  projects *live* at once rather than reachable in one click — comparing two
+  matches side by side would be that, and would be a different feature (two
+  pictures, not two tabs).
