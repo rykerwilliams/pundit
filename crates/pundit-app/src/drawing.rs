@@ -20,7 +20,7 @@
 //! when something downstream gets round to it.
 
 use pundit_core::layout::{STROKE_LINE_WIDTH, STROKE_LINE_WIDTH_THICK};
-use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
+use pundit_core::stroke::{arrow_head, Rgba, Stroke, StrokeEnd, StrokePoint};
 use uuid::Uuid;
 
 /// A point is kept only once this long has passed since the last kept one.
@@ -201,6 +201,32 @@ impl InProgress {
         commands(self.points.iter().map(|&(x, y, _)| (x, y)))
     }
 
+    /// The arrowhead for the part drawn so far, in content-rect pixels, or
+    /// empty where this stroke has no head or no direction yet (BACKLOG #117).
+    ///
+    /// **A rect IS needed here, unlike [`Self::commands`]**, because
+    /// `core::stroke::arrow_head` works in normalized coordinates — the buffer
+    /// is in pixels, so it has to go there and come back. Worth the trip: the
+    /// head under the pen is then the same three corners the logged stroke and
+    /// the export will draw, rather than a second piece of arithmetic that
+    /// agrees today.
+    pub fn arrow(&self, rect: (f64, f64)) -> String {
+        let (w, h) = rect;
+        if self.end != StrokeEnd::Arrow || w <= 0.0 || h <= 0.0 {
+            return String::new();
+        }
+        let points: Vec<StrokePoint> = self
+            .points
+            .iter()
+            .map(|&(x, y, t)| StrokePoint {
+                x: (x / w).clamp(0.0, 1.0),
+                y: (y / h).clamp(0.0, 1.0),
+                t,
+            })
+            .collect();
+        arrow_commands(&points, self.line_width, self.end, w, h)
+    }
+
     /// The pen came up at `(x, y)`: the finished stroke, and the moment of
     /// its last point on `now_ns()`'s clock, which is what
     /// `Command::Stroke`'s `host_ns` must be — `visible_strokes` back-computes
@@ -268,6 +294,44 @@ pub fn path_commands(points: &[StrokePoint], w: f64, h: f64) -> String {
     commands(points.iter().map(|p| (p.x * w, p.y * h)))
 }
 
+/// The arrowhead's path commands, in the same content-rect pixels
+/// [`path_commands`] produces — empty when the stroke has no head, or has one
+/// with no direction (BACKLOG #117).
+///
+/// **The triangle comes from `core::stroke::arrow_head` and is not computed
+/// here.** The export's overlay draws the same three corners from the same
+/// function, which is the whole point: two hand-written arrowheads would drift,
+/// and the coach would see one thing while recording and another in the export.
+/// This only turns them into the string Slint parses.
+///
+/// `aspect` is the content rect's, which `arrow_head` needs because x is
+/// normalized to width and y to height — a direction read straight out of that
+/// pair is skewed, and at 16:9 by 1.78.
+pub fn arrow_commands(
+    points: &[StrokePoint],
+    line_width: f64,
+    end: StrokeEnd,
+    w: f64,
+    h: f64,
+) -> String {
+    if end != StrokeEnd::Arrow || h <= 0.0 {
+        return String::new();
+    }
+    match arrow_head(points, line_width, w / h) {
+        Some(corners) => {
+            let mut out = String::new();
+            for (i, (x, y)) in corners.iter().enumerate() {
+                let cmd = if i == 0 { 'M' } else { 'L' };
+                out.push_str(&format!("{cmd} {} {} ", x * w, y * h));
+            }
+            // Closed, so it fills as a triangle rather than an open corner.
+            out.push('Z');
+            out
+        }
+        None => String::new(),
+    }
+}
+
 /// `M` to the first point, `L` to the rest. A single point becomes the
 /// degenerate `M x y L x y`, which a round cap rasterizes as a dot; a bare
 /// `M x y` draws nothing at all.
@@ -296,6 +360,101 @@ mod tests {
     use super::*;
 
     const S: u64 = 1_000_000_000;
+
+    /// **The live head and the logged head are the same three corners.** This
+    /// is the property the whole design exists for: the coach must not see one
+    /// arrowhead while recording and another in the export.
+    ///
+    /// It compares the string the in-progress buffer hands Slint against the
+    /// string built from the *released* stroke — the one the bus logs and the
+    /// export's overlay draws from. They go through different code (one
+    /// normalizes out of pixels, the other is already normalized) and must land
+    /// on the same numbers.
+    #[test]
+    fn the_head_under_the_pen_is_the_head_that_gets_logged() {
+        let rect = (1600.0, 900.0);
+        let mut ip = InProgress::start(
+            0,
+            100.0,
+            500.0,
+            Pen::default().color(),
+            STROKE_LINE_WIDTH,
+            StrokeEnd::Arrow,
+        );
+        for (i, x) in [300.0, 500.0, 700.0].into_iter().enumerate() {
+            assert!(ip.moved(x, 500.0, (i as u64 + 1) * S / 4));
+        }
+        let live = ip.arrow(rect);
+        assert!(!live.is_empty(), "a drawn arrow has a head");
+
+        let (_, stroke) = ip.release(700.0, 500.0, S, rect, None);
+        let logged = arrow_commands(
+            &stroke.points,
+            stroke.line_width,
+            stroke.end,
+            rect.0,
+            rect.1,
+        );
+        assert_eq!(live, logged, "the live head and the logged head must agree");
+    }
+
+    /// Shift makes the arrow and nothing else does: the same gesture without it
+    /// logs a plain line and draws no head.
+    #[test]
+    fn without_the_arrow_end_there_is_no_head() {
+        let rect = (1600.0, 900.0);
+        let mut ip = InProgress::start(
+            0,
+            100.0,
+            500.0,
+            Pen::default().color(),
+            STROKE_LINE_WIDTH,
+            StrokeEnd::Plain,
+        );
+        assert!(ip.moved(700.0, 500.0, S / 2));
+        assert_eq!(ip.arrow(rect), "");
+
+        let (_, stroke) = ip.release(700.0, 500.0, S, rect, None);
+        assert_eq!(stroke.end, StrokeEnd::Plain);
+        assert_eq!(
+            arrow_commands(
+                &stroke.points,
+                stroke.line_width,
+                stroke.end,
+                rect.0,
+                rect.1
+            ),
+            ""
+        );
+    }
+
+    /// A click carries no direction, so a Shift-click draws no head rather than
+    /// a triangle of `NaN`s.
+    #[test]
+    fn a_shift_click_has_no_head() {
+        let rect = (1600.0, 900.0);
+        let ip = InProgress::start(
+            0,
+            100.0,
+            500.0,
+            Pen::default().color(),
+            STROKE_LINE_WIDTH,
+            StrokeEnd::Arrow,
+        );
+        assert_eq!(ip.arrow(rect), "");
+        let (_, stroke) = ip.release(100.0, 500.0, S, rect, None);
+        assert_eq!(stroke.points.len(), 1);
+        assert_eq!(
+            arrow_commands(
+                &stroke.points,
+                stroke.line_width,
+                stroke.end,
+                rect.0,
+                rect.1
+            ),
+            ""
+        );
+    }
 
     /// A 1000 × 500 content rect, and no auto-clear unless a test asks.
     fn release(ip: InProgress, x: f64, y: f64, now_ns: u64) -> (u64, Stroke) {

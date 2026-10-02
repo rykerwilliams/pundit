@@ -1564,6 +1564,10 @@ component HighlightsPanel inherits VerticalLayout {
 export struct LiveStroke {
     commands: string,
     ink: color,
+    /// The arrowhead's closed triangle, empty when the stroke has none
+    /// (BACKLOG #117). Built in Rust from `core::stroke::arrow_head` — the same
+    /// function the export's overlay draws from, so the two cannot drift.
+    arrow: string,
 }
 
 /// One player highlight on the live picture (spec H5), as
@@ -1602,6 +1606,9 @@ component StrokePass inherits Path {
 /// the edge's rim shows. The caller sets `commands` and `ink`.
 component StrokePath inherits Rectangle {
     in property <string> commands;
+    /// The arrowhead's closed triangle; empty draws nothing, so it needs no
+    /// `if` (BACKLOG #117).
+    in property <string> arrow;
     in property <color> ink;
     /// `core::layout::STROKE_LINE_WIDTH`, a fraction of the picture's height:
     /// the one pen width, handed in from Rust rather than written here, so a
@@ -1622,6 +1629,20 @@ component StrokePath inherits Rectangle {
         commands: root.commands;
         stroke: root.ink;
         stroke-width: root.height * root.line-width;
+    }
+    // The head is **filled**, where the line is stroked, so it cannot reuse
+    // `StrokePass`. One element rather than two passes: Slint fills before it
+    // strokes, so the dark outline lands over the fill's own edge and the rim
+    // that shows outside is half the stroke — a quarter of a line, which is the
+    // overlay's `STROKE_EDGE_RATIO` and the same rim the line carries.
+    Path {
+        commands: root.arrow;
+        width: 100%;
+        height: 100%;
+        fit: preserve;
+        fill: root.ink;
+        stroke: #000000cc;
+        stroke-width: root.height * root.line-width * 0.5;
     }
 }
 
@@ -3644,6 +3665,9 @@ export component AppWindow inherits Window {
     in property <bool> highlight-key-here;
     /// The stroke under the pen, likewise; empty when nothing is being drawn.
     in property <string> drawing-path;
+    /// The arrowhead under the pen, so a Shift-drag shows its head as it is
+    /// drawn rather than only once it is logged (BACKLOG #117).
+    in property <string> drawing-arrow;
     /// ... and its colour, the pen's when it went down.
     in property <color> drawing-ink;
     /// The pens' colours, in the swatch row's order (`drawing::Pen::ALL`),
@@ -5130,6 +5154,7 @@ export component AppWindow inherits Window {
                             }
                             for stroke in root.live-paths: StrokePath {
                                 commands: stroke.commands;
+                                arrow: stroke.arrow;
                                 ink: stroke.ink;
                                 line-width: root.stroke-line-width;
                             }
@@ -5137,6 +5162,7 @@ export component AppWindow inherits Window {
                             // nothing, so it needs no `if`.
                             StrokePath {
                                 commands: root.drawing-path;
+                                arrow: root.drawing-arrow;
                                 ink: root.drawing-ink;
                                 line-width: root.stroke-line-width;
                             }
