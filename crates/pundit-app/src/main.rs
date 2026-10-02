@@ -28,7 +28,7 @@ use pundit_app::bus::{
     RecordingStatus, Snapshot, Stage, TargetState, TranscriptionState, WindowSize,
 };
 use pundit_app::color_picker;
-use pundit_app::drawing::{path_commands, InProgress, Pen, PenWidth};
+use pundit_app::drawing::{arrow_commands, path_commands, InProgress, Pen, PenWidth};
 use pundit_app::fit::{fit_window, Fit};
 use pundit_app::format::{finish_at, format_hms, format_hms_tenths, sentence};
 use pundit_app::highlight_view::{self, LiveHighlight as Ring};
@@ -2488,6 +2488,9 @@ fn wire_drawing(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
                 // A press already draws its dot.
                 w.set_drawing_ink(slint_color(ui.pen.color()));
                 w.set_drawing_path(start.commands().into());
+                // One point has no direction, so this is empty on the press
+                // and fills in as the drag acquires one.
+                w.set_drawing_arrow(SharedString::new());
                 ui.drawing = Some(start);
             });
         }
@@ -2501,12 +2504,17 @@ fn wire_drawing(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             let now_ns = now_ns();
             // Only when the point was kept: Slint re-parses the path and
             // rebuilds it in Skia on every set.
-            let commands = UI.with_borrow_mut(|ui| {
+            // The head follows the pen, so it is rebuilt with the path and on
+            // the same kept-point gate — Slint re-parses whatever it is given.
+            let rect = content_size(&w);
+            let drawn = UI.with_borrow_mut(|ui| {
                 let ip = ui.drawing.as_mut()?;
-                ip.moved(x, y, now_ns).then(|| ip.commands())
+                ip.moved(x, y, now_ns)
+                    .then(|| (ip.commands(), rect.map(|r| ip.arrow(r)).unwrap_or_default()))
             });
-            if let Some(commands) = commands {
+            if let Some((commands, arrow)) = drawn {
                 w.set_drawing_path(commands.into());
+                w.set_drawing_arrow(arrow.into());
             }
         }
     });
@@ -2519,6 +2527,7 @@ fn wire_drawing(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             let now_ns = now_ns();
             let auto = w.get_auto_clear().then_some(AUTO_CLEAR);
             w.set_drawing_path(SharedString::new());
+            w.set_drawing_arrow(SharedString::new());
             // Without a content rect there's nothing to normalize against;
             // the stroke is dropped rather than stored wrong. The player has
             // one whenever a press could reach the drawing area.
@@ -2541,6 +2550,7 @@ fn wire_drawing(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
         move || {
             let Some(w) = weak.upgrade() else { return };
             w.set_drawing_path(SharedString::new());
+            w.set_drawing_arrow(SharedString::new());
             UI.with_borrow_mut(|ui| ui.drawing = None);
         }
     });
@@ -2765,6 +2775,7 @@ fn selected_highlight(w: &AppWindow) -> Option<Uuid> {
 /// whether anything was there to wipe.
 fn clear_drawings(w: &AppWindow) -> bool {
     w.set_drawing_path(SharedString::new());
+    w.set_drawing_arrow(SharedString::new());
     w.set_live_paths(ModelRc::default());
     UI.with_borrow_mut(|ui| {
         let had_any = !ui.live_strokes.is_empty() || ui.drawing.is_some();
@@ -2784,6 +2795,7 @@ fn show_strokes(w: &AppWindow, ui: &mut UiState, rect: (f64, f64)) {
         .iter()
         .map(|(s, _)| LiveStroke {
             commands: path_commands(&s.points, rect.0, rect.1).into(),
+            arrow: arrow_commands(&s.points, s.line_width, s.end, rect.0, rect.1).into(),
             ink: slint_color(s.color),
         })
         .collect();

@@ -51,7 +51,7 @@ use pundit_core::layout::{
 };
 use pundit_core::project::Clip;
 use pundit_core::scoreboard::{format_clock, ScoreboardConfig, ScoreboardState};
-use pundit_core::stroke::Rgba;
+use pundit_core::stroke::{arrow_head, Rgba, StrokeEnd};
 use pundit_core::stroke_replay::visible_strokes;
 use tiny_skia::{
     Color, FillRule, LineCap, LineJoin, Mask, Paint, PathBuilder, PixmapMut, Rect, Transform,
@@ -966,7 +966,80 @@ fn draw_strokes(pixmap: &mut PixmapMut, frame: &OverlayFrame) {
         // line: a later stroke crossing an earlier one is outlined over it,
         // as a pen on a pen would be.
         stroke_with_edge(pixmap, &path, stroke.color, width, None);
+
+        // The arrowhead, after its own line so it sits over the end of it
+        // (BACKLOG #117). **The corners come from `core::stroke::arrow_head`,
+        // the same function the live Slint layer draws from** — the coach must
+        // not see one head while recording and another in the export, which is
+        // why the geometry is in core and neither drawer does its own.
+        //
+        // It is the **drawn** points, not the whole stroke: mid-replay a stroke
+        // is still being laid down, and a head at its eventual end would point
+        // somewhere the line has not reached.
+        if stroke.end == StrokeEnd::Arrow {
+            let drawn = &stroke.points[..visible.drawn_point_count];
+            if let Some(corners) = arrow_head(drawn, stroke.line_width, w / h) {
+                let mut head = PathBuilder::new();
+                let (hx, hy) = (
+                    (x0 + corners[0].0 * w) as f32,
+                    (y0 + corners[0].1 * h) as f32,
+                );
+                head.move_to(hx, hy);
+                for (cx, cy) in &corners[1..] {
+                    head.line_to((x0 + cx * w) as f32, (y0 + cy * h) as f32);
+                }
+                head.close();
+                if let Some(head) = head.finish() {
+                    fill_with_edge(pixmap, &head, stroke.color, width, None);
+                }
+            }
+        }
     }
+}
+
+/// Fills `path` in `color` on the same thin dark rim [`stroke_with_edge`] gives
+/// a line, for a shape that is filled rather than stroked — the arrowhead.
+///
+/// **Not `stroke_with_edge`**, which draws a line *along* a path: run on a
+/// closed triangle it would outline a hollow one. The rim here is a dark stroke
+/// of `2 x STROKE_EDGE_RATIO` centred on the outline, so half of it —
+/// `STROKE_EDGE_RATIO`, a quarter of a line — shows outside, which is exactly
+/// the rim a line carries. The fill goes on top, covering the inner half.
+///
+/// Translucent ink skips the rim, for `stroke_with_edge`'s reason: a dark edge
+/// under a see-through colour reads as a dirty outline rather than a soft one.
+fn fill_with_edge(
+    pixmap: &mut PixmapMut,
+    path: &tiny_skia::Path,
+    color: Rgba,
+    width: f64,
+    mask: Option<&Mask>,
+) {
+    let Some(ink) = Color::from_rgba(
+        color.r as f32,
+        color.g as f32,
+        color.b as f32,
+        color.a as f32,
+    ) else {
+        return;
+    };
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Paint::default()
+    };
+    if color.a >= 1.0 {
+        paint
+            .set_color(Color::from_rgba(0.0, 0.0, 0.0, STROKE_EDGE_ALPHA).expect("a valid colour"));
+        let pen = tiny_skia::Stroke {
+            width: (width * 2.0 * STROKE_EDGE_RATIO) as f32,
+            line_cap: LineCap::Round,
+            line_join: LineJoin::Round,
+            ..tiny_skia::Stroke::default()
+        };
+        pixmap.stroke_path(path, &paint, &pen, Transform::identity(), mask);
+    }
+    paint.set_color(ink);
+    pixmap.fill_path(path, &paint, FillRule::Winding, Transform::identity(), mask);
 }
 
 /// Strokes `path` in `color`, `width` px wide, on the thin dark edge
