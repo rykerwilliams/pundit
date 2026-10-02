@@ -2771,6 +2771,16 @@ fn slint_color(c: Rgba) -> slint::Color {
     slint::Color::from_argb_f32(c.a as f32, c.r as f32, c.g as f32, c.b as f32)
 }
 
+/// Whether `$PUNDIT_BOARD_DEBUG` is set, read once.
+///
+/// Transitional, for BACKLOG #110 — it goes with the fix, and the entry says
+/// so. An env var rather than a build flag because the coach runs a release
+/// build, and the one thing needed is a line from a real take.
+fn board_debug() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("PUNDIT_BOARD_DEBUG").is_some())
+}
+
 /// The content rect's size, as the window lays it out: the letterboxed
 /// picture at 1×, which the drawing area is sized to and strokes are
 /// normalized against. `None` before the first layout, or with nothing
@@ -3758,6 +3768,30 @@ fn tick(w: &AppWindow, position: &PositionHandle, preview: &PreviewPosition) {
             }
             _ => None,
         };
+        // **Why the board is or is not on screen** (BACKLOG #110: the coach
+        // sees the clock while watching and not during a take). Logged only
+        // when it appears or disappears, and only under
+        // `$PUNDIT_BOARD_DEBUG`, so one take yields a handful of lines that
+        // name the input which went missing. Static reading has not found it:
+        // nothing on the recording path touches these four, and the `Image`
+        // is gated on `previewing` alone.
+        if board_debug() && board.is_some() != ui.board_key.is_some() {
+            let state = match (shown, &ui.scoreboard) {
+                (Some((i, secs)), Some(sb)) => sb.state_at(i, secs).is_some(),
+                _ => false,
+            };
+            eprintln!(
+                "board: {} — shown {:?}, content {:?}, scoreboard {}, \
+                 state_at {}, scrubbing {}, phase {:?}",
+                if board.is_some() { "SHOWN" } else { "GONE" },
+                shown,
+                content,
+                ui.scoreboard.is_some(),
+                state,
+                w.get_scrubbing(),
+                w.get_recording_phase(),
+            );
+        }
         if ui.board_key != board {
             show_board(w, ui, board);
         }

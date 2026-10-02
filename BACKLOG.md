@@ -34,7 +34,8 @@ made things worse.
 - **114.** Shooting a slate doesn't stop at its out point — pause the footage
   there and keep recording is the likely shape; the coach picks
 - **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
-  clip, sticky for the next recording, as #88's inset size and corner are (v14)
+  clip, sticky for the next recording, as #88's inset size and corner are (v14).
+  **Three states, not two:** off, whole entry, or the first few seconds
 - **113.** Fold panels away once they've done their job — a collapsible header
   per section (Match, Project, Sources first), folded state in `state.json`;
   folds, not tabs
@@ -2349,6 +2350,31 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   - **App-wide, with #78's settings** — "the things an export writes", which is
     exactly what #78 is; cheapest to store, least discoverable until #78 has a
     screen.
+- **And a third state, asked for the same day: "show title for the first 3
+  seconds or first `d` seconds".** So the switch is **not a bool** — it is
+  *off*, *for the whole entry*, or *for the first few seconds*, which is the
+  single most useful of the three on a reel or a long clip: the viewer gets told
+  what they are watching and then the picture is clear.
+  - **It makes the field an enum, not an `Option<bool>`**, and that changes
+    CLAUDE.md's format advice for it: a `CaptionBar` enum whose `Default` is
+    "whole entry" is exactly what every v7–v13 clip means, so it takes a
+    field-level `#[serde(default)]` for the reason `Clip::inset` defaults to
+    `Camera` — the rule is "any type whose `Default` is what an older file
+    means", not "`Option` only".
+  - **The duration wants to be one number, not per clip.** A seconds value on
+    every clip is a field the coach would set once; the shape to copy is the
+    sticky preference below — the *mode* per clip, the *seconds* as one
+    preference (3 s is the coach's own figure and a good default).
+  - **It is a change in `media`, not just a flag.** `layout::bar_rect` is
+    geometry and is per frame already, but nothing in the overlay knows about
+    *time*: the bar is drawn for every frame of an entry. A timed bar needs the
+    entry's own elapsed time at the draw, which the overlay has (the PTS-keyed
+    probe carries it), so this is reachable — but it is the one part of this
+    entry that is not a copy of something already shipped. **Fade or hard cut**
+    is a question for the coach; a hard cut is honest and cheaper, a fade is
+    what a broadcast would do.
+  - **The preview must agree**, as below: one composite draws it, so a timed bar
+    is timed in both or the preview stops being the export.
 - **The coach answered (same day): "per clip or in general"** — not the export
   sheet. That is exactly the shape #88 shipped for the inset's size and corner,
   and it should be copied, not reinvented:
@@ -2532,20 +2558,34 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   two can be split into separate constants if the coach wants only one changed.
   The live layer and the export take the same value, so the two agree by
   construction and no drawer needs touching.
-- **The open question is whether this is one number or a choice.** Three shapes,
-  cheapest first: (a) raise the constant, one line, and the coach never thinks
-  about it again; (b) a width picker beside the pen swatches, remembered in
-  `state.json` like the pen is (machine-wide, still no format change, and
-  `Pen::from_label`'s pattern for reading an unknown value back as the default);
-  (c) pressure or speed sensitivity, which is a different feature and is not
-  being proposed. **(a) is the one to try first** — the coach said "a bit skinny",
-  not "I want to choose".
-- **Why deferred:** needs a number from the coach, not a guess. The way to get it
-  is to draw on real footage at two or three widths and pick, which is a
-  hands-on check rather than a code change. Worth pairing with #117, since an
-  arrow's head should be sized off whatever width is settled on.
-- **When to revisit:** with the next hands-on pass, or immediately if the coach
-  names a width. Try doubling it (0.01, ~11 px at 1080p) as the first candidate.
+- **ANSWERED by the coach (2026-10-02): "current plus one thicker option?"** So
+  it is a **choice of two**, not a new constant — today's width stays available
+  and a thicker one joins it. That settles the shape: a two-value picker beside
+  the pen swatches, remembered in `state.json` like the pen is (machine-wide,
+  still no format change), read back through `Pen::from_label`'s pattern so an
+  unknown stored value reads as the default rather than costing the document.
+  Pressure or speed sensitivity is a different feature and is not proposed.
+- **Highlight rings must NOT follow the chosen width, and this is settled rather
+  than open.** It looked like a judgement call — the ring is stroked at the pen's
+  weight "so it reads like a drawn ellipse", which argues for following — but
+  following is not implementable without a format change: `highlight_shapes` is
+  called by `composite/export.rs` and `composite/preview.rs`, which burn the ring
+  in and have no access to `state.json`, and `PlayerHighlight` stores no width.
+  So a chosen width would make the live ring differ from the one the export
+  burns in, which is exactly what spec H6 forbids. Making them agree would mean
+  **storing the width on the highlight**, as its colour already is and for the
+  same reason that doc gives ("a project must draw the same ring on a build whose
+  swatches differ") — a v14 field for a thing nobody asked for.
+- **So this is a stroke-only choice, and that is why it stays cheap.** `Stroke`
+  carries its own `line_width` and is stored, so an export honours whatever each
+  stroke was drawn at with no new machinery. Rings keep
+  `layout::STROKE_LINE_WIDTH`, which is still a pen width — the default one.
+- **Why deferred:** nothing is blocked; the shape is now settled and the only
+  unknown is the thicker number itself, which wants an eye on real footage.
+  0.01 (~11 px at 1080p, double today's) is the candidate to put in front of the
+  coach first.
+- **When to revisit:** next, with #117 — an arrow's head should be sized off the
+  stroke's own `line_width`, so it follows whichever width is chosen for free.
 
 117. **An arrow head at the end of a drawn line.** The coach (2026-10-02): "i
   wonder if there is an easy way to put an arrow head at the end of the line i
