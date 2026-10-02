@@ -85,6 +85,17 @@ impl Bus {
     /// editable projects-folder field with its provenance line is the answer,
     /// and the spec's Risk 3 says so.
     pub(super) fn restore_last_project(&mut self) {
+        // **Guarded for `open_project`'s reason, not for a reason of its own.**
+        // An earlier version left this alone, on the stated grounds that it
+        // "runs at launch with nothing running" — which is false twice over:
+        // it is a public `Command` with no gate, and `clips.rs`'s
+        // `opening_empties_the_trash_and_the_history` already sends it
+        // mid-session. It is not reachable from the UI today, so this costs
+        // nothing behaviourally; it is here so the next caller does not inherit
+        // the one door of two that was left open.
+        if let Err(e) = self.refuse_if_busy() {
+            return self.emit(Event::Error(e));
+        }
         let Some(folder) = self.files.last_project() else {
             return;
         };

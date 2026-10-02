@@ -34,11 +34,19 @@ New match plan and repeated without re-deriving.
 
 ## Where this stands (update it as tasks land)
 
-- **T1 — `state.json` reads per field (BACKLOG #100).** Not started.
-- **T2 — `recents::rows`.** Not started.
-- **T3 — the list, the restore, and `open_project`'s busy guard.** Not started.
-- **T4 — the popover and the button.** Not started.
-- **T5 — close out.** Not started.
+- **T1 — `state.json` reads per field (BACKLOG #100).** Done, PR #11.
+- **T2 — `recents::rows`.** Done, PR #12.
+- **T3 — the list, the restore, and `open_project`'s busy guard.** Done, PR #13.
+- **T4 — the popover and the button.** Done, PR #14.
+- **T5 — close out.** Done, PR #15. **Three of this plan's own instructions did
+  not survive contact** and are recorded here so the next plan is written
+  differently: sabotage proof 1 named a field T3 adds, so it could not run in T1
+  (the T1-shaped equivalent was run instead, and proof 1 ran at T3); trap 4's
+  prescription — the ticked row's `TouchArea` *and* its hover background each
+  `if !ticked` — does not compile, because the `if` takes the `touch` id out of
+  scope, and `enabled: !ticked` does both jobs in one property; and T4's own
+  layout-safety citations were two passes that do not apply to a
+  `HorizontalLayout`, which the shipped-code review caught.
 
 ---
 

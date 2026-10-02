@@ -24,6 +24,18 @@ use crate::drawing::Pen;
 
 /// The app's own directory under whichever XDG base directory is in play.
 pub(super) const APP_DIR: &str = "pundit";
+
+/// How many projects are remembered (recents spec S3).
+///
+/// Eight, which is an estimate rather than a measurement: a popover row is two
+/// lines, so eight stand about 320px over the player. The coach has three
+/// projects and a season has twenty-odd, and a list you scroll is a picker —
+/// which they already have.
+///
+/// It lives here, with [`AppFiles::push_recent_project`] and [`AppFiles::read`],
+/// because those two are what enforce it. The popover only displays what it is
+/// handed.
+pub const RECENT_PROJECTS: usize = 8;
 const FILE: &str = "state.json";
 
 /// **Every field defaults**, and a file written by a later version keeps the
@@ -54,9 +66,14 @@ struct State {
     /// merely intended: [`AppFiles::save`] re-serialises the whole `State`, so
     /// without it every setter would rewrite `lastProject` at its pre-upgrade
     /// value forever. With it the key self-cleans out of the file on the first
-    /// save. **The named cost:** a downgrade to a build predating this one,
-    /// after any save, gets no restore at launch — one folder-pick, which is
-    /// what this file's header already prices it at.
+    /// save. **The named cost, traced rather than guessed:** a build predating
+    /// this one has no `recent_projects` field, so its first setter rewrites the
+    /// document and drops the **whole list**, not just the head — and since
+    /// `lastProject` is already gone by then, a downgrade that only changes a
+    /// pen leaves neither key. So the cost of a downgrade after any save is the
+    /// list, permanently, and a re-pick of the project to restore. Nothing else
+    /// is unrecoverable, and this file's header already prices a lost field at a
+    /// re-open and a re-pick.
     ///
     /// Dated on `adopt_old_name`'s pattern: BACKLOG #109 deletes it once no
     /// installation predating this version is left to upgrade.
@@ -249,7 +266,7 @@ impl AppFiles {
     }
 
     /// Puts `folder` at the head of the list, removing it from wherever else it
-    /// was and dropping the oldest beyond [`crate::recents::RECENT_PROJECTS`].
+    /// was and dropping the oldest beyond [`RECENT_PROJECTS`].
     ///
     /// **This is the only writer**, which is why `set_last_project` was deleted
     /// rather than left with no callers: a second way to write one field, and
@@ -267,9 +284,7 @@ impl AppFiles {
         let mut state = self.read();
         state.recent_projects.retain(|p| p != folder);
         state.recent_projects.insert(0, folder.to_path_buf());
-        state
-            .recent_projects
-            .truncate(crate::recents::RECENT_PROJECTS);
+        state.recent_projects.truncate(RECENT_PROJECTS);
         self.save(&state);
     }
 
@@ -373,8 +388,17 @@ impl AppFiles {
         // lose the pointer for a document holding a good `lastProject` beside a
         // bad list: BACKLOG #100's symptom, reintroduced by its own fix.
         if state.recent_projects.is_empty() {
-            state.recent_projects = state.last_project.clone().into_iter().collect();
+            // `take`, not `clone`: read once is exactly what this field is for.
+            state.recent_projects = state.last_project.take().into_iter().collect();
         }
+        // **Bounded on the way in as well as on the way out.** The cap used to
+        // be `push_recent_project`'s alone, so a hand-edited or
+        // downgrade-written file holding two hundred entries would have had all
+        // two hundred read — two hundred `store::read`s on the UI thread when
+        // the popover opened, against a budget of seven — and lowering
+        // `RECENT_PROJECTS` would not have taken effect until the next push.
+        // Here it is a property of the value rather than of one writer.
+        state.recent_projects.truncate(RECENT_PROJECTS);
         state
     }
 
@@ -389,10 +413,9 @@ impl AppFiles {
 }
 
 fn write(path: &Path, state: &State) -> std::io::Result<()> {
-    // Fails only for a non-UTF-8 path, which then simply isn't remembered —
-    // along with whatever the other setters were holding, since the document is
-    // serialised whole. Self-limiting: the rename never happens, so the next
-    // setter reads a clean file.
+    // Fails only for a non-UTF-8 path, which then simply isn't remembered.
+    // Self-limiting: the rename never happens, so the file is left exactly as it
+    // was and the next setter reads a clean one.
     let text = serde_json::to_string_pretty(state).map_err(std::io::Error::other)?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -604,13 +627,20 @@ mod tests {
             "a repeat moves to the head, it does not duplicate"
         );
 
-        // One past the cap: the oldest goes and the length holds.
-        for i in 0..crate::recents::RECENT_PROJECTS {
+        // One past the cap: the oldest goes and the length holds. Derived from
+        // the constant, so changing the cap cannot fail this test for a reason
+        // that has nothing to do with the rule.
+        let last = RECENT_PROJECTS - 1;
+        for i in 0..RECENT_PROJECTS {
             state.push_recent_project(&PathBuf::from(format!("/p/{i}")));
         }
         let list = state.recent_projects();
-        assert_eq!(list.len(), crate::recents::RECENT_PROJECTS);
-        assert_eq!(list[0], PathBuf::from("/p/7"), "the newest is the head");
+        assert_eq!(list.len(), RECENT_PROJECTS);
+        assert_eq!(
+            list[0],
+            PathBuf::from(format!("/p/{last}")),
+            "the newest is the head"
+        );
         assert!(
             !list.contains(&PathBuf::from("/p/other")),
             "the oldest dropped off the end"
@@ -924,12 +954,19 @@ mod tests {
         std::fs::create_dir_all(dir.path().join(APP_DIR)).unwrap();
         let file = dir.path().join(APP_DIR).join(FILE);
         let rest = r#""lastProject":"/p/game","pen":"blue","whisperModel":"base.en""#;
-        for bad in [
-            r#""panels":"wide""#,
-            r#""panels":{"sidebar":-5}"#,
-            r#""panels":{"sidebar":1.5}"#,
-            r#""panels":null"#,
-            r#""window":{"height":-1}"#,
+        // The good values are stated once; each row names **which** field it
+        // breaks, so the "and the bad field defaulted" assertion is about the
+        // field that document actually mentions. Asserting both every time left
+        // one of the two vacuous on every row, which would not have noticed a
+        // change that broke the other.
+        let panels = |s: &AppFiles| s.panel_widths() != PanelWidths::default();
+        let window = |s: &AppFiles| s.window_size() != WindowSize::default();
+        for (bad, still_set) in [
+            (r#""panels":"wide""#, &panels as &dyn Fn(&AppFiles) -> bool),
+            (r#""panels":{"sidebar":-5}"#, &panels),
+            (r#""panels":{"sidebar":1.5}"#, &panels),
+            (r#""panels":null"#, &panels),
+            (r#""window":{"height":-1}"#, &window),
         ] {
             let text = format!("{{{rest},{bad}}}");
             std::fs::write(&file, &text).unwrap();
@@ -940,9 +977,10 @@ mod tests {
             );
             assert_eq!(state.pen(), Pen::Blue, "{text}");
             assert_eq!(state.whisper_model(), WhisperModel::Base, "{text}");
-            // And the bad field itself is simply its default.
-            assert_eq!(state.panel_widths(), PanelWidths::default(), "{text}");
-            assert_eq!(state.window_size(), WindowSize::default(), "{text}");
+            assert!(
+                !still_set(&state),
+                "the broken field should have defaulted: {text}"
+            );
         }
     }
 
