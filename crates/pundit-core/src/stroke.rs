@@ -131,7 +131,10 @@ pub const ARROW_TANGENT_WINDOW_RATIO: f64 = 3.0;
 /// a head that runs over it, and both drawers clip, which is what the line's
 /// own round cap already does.
 pub fn arrow_head(points: &[StrokePoint], line_width: f64, aspect: f64) -> Option<[(f64, f64); 3]> {
-    if !(line_width.is_finite() && line_width > 0.0) || !(aspect.is_finite() && aspect > 0.0) {
+    // One negation over the whole conjunction: clippy's `nonminimal_bool` on
+    // CI's pinned 1.92 refuses the two-negation form, and a newer local clippy
+    // does not flag it.
+    if !(line_width.is_finite() && line_width > 0.0 && aspect.is_finite() && aspect > 0.0) {
         return None;
     }
     // Into the square space: x scaled up by the aspect, y left alone.
