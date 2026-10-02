@@ -24,6 +24,10 @@ made things worse.
   clip row's double-click does (and a click should stop toggling the selection)
 - **105.** A slate's tag field should offer the tags already in use — the clip
   inspector's suggestion list, lifted into one shared `TagField`
+- **116.** The pen is too skinny — try doubling `STROKE_LINE_WIDTH`; no format
+  change, but it thickens the highlight rings too, which is a decision
+- **117.** An arrow head at the end of a drawn line — right-drag or Shift+drag
+  (both free), a v14 field, and the head's geometry in core so both drawers agree
 - **110.** The scoreboard over the picture disappears during a take — it shows
   while watching and in a preview; not yet reproduced, and no code gates it on
   recording
@@ -2509,3 +2513,82 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   across both columns.
 - **When to revisit:** soon — it is the coach's direct complaint about the main
   window, and the Match panel alone is a small first step.
+
+116. **The pen is too skinny.** The coach (2026-10-02): "pen width is a bit
+  skinny sometimes." `core::layout::STROKE_LINE_WIDTH` is **0.005** — half a
+  percent of the picture's height, so about **5.4 px at 1080p** and 3.6 px at
+  720p. On a pitch full of players that is thin, and it is thinner still in an
+  export watched on a phone.
+- **A thicker default costs no format change**, which is the useful thing to know
+  here: `Stroke` already carries its own `line_width` (`stroke.rs:50`), set from
+  the constant when the stroke is logged (`drawing.rs:176`). So raising the
+  constant changes new drawings only, every existing project keeps the width its
+  strokes were drawn at, and nothing needs a version bump or a migration.
+- **But the constant has five readers and one of them is not a pen.** A
+  highlight's ring is stroked at the same weight **on purpose** — the doc says
+  "so it reads like a drawn ellipse" (`layout.rs:502-506`, `highlight.rs:452`) —
+  so raising it thickens every player ring too. That may well be right (the rings
+  are thin for the same reason), but it is a decision, not a side effect, and the
+  two can be split into separate constants if the coach wants only one changed.
+  The live layer and the export take the same value, so the two agree by
+  construction and no drawer needs touching.
+- **The open question is whether this is one number or a choice.** Three shapes,
+  cheapest first: (a) raise the constant, one line, and the coach never thinks
+  about it again; (b) a width picker beside the pen swatches, remembered in
+  `state.json` like the pen is (machine-wide, still no format change, and
+  `Pen::from_label`'s pattern for reading an unknown value back as the default);
+  (c) pressure or speed sensitivity, which is a different feature and is not
+  being proposed. **(a) is the one to try first** — the coach said "a bit skinny",
+  not "I want to choose".
+- **Why deferred:** needs a number from the coach, not a guess. The way to get it
+  is to draw on real footage at two or three widths and pick, which is a
+  hands-on check rather than a code change. Worth pairing with #117, since an
+  arrow's head should be sized off whatever width is settled on.
+- **When to revisit:** with the next hands-on pass, or immediately if the coach
+  names a width. Try doubling it (0.01, ~11 px at 1080p) as the first candidate.
+
+117. **An arrow head at the end of a drawn line.** The coach (2026-10-02): "i
+  wonder if there is an easy way to put an arrow head at the end of the line i
+  draw? maybe with some other click?" Pointing at where a player **should have
+  gone** is most of what a coach's pen is for, and a bare line does not say which
+  end is the destination.
+- **The input is already free, which is the part that makes this cheap.** The
+  picture's drawing `TouchArea` explicitly ignores every button but the left one
+  (`app.slint`: `if (event.button != PointerEventButton.left) { return; }`), and
+  the draw area reads no modifiers. So **right-drag** or **Shift+drag** is
+  available with no key to reassign and nothing to take away from #96. The
+  coach's own "maybe with some other click" points at the right-drag reading.
+  Right-drag is the better of the two if a context menu is never wanted on the
+  picture; Shift+drag is the safer reservation. **Ask the coach which hand they
+  would rather use.**
+- **It IS a format change, unlike #116.** `Stroke` has no shape or kind field, so
+  an arrow needs one and that means **v14** plus a test that every readable
+  version still loads, per the rules in `project.rs`'s header. The type matters:
+  a bare `bool` must not take a field-level `#[serde(default)]` — but an enum
+  whose `Default` is "no arrow", or an `Option`, is exactly right, which is the
+  `Clip::inset`-defaults-to-`Camera` precedent that header already names.
+- **The geometry belongs in core, as one pure function, and this is the whole of
+  the design risk.** Strokes are drawn **twice** by different code: live in Slint
+  from `drawing::path_commands` (SVG path commands), and in exports and previews
+  by `pundit-media/src/overlay.rs` with tiny-skia. Two hand-written arrowheads
+  would drift, and the coach would see one thing while recording and another in
+  the export — the exact failure the codebase avoids by putting
+  `highlight_shapes` in core and having both layers take it. So: one
+  `core::stroke::arrow_head(points, line_width) -> [points]` (or a small
+  `ArrowHead` shape struct), sized off the stroke's own `line_width` so it
+  follows #116 automatically, and both drawers render what it returns.
+- **The direction is the last two points, not the first and last.** A coach's
+  flick curves; the head must follow the tangent at the tip or it will point
+  somewhere the line does not go. A short tail-end window (the last few points,
+  or the last ~2% of the path length) is more stable than the final pair on a
+  jittery stroke, and a single-point stroke has no direction at all and must draw
+  no head.
+- **Everything else comes free.** Auto-clear, replay, the undo history and the
+  export burn-in all hang off `Stroke`, so an arrow inherits them with no new
+  machinery.
+- **Why deferred:** a format bump and two renderers is more than an afternoon,
+  and the input question ("which click") is the coach's to answer. It also wants
+  #116 settled first, so the head is sized off a width that is staying.
+- **When to revisit:** after #116, and once the coach has said right-drag or
+  Shift+drag. A spec is worth writing for this one — it touches the format, both
+  drawers and the input map.

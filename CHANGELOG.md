@@ -13,6 +13,8 @@ which the app was called until 0.8.0 renamed it.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-02
+
 ### Added
 
 - **Switch between the matches you have been in, from one button.**
