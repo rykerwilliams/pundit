@@ -218,9 +218,11 @@ fn a_new_match_makes_the_folder_writes_the_project_and_opens_it() {
     assert!(folder.join(PROJECT_FILENAME).is_file());
     assert!(folder.join(RECORDINGS_DIRNAME).is_dir());
     assert_eq!(store::read(&folder).unwrap(), **p);
+    // A created project enters the recents list like any other open, at the
+    // head — the flow stores nothing of its own.
     assert_eq!(
-        AppFiles::in_config_dir(&rig.config()).last_project(),
-        Some(folder.canonicalize().unwrap())
+        AppFiles::in_config_dir(&rig.config()).recent_projects(),
+        [folder.canonicalize().unwrap()]
     );
 
     // One `ProjectOpened`, not one per source: the whole point of the command.

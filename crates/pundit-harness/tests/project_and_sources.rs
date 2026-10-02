@@ -183,13 +183,20 @@ fn restore_reopens_the_last_project() {
     h.shutdown();
 }
 
+/// **A failed restore keeps the entry** (spec E2), which is the inversion this
+/// feature turns on: a match on a drive that isn't mounted this morning is
+/// exactly the row the coach wants to see, greyed, and click once it is.
 #[test]
-fn restoring_a_folder_that_no_longer_exists_does_not_create_it() {
+fn restoring_a_folder_that_no_longer_exists_keeps_it_and_creates_nothing() {
     let dirs = Dirs::new();
     let mut h = dirs.harness();
     h.send(Command::OpenProject(dirs.project()));
     h.wait_opened();
     h.shutdown();
+    // Captured **before** the removal: `commit` stores the canonical form and
+    // `$TMPDIR` may be a symlink, so comparing against the raw path can fail —
+    // but `canonicalize` on a removed path is `ENOENT` and would panic.
+    let folder = dirs.project().canonicalize().unwrap();
     std::fs::remove_dir_all(dirs.project()).unwrap();
 
     let h = dirs.harness();
@@ -203,8 +210,41 @@ fn restoring_a_folder_that_no_longer_exists_does_not_create_it() {
     assert!(!dirs.project().exists(), "restore recreated the folder");
     assert_eq!(
         AppFiles::in_config_dir(&dirs.config()).last_project(),
-        None,
-        "a folder that can't be restored is forgotten"
+        Some(folder),
+        "a folder that can't be restored is still in the list"
+    );
+}
+
+/// **`commit` pushes, the newest is the head, and a re-open moves rather than
+/// duplicating** — the three stored-list rules through the bus rather than
+/// through the setter.
+#[test]
+fn opening_projects_in_turn_builds_the_recents_list() {
+    let dirs = Dirs::new();
+    let a = dirs.project();
+    let b = dirs.tmp.path().join("b");
+    std::fs::create_dir(&b).unwrap();
+
+    let mut h = dirs.harness();
+    h.send(Command::OpenProject(a.clone()));
+    h.wait_opened();
+    h.send(Command::OpenProject(b.clone()));
+    h.wait_opened();
+    h.send(Command::OpenProject(a.clone()));
+    h.wait_opened();
+    h.shutdown();
+
+    let a = a.canonicalize().unwrap();
+    let b = b.canonicalize().unwrap();
+    assert_eq!(
+        AppFiles::in_config_dir(&dirs.config()).recent_projects(),
+        [a.clone(), b],
+        "A is back at the head and appears once"
+    );
+    assert_eq!(
+        AppFiles::in_config_dir(&dirs.config()).last_project(),
+        Some(a),
+        "and the head is what a restore would reopen"
     );
 }
 

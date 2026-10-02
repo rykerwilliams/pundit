@@ -33,6 +33,13 @@ impl Bus {
     /// the open project. A folder that doesn't exist is an error: saving
     /// never creates one.
     pub(super) fn open_project(&mut self, folder: PathBuf) {
+        // An export or an open preview is composing from the project the coach
+        // is leaving, and `commit` below empties that project's trash and
+        // clears the history (spec O4). The reason this matters is written down
+        // at `built_new_match`'s gate.
+        if let Err(e) = self.refuse_if_busy() {
+            return self.emit(Event::Error(e));
+        }
         let folder = match std::path::absolute(&folder) {
             Ok(folder) => folder,
             Err(e) => return self.emit(Event::Error(UserError::Io(e.to_string()))),
@@ -60,10 +67,23 @@ impl Bus {
         }
     }
 
-    /// Reopens the remembered project. Opens an **existing** project only:
-    /// creating one would make `store::write` recreate a deleted or unmounted
-    /// folder. On any failure the path is forgotten and the UI stays in its
-    /// no-project state.
+    /// Reopens the remembered project — the head of the recents list. Opens an
+    /// **existing** project only: creating one would make `store::write`
+    /// recreate a deleted or unmounted folder.
+    ///
+    /// **A failure no longer forgets the path** (spec E2), and the reason is
+    /// forcing rather than preferred: `last_project` is the list's derived head
+    /// now, so there is no coherent thing for a "forget" to do — drop the head
+    /// and silently promote the one behind it? Keeping it is also what the
+    /// feature is for: a match on a drive that isn't mounted this morning is
+    /// exactly the row the coach wants to see, greyed, and click once it is.
+    ///
+    /// **One consequence, stated because it is not obvious:** the New match
+    /// flow's `BesideLastProject` tier tests only that the head's *parent* is a
+    /// directory, so a deleted project whose parent survives now feeds that
+    /// tier at every launch rather than at one. Nothing to build — W3's
+    /// editable projects-folder field with its provenance line is the answer,
+    /// and the spec's Risk 3 says so.
     pub(super) fn restore_last_project(&mut self) {
         let Some(folder) = self.files.last_project() else {
             return;
@@ -72,7 +92,6 @@ impl Bus {
             Ok(project) => self.commit(folder, project),
             Err(e) => {
                 eprintln!("bus: not restoring last project {}: {e}", folder.display());
-                self.files.set_last_project(None);
             }
         }
     }
@@ -298,7 +317,7 @@ impl Bus {
         // relative source paths computed against it resolve the way the
         // kernel resolves `..`.
         let folder = folder.canonicalize().unwrap_or(folder);
-        self.files.set_last_project(Some(&folder));
+        self.files.push_recent_project(&folder);
 
         // Nothing of the previous project survives: not its requests, its
         // skip burst, nor its frame.

@@ -40,7 +40,27 @@ const FILE: &str = "state.json";
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 struct State {
+    /// The projects the coach has had open, newest first (spec S1).
+    ///
+    /// **One field, not two.** [`AppFiles::last_project`] is this list's head,
+    /// derived — never a second copy of it, which would be free to disagree.
     #[serde(deserialize_with = "lenient")]
+    recent_projects: Vec<PathBuf>,
+    /// **A read-only seed, and dated.** It is what a `state.json` written
+    /// before `recentProjects` existed carries, read once in [`AppFiles::read`]
+    /// to fill the list.
+    ///
+    /// `#[serde(skip_serializing)]` is what makes "read-only" true rather than
+    /// merely intended: [`AppFiles::save`] re-serialises the whole `State`, so
+    /// without it every setter would rewrite `lastProject` at its pre-upgrade
+    /// value forever. With it the key self-cleans out of the file on the first
+    /// save. **The named cost:** a downgrade to a build predating this one,
+    /// after any save, gets no restore at launch — one folder-pick, which is
+    /// what this file's header already prices it at.
+    ///
+    /// Dated on `adopt_old_name`'s pattern: BACKLOG #109 deletes it once no
+    /// installation predating this version is left to upgrade.
+    #[serde(skip_serializing, deserialize_with = "lenient")]
     last_project: Option<PathBuf>,
     /// [`WhisperModel::label`], not the enum: the file is hand-readable, and
     /// a label this version doesn't know reads as the default rather than
@@ -212,16 +232,44 @@ impl AppFiles {
         self.films.clone()
     }
 
-    /// The remembered project folder, if any. An unreadable file reads as
-    /// none.
-    pub fn last_project(&self) -> Option<PathBuf> {
-        self.read().last_project
+    /// The projects the coach has had open, newest first (spec S1). An
+    /// unreadable file reads as none of them.
+    pub fn recent_projects(&self) -> Vec<PathBuf> {
+        self.read().recent_projects
     }
 
-    /// Remembers `folder`, or forgets the last project with `None`.
-    pub fn set_last_project(&self, folder: Option<&Path>) {
+    /// The remembered project folder, if any — **the head of
+    /// [`AppFiles::recent_projects`]**, derived rather than stored.
+    ///
+    /// It survives as an accessor because two callers want exactly the head and
+    /// nothing else: `Bus::restore_last_project`, and the New match flow's
+    /// projects-folder tier in `main.rs`.
+    pub fn last_project(&self) -> Option<PathBuf> {
+        self.read().recent_projects.into_iter().next()
+    }
+
+    /// Puts `folder` at the head of the list, removing it from wherever else it
+    /// was and dropping the oldest beyond [`crate::recents::RECENT_PROJECTS`].
+    ///
+    /// **This is the only writer**, which is why `set_last_project` was deleted
+    /// rather than left with no callers: a second way to write one field, and
+    /// nobody could say what it meant — write a one-element list, replace the
+    /// head, or truncate the rest?
+    ///
+    /// **`==` is the whole de-duplication** (spec S4). `Bus::commit` stores
+    /// `folder.canonicalize().unwrap_or(folder)` with `open_project` having
+    /// made it absolute first, so equal paths are the same project and
+    /// re-opening one moves it to the head. Where `canonicalize` failed — an
+    /// EACCES on a component, a mount dropped between the read and the commit —
+    /// a non-canonical path is stored and the list can hold two entries for one
+    /// project. That costs one duplicate row and is not worth normalizing for.
+    pub fn push_recent_project(&self, folder: &Path) {
         let mut state = self.read();
-        state.last_project = folder.map(Path::to_path_buf);
+        state.recent_projects.retain(|p| p != folder);
+        state.recent_projects.insert(0, folder.to_path_buf());
+        state
+            .recent_projects
+            .truncate(crate::recents::RECENT_PROJECTS);
         self.save(&state);
     }
 
@@ -305,10 +353,29 @@ impl AppFiles {
         let Ok(text) = std::fs::read_to_string(path) else {
             return State::default();
         };
-        serde_json::from_str::<State>(&text).unwrap_or_else(|e| {
+        let mut state = serde_json::from_str::<State>(&text).unwrap_or_else(|e| {
             eprintln!("bus: ignoring unreadable {}: {e}", path.display());
             State::default()
-        })
+        });
+        // **The migration, and it belongs here rather than in the accessor.**
+        // Every setter is `read` → mutate → `save` over the raw field. Seeded
+        // in `recent_projects()` instead, that field is still empty on a
+        // just-upgraded install while `lastProject` is skipped on serialize —
+        // so the **first save of any setting**, a pen change included, writes
+        // an empty `recentProjects` and no `lastProject`, and the pointer is
+        // gone for good. Measured: moving the seeding there fails two tests,
+        // one of them on a `set_pen`. Seeding here closes it in one place and
+        // saves `push_recent_project` a second read.
+        //
+        // **The fallback is on the empty value, from any cause** — not on the
+        // key being absent. A per-field read cannot tell a missing
+        // `recentProjects` from a malformed one, so keying on absence would
+        // lose the pointer for a document holding a good `lastProject` beside a
+        // bad list: BACKLOG #100's symptom, reintroduced by its own fix.
+        if state.recent_projects.is_empty() {
+            state.recent_projects = state.last_project.clone().into_iter().collect();
+        }
+        state
     }
 
     fn save(&self, state: &State) {
@@ -322,7 +389,10 @@ impl AppFiles {
 }
 
 fn write(path: &Path, state: &State) -> std::io::Result<()> {
-    // Fails only for a non-UTF-8 path, which then simply isn't remembered.
+    // Fails only for a non-UTF-8 path, which then simply isn't remembered —
+    // along with whatever the other setters were holding, since the document is
+    // serialised whole. Self-limiting: the rename never happens, so the next
+    // setter reads a clean file.
     let text = serde_json::to_string_pretty(state).map_err(std::io::Error::other)?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -503,16 +573,159 @@ mod tests {
         );
     }
 
+    /// The list's three rules: a new path goes to the head, one already in it
+    /// **moves** rather than duplicating, and the oldest beyond the cap drops.
+    ///
+    /// This replaces `remembers_and_forgets`, whose name promised the forgetting
+    /// that spec E2 deliberately deleted; its first two assertions are the first
+    /// two here.
     #[test]
-    fn remembers_and_forgets() {
+    fn push_recent_project_heads_the_list_moves_a_repeat_and_caps_it() {
         let dir = tempfile::tempdir().unwrap();
         let state = AppFiles::in_config_dir(dir.path());
         assert_eq!(state.last_project(), None);
-        state.set_last_project(Some(Path::new("/p/game")));
+        assert!(state.recent_projects().is_empty());
+
+        state.push_recent_project(Path::new("/p/game"));
         assert_eq!(state.last_project(), Some(PathBuf::from("/p/game")));
         assert!(dir.path().join("pundit/state.json").is_file());
-        state.set_last_project(None);
-        assert_eq!(state.last_project(), None);
+
+        state.push_recent_project(Path::new("/p/other"));
+        assert_eq!(
+            state.recent_projects(),
+            [PathBuf::from("/p/other"), PathBuf::from("/p/game")],
+            "newest first"
+        );
+
+        state.push_recent_project(Path::new("/p/game"));
+        assert_eq!(
+            state.recent_projects(),
+            [PathBuf::from("/p/game"), PathBuf::from("/p/other")],
+            "a repeat moves to the head, it does not duplicate"
+        );
+
+        // One past the cap: the oldest goes and the length holds.
+        for i in 0..crate::recents::RECENT_PROJECTS {
+            state.push_recent_project(&PathBuf::from(format!("/p/{i}")));
+        }
+        let list = state.recent_projects();
+        assert_eq!(list.len(), crate::recents::RECENT_PROJECTS);
+        assert_eq!(list[0], PathBuf::from("/p/7"), "the newest is the head");
+        assert!(
+            !list.contains(&PathBuf::from("/p/other")),
+            "the oldest dropped off the end"
+        );
+    }
+
+    /// **The migration's three shapes** (spec S1). The fallback is on the
+    /// **value**, so a document carrying only `lastProject` reads as a
+    /// one-entry list.
+    #[test]
+    fn a_file_from_before_the_list_reads_its_last_project_as_the_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppFiles::in_config_dir(dir.path());
+        std::fs::create_dir_all(dir.path().join(APP_DIR)).unwrap();
+        let file = dir.path().join(APP_DIR).join(FILE);
+
+        for (text, expected) in [
+            // Only the old key: it becomes the list.
+            (r#"{"lastProject":"/p/game"}"#, vec!["/p/game"]),
+            // Both: the list wins, and the old key is ignored entirely.
+            (
+                r#"{"lastProject":"/p/game","recentProjects":["/p/a","/p/b"]}"#,
+                vec!["/p/a", "/p/b"],
+            ),
+            // Neither: empty, and no phantom entry.
+            (r#"{"pen":"blue"}"#, vec![]),
+        ] {
+            std::fs::write(&file, text).unwrap();
+            let expected: Vec<PathBuf> = expected.iter().map(PathBuf::from).collect();
+            assert_eq!(state.recent_projects(), expected, "{text}");
+            assert_eq!(state.last_project(), expected.first().cloned(), "{text}");
+        }
+    }
+
+    /// **The cross-case, and what sabotage proof 1 targets.** A malformed
+    /// `recentProjects` beside a good `lastProject`: `lenient` defaults the list
+    /// to empty, so the value-based fallback fires and the pointer survives.
+    ///
+    /// Keying the migration on the **key being absent** instead would lose it
+    /// here — BACKLOG #100's own symptom, reintroduced by its fix.
+    #[test]
+    fn a_malformed_list_still_reads_the_last_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppFiles::in_config_dir(dir.path());
+        std::fs::create_dir_all(dir.path().join(APP_DIR)).unwrap();
+        let file = dir.path().join(APP_DIR).join(FILE);
+
+        for bad in [r#""nonsense""#, "5", "null", r#"["/p/a",5]"#, "{}"] {
+            let text = format!(r#"{{"lastProject":"/p/game","recentProjects":{bad}}}"#);
+            std::fs::write(&file, &text).unwrap();
+            assert_eq!(
+                state.recent_projects(),
+                [PathBuf::from("/p/game")],
+                "{text}"
+            );
+            assert_eq!(
+                state.last_project(),
+                Some(PathBuf::from("/p/game")),
+                "{text}"
+            );
+        }
+    }
+
+    /// **The seeded push, which is what the plan's trap 2 pins.** A
+    /// just-upgraded document holds only `lastProject`; one switch must leave
+    /// **both** projects in the list, newest first.
+    ///
+    /// **Measured by moving the seeding into the accessor: two tests fail, and
+    /// the damage is worse than "the first switch".** Every setter is `read` →
+    /// mutate → `save` over the raw field, which is empty on a just-upgraded
+    /// install, while `lastProject` is skipped on serialize — so the *first save
+    /// of any setting at all* writes an empty `recentProjects` and no
+    /// `lastProject`, and the pointer is gone. Changing the pen would lose the
+    /// coach's project list. This test fails on the switch;
+    /// `the_old_key_self_cleans_out_of_the_file_on_the_first_save` fails on the
+    /// pen, which is the one that shows how wide it is.
+    #[test]
+    fn the_first_switch_after_an_upgrade_keeps_the_project_before_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppFiles::in_config_dir(dir.path());
+        std::fs::create_dir_all(dir.path().join(APP_DIR)).unwrap();
+        std::fs::write(
+            dir.path().join(APP_DIR).join(FILE),
+            r#"{"lastProject":"/p/yesterday"}"#,
+        )
+        .unwrap();
+
+        state.push_recent_project(Path::new("/p/today"));
+
+        assert_eq!(
+            state.recent_projects(),
+            [PathBuf::from("/p/today"), PathBuf::from("/p/yesterday")],
+            "the project before the upgrade is still in the list"
+        );
+    }
+
+    /// `lastProject` is **read-only**: one save and the key is gone from the
+    /// file, with the list carrying what it held. Without
+    /// `#[serde(skip_serializing)]` every setter would rewrite it at its
+    /// pre-upgrade value forever, and the doc comment calling it read-only
+    /// would be a lie the next reader inherits.
+    #[test]
+    fn the_old_key_self_cleans_out_of_the_file_on_the_first_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppFiles::in_config_dir(dir.path());
+        std::fs::create_dir_all(dir.path().join(APP_DIR)).unwrap();
+        let file = dir.path().join(APP_DIR).join(FILE);
+        std::fs::write(&file, r#"{"lastProject":"/p/game"}"#).unwrap();
+
+        state.set_pen(Pen::Blue);
+
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(!text.contains("lastProject"), "{text}");
+        assert!(text.contains("recentProjects"), "{text}");
+        assert_eq!(state.last_project(), Some(PathBuf::from("/p/game")));
     }
 
     /// The model is machine-wide and survives a restart, which is the whole
@@ -562,7 +775,7 @@ mod tests {
     fn the_settings_are_independent() {
         let dir = tempfile::tempdir().unwrap();
         let state = AppFiles::in_config_dir(dir.path());
-        state.set_last_project(Some(Path::new("/p/game")));
+        state.push_recent_project(Path::new("/p/game"));
         state.set_whisper_model(WhisperModel::Base);
         state.set_pen(Pen::Pink);
         let size = WindowSize {
@@ -578,7 +791,7 @@ mod tests {
         assert_eq!(state.last_project(), Some(PathBuf::from("/p/game")));
         assert_eq!(state.whisper_model(), WhisperModel::Base);
         // (Base, not the default Small: a clobbered model must be visible.)
-        state.set_last_project(Some(Path::new("/p/other")));
+        state.push_recent_project(Path::new("/p/other"));
         assert_eq!(state.pen(), Pen::Pink);
         state.set_pen(Pen::Blue);
         assert_eq!(state.last_project(), Some(PathBuf::from("/p/other")));

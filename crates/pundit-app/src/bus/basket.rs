@@ -661,7 +661,7 @@ mod tests {
     fn the_basket_and_the_state_file_are_independent() {
         let dir = tempfile::tempdir().unwrap();
         let state = AppFiles::in_config_dir(dir.path());
-        state.set_last_project(Some(Path::new("/p/game")));
+        state.push_recent_project(Path::new("/p/game"));
         state.set_pen(crate::drawing::Pen::Pink);
 
         let mut basket = Basket::load(&state);

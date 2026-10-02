@@ -2125,3 +2125,22 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   states the `safe_chars`-is-not-`folder_slug` and `check_aspect`-gates-nothing
   arguments at four and five sites (this codebase's style is reasoning at the site
   on purpose; the specific places the prose had **drifted** were corrected instead).
+
+109. **`state.json`'s `lastProject` seed is transitional and dated.** The
+  recents list (#85) replaced `lastProject` with `recentProjects`, keeping the old
+  key as a **read-only seed**: `AppFiles::read` fills an empty list from it once,
+  and `#[serde(skip_serializing)]` means the key self-cleans out of the file on the
+  first save. `State.last_project`, that attribute, the seeding block in `read`
+  and `the_old_key_self_cleans_out_of_the_file_on_the_first_save` all exist only
+  for installations that predate the list.
+- **Why deferred:** deleting it now would mean a coach upgrading from 0.9.x or
+  earlier gets no project restored at launch and an empty popover — one
+  folder-pick each, but for no reason at all. It costs one `Option<PathBuf>`, one
+  attribute and a four-line block to keep.
+- **The named cost of keeping it**, so nobody has to re-derive it: a *downgrade*
+  to a build predating the list, after any save, gets no restore at launch. One
+  folder-pick.
+- **When to revisit:** once no installation predating the recents list is left to
+  upgrade — `state::adopt_old_name`'s pattern, which #93 dates the same way. Delete
+  the field, the attribute, the seeding block in `read` and that one test; nothing
+  else reads it.
