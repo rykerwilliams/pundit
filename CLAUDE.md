@@ -75,6 +75,17 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 ```
 
+**A clean local `clippy` is NOT the same gate as CI's.** `rust.yml`'s workspace
+job pins **`dtolnay/rust-toolchain@1.92`** while this laptop is on 1.98.1, and
+clippy's lints move between releases in both directions — measured 2026-10-02,
+`nonminimal_bool` fired on 1.92 for a guard that 1.98 passed without comment, so
+the branch was green locally and red on CI. When clippy fails on CI and not
+here, **read the version in the error's own help URL**
+(`…/rust-clippy/rust-1.92.0/index.html#<lint>`) before doubting the code. The
+cheap way to check before pushing is `rustup run 1.92 cargo clippy …`, which
+needs that toolchain installed; the pin is deliberate and is not the thing to
+change.
+
 **Speech recognition needs `cmake` and `libclang-dev`** (`sudo apt install
 cmake libclang-dev`). `pundit-media` depends on `whisper-rs`
 unconditionally — there is no feature gate, by decision — so without them
