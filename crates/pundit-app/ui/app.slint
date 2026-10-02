@@ -247,6 +247,25 @@ export struct DeviceRow {
     chosen: bool,
 }
 
+/// One row of the Recent popover (recents spec D1, D2, D3).
+///
+/// **The path is not here.** `open-recent(int)` carries the index and Rust
+/// re-reads `state.json` to resolve it, so a row cannot hold a path that has
+/// gone stale against the list.
+export struct RecentRow {
+    /// Line one, always populated: the match's name, or the folder's own name
+    /// where the project could not be read.
+    label: string,
+    /// Line two, empty where it would only repeat `label`.
+    second-line: string,
+    /// The open project. Ticked, and **the one row that is not clickable** —
+    /// re-opening the open project would empty its own trash.
+    ticked: bool,
+    /// The project could not be read. Dimmed, and **still clickable**: the
+    /// drive may be about to be plugged in.
+    dimmed: bool,
+}
+
 /// The recording as the UI last heard it from the bus (Phase 4 R6).
 export enum RecordingPhase {
     idle,
@@ -450,6 +469,107 @@ component DeviceList inherits VerticalLayout {
         label: row.label;
         chosen: row.chosen;
         clicked => { root.chosen(row.node-name); }
+    }
+}
+
+/// One row of the Recent popover, on [`DeviceChoice`]'s shape with a second
+/// line.
+///
+/// **The ticked row is not clickable, and that is load-bearing rather than
+/// cosmetic**: a click on the open project's row would send `OpenProject` for
+/// the folder already open, and the bus's `commit` clears the undo history and
+/// `remove_dir_all`s that project's own `recordings/.trash`. Making only the
+/// cursor change would still let it happen.
+///
+/// **`enabled` on the `TouchArea` is the whole of it**, one property rather
+/// than two conditions: `TouchArea::input_event_filter_before_children` sets
+/// `has_hover` to false when it is disabled
+/// (`i-slint-core-1.18.0/items/input_items.rs:81-82`), so the hover background
+/// below goes with the click. Wrapping the `TouchArea` in an `if` instead does
+/// not compile — the `touch` id leaves scope and `background` cannot reach it.
+///
+/// A dimmed row stays enabled: the drive may be about to be plugged in.
+component RecentChoice inherits Rectangle {
+    in property <string> label;
+    in property <string> second-line;
+    in property <bool> ticked;
+    in property <bool> dimmed;
+    callback clicked();
+
+    height: root.second-line == "" ? 28px : 40px;
+    border-radius: 4px;
+    background: touch.has-hover ? Palette.selection-background : transparent;
+
+    touch := TouchArea {
+        enabled: !root.ticked;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        spacing: 6px;
+
+        Text {
+            text: root.ticked ? "✓" : "";
+            color: Palette.foreground;
+            width: 14px;
+            vertical-alignment: center;
+        }
+        VerticalLayout {
+            alignment: center;
+
+            Text {
+                text: root.label;
+                color: root.dimmed ? Palette.alternate-foreground : Palette.foreground;
+                overflow: elide;
+            }
+            if root.second-line != "": Text {
+                text: root.second-line;
+                color: Palette.alternate-foreground;
+                font-size: 11px;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+/// The Recent popover's list (recents spec P5).
+///
+/// **Two empty states, and the difference matters to the coach**: no list at all
+/// is a fresh install, while a list none of whose projects could be read is a
+/// drive that isn't mounted — *"my projects are gone"* against *"my drive isn't
+/// plugged in"*. `none-resolved` is computed in Rust because Slint cannot fold
+/// over a model to learn it.
+component RecentList inherits VerticalLayout {
+    in property <[RecentRow]> rows;
+    in property <bool> none-resolved;
+    callback chosen(int);
+
+    spacing: 4px;
+
+    Text {
+        text: "Recent projects";
+        color: Palette.alternate-foreground;
+        font-size: 11px;
+    }
+    if root.rows.length == 0: Text {
+        text: "No projects opened yet.";
+        color: Palette.alternate-foreground;
+        wrap: word-wrap;
+    }
+    if root.rows.length > 0 && root.none-resolved: Text {
+        text: "None of these could be read. If they live on an external drive, plug it in.";
+        color: Palette.alternate-foreground;
+        wrap: word-wrap;
+        font-size: 11px;
+    }
+    for row[i] in root.rows: RecentChoice {
+        label: row.label;
+        second-line: row.second-line;
+        ticked: row.ticked;
+        dimmed: row.dimmed;
+        clicked => { root.chosen(i); }
     }
 }
 
@@ -3369,6 +3489,12 @@ export component AppWindow inherits Window {
     /// they're being looked up.
     in property <[DeviceRow]> cameras;
     in property <[DeviceRow]> mics;
+    /// The Recent popover's rows, newest first, filled on open (recents P2).
+    in property <[RecentRow]> recent-rows;
+    /// Every row is dimmed, which Slint cannot work out from the model itself
+    /// — so it is computed in Rust. It is the difference between "no projects"
+    /// and "the drive those projects are on isn't mounted" (recents P5).
+    in property <bool> recents-none-resolved;
     /// The popover's Inset section: the project's avatar image, its file name
     /// (empty for none), and whether that file has gone missing (avatar G1).
     in property <image> avatar-thumb;
@@ -3675,6 +3801,13 @@ export component AppWindow inherits Window {
     callback stop-recording();
     /// The Devices popover opened: look the devices up.
     callback list-devices();
+    /// The Recent popover opened: fill `recent-rows` (recents P2). Named after
+    /// `list-devices`, which is the same shape — the rows are read on open, so
+    /// a project renamed or deleted since last time shows as it is now.
+    callback list-recents();
+    /// A row of the Recent popover was picked, by **index** into
+    /// `recent-rows`: Rust re-reads `state.json` to resolve it (recents O1).
+    callback open-recent(int);
     /// A row of the popover's camera or microphone list was picked: its
     /// `node-name`, empty for the system default.
     callback choose-camera(string);
@@ -4931,7 +5064,7 @@ export component AppWindow inherits Window {
                         message: "Pick the game's video files and pundit makes the folder, names the project after both teams and sets the teams up. The footage stays where it is. Already have a project? Open its folder — the project file (project.json) lives inside it.";
                         action: "New match…";
                         secondary: "Open Project…";
-                        enabled: !root.recording;
+                        enabled: !root.recording && !root.previewing;
                         clicked => { root.new-match(); }
                         secondary-clicked => { root.open-project(); }
                     }
@@ -5308,8 +5441,66 @@ export component AppWindow inherits Window {
                         }
                         Button {
                             text: "Open Project…";
-                            enabled: !root.recording;
+                            enabled: !root.recording && !root.previewing;
                             clicked => { root.open-project(); }
+                        }
+                        // **The popup is the button's SIBLING, not its child**:
+                        // no style's `Button` has a `@children` slot, so
+                        // nesting it fails with "'Button' cannot have
+                        // children". `Tooltip` nests only because it is a
+                        // builtin flagged `@can_be_declared_without_children_slot`.
+                        //
+                        // The wrapper holds nothing but the button, so `x: 0`
+                        // anchors where the button is — `devices-popup`'s
+                        // right-anchored `parent.width - self.width` would be
+                        // ~1000px wrong at this end of the row. It costs no
+                        // layout: `lower_popups` runs before `lower_layouts`,
+                        // so the popup contributes no constraint, and both
+                        // `lower_layout` and `optimize_useless_rectangles`
+                        // special-case `has_popup_child`. A HorizontalLayout
+                        // rather than a Rectangle, which would take stretch
+                        // and not propagate the button's minimum.
+                        HorizontalLayout {
+                            Button {
+                                text: "Recent ▾";
+                                enabled: !root.recording && !root.previewing;
+                                // `keys.focus()` BEFORE `show()`: `show_popup`
+                                // takes the window's focus item, so a
+                                // half-typed clip name or editor row would
+                                // commit as a side effect of opening this.
+                                clicked => {
+                                    keys.focus();
+                                    root.list-recents();
+                                    recent-popup.show();
+                                }
+
+                                Tooltip {
+                                    text: @markdown("Switch to a project you had open recently");
+                                }
+                            }
+                            // Above the button's own end, over the player.
+                            recent-popup := PopupWindow {
+                                x: 0;
+                                y: -self.height - 8px;
+                                width: 300px;
+
+                                Rectangle {
+                                    background: Palette.background;
+                                    border-radius: 8px;
+                                    border-width: 1px;
+                                    border-color: Palette.border;
+
+                                    VerticalLayout {
+                                        padding: 12px;
+
+                                        RecentList {
+                                            rows: root.recent-rows;
+                                            none-resolved: root.recents-none-resolved;
+                                            chosen(i) => { root.open-recent(i); }
+                                        }
+                                    }
+                                }
+                            }
                         }
                         Button {
                             text: "Add Source Video…";
