@@ -102,6 +102,55 @@ fn closing_nothing_is_a_spoken_refusal_that_stores_nothing() {
     assert!(p.saved().slates.is_empty());
 }
 
+/// **Moving a mark, and the refusal reaching the coach** (BACKLOG #119).
+///
+/// This is the assertion the spec's review asked for: `Project::edit_slate` is
+/// infallible and `Bus::edit_slates` returns **silently** when nothing changed,
+/// so a core-side refusal would be indistinguishable from a button that did
+/// nothing. The check is in the bus, and this proves the notice comes out.
+#[test]
+fn moving_a_mark_works_and_an_inverting_move_is_a_spoken_refusal() {
+    let (mut h, p) = Proj::open(&["a.webm"]);
+    h.wait_settled();
+
+    h.send(mark_in(0, 1.0));
+    h.wait_changed();
+    h.send(mark_out(0, 2.0));
+    h.wait_changed();
+    let id = p.saved().slates[0].id;
+
+    // Both marks move.
+    h.send(Command::EditSlate {
+        id,
+        edit: SlateEdit::Out(3.0),
+    });
+    h.wait_changed();
+    h.send(Command::EditSlate {
+        id,
+        edit: SlateEdit::In(1.5),
+    });
+    h.wait_changed();
+    let moved = p.saved().slates[0].clone();
+    assert_eq!((moved.in_seconds, moved.out_seconds), (1.5, Some(3.0)));
+
+    // And an inverting move is refused out loud, storing nothing — in both
+    // directions, which is the half an earlier draft of the spec missed.
+    for edit in [SlateEdit::Out(1.5), SlateEdit::In(3.0)] {
+        h.send(Command::EditSlate { id, edit });
+        let err = h.wait_for_error();
+        assert!(matches!(err, UserError::Slate(_)), "{err:?}");
+        assert!(err.is_notice(), "a modal could land over a live take");
+        let after = p.saved().slates[0].clone();
+        assert_eq!(
+            (after.in_seconds, after.out_seconds),
+            (1.5, Some(3.0)),
+            "a refused move stores nothing"
+        );
+    }
+
+    h.shutdown();
+}
+
 /// The coach spots the next moment while talking over this one, so both marks
 /// are on the recording allow-list — the rule that already puts a match tag
 /// and a highlight key there. Editing and deleting wait, as every other edit

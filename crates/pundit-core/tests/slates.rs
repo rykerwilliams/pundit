@@ -80,6 +80,64 @@ fn an_out_point_at_or_before_the_in_point_is_refused() {
     assert!(p.mark_slate_out(0, 100.5).is_ok());
 }
 
+/// **Moving a mark, and `would_invert` guarding both directions** (BACKLOG
+/// #119). An earlier draft of the spec guarded the out point alone — but moving
+/// the **in** point past an existing out is the likelier mistake, and nothing
+/// guarded an in point at all before this.
+#[test]
+fn a_mark_moves_and_an_inverting_move_is_caught_in_both_directions() {
+    let mut p = project(1);
+    p.mark_slate_in(0, 100.0);
+    p.mark_slate_out(0, 140.0).unwrap();
+    let id = p.slates[0].id;
+
+    // Both marks move.
+    p.edit_slate(id, SlateEdit::In(110.0));
+    p.edit_slate(id, SlateEdit::Out(150.0));
+    assert_eq!(
+        (p.slates[0].in_seconds, p.slates[0].out_seconds),
+        (110.0, Some(150.0))
+    );
+
+    // And `<=`, matching `mark_slate_out`: a zero-length range is not a range.
+    for (edit, why) in [
+        (SlateEdit::Out(110.0), "an out at the in point"),
+        (SlateEdit::Out(109.0), "an out before the in point"),
+        (SlateEdit::In(150.0), "an in at the out point"),
+        (SlateEdit::In(151.0), "an in past the out point"),
+    ] {
+        assert!(p.slates[0].would_invert(&edit), "{why}");
+    }
+    for (edit, why) in [
+        (SlateEdit::Out(110.5), "an out just past the in point"),
+        (SlateEdit::In(149.5), "an in just before the out point"),
+        (SlateEdit::Name("x".into()), "a name"),
+    ] {
+        assert!(!p.slates[0].would_invert(&edit), "{why}");
+    }
+}
+
+/// A half-marked range constrains nothing, so its in point moves freely — and
+/// `Out` on it finishes the range, which is how the editor completes a slate
+/// that `o` never closed.
+#[test]
+fn a_half_marked_slate_takes_either_mark() {
+    let mut p = project(1);
+    p.mark_slate_in(0, 100.0);
+    let id = p.slates[0].id;
+
+    assert!(!p.slates[0].would_invert(&SlateEdit::In(9_999.0)));
+    p.edit_slate(id, SlateEdit::In(200.0));
+    assert_eq!(p.slates[0].in_seconds, 200.0);
+
+    p.edit_slate(id, SlateEdit::Out(260.0));
+    assert_eq!(
+        p.slates[0].out_seconds,
+        Some(260.0),
+        "the range is finished"
+    );
+}
+
 /// Two ranges open at once close newest-first, which is why the stored order
 /// is the marked order and `slates_sorted` is for reading only.
 #[test]
