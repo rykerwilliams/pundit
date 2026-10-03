@@ -26,6 +26,44 @@ tags, the avatar's pulse constants — §X1, §X3), and **one is real** (the
 chapters). So the answer is a single checkbox, on the sheet that already carries
 three like it, and **no new UI surface, no new file and no new command**.
 
+
+## Overturned by the coach, 2026-10-03 — read this before the sections below
+
+Two answers change this spec's headline decision, and the sections after this one
+have **not** been rewritten yet; they are the reasoning as it stood, which is
+still worth reading for the audit in §W2.
+
+**1. "I think all of them should be settings?"** — asked which files in
+`exports/` were unwanted when #78 was filed. So the spec's collapse of #78 to a
+single chapters checkbox is **not what was asked for**: the coach wants every
+export output switchable.
+
+**The one thing that needs care rather than agreement.** §W2's audit stands as a
+*fact*: the `.srt` and the embedded `tx3g` **already** have a switch — the
+Scoreboard picker, where *Burned into the picture* writes neither and removes a
+stale `.srt`. So adding a second control over them would be two places governing
+one output, which is the "two spellings of one rule" this codebase keeps
+deleting (`Command::NewMatch`'s dropped `name` field is the precedent). The
+honest resolutions are **either** move the `.srt`/`tx3g` decision out of the
+Scoreboard picker and into the settings, **or** leave it in the picker and say so
+in the settings — not both. That is a question for the coach, and it is the only
+part of this answer that is not simply "do it".
+
+**2. #102 is an on/off setting**, not the snap-always-Shift-to-suppress shape
+§U1 recommended.
+
+**Together these retire §U1's conclusion that no settings screen is justified.**
+That conclusion rested on "this option has nothing to sit beside" — and there are
+now **three** tenants: #102's bool, the export-output switches, and #84's local
+music folder path. The sheet designed in §U3–U4 should be built, and §U1's rule
+("a setting sits beside what it configures") survives as the test a *new* setting
+has to pass, not as an argument against the screen.
+
+**What has not changed:** §X's refusals (the header tags, the reel trim, the
+avatar constants, anything already carrying a control, anything belonging to one
+clip), and the format-cost correction in §W3, which was independently verified
+and is now in `CLAUDE.md`.
+
 ## Goal
 
 The coach can stop an export writing anything beside the video, from the sheet

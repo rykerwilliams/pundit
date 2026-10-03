@@ -2026,9 +2026,12 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   movement.
 - **Why deferred:** filed on the day it was asked for, with #88 closing out; it
   is a UX affordance with a real design question in it (which marks), not a bug.
-- **When to revisit:** with #78, which brings the settings panel it needs a
-  control in. The per-field `state.json` read it should not go in without has
-  landed, so #78 is now the only gate.
+- **ANSWERED by the coach (2026-10-03): an on/off setting**, not the
+  snap-always-Shift-to-suppress shape the #78 spec recommended. So it needs a
+  home, and that is one of the three tenants that now justify the Settings sheet
+  (see #78). One `state.json` bool, one attribute under #100's per-field read.
+- **When to revisit:** with #78's sheet, which it is now a reason to build
+  rather than a reason to wait.
 
 103. **A possession tracker, as an analysis pass.** The coach (2026-09-28): "a
   possession tracker analysis pass." Which team has the ball, over the match — so
@@ -2292,9 +2295,21 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **Answered in the same message:** the export does carry the clock — burned in
   on every clip and reel, and on the whole match unless **Scoreboard: Separate
   track** is chosen, where it rides as a `tx3g` track and an `.srt`.
+- **The diagnostic shipped 2026-10-02 and is waiting on one run.** Static
+  reading was exhausted first — layout, `scan`, `content`, `ui.scoreboard` and
+  the recording path were each ruled out — so what is left is a runtime value.
+  **Run a take with it on and paste the lines:**
+  ```bash
+  PUNDIT_BOARD_DEBUG=1 ./target/release/pundit 2>&1 | grep '^board:'
+  ```
+  It prints on each appearance or disappearance only — `shown`, `content`,
+  whether a context exists, whether `state_at` answered, `scrubbing`, and the
+  phase — so one take yields a handful of lines rather than one a tick. It is
+  transitional and goes with the fix.
 - **Why deferred:** filed while the coach was recording; needs a reproduction
   before a fix can be chosen.
-- **When to revisit:** next — it is a visible gap on the app's main path.
+- **When to revisit:** as soon as those lines exist. It is a visible gap on the
+  app's main path and everything else about it is already known.
 
 114. **Shooting a slate doesn't stop at its out point.** The coach (2026-10-02):
   "when i record a clip, it doesn't stop at the end of the clip." Shooting a

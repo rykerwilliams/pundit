@@ -22,6 +22,17 @@ can even mean — is **right, and stronger than it says** (**K1**). Separately,
 Slint 1.18 ships two things #96 predates and this spec had to weigh: a
 first-class `keys` type and a `KeyBinding` element (**K3**, **B4**).
 
+
+## Answered by the coach, 2026-10-03
+
+**The far skip becomes its own action.** Shift stops being a special argument on
+the transport, so the 20 s skip is rebindable and listable and the conflict rule
+becomes statable with no exception in it. **The named cost is accepted: Shift+R
+no longer records**, along with the one Caps-Lock corner.
+
+So the spec's §D decision stands as written, and the open question that depended
+on it is closed. The other four open questions are still the coach's.
+
 ## Goal
 
 Every key the app binds is one row in one table: its action, its default, what
