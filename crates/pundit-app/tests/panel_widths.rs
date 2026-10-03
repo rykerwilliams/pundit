@@ -64,6 +64,7 @@ fn window() -> AppWindow {
         name: "a long slate name as well".into(),
         tags: "corner, set-piece, defending".into(),
         shot: false,
+        timed: true,
     }])));
     w.set_transcript_models(ModelRc::new(VecModel::from(vec![
         SharedString::from("base.en"),
