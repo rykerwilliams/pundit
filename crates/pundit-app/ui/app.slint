@@ -34,6 +34,11 @@ export struct SlateRow {
     tags: string,
     /// A clip was recorded from it. It stays in the list: a coach re-records.
     shot: bool,
+    /// Both marks are set (BACKLOG #120). A half-marked range — `i` pressed,
+    /// `o` not — is **shown and skipped by the themed pass**, so the row has to
+    /// say so: a pass that silently passed over rows the coach can see is the
+    /// hazard the spec's review found in its own T1.
+    timed: bool,
 }
 
 /// One row of the sidebar's Clips list, in the project's order.
@@ -3544,6 +3549,11 @@ export component AppWindow inherits Window {
     /// selection has moved on -- `editing-clip-id`'s rule, which exists
     /// because `for` reuses its rows by index.
     in-out property <string> editing-slate-id;
+    /// The themed pass's tag filter (BACKLOG #120). **Not the window's
+    /// `tag-filter`**, which the bus writes on `Event::Select` to un-hide a
+    /// newly selected clip — that write would clear this one mid-pass.
+    in-out property <string> slate-tag-filter;
+    changed slate-tag-filter => { root.filter-slates(); }
     /// The export sheet would have a row: a clip, or a goal for the reel
     /// (spec R1). A project of goals and no clips can export its reel.
     in property <bool> can-export;
@@ -3955,6 +3965,8 @@ export component AppWindow inherits Window {
     /// #119). No position argument: Rust reads the same heading position `i`
     /// and `o` do, so a re-mark lands where a fresh mark would.
     callback set-slate-mark(SlateMark);
+    /// The slates' tag filter changed: rebuild the list (BACKLOG #120).
+    callback filter-slates();
     /// Focus a slate field, for `tests/slate_fields.rs`: both failures that
     /// test pins are about a *focused* field, and tabbing to one depends on
     /// the whole window's focus order.
@@ -4714,11 +4726,26 @@ export component AppWindow inherits Window {
                         if root.slates.length > 0: VerticalLayout {
                             spacing: 6px;
 
-                            Text {
-                                text: "Slates";
-                                color: Palette.alternate-foreground;
-                                font-size: 11px;
-                                vertical-alignment: center;
+                            HorizontalLayout {
+                                spacing: 6px;
+
+                                Text {
+                                    text: "Slates";
+                                    color: Palette.alternate-foreground;
+                                    font-size: 11px;
+                                    vertical-alignment: center;
+                                }
+                                // The themed pass's filter (BACKLOG #120): "all
+                                // these clips are corner kicks". **Its own
+                                // property, not the window's `tag-filter`** —
+                                // that one is *written by the bus* on
+                                // `Event::Select` to un-hide a newly selected
+                                // clip, which would clear this one mid-pass.
+                                LineEdit {
+                                    placeholder-text: "Filter by tag";
+                                    text <=> root.slate-tag-filter;
+                                    horizontal-stretch: 1;
+                                }
                             }
 
                             ListView {

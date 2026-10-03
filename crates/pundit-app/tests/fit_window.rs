@@ -188,6 +188,7 @@ fn the_f_key_is_gated_and_a_field_swallows_it() {
         name: "corner".into(),
         tags: SharedString::new(),
         shot: false,
+        timed: true,
     }])));
     w.set_selected_slate("s1".into());
     w.invoke_focus_slate_name();

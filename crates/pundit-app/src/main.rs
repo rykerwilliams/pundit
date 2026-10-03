@@ -1247,6 +1247,19 @@ fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             bus.borrow().send(Command::EditSlate { id, edit });
         }
     });
+    window.on_filter_slates({
+        let weak = window.as_weak();
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            // The project the window already holds: a filter change is the
+            // window's own state, so there is nothing to ask the bus for.
+            UI.with_borrow(|ui| {
+                if let Some(s) = ui.snapshot.as_ref() {
+                    show_slates(&w, &s.project);
+                }
+            });
+        }
+    });
     window.on_set_slate_mark({
         let (bus, weak, position) = (
             bus.clone(),
@@ -3330,6 +3343,15 @@ fn show_project(w: &AppWindow, snapshot: Snapshot) {
     }
     // Its slate is gone -- an undone delete is exactly when this bites -- so
     // the row's fields go with it, as the clip rule above does.
+    //
+    // **A tag filter that hides the selected slate does NOT clear it**, and
+    // that is deliberately the opposite of the clip rule above, which clears
+    // the *filter* to un-hide a newly selected clip. Two reasons: a slate is
+    // selected by clicking a visible row, so "selected but hidden" only arises
+    // when the coach types a filter afterwards — and when they do, the editor
+    // row staying usable is the useful behaviour, not a bug. Clearing a
+    // selection because the view changed would be the panel moving under their
+    // hands.
     if !w.get_selected_slate().is_empty()
         && !project
             .slates
@@ -3462,12 +3484,22 @@ fn show_clips(w: &AppWindow, project: &Project) {
 }
 
 /// The Slates list: every marked range, in reading order, with the video named
-/// only when there is more than one to tell apart.
+/// only when there is more than one to tell apart — and filtered by the
+/// **slates'** own tag filter (BACKLOG #120).
+///
+/// **Not the window's `tag-filter`.** That one belongs to the Clips list and is
+/// *written by the bus* on `Event::Select`, to un-hide a newly selected clip;
+/// sharing it would clear the themed pass's filter from under the coach.
+///
+/// The filter is one exact tag, which is the Clips list's rule — so a tag
+/// invented on a slate filters the same way one invented on a clip does.
 fn show_slates(w: &AppWindow, project: &Project) {
     let many = project.source_videos.len() > 1;
+    let filter = w.get_slate_tag_filter();
     let rows: Vec<SlateRow> = project
         .slates_sorted()
         .iter()
+        .filter(|s| filter.is_empty() || s.tags.iter().any(|t| *t == filter.as_str()))
         .map(|s| SlateRow {
             id: s.id.to_string().into(),
             range: slate_range(s).into(),
@@ -3488,6 +3520,11 @@ fn show_slates(w: &AppWindow, project: &Project) {
             },
             tags: s.tags.join(", ").into(),
             shot: project.clips.iter().any(|c| c.slate_id == Some(s.id)),
+            // For the themed pass, which reads the row model rather than
+            // rescanning the project — so the list and the pass cannot
+            // disagree about what is in it. The *coach* already sees this: an
+            // open range renders as `14:05–`, with nothing after the dash.
+            timed: s.out_seconds.is_some(),
         })
         .collect();
     w.set_slates(ModelRc::new(VecModel::from(rows)));

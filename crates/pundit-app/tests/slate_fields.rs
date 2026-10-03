@@ -22,6 +22,7 @@ fn slate(id: &str, name: &str) -> SlateRow {
         name: name.into(),
         tags: SharedString::new(),
         shot: false,
+        timed: true,
     }
 }
 
