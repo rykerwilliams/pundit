@@ -431,12 +431,45 @@ pub struct Slate {
     pub tags: Vec<String>,
 }
 
+impl Slate {
+    /// Whether applying `edit` would leave this slate's out point at or before
+    /// its in point (BACKLOG #119) — the question the bus asks before it
+    /// mutates, since [`Project::edit_slate`] is infallible.
+    ///
+    /// **Both directions**, which is the half an earlier draft missed: moving
+    /// the *in* point past an existing out is the likelier mistake, and nothing
+    /// guarded an in point at all before this. A slate with no out point
+    /// constrains nothing, so a half-marked range's in point moves freely.
+    ///
+    /// The comparison is `<=`, matching [`Project::mark_slate_out`]: an out
+    /// point equal to the in point is already refused there, and a zero-length
+    /// range is not a range.
+    pub fn would_invert(&self, edit: &SlateEdit) -> bool {
+        match edit {
+            SlateEdit::In(seconds) => self.out_seconds.is_some_and(|out| out <= *seconds),
+            SlateEdit::Out(seconds) => *seconds <= self.in_seconds,
+            SlateEdit::Name(_) | SlateEdit::Tags(_) => false,
+        }
+    }
+}
+
 /// One field of a [`Slate`], for [`Project::edit_slate`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// **No `Eq`**, because [`SlateEdit::In`] and [`SlateEdit::Out`] carry an `f64`
+/// and `f64` is not `Eq`. Nothing needs it: `edit_slates`' undo step compares
+/// whole `Vec<Slate>` by `PartialEq`, and the tests only `assert_eq!`.
+#[derive(Debug, Clone, PartialEq)]
 pub enum SlateEdit {
     Name(String),
     /// Already normalized by [`crate::tag::normalize_tags`], as a clip's are.
     Tags(Vec<String>),
+    /// Move the in point (BACKLOG #119). **The caller has already checked the
+    /// ordering** — see [`Project::edit_slate`]'s note on why this setter stays
+    /// infallible.
+    In(f64),
+    /// Move the out point. A slate with no out point gains one, which is how a
+    /// half-marked range is finished from the editor rather than from `o`.
+    Out(f64),
 }
 
 /// [`Project::mark_slate_out`] refused; the project is unchanged.
@@ -761,6 +794,15 @@ impl Project {
     }
 
     /// Applies `edit` to slate `id`, or does nothing when it is gone.
+    ///
+    /// **Infallible, and the mark edits do not change that** (BACKLOG #119).
+    /// [`SlateEdit::In`] and [`SlateEdit::Out`] can make a range inverted, and
+    /// the check for that lives in the **bus**, before the mutation — not here.
+    /// Two reasons: `Bus::edit_slates` is where a refusal can become a
+    /// `UserError::Slate` notice, which is the path `mark_slate_out`'s own
+    /// refusal already takes; and making this `Result` would put a fallible
+    /// setter in front of two existing infallible call sites for a rule neither
+    /// of them can break. Use [`Slate::would_invert`] to ask first.
     pub fn edit_slate(&mut self, id: Uuid, edit: SlateEdit) {
         let Some(slate) = self.slates.iter_mut().find(|s| s.id == id) else {
             return;
@@ -768,6 +810,8 @@ impl Project {
         match edit {
             SlateEdit::Name(name) => slate.name = name.trim().to_owned(),
             SlateEdit::Tags(tags) => slate.tags = tags,
+            SlateEdit::In(seconds) => slate.in_seconds = seconds,
+            SlateEdit::Out(seconds) => slate.out_seconds = Some(seconds),
         }
     }
 

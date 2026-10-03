@@ -1247,6 +1247,48 @@ fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             bus.borrow().send(Command::EditSlate { id, edit });
         }
     });
+    window.on_set_slate_mark({
+        let (bus, weak, position) = (
+            bus.clone(),
+            window.as_weak(),
+            bus.borrow().position_handle().clone(),
+        );
+        move |mark| {
+            let Some(w) = weak.upgrade() else { return };
+            // The **selection**, not `editing-slate-id`: a button is not a
+            // field, so there is no half-typed edit to attribute to the slate
+            // it opened on.
+            let Some(id) = parse_id(&w.get_selected_slate()) else {
+                return;
+            };
+            // `scan_source_position` — the *heading* position, which is what
+            // `i` and `o` capture (slates spec S4). A re-mark must land where a
+            // fresh mark would, or the two keys and these two buttons would
+            // disagree about what "the playhead" means.
+            let Some((source_index, seconds)) = scan_source_position(&position) else {
+                return;
+            };
+            // A slate belongs to one source, so a mark can only be moved within
+            // it. Re-marking from another video would silently move the range
+            // onto footage it was never about.
+            let on_its_source = UI.with_borrow(|ui| {
+                ui.snapshot.as_ref().is_some_and(|s| {
+                    s.project
+                        .slates
+                        .iter()
+                        .any(|sl| sl.id == id && sl.source_index == source_index)
+                })
+            });
+            if !on_its_source {
+                return;
+            }
+            let edit = match mark {
+                SlateMark::InPoint => SlateEdit::In(seconds),
+                SlateMark::OutPoint => SlateEdit::Out(seconds),
+            };
+            bus.borrow().send(Command::EditSlate { id, edit });
+        }
+    });
     window.on_show_slate({
         let weak = window.as_weak();
         move || {

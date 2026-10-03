@@ -15,7 +15,7 @@
 //! per-command inverse, and a source move or removal purges it from both
 //! stacks because a snapshot holds source indices.
 
-use pundit_core::project::{Project, SlateEdit};
+use pundit_core::project::{Project, SlateEdit, SlateError};
 use pundit_core::undo::UndoAction;
 use pundit_core::zoom::Zoom;
 use uuid::Uuid;
@@ -77,7 +77,30 @@ impl Bus {
         self.start_recording(zoom, Some(shot));
     }
 
+    /// Applies `edit` to slate `id`, **refusing one that would invert the
+    /// range** (BACKLOG #119).
+    ///
+    /// **The check is here and not in core** because this is where a refusal
+    /// can be seen: `edit_slates` below returns silently when nothing changed —
+    /// by design, so a command naming a slate that is gone costs nothing — so a
+    /// core-side refusal would be indistinguishable from a key that did nothing.
+    /// `Project::edit_slate` stays infallible and `Slate::would_invert` is the
+    /// question.
+    ///
+    /// The notice is `mark_slate_out`'s own `SlateError::OutBeforeIn`, reused
+    /// rather than reworded: it is the same rule, and a coach who meets it from
+    /// `o` and from this button should read the same sentence.
     pub(super) fn edit_slate(&mut self, id: Uuid, edit: SlateEdit) {
+        if let Some(open) = &self.open {
+            if let Some(slate) = open.project.slates.iter().find(|s| s.id == id) {
+                if slate.would_invert(&edit) {
+                    let e = SlateError::OutBeforeIn {
+                        in_seconds: slate.in_seconds,
+                    };
+                    return self.emit(Event::Error(UserError::Slate(e.to_string())));
+                }
+            }
+        }
         self.edit_slates(|project| project.edit_slate(id, edit));
     }
 

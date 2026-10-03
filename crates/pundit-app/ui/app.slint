@@ -195,6 +195,15 @@ export enum SlateField {
     tags,
 }
 
+/// Which of a slate's two marks a button moves (BACKLOG #119).
+///
+/// **Not folded into [`SlateField`]**: those two carry the text of a field,
+/// these two carry no payload at all — the value is the playhead, read in Rust.
+export enum SlateMark {
+    in-point,
+    out-point,
+}
+
 /// The inspector's text fields, for `edit-clip`.
 export enum ClipField {
     name,
@@ -3942,6 +3951,10 @@ export component AppWindow inherits Window {
     callback shoot-slate(string);
     callback delete-slate(string);
     callback edit-slate-field(SlateField, string);
+    /// Move the selected slate's in or out point to the playhead (BACKLOG
+    /// #119). No position argument: Rust reads the same heading position `i`
+    /// and `o` do, so a re-mark lands where a fresh mark would.
+    callback set-slate-mark(SlateMark);
     /// Focus a slate field, for `tests/slate_fields.rs`: both failures that
     /// test pins are about a *focused* field, and tabbing to one depends on
     /// the whole window's focus order.
@@ -4837,6 +4850,35 @@ export component AppWindow inherits Window {
                                     }
                                     accepted => { root.edit-slate-field(SlateField.tags, self.text); }
                                 }
+                            // Re-mark from the playhead (BACKLOG #119).
+                            // **Buttons, not `i`/`o`**: those match `"i" || "I"`
+                            // on purpose so a shifted press still marks, and the
+                            // slates spec's §S6 already settled that one key
+                            // cannot both create and re-time.
+                            Button {
+                                text: "Set in";
+                                enabled: !root.recording && !root.previewing;
+                                clicked => {
+                                    keys.focus();
+                                    root.set-slate-mark(SlateMark.in-point);
+                                }
+
+                                Tooltip {
+                                    text: @markdown("Move this slate's **in** point to the playhead");
+                                }
+                            }
+                            Button {
+                                text: "Set out";
+                                enabled: !root.recording && !root.previewing;
+                                clicked => {
+                                    keys.focus();
+                                    root.set-slate-mark(SlateMark.out-point);
+                                }
+
+                                Tooltip {
+                                    text: @markdown("Move this slate's **out** point to the playhead");
+                                }
+                            }
                             Button {
                                 text: "Record";
                                 enabled: !root.recording && !root.previewing;
