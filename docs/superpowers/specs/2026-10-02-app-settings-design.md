@@ -38,16 +38,36 @@ still worth reading for the audit in §W2.
 single chapters checkbox is **not what was asked for**: the coach wants every
 export output switchable.
 
-**The one thing that needs care rather than agreement.** §W2's audit stands as a
-*fact*: the `.srt` and the embedded `tx3g` **already** have a switch — the
-Scoreboard picker, where *Burned into the picture* writes neither and removes a
-stale `.srt`. So adding a second control over them would be two places governing
-one output, which is the "two spellings of one rule" this codebase keeps
-deleting (`Command::NewMatch`'s dropped `name` field is the precedent). The
-honest resolutions are **either** move the `.srt`/`tx3g` decision out of the
-Scoreboard picker and into the settings, **or** leave it in the picker and say so
-in the settings — not both. That is a question for the coach, and it is the only
-part of this answer that is not simply "do it".
+**And the coach answered the fork it raises (2026-10-03): fully independent
+switches.** The question was put — the `.srt` and the embedded `tx3g` are not
+independently controlled today, they *follow* from the Scoreboard picker (burned
+in writes neither and removes a stale `.srt`; separate track writes both),
+because a subtitle track of a board already painted into the picture is the
+board twice. Asked whether to leave them following the picker, make them
+independent, or grey them when redundant, the coach chose **independent**.
+
+**So two combinations become reachable that are not today, and both are
+legitimate — but neither may be silent.**
+
+- **Board burned in *and* a subtitle track of it.** The board twice. The coach
+  asked for the control knowing this; it is their file.
+- **Scoreboard: Separate track with the subtitle outputs off** — which means
+  **no board anywhere**: not burned, not beside the file, not embedded. Read
+  charitably this is a thing a coach may well want (a clean copy with no board
+  at all), so it is not a state to refuse. But it is **the one combination where
+  what you asked for and what you get look nothing alike**, so the export
+  sheet's explanatory line — which already follows the *effective* mode — has to
+  say it in words before the run, not leave it to be discovered in `exports/`.
+
+**What this does to the code**, so the plan does not discover it: `job.cues`
+stops being derived from the picker. `carry_scoreboard` currently maps mode +
+target into **both** the renderer and the cue slot in one place; the cues become
+their own input. That is a coupling removed rather than added, but the two rules
+it currently states together ("track mode blanks `job.scoreboard`" and "a clip
+or reel asked for on a separate track burns it in rather than dropping it") have
+to survive separately — the second especially, because it exists so the picker
+can never lose the board, and a clip's cue slot is **not** where its board can
+live.
 
 **2. #102 is an on/off setting**, not the snap-always-Shift-to-suppress shape
 §U1 recommended.
