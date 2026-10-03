@@ -1,51 +1,58 @@
 # The slate workflow — stopping at the out point, adjusting the marks, and the themed pass
 
-**BACKLOG #114, #119 and #120, specced as one piece**, because all three want the
-same thing underneath: *play this range and stop*. Written apart they would write
-that three times.
+**BACKLOG #114, #119, #120 and #104**, specced together because they touch one
+panel, one stored struct and — for two of them — one mechanism.
 
-The coach, over one session on 2026-10-02:
+**Revised through two adversarial passes.** The first draft got the central
+architecture wrong and shipped seven bugs on paper; **§R** keeps the record,
+because several were wrong in ways worth not repeating.
 
-- "when i record a clip, it doesn't stop at the end of the clip" (#114)
-- "preview and edit in out times" (#119)
-- "i want to be able to filter slates on tags too, then record all the slates
-  with that tag. the use case is like 'all these clips are corner kicks' or
-  similar" — and, clarifying, "it should only show the timed slates, and not
-  'free record' like the current slate recording action" (#120)
+The coach, over one session on 2026-10-02, and their choices:
 
-**Three decisions came from the coach before this was written**, and the spec is
-built on them rather than proposing alternatives:
-
-| | chosen |
+| | |
 |---|---|
-| #114's shape | **Pause the footage at the out point, keep recording — and draw the range during the take** |
-| #120's advance | **Advance to the next slate and park there, waiting for `R`** |
-| #119's control | **Re-mark from the playhead: `i` / `o` with the slate selected** |
+| #114's shape | **Pause the footage at the out point, keep recording — and show the range** |
+| #120's advance | **Advance to the next slate and park, waiting for `R`** |
+| #119's control | Re-mark from the playhead — **as two buttons, not `i`/`o`** (see M1) |
+| the detector's home | **The bus** (see S2) |
 
-This spec does **not** repeat the three backlog entries' own reasoning. Read them
-first; they carry the alternatives that were rejected and the coach's words.
+Read #114, #119, #120 and #104 first; this does not repeat their reasoning.
 
 ---
 
-## What already exists, checked rather than assumed
+## What already exists, read rather than assumed
 
-- **A slate is `(in_seconds, out_seconds: Option<f64>)` on `Project.slates`**,
-  marked by `i` / `o`. `i` stores it with `out_seconds: None`, deliberately, so a
-  half-marked range is a row that can be finished or deleted rather than UI state
-  that dies with the app.
-- **Shooting a slate seeks to its in point and then runs free** until Stop
-  (`start_recording`'s `from`). Nothing watches the out point.
-- **`SlateEdit` is `Name | Tags`.** There is no way to move a mark today —
-  `in_seconds` and `out_seconds` are never written after `o` closes the range.
-- **Slates are not on the scrubber at all.** `main.rs` shows them only in the
-  Slates list, as text (`slate_range`). The scrubber's `match-marks` are match
-  events.
-- **"Has this slate been shot?" is already cheap**: a scan of the clips for
-  `Clip.slate_id == slate.id`, which stays right across a delete, an undo and a
-  re-record.
-- **The clips list already filters by tag**, through the window's `tag-filter`,
-  and `tag_vocabulary` is deliberately clips ∪ slates so a tag invented on a
-  slate autocompletes.
+- **A slate is `{ id, source_index, in_seconds, out_seconds: Option<f64>, name,
+  tags }`** (`project.rs:420`). **One source per slate** — which the first draft
+  missed, and which the whole detector turns on.
+- **`selected-slate` already exists** (`app.slint:3514`): UI-only, cleared on
+  project open and when its slate leaves the project, driving the row highlight
+  and the editor row below the list. A click **toggles** it.
+- **The slate editor row already exists** with its two `LineEdit`s and the
+  Shoot button (`app.slint:4803-4845`), already folded into `text-editing`.
+- **`i` / `o` match `"i" || "I"` deliberately** (`app.slint:4355`), so a shifted
+  or caps-locked press still marks. Shift+`i` is **not** free.
+- **The slates spec's §S6 already decided** that `i`/`o` do not re-time a
+  selected slate: "One key cannot both create and re-time, and the mode deciding
+  which would be invisible state on the primary key."
+- **`SlateEdit` is `Name | Tags`** and derives **`Eq`** (`project.rs:435`).
+- **`SlateError::OutBeforeIn` and the `out <= in` rule already exist**
+  (`project.rs:443-456`), surfaced by `mark_slate_out` as a notice.
+- **`start_recording` pauses the footage unconditionally** — "Every clip starts
+  on a still frame" (`recording.rs:124-127`) — and `RecordingLog::new` seeds a
+  `Pause` at record time 0. So `R` parks a take **paused**.
+- **A scrub is impossible during a take**: the scrubber is `enabled: can-play &&
+  !recording`, and `ScrubMove`/`ScrubRelease` are absent from the recording
+  allow-list. **Only skips** move the playhead mid-take.
+- **The recording guard is an exhaustive allow-list** (`bus/mod.rs:914-951`):
+  "everything not listed is refused, so commands added later are too."
+- **`RecordingStatus` is `Idle | Starting | Recording { t0_ns }`** — it carries
+  **no slate**. The bus knows (`Active.slate`); the UI does not.
+- **The scrubber's `Mark` is a point** (`at`, `color`, a 2px rectangle drawn
+  before the slider so the thumb paints over it, `scrubber.slint:16-19, 74-81`),
+  and `at` is **concat time** (`main.rs:1699`).
+- **`show_slates` already renders `slates_sorted()`** — source then in-point,
+  i.e. footage order — and already computes `shot` per row (`main.rs:3423-3451`).
 
 ---
 
@@ -53,255 +60,240 @@ first; they carry the alternatives that were rejected and the coach's words.
 
 **S1. The footage pauses at the out point; the recording does not stop.**
 
-The coach's choice, and it keeps the slates spec's S5 reason intact: S5 refused to
+The coach's choice, and it leaves the slates spec's §S5 standing: S5 refused to
 bind `out_seconds` because "binding it would mean stopping a recording the coach
-is still talking over" — which is an argument about the *recording*, not about the
-*footage*. Pausing the picture takes nothing away from the sentence being spoken.
+is still talking over" — an argument about the *recording*, not the *footage*.
 
-**A commentary pause is already an ordinary event in a take** (every recording
-opens with one), so the clip replays, previews and exports with no special case.
-That is the whole reason this shape is cheap.
+**Verified by running code rather than argued:** a take with a pause at its end
+replays as `[Freeze, Play, Freeze]` with `source_time` holding at the out point,
+because `playback_segments`' tail covers the rest of the take; and a stroke
+mid-draw when the pause lands is unaffected, since `visible_strokes` is keyed on
+record time alone. That is why this shape is cheap.
 
-**S2. The UI tick detects the crossing, not the bus — forced by the bus
-contract.**
+**S2. The bus detects the crossing, and the first draft's argument for the UI
+tick was wrong.**
 
-`CLAUDE.md`'s bus contract: any command that lands in the commentary event log
-carries its timestamp and source anchor **as a field, captured at the input event
-on the UI thread, never assigned by the bus handler**, because queue delay is the
-drift that puts drawings behind the ball on replay.
+The draft deduced the UI tick from `CLAUDE.md`'s bus contract. **That deduction
+does not hold**: the contract is about queue delay between a user's *input
+event* and the handler that stamps it, and a crossing has no input event — there
+is nothing queued for the delay to affect.
 
-A pause at the out point lands in the event log. So it cannot be a pause the bus
-decides to issue with its own clock. The UI tick already reads the shown frame's
-source time once a tick for the scoreboard and the highlight rings; it is the only
-place that holds both halves — the frame on screen and a `now_ns()` to stamp it
-with.
+The real reasons are better and they point the other way:
 
-**The cost is the tick's granularity: 30 Hz, so up to 33 ms late.** Stated rather
-than hidden. It is the same granularity the scan board and the rings already
-follow the footage at, and a third of a frame at 30 fps.
+- **The bus owns the player, the rate, the position and `Active.slate`**, so it
+  sees every seek, skip and rate change **first-hand**. The UI sees them late
+  and through `shown_position`, which returns `locate(target_abs)` while a seek
+  is outstanding — which is exactly how the draft's detector mistook a skip for
+  a crossing (§R).
+- **It already has the shape.** The run loop is `rx.recv_timeout` over
+  `min(skip_deadline, start_deadline)` with `dispatch_deadlines`, so an
+  **out-deadline is an existing mechanism**, not a new one.
+- **It is testable.** `pundit-harness` drives the bus headlessly and never runs
+  `main.rs`'s timer, so a tick-based detector is **invisible to CI** — which is
+  how the draft's bugs survived its own review.
 
-**S3. The trigger is *crossing* the out point while playing forward, once per
-take — not `position >= out`.**
+**The named cost is re-arming**: play, pause, a skip landing, a rate change and
+a load all change when (or whether) the out point will be reached. That is real
+added complexity and it is the price of the three bugs it removes.
 
-A skip or a scrub during the take can move the footage past the out point or back
-before it **on purpose**: the coach went there. `position >= out` would re-pause
-every tick after the first, and would fight a coach who skipped back to re-watch
-something.
+**S3. The armed range is `(source_index, out_seconds)`, and both halves are
+required.**
 
-So: remember the previous tick's source time, and fire when the previous was
-`< out` and the current is `>= out`, while playing forward, and only if this take
-has not already fired. A half-marked slate (`out_seconds: None`) has no end and
-behaves exactly as today. A plain `R` take — not from a slate — has no range and
-is untouched.
+A slate belongs to one source. Comparing a time alone pauses the footage in the
+*next* video wherever its time passes the out point — reachable on the preview
+path, where `end_of_stream` advances to the next source at 0 s.
 
-**S4. `TogglePlay` cannot be used for it, and this is the one new command.**
+**S4. No new transport command.** The bus pauses the footage itself; it does not
+need to send itself a command, and `Command::Pause` would have been **silently
+refused mid-take** by the allow-list — the draft's one-line addition was a
+feature that could never fire. The pause is logged exactly as `toggle_play` logs
+one, **only on a state change**, so an already-paused take gains no second event.
 
-The existing pause/play command is `TogglePlay { host_ns, source_secs }`. A toggle
-is wrong here: if the coach has already paused the footage themselves before the
-crossing, a toggle would **start it playing** at the moment the range ended, which
-is the opposite of the feature.
+**S5. The pause is anchored at `out`, not at a position reading.** `out_seconds`
+is a stored field, so there is nothing to capture. This is `ShootSlate`'s own
+precedent: it "carries **no** captured position: the in point is a stored field,
+not a reading of the playhead."
 
-So `Command::Pause { host_ns, source_secs }` — an idempotent pause, carrying the
-same two caller-captured fields for S2's reason. `TogglePlay` stays as it is; this
-is not a refactor of it, because every keyboard path genuinely wants the toggle.
+**S6. The range is drawn on the scrubber for the armed *or selected* slate.**
 
-**S5. The range is drawn on the scrubber during the take, and this is half the
-fix.**
+The coach thought this already existed; it never did, and without it a take that
+pauses is indistinguishable from one that stalled. Drawing it for the **selected**
+slate too costs nothing extra and serves the two features that need it most —
+re-marking (M) and previewing (P) both work on a range with no take in flight.
 
-The coach said "i thought we were signaling the end of the slate during
-recording". It never existed. Without a visible end, a take that pauses is
-indistinguishable from a take that stalled — which would turn S1 from a feature
-into a bug report.
-
-**The scrubber's `Mark` is a point, not a span** (`at`, `color`, drawn as a 2px
-Rectangle), so a range needs a new shape: `export struct Span { from: float, to:
-float, color: color }`, drawn before the marks for the same stated reason the
-marks are drawn before the slider — so the thumb paints over them.
-
-**Only the take's own slate is drawn, not every slate.** A match has dozens; the
-scrubber is ~1000px wide at best, and the one range that matters during a take is
-the one being shot. Outside a take, no span is drawn — which is also why this
-needs no decision about overlapping ranges.
+Two things it requires: a span shape (the existing `Mark` is a point), and
+mapping through `project.abs_seconds(source_index, …)`, because `at` is concat
+time. One slate at a time, so the overlap question does not arise.
 
 ### Deferred from S
-
-- **A countdown or a flash at the out point.** The span plus the pause is enough
-  signal to test; a countdown is a second mechanism for the same job.
-- **Drawing every slate on the scrubber outside a take.** Wanted eventually (it
-  is how a coach would see the shape of a match), but it brings the overlap
-  question with it and is not this feature's.
+A countdown or flash at the out point; drawing *every* slate's range, which
+brings the overlap question with it.
 
 ---
 
 ## M. Adjusting the marks (#119)
 
-**M1. `i` and `o` move the selected slate's marks, from the playhead.**
+**M1. Two buttons in the slate editor — "Set in" and "Set out" from the
+playhead — not `i`/`o`.**
 
-The coach's choice, and it needs no new control: the same two keys that made the
-slate move its marks when one is selected. Frame-accurate, because the playhead
-already is.
+The coach chose "re-mark from the playhead"; this is that, by the cheaper route.
+`i`/`o` are **not** available: they match `"i" || "I"` on purpose, so Shift+`i`
+already marks, and splitting that branch would take behaviour away. **The slates
+spec's §S6 already decided this** and its reasoning stands — one key cannot both
+create and re-time. In this app Shift also already means *more* on the transport
+(Shift+arrow is a 20 s skip), not *edit*.
 
-**M2. Two new `SlateEdit` variants, and no format change.** `in_seconds` and
-`out_seconds` already exist; `Project::edit_slate` is already the one mutation
-path. `purge_for_source_change`'s staleness test is a deliberately **exhaustive**
-match, which is what stops a new edit kind being admitted in silence — so adding
-variants is safe there by construction.
+The editor row, the selection and the `text-editing` fold all already exist, so
+two buttons need no key branch, no modifier and no new state.
 
-**M3. The rule has to say what "selected" means, and there is no slate selection
-today.** The Slates list has rows; the clips list has `selected-clip`. A slate
-selection is new state, and it is UI state (not stored): which row the coach is
-working on is not a property of the match.
+**M2. Two `SlateEdit` variants, no format change — and `Eq` has to go.**
+`in_seconds`/`out_seconds` already exist and `edit_slate` is the one mutation
+path. But `SlateEdit` derives `Eq`, and an `In(f64)`/`Out(f64)` variant cannot:
+`f64: !Eq`. Nothing needs it. *(The draft claimed safety came from
+`purge_for_source_change`'s exhaustive match — that match is over `UndoAction`,
+not `SlateEdit`. Adding variants is safe because every slate edit funnels into
+one `UndoAction::EditSlates` whole-list snapshot, which is already listed as
+holding stale indices.)*
 
-**M4. `i` with a slate selected is ambiguous, and the ambiguity is resolved in
-favour of the new slate.** Today `i` starts a *new* range. If a selected slate
-made `i` move its in point, a coach who had clicked a row an hour ago would mark
-nothing when they meant to.
+**M3. The ordering rule reuses `SlateError::OutBeforeIn` and its `<=`**, in
+**both** directions — a "Set in" after the out point is the likelier mistake, and
+nothing guards an in point today. A half-marked slate constrains nothing.
 
-So: **`i` always starts a new range.** Moving a mark is `i`/`o` **with a
-modifier** — Shift+`i` / Shift+`o` — or an explicit "Set in from playhead" on the
-row. **This is an open question for the coach**, because the choice is between a
-modifier to remember and two buttons per row.
-
-**M5. Moving a mark must keep the range ordered.** An out before its in is not a
-range. Refuse it with a notice naming which mark, rather than silently swapping
-them — a swap would move a mark the coach did not touch.
+**M4. Where the check goes is the one real design choice in M.**
+`Project::edit_slate` is infallible and `Bus::edit_slates` returns silently when
+nothing changed — by design — so a refusal has nowhere to surface. Either
+`edit_slate` becomes `Result<(), SlateError>` (two existing call sites) or the
+check happens in `bus::edit_slate` before the mutation. **The spec picks the
+bus**: core keeps its infallible setter, and the bus is already where
+`UserError::Slate` notices come from.
 
 ---
 
-## P. Previewing a slate (#119)
+## P. Previewing a slate (#119, #104)
 
-**P1. Previewing a slate is NOT the preview pipeline**, and knowing that is what
-makes it cheap.
+**P1. It is not the preview pipeline.** `OpenPreview` takes a **clip** id and
+composites that clip's recording; a slate has no recording.
 
-`Command::OpenPreview(Uuid)` takes a **clip** id and composites that clip's
-recording against the game video. A slate has no recording, so there is nothing
-to composite. What the coach wants is the game video played from `in` to `out`
-and stopped.
+**P2. It is #104's command plus a play.** #104 already specifies the park:
+`reset_skip`, pause, then `load(source_index, in_seconds, …, Origin::Scrub)` —
+i.e. `Command::JumpToSlate(Uuid)`. Previewing is that, then playing, then S's own
+armed stop. **#104 is therefore subsumed**: a double-click on a slate row
+previews its range.
 
-**P2. So it is a seek, a play, and S3's own crossing detector** — the same
-machinery, with no recording in flight. Which is the strongest argument for
-specifying these three entries together: a preview is a take's stop without the
-take.
+**P3. It forces 1×.** The clip preview already returns to 1× with no seek; a
+coach scanning at 16× would otherwise overshoot by half a second of footage.
 
-**P3. It stops rather than pausing-and-continuing**, because there is no sentence
-to finish. The footage pauses on the range's last frame, which is where the coach
-wanted to look.
+**P4. It stops rather than pausing-and-continuing** — there is no sentence to
+finish, and the last frame of the range is what they wanted to look at.
 
 ---
 
 ## T. The themed pass (#120)
 
-**T1. The queue is the filtered list, and the filter is the Slates list's own.**
+**T1. The pass is the Slates list, tag-filtered**, on the clips list's shape. Its
+order is the list's, which is already `slates_sorted` — footage order, which is
+already right.
 
-Cheapest and clearest: what the coach sees is what they will work through. A tag
-filter on the Slates panel, on the clips list's shape.
+**T2. Only *timed* slates (`out_seconds.is_some()`) and only *unshot* ones, and
+the rows must SAY so.** The draft claimed "the queue is the filtered list, so
+what the coach sees is what they will work through" while excluding two classes
+that stay in the list — rows the pass silently skips. `SlateRow` already carries
+`shot`; nothing in the row reads it yet. **The rows show both states**, so the
+list and the pass cannot disagree, and the queue reads the row model rather than
+rescanning.
 
-**T2. Only *timed* slates are in the queue — `out_seconds.is_some()`.**
+**T3. The pass holds the ordered slate *ids* it started with.** An index-based
+"next" breaks the moment it is used: stopping a take adds a clip carrying
+`slate_id`, so the shot slate leaves an unshot queue in the same
+`ProjectChanged` the advance reacts to — `[A,B,C]`, shoot A, queue becomes
+`[B,C]`, index+1 is **C**, and **B is never offered**. An *aborted* take produces
+no clip at all, so its slate stays unshot and must not be skipped either.
 
-The coach's clarification. A pass through the corners is a pass through ranges,
-and a range with no end has nothing to work through. Half-marked slates **stay in
-the list** to be finished; they are excluded from the queue alone. This is the
-queue's filter, not a change to what a slate is.
+**T4. After Stop it parks on the next slate's in point, via #104's
+`JumpToSlate`** — which pauses, where `ScrubRelease` would not and the footage
+would run on through the next range.
 
-**T3. Only *unshot* slates, by default.** The point is to get through the ones
-not yet done, and "has this been shot?" is already the clip scan. A re-record of
-one that came out badly is an obvious second need, so the queue carries a way to
-include the shot ones — **an open question is whether that is a toggle or just
-clicking the row directly**.
+**T5. `R` arms and space starts, and that is stated rather than discovered.**
+`start_recording` pauses the footage unconditionally and the log seeds a pause at
+record time 0, both deliberately. So a bounded take is two keys. **Open question
+for the coach:** should the pass's own start play the footage, saving a press per
+slate, or is R-then-space right? Changing it argues against a documented rule.
 
-**T4. After Stop, it advances to the next slate and parks on its in point,
-waiting for `R`.**
+**T6. The bound is in the data, not on the command.** `out_seconds.is_some()`
+is the bound; an untimed slate has no end and behaves as today. The draft carried
+a bound on the command and claimed two modes had to coexist — under S1 that is
+false, because pausing the picture costs the coach nothing, so there is no
+free-running mode to preserve.
 
-The coach's choice. It keeps the momentum of a pass without recording while they
-are not ready, and it matches the rule every sheet in this app follows: nothing
-moves under the coach's hands without being asked.
-
-**T5. The bound belongs to the PASS, not to the slate — and both modes must keep
-existing.**
-
-Free-running is right when the coach marked an in point and wants to talk for as
-long as it takes. Bounded is right for a pass. The same slate shot either way
-behaves differently, and **nothing is stored to say which** — so the bound is a
-property of how the take was started, carried on the command, not a field on the
-slate.
-
-**T6. Order is the footage's, not the marked order.** `slates_sorted` exists for
-reading and is time order; the stored order is the marked order. A pass through a
-match goes forwards through the match. Said rather than inherited from whichever
-the list happens to use.
-
----
-
-## X. What this does not do
-
-- **X1. It does not stop the recording.** S1. The coach keeps Stop.
-- **X2. It does not touch a plain `R` take.** No range, nothing to stop at.
-- **X3. It does not make `out_seconds` binding on the stored slate.** The slates
-  spec's S5 stands: the value is advisory, and a take that runs past it is still
-  the take. What changes is that the *footage* stops offering more.
-- **X4. It does not draw every slate on the scrubber.** S5's deferral.
-- **X5. It does not add a second "record this range" command.** The pass starts
-  takes through the same path a single slate does, with the bound carried on it
-  (T5).
-- **X6. It stores nothing new in `project.json`** — no format bump. The marks'
-  fields exist (M2), the selection is UI state (M3), the filter is UI state, and
-  the pass is UI state.
+**T7. The slates' tag filter is its own property, not the window's
+`tag-filter`.** The clips list's is **written by the bus** on `Event::Select` to
+un-hide a newly selected clip, which could clear the pass's filter mid-pass.
 
 ---
 
 ## Crate responsibilities
 
-- **`pundit-core`**: the two `SlateEdit` variants and the ordering rule (M2, M5).
-  The queue's shape — "timed, unshot, tagged, in footage order" — is a pure
-  function over `Project`, which is where it can be tested without a bus.
-- **`pundit-app`'s bus**: `Command::Pause`, the bound carried on a slate take, and
-  the slate edits. It does **not** detect the crossing (S2).
-- **`pundit-app`'s UI**: the crossing detector in the tick, the scrubber span, the
-  slate selection, the tag filter, and the pass's advance.
-- **`pundit-media`**: **nothing.** This feature draws no new pixels and changes no
-  pipeline.
+- **`pundit-core`**: the two `SlateEdit` variants (M2), and a predicate on
+  `&Slate` + `&[Clip]` for "timed and unshot" — not a "queue", which would be a
+  second definition of what the row model already computes.
+- **`pundit-app`'s bus**: the out-deadline, the arm and its re-arming (S2, S3),
+  the logged pause (S4, S5), `JumpToSlate` (P2), and the slate edits with their
+  refusal (M4). The bus publishes the armed range so the UI can draw it.
+- **`pundit-app`'s UI**: the span (S6), the tag filter (T7), the row states (T2),
+  the two editor buttons (M1), and the pass's advance over ids (T3).
+- **`pundit-media`**: **nothing.** No pipeline changes, no new pixels.
 
 ## Testing
 
-- Core: the queue function over a project with timed/untimed, shot/unshot, tagged
-  and untagged slates; the mark edits including the refused inversion.
+Now that the detector is in the bus, the test that proves S1 end to end is
+**reachable**, which it was not in the draft:
+
 - Harness: a take from a slate crosses its out point and the clip's event log
-  **ends with a pause whose source time is the out point** — the one assertion
-  that proves S1 end to end. And: a skip back before the out point does not
-  re-fire (S3), a half-marked slate's take never pauses, and a plain `R` take
-  never pauses.
-- The crossing detector is pure arithmetic over (previous, current, out) and
-  should be a function with its own table test, not a condition buried in the
-  tick.
+  **ends with a pause anchored at `out`**; a forward skip past the out point does
+  **not** fire it; a half-marked slate's take never pauses; a plain `R` take
+  never pauses; a take on source 1 is not stopped by a slate on source 0.
+- Harness: the refused mark move emits `UserError::Slate` and changes nothing.
+- Core: the timed-and-unshot predicate, and the mark edits including both
+  inversion directions.
 
 ## Risks
 
-1. **The 30 Hz tick means the pause can be up to 33 ms late** (S2). Accepted,
-   stated, and the same granularity the board and rings already run at. If it
-   ever matters, the fix is not a faster tick: it is the bus detecting the
-   crossing and the UI stamping it, which is a bigger change than this feature.
-2. **A slate selection is new UI state** (M3) and new state is where bugs live.
-   Mitigated by it being UI-only and by the Slates list already having rows.
-3. **M4's modifier is a guess at what the coach will find natural.** It is the
-   one open question that will be felt every time it is used.
-4. **The span on the scrubber is the first span that element has drawn.** Its
-   marks are 2px points; a range needs its own shape and its own z-order
-   decision. Small, but it is new drawing in a file that currently has none.
+1. **Re-arming is the whole risk** (S2's named cost): six events change when the
+   out point will be reached, and a missed one is either a pause that never comes
+   or one that comes late. It is why the harness assertions above are per-event
+   rather than one happy path.
+2. **No format bump, no `state.json` key** — so nothing here can corrupt a
+   project or a preference. Worth stating because it bounds the damage any of
+   this can do.
 
 ## Open questions for the coach
 
-1. **M4: Shift+`i`/`o` to move a selected slate's mark, or two buttons on the
-   row?** A modifier to remember against two more controls per row.
-2. **T3: should the pass include already-shot slates behind a toggle**, or is
-   clicking the row directly enough?
-3. **Does the preview (P) want a key, or is a row button enough?** Every letter
-   is taken and #96 owns the keyboard question.
+1. **T5: should the pass's start play the footage**, or is `R`-then-space right?
+2. **T2: are the skipped rows marked, or filtered out** — and if filtered, how
+   do you get back to a half-marked one to finish it?
+3. **P: does previewing want a key?** `b e g k m n p q s t u w` are free (`p` is
+   the obvious one); #96 owns the keyboard question but the letters exist.
 
-## R. What this spec is not sure of
+## R. What the first draft got wrong
 
-- **The crossing detector's home is argued from the bus contract, not measured.**
-  The contract is explicit and the conclusion follows, but no one has shown that a
-  bus-side pause would actually drift enough to notice. The argument is that the
-  contract exists precisely so nobody has to find out.
-- **The queue's "unshot" scan is O(clips × slates)** per rebuild. Fine at a
-  match's scale (dozens of each) and stated so nobody assumes it was measured.
+Kept because several were wrong in instructive ways.
+
+1. **The detector's home was deduced from the wrong premise.** The bus contract
+   is about queue delay after an input event; a crossing has none. The right
+   argument is that the bus sees seeks first-hand and is testable.
+2. **A slate's `source_index` was omitted from its own description**, so the
+   detector compared a time across a multi-video timeline.
+3. **`prev < out && cur >= out` mistook a skip for a crossing**, because
+   `shown_position` returns `locate(target_abs)` mid-seek. The draft *named* that
+   hazard and then wrote the rule it breaks.
+4. **`Command::Pause` could never have fired** — not on the recording
+   allow-list.
+5. **"There is no slate selection today"** — there is, and it already has the
+   exact properties the draft proposed to invent.
+6. **The arm outlived a refused take**, so a plain `R` take would have paused at
+   a stale out point, violating the draft's own X2.
+7. **The index-based advance skipped every second slate** (T3).
+8. **Two fact errors relayed**: "every letter is taken" (twelve are free), and
+   "a third of a frame at 30 fps" — 33 ms is exactly one frame.
+9. **A section of refusals and a section of risks were 5/6 and 3/4
+   restatement.** Both are now one short section each.
