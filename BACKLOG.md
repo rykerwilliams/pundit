@@ -2308,8 +2308,39 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   transitional and goes with the fix.
 - **Why deferred:** filed while the coach was recording; needs a reproduction
   before a fix can be chosen.
-- **When to revisit:** as soon as those lines exist. It is a visible gap on the
-  app's main path and everything else about it is already known.
+- **DID NOT REPRODUCE, 2026-10-03, and the diagnostic is proven working.** The
+  coach ran it: "it shows the board during record now". The lines carry exactly
+  one `GONE`, and it is `scrubbing true` — the documented drop on a drag,
+  restored on release. **No line reads `phase Starting` or `Recording` at all**,
+  and since the diagnostic prints only on a *transition*, the board never
+  changed state across the take.
+- **It was not fixed by anything**, checked rather than assumed: the only commit
+  touching the board path since v0.11.0 is the diagnostic itself, an `eprintln!`
+  behind an env var. `show_board`, the tick's board key and the `Image`'s gate
+  are byte-identical to the build the report came from.
+- **So the leading hypothesis is now that the board never disappeared, and what
+  the coach saw was the clock not ADVANCING.** `start_recording` pauses the
+  footage unconditionally — "Every clip starts on a still frame" — and the scan
+  board follows **the displayed frame's source time**. A take started and talked
+  over *without pressing play* therefore shows a board whose clock is frozen:
+  correct behaviour that reads exactly like "the clock isn't working". It fits
+  the original wording — "when i am previewing the video i see the clock. when
+  im recording, i don't", where a preview plays and a fresh take does not — and
+  it fits this run, where the coach pressed play.
+  - **Testable in one take:** press `R` and do **not** press space. The clock
+    should sit still at the in point; press space and it should advance. If so,
+    #110 is not a defect in the board at all, and the question becomes whether a
+    frozen clock during a take should *say* so — a UX decision, not a fix.
+  - **If that is not it**, the remaining variables are which project (the coach
+    has three), a second video (`source_index > 0`), an avatar project, and
+    whether the period covering the take's position is tagged.
+- **The diagnostic stays in**, against its own "transitional, goes with the fix"
+  note: there is no fix, and it is the one thing that will name the cause in a
+  single take if this recurs. Its cost is an env var and two lines per
+  transition.
+- **When to revisit:** the next time the coach sees it. Run the command above,
+  and try the frozen-clock test first — it costs one take and would reframe the
+  whole entry.
 
 114. **Shooting a slate doesn't stop at its out point.** The coach (2026-10-02):
   "when i record a clip, it doesn't stop at the end of the clip." Shooting a
