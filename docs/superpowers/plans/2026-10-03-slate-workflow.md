@@ -1,0 +1,309 @@
+# Plan — the slate workflow's hard half: the out-point stop, the preview, the pass
+
+Spec: `docs/superpowers/specs/2026-10-02-slate-workflow-design.md`. **Read it
+first; this plan does not repeat its reasoning.** Read `CLAUDE.md` too.
+
+**M and T1 have shipped** (PRs #29, #30): the mark buttons and the slates' tag
+filter. What is left is the half the spec's review found a bug in nearly every
+paragraph of.
+
+**Revised through two adversarial passes, and the first draft's one original
+idea was wrong.** §R keeps the record. The short version: the draft added a
+"deadline as a hint, position check as truth" mechanism to make a missed re-arm
+degrade to "pauses late" — but **"late" is unbounded**, which is
+indistinguishable from "never", so it bought nothing. The replacement is smaller
+and has no re-arms at all.
+
+**Gates.** `CLAUDE.md`'s build conventions. Clippy must be
+`rustup run 1.92 cargo clippy --workspace --all-targets -- -D warnings`: a clean
+local 1.98 is not the gate.
+
+**`pundit-core` and `pundit-media` are untouched by every task.**
+
+## Where this stands (update it as tasks land)
+
+- **A — the span on the scrubber.** Not started.
+- **B — the stop.** Not started.
+- **C — the preview.** Not started.
+- **D — the pass.** Not started.
+
+---
+
+## A. The span on the scrubber — first, because it is the only part the coach can see without the stop working
+
+**Files:** `crates/pundit-app/ui/scrubber.slint`, `app.slint`, `main.rs`.
+
+1. **Two floats on the `Scrubber`, not a field on `Mark`.** `in property <float>
+   slate-span-from` / `slate-span-to`, and one `Rectangle` before the slider
+   with `visible: to > from`. The draft put a `to` on `Mark` for "one field, one
+   expression, one loop" and all three were wrong:
+   - **the loop's `x` is `mark-x(mark.at) - self.width / 2`**, centred for a 2px
+     tick, so a span would be drawn **half its own length to the left** — the
+     left edge half a span before the in point. Two expressions, and the second
+     is where the bug is.
+   - **there is exactly one `Mark` construction** and it is a Rust struct
+     literal in `show_match`, so "every existing construction keeps working"
+     is false: it would not compile until `to: 0.0` were added. A compile error
+     rather than a silent bug, but the opposite of what the draft promised.
+   - **it is not a list.** The spec's S6 is one slate at a time. A span is two
+     floats, and as its own element it is free to take its own height and
+     opacity — which it wants, because a 12px tick-coloured bar over a region
+     does not read like a tick.
+2. **Drawn for the SELECTED slate, and the bus publishes nothing.** The draft had
+   the bus publish the armed range *and* said it should serve the selected one —
+   which cannot both hold, because the selection is UI-only. It does not need
+   to: **the armed slate is always the selected slate** at every entry point (the
+   Shoot button sends `root.selected-slate`, the preview comes from a row
+   double-click, the pass selects the row it parks on). `on_show_slate` already
+   fires on every selection change and already looks the slate up in the
+   snapshot. So this is ~4 lines there plus the same two in the project-changed
+   path, so a re-mark moves it — and **no new `Event`**.
+3. **In concat time**, through `project.abs_seconds(source_index, …)`, because
+   the scrubber's x is the concat timeline. `abs_seconds` is infallible and
+   clamps the *index*, not the time — so an out-of-range index maps silently to
+   `total + in_seconds`, off the end of the bar. Only reachable through a remap
+   bug, but it fails quietly; worth a debug assert rather than a guess.
+
+---
+
+## B. The stop
+
+**Files:** `crates/pundit-app/src/bus/{mod.rs, recording.rs, transport.rs}`.
+
+### The mechanism
+
+1. **`Bus.armed_slate: Option<Uuid>`, not a `(source_index, out)` tuple.** The
+   tuple is a cache of two fields of a project the bus owns, and it goes stale:
+   **`MarkSlateOut` is on the recording allow-list**, so the coach can press `o`
+   mid-take and move the out point, and the cached value would stop at the old
+   one. An id resolved at each check also makes a "cleared on a source change"
+   clause unnecessary — a remapped slate resolves correctly, a deleted one
+   resolves to `None` — and `Active.slate: Option<Uuid>` already exists, so a
+   tuple beside it would be the second truth this task is meant to avoid.
+2. **No deadline during a take: the bus already wakes 10 times a second.**
+   `LEVEL_INTERVAL_NS` is 100 ms, and `bus/mod.rs`'s loop tail runs *"After every
+   input, not only on a timeout, so a busy channel (level messages at 10 Hz)
+   can't starve them."* So the check belongs in that tail and the take path needs
+   no deadline at all.
+3. **One bounded poll covers the preview path**, which is the only quiet one
+   (plain playback posts nothing periodic). Recomputed each iteration in the
+   `.min()` chain:
+   ```rust
+   .chain((self.armed_slate.is_some() && self.playing).then(|| Instant::now() + OUT_POLL))
+   ```
+   **No stored `Instant`, no `dispatch_deadlines` arm, no re-arm sites.** The
+   timeout falls through `match input { None => {} }` to the tail, where the
+   check lives. `OUT_POLL = LEVEL_INTERVAL`, so the constant says why it is that
+   number. Worst case is one poll late — three frames — against the draft's
+   unbounded "late".
+4. **The check:** armed, playing, **no preview open**, the slate resolves, its
+   source is `self.current`, and `query_position()` is at or past its out point.
+   Then fire once and disarm.
+   - `preview.is_none()` is not optional: `set_playing` acts on whichever
+     pipeline is on screen while `query_position` always reads the **game**
+     pipeline, so without it a stale arm would stop a *clip preview* dead, with
+     no notice and no log.
+   - **`query_position` is safe here, measured:** after a flushing seek it
+     returns `None` for 0–15 ms and then the seek's **target** — never the
+     pre-seek value — and the same across a source change. So there is no stale
+     read to defend against, which is why there is no previous-position state.
+
+### The bug the measurement exposed, and its fix
+
+5. **A forward skip makes `query_position` read the skip's target within 5 ms, so
+   a naive check fires and logs a pause where the footage is not.** Skip +6 s
+   from 59.5 with `out = 60`: the position reads ~65.5, the check fires, and the
+   log gets `Pause { source_time: 60.0 }` while the picture is at 65.5 — replay
+   then freezes 5.5 s behind the footage the coach is talking over. The draft
+   called an immediate fire "the honest answer, because the coach *is* past the
+   range"; it is not honest, it writes a wrong anchor. BACKLOG #114 is explicit
+   that a deliberate move past the out point must not trigger it.
+6. **So the distinguisher is the EVENT, not the position: disarm without pausing
+   when a landing's position is already past the out point.** One line at the
+   skip/scrub/load landing sites. After it, the poll only ever sees a position
+   reached by **playback**, anchoring at `out` is honest to the frame, and
+   #114's rule is kept with no previous-tick state machine. A position tolerance
+   cannot do this job — a missed poll and a deliberate skip look identical in
+   position alone.
+
+### The log, which is this feature's one genuine departure
+
+7. **The bus mints the timestamp, and that contradicts a rule stated twice in the
+   file being edited.** `transport.rs` declines to log a pause at `PlayerEvent::
+   Error` and at EOS because *"it would need a bus-side time"*, and #114 repeats
+   the demand for a caller-captured one. The spec argued `CLAUDE.md`'s contract
+   away for **where the detector lives**; nobody carried it through to the
+   **timestamp**. Carry it: the contract is about queue delay between an input
+   event and its handler, **the deadline is itself the event**, nothing was
+   queued, and the time wanted is "when the picture stopped", which is now. So
+   `host_ns = pundit_media::now_ns()` on the bus thread — and **amend those two
+   comments**, so the codebase ends with one rule rather than two contradictory
+   ones. The distinction that makes it sound: those pauses have **nothing to
+   anchor to**; this one has `out`.
+8. **Call `active.log.pause(host_ns, out)` directly — NOT `log_playing`.**
+   `log_playing` computes its anchor from `heading(ui_secs)`, which prefers
+   `skip.target()`, then `player.target_secs()`, then the caller's value. So
+   `log_playing(now, Some(out))` anchors at `out` only when the skip coordinator
+   is idle *and* no seek is in flight — and `set_playing(false)` at a non-1×
+   rate calls `change_rate(1.0)` → `load(...)` itself, making `target_secs()`
+   `Some` **before** the log line runs. The anchor would be non-deterministic,
+   and `EventKind`'s own doc says that anchor **overrides** the wall-clock cursor
+   on replay. The draft's "as `toggle_play` does" was wrong twice: that guard
+   lives in `toggle_play`, not in `set_playing` or `log_playing`.
+9. **The state-change guard is the firing condition.** The check requires
+   `self.playing`, so `set_playing(false)` always changes state and no second
+   pause can be written. State that as the deliberate consequence rather than
+   leaving it a coincidence a later edit can break. *(The draft cited
+   `debug_assert_sorted` as the thing a duplicate would trip — it cannot:
+   `RecordingLog::record_time` clamps every record time to at least the last
+   event's, precisely so a late `host_ns` cannot unsort the log. The real cost of
+   a duplicate is a redundant event and the tests that read the log's tail.)*
+
+### The arm's lifecycle — four explicit sites, and there is no funnel
+
+10. **`start_recording` assigns the arm unconditionally** — `self.armed_slate =
+    from.map(|shot| shot.slate)` — so a plain `R` take always **clears** it.
+    Without that, a live preview's arm is inherited and an `R` take pauses at a
+    stale out point: the same bug as a refused shoot, through a second door.
+    Assign it **after** `self.recording = Some(Active{…})`, since
+    `create_dir_all` and `Recorder::start` can still refuse below that.
+11. **Cleared on:** firing, a landing past the out point (item 6), wherever
+    `recording` is cleared (`finish_recording` / `abort_recording`, which every
+    stop path reaches), and a project open.
+12. **The draft's advice here was unsafe and is retracted**: it said to prefer
+    "one place they all pass through". **No such place exists.** The only hook
+    project-open and every source change share is `reset_skip` — which is also
+    called by a `J`/`L` press (disarming a live preview) and by
+    `start_recording`'s own slate seek, *before* the arm is set. Clearing there
+    breaks both features. Four explicit sites is the honest answer.
+
+**Tests** (harness — reachable because the detector is in the bus, which it was
+not in the spec's first draft):
+
+- A take from a timed slate reaches its out point and **the clip's log ends with
+  a pause anchored at `out`**. The assertion the feature exists for.
+- **A forward skip past the out point disarms and never logs a pause** — item 6,
+  and the draft's version of this test did not catch its own bug (it only
+  asserted the pause was not *before* the skip target, which an immediate wrong
+  fire satisfies).
+- A half-marked slate's take never pauses.
+- A plain `R` take never pauses: after a **refused** shoot, and after a **live
+  preview arm**.
+- A take on source 1 is not stopped by a slate on source 0 with a smaller out.
+
+---
+
+## C. The preview
+
+**Files:** `crates/pundit-app/src/bus/{mod.rs, slates.rs}`, `main.rs`,
+`app.slint`.
+
+1. **`Command::JumpToSlate(Uuid)`**, which is BACKLOG **#104** — and its body is
+   **`bus/clips.rs::jump_to_clip`**, not `transport.rs` (#104 names the function
+   without its file and the obvious guess is wrong). That body is
+   `reset_skip(); set_playing(false); if seekable() { load(index, secs, true,
+   Origin::Scrub) }`, which is exactly what #104 describes. **#104 is resolved by
+   this task.**
+2. **Previewing is that, then play, then B's armed stop** — so the arm is not a
+   take's alone.
+3. **It forces 1× at the start, and `ScanSpeed` is refused while armed.** P3's
+   "force 1×" is not enough on its own: `J`/`L` **are** allowed during a slate
+   preview (`scan_speed` only requires `playing && preview.is_none()`), and at
+   32× two things break — the poll overshoots by `rate × interval` (0.64 s at a
+   100 ms poll), and `set_playing(false)` seeks back to `shown_secs()`, which
+   "at 32x trails the position by up to 0.6 s", so the stop would land **before**
+   the out point. One condition in `scan_speed`, for P3's own reason.
+4. **A slate row selects on click**, the clip row's rule — it toggles today, so a
+   double-click would jump and leave the row deselected. **#104 already settled
+   this** ("Selecting on click, with deselection by Esc or by clicking empty
+   space"), so follow it rather than re-opening it.
+
+---
+
+## D. The pass
+
+**Files:** `crates/pundit-app/src/main.rs`, `app.slint`.
+
+1. **No core predicate, and `pundit-core` stays untouched.** T1 already shipped
+   the row model carrying both halves — `shot` and `timed` — with a comment that
+   is the spec's T2 verbatim. A `core::is_unshot_pass_candidate` would be exactly
+   the "second definition" that comment forbids.
+2. **No id snapshot: "the next candidate row at or after the current one."** A
+   shot slate **stays in the list**, so the displayed list is a stable frame of
+   reference. On Stop, select the first row at or after the current slate's
+   position that is `timed && !shot`. After a successful take the current row is
+   now `shot`, so it moves on — the `[A,B,C]` skip-every-second bug is
+   **structurally impossible rather than merely tested against**. After an
+   aborted take the slate is still a candidate, so "at or after" parks on it
+   again, which is the behaviour the draft needed a second sentence for. A slate
+   marked mid-pass is picked up, and a filter change is honoured, because the
+   list *is* the queue. It also removes a question the draft never raised: with a
+   snapshot, something has to start and end the pass, and no task said what that
+   UI was.
+3. **Advance on `Event::Recording(RecordingStatus::Idle)`, not
+   `ProjectChanged`.** The draft had it on `ProjectChanged` and that is wrong
+   twice: `abort_recording` emits **only** `Recording(Idle)` — no
+   `ProjectChanged`, because nothing changed to save — so the advance would never
+   fire after an abort; and `ProjectChanged` fires on **every** unrelated change,
+   including a transcript landing with no command behind it, which would move the
+   footage under the coach's hands mid-pass. `finish_recording` emits
+   `ProjectChanged` **then** `Recording(Idle)`, so the project is already updated
+   when `Idle` arrives.
+4. **The advance parks via `JumpToSlate`** (C1), which pauses. `ScrubRelease`
+   would not, and the footage would run on through the next range.
+5. **`R` arms and space starts, and the UI says so.** `start_recording` pauses
+   the footage unconditionally and the log seeds a pause at record time 0, both
+   deliberately. **This is the spec's open question for the coach**; do not
+   change a documented rule to save a keypress unasked.
+6. **Slates marked during the pass are not added to it** — `i`/`o` are on the
+   recording allow-list, so this is reachable. Defensible (the pass is the set
+   the coach started with, and item 2 picks up a new one at the next advance
+   anyway), but say it rather than let it be an accident.
+
+**Tests.** Harness: shoot the first of three candidates and assert the **second**
+is next. Under item 2 that passes by construction, so the test is a regression
+guard rather than a proof — which is the point of choosing a design where the bug
+cannot be written.
+
+---
+
+## One hazard that is not this feature's
+
+**BACKLOG #72.** Every test above opens a project through the rig, and #72 is an
+unresolved flake — thirteen sightings, every one `Rig::open`'s settle timeout,
+including on branches with no Rust in them. These tests raise the exposure.
+**The discriminator, so nobody re-debugs the detector:** the panic site is the
+rig's settle wait, with `Position { source_index: 0, target_abs: Some(0.0) }` and
+no settle inside the bound. If a CI run reddens there, rerun the job before
+reading the diff. (#101 does not apply: it is the export binaries under load, and
+nothing here touches an export path.)
+
+---
+
+## §R. What the first draft got wrong
+
+1. **Its one original idea was unsound.** "The deadline is a hint; the position
+   check is the truth" was justified by a table claiming a missed re-arm
+   degrades to "pauses late" rather than "never". **"Late" is unbounded**: armed
+   at `out = 100` with the playhead at 20, the deadline is `now + 80 s`; skip to
+   95 and the out point passes 5 s later, but the first check lands **75 s late**
+   — after the take ended. Indistinguishable from never. Capped, the estimate
+   becomes pointless; the bounded poll is what remains.
+2. **It did not notice the bus already wakes at 10 Hz during a take**, which is
+   written down in the loop it proposed to extend.
+3. **It cached `(source_index, out)`** when `MarkSlateOut` is on the recording
+   allow-list, so the cache can go stale mid-take.
+4. **It routed the log through `log_playing`**, which cannot anchor at `out`.
+5. **It never said the bus must mint the timestamp**, against a rule stated
+   twice in the file it edits.
+6. **It called an immediate fire after a forward skip "the honest answer."** It
+   writes a wrong anchor and replay freezes behind the footage — found by
+   *measuring* `query_position` after a seek.
+7. **It missed five preview-path endings**, including an `R` take inheriting a
+   preview's arm — its own trap 4 through a second door.
+8. **Its span would have been drawn half its length to the left**, and its
+   "every existing construction keeps working" was false.
+9. **It had a Traps section that was 8/8 restatement of its own task items**,
+   one of which (`debug_assert_sorted`) named a guard that cannot trip. Deleted;
+   the spec's §R records deleting such a section for being 5/6 restatement, and
+   this one was worse.
