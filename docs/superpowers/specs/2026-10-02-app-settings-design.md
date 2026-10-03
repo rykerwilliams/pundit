@@ -26,6 +26,64 @@ tags, the avatar's pulse constants — §X1, §X3), and **one is real** (the
 chapters). So the answer is a single checkbox, on the sheet that already carries
 three like it, and **no new UI surface, no new file and no new command**.
 
+
+## Overturned by the coach, 2026-10-03 — read this before the sections below
+
+Two answers change this spec's headline decision, and the sections after this one
+have **not** been rewritten yet; they are the reasoning as it stood, which is
+still worth reading for the audit in §W2.
+
+**1. "I think all of them should be settings?"** — asked which files in
+`exports/` were unwanted when #78 was filed. So the spec's collapse of #78 to a
+single chapters checkbox is **not what was asked for**: the coach wants every
+export output switchable.
+
+**And the coach answered the fork it raises (2026-10-03): fully independent
+switches.** The question was put — the `.srt` and the embedded `tx3g` are not
+independently controlled today, they *follow* from the Scoreboard picker (burned
+in writes neither and removes a stale `.srt`; separate track writes both),
+because a subtitle track of a board already painted into the picture is the
+board twice. Asked whether to leave them following the picker, make them
+independent, or grey them when redundant, the coach chose **independent**.
+
+**So two combinations become reachable that are not today, and both are
+legitimate — but neither may be silent.**
+
+- **Board burned in *and* a subtitle track of it.** The board twice. The coach
+  asked for the control knowing this; it is their file.
+- **Scoreboard: Separate track with the subtitle outputs off** — which means
+  **no board anywhere**: not burned, not beside the file, not embedded. Read
+  charitably this is a thing a coach may well want (a clean copy with no board
+  at all), so it is not a state to refuse. But it is **the one combination where
+  what you asked for and what you get look nothing alike**, so the export
+  sheet's explanatory line — which already follows the *effective* mode — has to
+  say it in words before the run, not leave it to be discovered in `exports/`.
+
+**What this does to the code**, so the plan does not discover it: `job.cues`
+stops being derived from the picker. `carry_scoreboard` currently maps mode +
+target into **both** the renderer and the cue slot in one place; the cues become
+their own input. That is a coupling removed rather than added, but the two rules
+it currently states together ("track mode blanks `job.scoreboard`" and "a clip
+or reel asked for on a separate track burns it in rather than dropping it") have
+to survive separately — the second especially, because it exists so the picker
+can never lose the board, and a clip's cue slot is **not** where its board can
+live.
+
+**2. #102 is an on/off setting**, not the snap-always-Shift-to-suppress shape
+§U1 recommended.
+
+**Together these retire §U1's conclusion that no settings screen is justified.**
+That conclusion rested on "this option has nothing to sit beside" — and there are
+now **three** tenants: #102's bool, the export-output switches, and #84's local
+music folder path. The sheet designed in §U3–U4 should be built, and §U1's rule
+("a setting sits beside what it configures") survives as the test a *new* setting
+has to pass, not as an argument against the screen.
+
+**What has not changed:** §X's refusals (the header tags, the reel trim, the
+avatar constants, anything already carrying a control, anything belonging to one
+clip), and the format-cost correction in §W3, which was independently verified
+and is now in `CLAUDE.md`.
+
 ## Goal
 
 The coach can stop an export writing anything beside the video, from the sheet
