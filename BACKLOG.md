@@ -2003,9 +2003,32 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   is what a heap written through at an arbitrary offset looks like. The suite
   then passed **30/30 alone in 44 s at the same load**, so the entry's "never in
   a run of that suite alone" still holds across five sightings.
-- **When to revisit:** if it happens on a quiet machine or in CI even once — that
-  would make it a real bug rather than a load artefact — or if anything else in
-  the export path starts corrupting memory.
+- **SIXTH SIGHTING — AND IT WAS IN CI, WHICH THIS ENTRY'S OWN TRIGGER SAYS MAKES
+  IT A REAL BUG.** 2026-10-04, run 37235570591 on the #122/#123 branch:
+  `corrupted size vs. prev_size`, SIGABRT, in **`pundit-harness --test
+  whole_match`** — a *third* distinct binary, on a GitHub runner, on a branch
+  whose only Rust change is a UI-layer notice string and a Slint panel gate.
+  Nothing in that push goes anywhere near the export path.
+- **What the CI sighting changes.** Every previous sighting was on this laptop
+  with other sessions building (loadavg 12–21), which is what "load artefact"
+  rested on. A two-core GitHub runner is not that machine, so the remaining
+  common factor is **concurrency against a small core count**, not this laptop.
+  The deferral reason above — "it has never been seen on a quiet machine or in
+  CI" — is **no longer true**, and the entry is kept here with its reasoning
+  intact rather than rewritten, so the change of status is legible.
+- **And `whole_match` widens the suspect list in a useful way.** It exercises
+  the **stream-copy** renderer (`composite/copy.rs`: two `async=false` sinks,
+  re-based segments, the `tx3g` appsrc) — *not* the encode path's
+  `gltransformation`/`glvideomixer`/llvmpipe graph that "where to look" above
+  points at. The one thing the copy path and the encode path share is
+  `mp4mux`, the `.part` handling and the chapter splice. **That intersection is
+  where to look first now**, and it is much smaller than "the export path".
+- **When to revisit: now, not later.** The trigger this entry set for itself has
+  fired. The experiment is unchanged (`GST_DEBUG` plus ASan or valgrind on
+  `--test whole_match` and `--test export` under an artificial load), but it is
+  no longer optional work on a rare flake: a memory-safety bug that reaches CI
+  will eventually corrupt an export the coach keeps, and a wrong byte in a
+  copied stream is exactly the failure that would not announce itself.
 
 102. **Snap the scrubber to events, as an option.** The coach (2026-09-28):
   "snap to events in the scrubber as an option." Dragging the scrubber lands on
