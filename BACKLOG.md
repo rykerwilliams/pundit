@@ -2261,7 +2261,22 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   the field, the attribute, the seeding block in `read` and that one test; nothing
   else reads it.
 
-110. **The scoreboard over the picture disappears during a take.** The coach
+110. **The scoreboard over the picture disappears during a take — NOT A DEFECT,
+  confirmed 2026-10-04.** The board never disappeared. **The clock was frozen**,
+  because `start_recording` pauses the footage unconditionally ("Every clip
+  starts on a still frame") and the scan board follows **the displayed frame's
+  source time** — so a take started and talked over without pressing space shows
+  a board whose clock correctly does not move. The coach confirmed it in one
+  take: "yes clock frozen."
+- **What remains is a UX question, not a fix**, and it is recorded at the bottom
+  of this entry. The code is right; the coach could not tell the footage was
+  paused.
+- **The diagnostic (`$PUNDIT_BOARD_DEBUG`) stays**, because it is what proved
+  this in one take after static reading had exhausted itself, and it is what will
+  name the cause if a board ever *does* vanish. Cost: an env var and two lines
+  per transition.
+
+  The original report and the investigation follow. The coach
   (2026-10-02): "when i am previewing the video i see the clock. when im
   recording, i don't." Asked, they confirmed it **shows while watching** too. A
   take is where the coach talks over the game, so it is where the clock is most
@@ -2338,9 +2353,20 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   note: there is no fix, and it is the one thing that will name the cause in a
   single take if this recurs. Its cost is an env var and two lines per
   transition.
-- **When to revisit:** the next time the coach sees it. Run the command above,
-  and try the frozen-clock test first — it costs one take and would reframe the
-  whole entry.
+- **CONFIRMED 2026-10-04: the clock is frozen, exactly as predicted.** So the
+  hypothesis above is the answer and the investigation is closed.
+- **The UX question it leaves, which is the coach's:** should a take say that the
+  footage is paused? The transport's Play/Pause button already says so, but
+  during a take the coach's eyes are on the picture, and a stopped clock on a
+  stopped frame is indistinguishable from a broken clock. The cheapest honest
+  answer may be "the coach now knows" — this cost one take to diagnose and
+  nothing to carry.
+- **What NOT to do:** start the take playing. The coach already declined that
+  for the themed pass (#120, "keep R-then-space"), and "every clip starts on a
+  still frame" is a deliberate rule the recording log seeds a pause at time 0
+  for.
+- **When to revisit:** if the coach is confused by it a second time, or with any
+  work on what a take shows on the picture.
 
 114. **Shooting a slate doesn't stop at its out point.** The coach (2026-10-02):
   "when i record a clip, it doesn't stop at the end of the clip." Shooting a
