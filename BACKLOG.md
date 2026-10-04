@@ -13,6 +13,9 @@ made things worse.
 
 ### Next, in order
 
+- **121.** A workspace test build compiles the whole UI six times at once and
+  froze the laptop out of memory (2026-10-02) — one test binary for the app's UI
+  tests
 - **78.** App settings for the things an export writes. The coach (2026-09-24):
 - **96.** Every hot key should be reassignable. The coach (2026-09-25): "we need
 - **77.** An export queue across projects. The coach (2026-09-24): "i open…
@@ -21,7 +24,9 @@ made things worse.
   "snap to events in the scrubber as an option" — which marks it covers is the
   open question (needs #78 for the control; **#100's per-field read has landed**)
 - **104.** Double-clicking a slate should take the player to its in point, as a
-  clip row's double-click does (and a click should stop toggling the selection)
+  clip row's double-click does — and a right-click menu like the clip row's
+  (jump to start / end, Record, Delete); a click should stop toggling the
+  selection
 - **105.** A slate's tag field should offer the tags already in use — the clip
   inspector's suggestion list, lifted into one shared `TagField`
 - **120.** Filter slates by tag, then work through all of them with that tag —
@@ -1078,6 +1083,13 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   `a_seek_in_the_final_second_stays_in_its_source` — the *first* sighting's test —
   same panic site, same `Position { source_index: 0, target_abs: Some(0.0) }`. That
   branch adds a new module nothing calls yet, so again nothing can be implicated.
+- **Eighth sighting, 2026-10-04**, run 37139820604 on the #110 branch:
+  `each_edit_is_one_undo_step` in `pundit-harness --test slates` — a **sixth**
+  distinct test name, same `lib.rs:164` panic site, same "timed out waiting for a
+  settled position". The branch it failed on is **documentation only** — a single
+  BACKLOG entry, no Rust touched at all — which is the cleanest exoneration of the
+  code this entry has: nothing in that push could have caused it. A `--failed`
+  rerun went green on the same commit, as every previous rerun has.
 - **Do not read a rate off 2026-10-01 without separating the two causes**, which is
   a mistake this entry made for a few hours. Of six workspace runs that day, **two
   failed to this flake and two to a slow Ubuntu mirror** — `azure.archive.ubuntu.com`
@@ -1991,9 +2003,32 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   is what a heap written through at an arbitrary offset looks like. The suite
   then passed **30/30 alone in 44 s at the same load**, so the entry's "never in
   a run of that suite alone" still holds across five sightings.
-- **When to revisit:** if it happens on a quiet machine or in CI even once — that
-  would make it a real bug rather than a load artefact — or if anything else in
-  the export path starts corrupting memory.
+- **SIXTH SIGHTING — AND IT WAS IN CI, WHICH THIS ENTRY'S OWN TRIGGER SAYS MAKES
+  IT A REAL BUG.** 2026-10-04, run 37235570591 on the #122/#123 branch:
+  `corrupted size vs. prev_size`, SIGABRT, in **`pundit-harness --test
+  whole_match`** — a *third* distinct binary, on a GitHub runner, on a branch
+  whose only Rust change is a UI-layer notice string and a Slint panel gate.
+  Nothing in that push goes anywhere near the export path.
+- **What the CI sighting changes.** Every previous sighting was on this laptop
+  with other sessions building (loadavg 12–21), which is what "load artefact"
+  rested on. A two-core GitHub runner is not that machine, so the remaining
+  common factor is **concurrency against a small core count**, not this laptop.
+  The deferral reason above — "it has never been seen on a quiet machine or in
+  CI" — is **no longer true**, and the entry is kept here with its reasoning
+  intact rather than rewritten, so the change of status is legible.
+- **And `whole_match` widens the suspect list in a useful way.** It exercises
+  the **stream-copy** renderer (`composite/copy.rs`: two `async=false` sinks,
+  re-based segments, the `tx3g` appsrc) — *not* the encode path's
+  `gltransformation`/`glvideomixer`/llvmpipe graph that "where to look" above
+  points at. The one thing the copy path and the encode path share is
+  `mp4mux`, the `.part` handling and the chapter splice. **That intersection is
+  where to look first now**, and it is much smaller than "the export path".
+- **When to revisit: now, not later.** The trigger this entry set for itself has
+  fired. The experiment is unchanged (`GST_DEBUG` plus ASan or valgrind on
+  `--test whole_match` and `--test export` under an artificial load), but it is
+  no longer optional work on a rare flake: a memory-safety bug that reaches CI
+  will eventually corrupt an export the coach keeps, and a wrong byte in a
+  copied stream is exactly the failure that would not announce itself.
 
 102. **Snap the scrubber to events, as an option.** The coach (2026-09-28):
   "snap to events in the scrubber as an option." Dragging the scrubber lands on
@@ -2098,6 +2133,23 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   recording, and `seekable()` covers a preview and a missing source. A
   half-marked slate (`out_seconds: None`) still has an in point, so it jumps
   like any other.
+- **And a right-click menu to match the clip row's** (the coach, 2026-10-04:
+  "add 'slates' right click menu like the clips, e.g. jump to slate start").
+  The slate row already has a `ContextMenuArea`, but its one item is **Delete
+  slate**; the clip row's has Jump to clip start, Preview clip, Export video…,
+  Add to basket and Delete clip. The slate's menu should be:
+  - **Jump to slate start** — the same `JumpToSlate` the double-click sends, so
+    the menu and the double-click are one command, as "Jump to clip start" and
+    the clip row's double-click are.
+  - **Jump to slate end** — the out point, greyed for a half-marked slate
+    (`out_seconds: None`). Worth having because there's no other way to check
+    where a range ends (#119).
+  - **Record** — `shoot-slate`, the same action as the Record button under the
+    selected slate, so a slate can be shot without selecting it first.
+  - **Delete slate**, last, as now.
+  - **Not copied:** *Add to basket* (a basket piece is a clip; a slate has no
+    recording); *Export* is #98's silent breakdown film; *Preview* is #119. Each
+    joins the menu when its own entry ships.
 - **Why deferred:** filed while the coach was using the app; a small UX gap, not
   a bug, and the other session is mid-#88.
 - **When to revisit:** any time — it is a row handler and one bus command, and
@@ -2924,3 +2976,116 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   rather than guessable.
 - **When to revisit:** after #114. Then this, #119 and #114 are one piece of
   work: mark, check, adjust, and talk through a themed set.
+
+121. **A workspace test build compiles the whole UI six times at once, and on
+  2026-10-02 that ran the laptop out of memory.** The machine froze and went
+  down uncleanly (`last -x` shows the session ending in `crash`, no shutdown
+  record) while a debug `cargo test --workspace`-shaped build ran in the main
+  checkout. From the previous boot's journal and `target/`'s timestamps:
+  - **21:42–21:47** test binaries are built; at **21:47** the compiles still in
+    flight are `pundit-app`'s — `fit_window`, `panel_widths`, `slate_fields`,
+    `self_view_placement` and two `pundit` targets (the bin and its unit
+    tests) — each writing an incremental `dep-graph.part.bin` of **~330 MB**
+    (measured, 322–340 MB), and every one's `.rcgu.o` still **0 bytes**: none
+    finished.
+  - **21:48** `systemd-journald` and `systemd-resolved` start logging "Under
+    memory pressure", every few seconds.
+  - **21:51:43** the journal stops mid-stream. **No OOM kill was logged** — with
+    31 GiB of RAM and only 1.9 GiB of swap the machine thrashed to a standstill
+    before the kernel's OOM killer acted. No worktree under `.claude/worktrees/`
+    was building in that window; it was the one build.
+- **The cause is structural:** `build.rs` compiles `ui/app.slint` for the app,
+  and **four integration tests compile it again each**, through their own
+  `slint::include_modules!()` (`tests/fit_window.rs`, `panel_widths.rs`,
+  `slate_fields.rs`, `self_view_placement.rs`). Each is a separate test binary,
+  so each is a separate rustc holding the whole generated UI — 6,375 lines of
+  `.slint` — and cargo runs them in parallel across the eight cores. (`scrubber.rs`
+  and `splitter.rs` are not part of it: they `slint!` only their own component.)
+  The per-rustc resident size was **not** measured — doing so means running the
+  build that froze the machine — so "several GB each" is an estimate; the
+  dep-graph sizes and the six concurrent compiles are what the files show.
+- **The cargo flock does not help** (the cargo-coordination rule): it stops two
+  `cargo` commands overlapping, and this was one.
+- **The fix: one test binary for the app's UI tests.** Move the four into
+  modules of a single `tests/ui/main.rs` (or one `tests/ui.rs` with `mod`s), with
+  **one** `slint::include_modules!()`, so the UI is generated and compiled once
+  for all of them rather than once per file. It also cuts the build time those
+  four cost every run, and every future UI test joins the existing binary rather
+  than adding another full compile — which is the trend: four of the six
+  arrived in the last week (#87, #88, #95, the slate fields). `scrubber` and
+  `splitter` can join it too or stay as they are.
+  - **Check before merging them:** whether any of the four relies on being alone
+    in its process — Slint's platform/backend is set once per process, and a
+    test that installs its own (a testing backend, a window size) may need the
+    others to share it. That is the one thing that could make the merge more
+    than a move.
+- **Not the fix:** capping `jobs` in `.cargo/config.toml`. It would stop the
+  freeze, but it slows every build on the machine to hide one shape of test
+  layout. On the machine itself, more swap or an OOM daemon (`earlyoom`,
+  `systemd-oomd`) would turn a future freeze into one killed build — worth doing
+  as a backstop, but it is the coach's machine and not a repo change.
+- **Why deferred:** filed from the crash investigation; a test-layout change in
+  `pundit-app` while other sessions are working in the same crate.
+- **When to revisit:** next time anyone touches `pundit-app/tests/` — and before
+  a fifth test adds `include_modules!()`. Until then, a full workspace test run
+  on this laptop with other work open risks the same freeze.
+
+122. **"Set in" / "Set out" refused silently from the wrong video — FIXED
+  2026-10-04.** The coach: "setout test - it doesn't move it but i don't show
+  any warning or anything."
+- **What it was:** `main.rs`'s `on_set_slate_mark` guarded the cross-source
+  re-mark with a bare `return`. The guard itself is right — a slate belongs to
+  one source, and re-marking from another video would move the range onto
+  footage it was never about — but it said nothing, so the button did nothing
+  and gave no reason.
+- **Why review missed it:** the path is **unreachable in a single-source
+  project**, and every fixture is one. With one video, every press either moves
+  the mark or meets the bus's inverting-move notice. A match is two halves, so
+  the coach met it on first real use.
+- **Why it is a defect and not a nit:** `bus/slates.rs`' header says "a refusal
+  here is a notice, never a modal", and the bus honours that for the *other*
+  bad re-mark. These two buttons were the one slate refusal that said nothing.
+- **The fix** names the video, because that is the one thing the coach has to
+  change: "That slate is on <video> — scrub to that video to re-mark it". A
+  slate that is **gone** stays silent, which is `Bus::edit_slates`' own rule and
+  unreachable from a row on screen to be pressed.
+- **Not unit-tested, deliberately:** the guard needs the playhead's source,
+  which only the UI layer has, and `main.rs` carries no test module — the four
+  other UI-side `show_notice` refusals (`FIT_IMPOSSIBLE`, `FIT_FULLSCREEN`,
+  `DRAWING_HINT`, `HIGHLIGHT_PAUSE_HINT`) are uncovered for the same reason. A
+  module for one two-branch rule would not earn its place; the bus-side sibling
+  **is** covered
+  (`slates.rs::moving_a_mark_works_and_an_inverting_move_is_a_spoken_refusal`).
+- **The lesson worth keeping:** a guard unreachable in the one-source project
+  every fixture uses is a guard no test will exercise. When the next slate rule
+  lands, ask which of them needs two sources to reach.
+
+123. **The slate tag filter could not be cleared, and took the whole slates
+  panel with it — FIXED 2026-10-04.** The coach: "when i try to filter slates,
+  there is no way to clear the filter", and then "i need the slate filter
+  cleared so i can record tho". **It blocked recording**, which makes it the
+  most serious thing shipped in this run.
+- **What it was:** the slates section is gated `if root.slates.length > 0`, to
+  keep a third list out of a 240 px column on every project that has never
+  marked a slate. #120's T1 then made `root.slates` the **filtered** list
+  without touching the gate, so the gate quietly changed meaning: a filter
+  matching nothing hid the rows *and the filter field that set it*. The filter
+  string survived in `slate-tag-filter` with no control left to clear it.
+- **It was every use, not an edge case.** The match is an **exact** tag
+  comparison, so typing `corner` matches nothing at `c`, `co`, `cor`… — the
+  field deleted itself on the first keystroke of every attempt.
+- **The workaround, for the record:** restart. `slate-tag-filter` is window
+  state and is never written to `state.json`, so it does not survive one. That
+  is what unblocked the coach.
+- **The fix is three parts:** the gate also holds while a filter is set
+  (`|| root.slate-tag-filter != ""`), so the field can always undo itself; a
+  **✕ button** beside it, because the filter is turned off as often as on and
+  the field is narrow; and an empty-state line naming the tag, so a filter that
+  matches nothing reads as "none tagged X" rather than as a blank panel saying
+  your slates are gone. The gate's original reason is untouched: a project with
+  no slates has no filter either, so it still shows nothing.
+- **The lesson, which is the general one:** #120 changed what an existing
+  property *means* (all slates → matching slates) and every reader of it
+  silently inherited the new meaning. The gate was such a reader. When a filter
+  is added over a list, the readers of that list's **count** are the review
+  surface — the rows take care of themselves.

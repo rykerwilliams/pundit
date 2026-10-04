@@ -4723,7 +4723,19 @@ export component AppWindow inherits Window {
                         // otherwise shrink the clip list on every project for
                         // a feature not in use. Capped in height for the same
                         // reason.
-                        if root.slates.length > 0: VerticalLayout {
+                        //
+                        // **Or whenever a tag filter is set** (BACKLOG #123),
+                        // including when it matches nothing. `slates` is the
+                        // *filtered* list -- #120's filter changed what this
+                        // gate reads without changing the gate -- so the count
+                        // alone took the filter field away along with the rows
+                        // and stranded the filter with no way to clear it. And
+                        // typing a tag passes through "matches nothing" on the
+                        // first letter, so that was every use of it, not an
+                        // edge case. The original reason survives untouched:
+                        // a project that has never marked a slate has no
+                        // filter either, so it still shows nothing.
+                        if root.slates.length > 0 || root.slate-tag-filter != "": VerticalLayout {
                             spacing: 6px;
 
                             HorizontalLayout {
@@ -4746,9 +4758,36 @@ export component AppWindow inherits Window {
                                     text <=> root.slate-tag-filter;
                                     horizontal-stretch: 1;
                                 }
+                                // Clearing is one press, not a select-all: the
+                                // field is narrow in a 240 px column and the
+                                // filter is a thing the coach turns *off* as
+                                // often as on, between one theme and the next.
+                                Button {
+                                    text: "✕";
+                                    enabled: root.slate-tag-filter != "";
+                                    clicked => {
+                                        root.slate-tag-filter = "";
+                                        keys.focus();
+                                    }
+
+                                    Tooltip {
+                                        text: @markdown("Clear the tag filter");
+                                    }
+                                }
                             }
 
-                            ListView {
+                            // Why the list is empty, rather than a blank panel
+                            // that reads as "your slates are gone" (#123). Only
+                            // reachable with a filter set: with none, the
+                            // section above is hidden entirely.
+                            if root.slates.length == 0: Text {
+                                text: "No slates tagged " + root.slate-tag-filter;
+                                color: Palette.alternate-foreground;
+                                font-size: 11px;
+                                wrap: word-wrap;
+                            }
+
+                            if root.slates.length > 0: ListView {
                                 height: min(root.slates.length * 30px + 4px, 124px);
 
                                     for slate[index] in root.slates: Rectangle {
