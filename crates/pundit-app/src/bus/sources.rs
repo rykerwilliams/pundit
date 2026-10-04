@@ -168,6 +168,11 @@ impl Bus {
             return false;
         };
         let secs = clamp_in_source(secs, source.duration_seconds);
+        // A deliberate move to or past an armed slate's out point spends the
+        // arm without pausing (BACKLOG #114). Here because this is the one
+        // path every request takes, and on the request rather than on a
+        // reading: see `disarm_if_past_slate_out`.
+        self.disarm_if_past_slate_out(index, secs);
         self.current = index;
         self.publish_position_at(Some(secs));
         let events = self.player.seek_to(&uri, secs, accurate, origin);

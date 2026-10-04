@@ -355,9 +355,13 @@ impl Bus {
                     // the next seek reloads it. One failure often posts
                     // several errors.
                     self.reset_skip();
-                    // While recording this pause isn't logged, as at EOS: it
-                    // would need a bus-side time. Replay keeps playing until
-                    // the next anchor. Rare, and accepted.
+                    // While recording this pause isn't logged, as at EOS.
+                    // **Not for want of a bus-side time** — the out-point stop
+                    // mints one (`bus::slates`) — but for want of anything to
+                    // anchor it to: the player has dropped its flight and its
+                    // source, so nothing can say which frame is up, and an
+                    // anchor overrides the wall-clock cursor on replay. Replay
+                    // keeps playing until the next anchor. Rare, and accepted.
                     if self.playing {
                         self.set_playing(false);
                     }
@@ -375,8 +379,10 @@ impl Bus {
     /// next source from its start, or stop at the end of the last one, where
     /// its final frame stays up. While recording it stops without advancing,
     /// since a clip points into one source, and logs nothing: replay's play
-    /// tail freezes on the last frame the same way, and a pause here would
-    /// carry a bus-side time (R10).
+    /// tail freezes on the last frame the same way, so the event would say
+    /// nothing the log doesn't already (R10). **Not because the time would be
+    /// the bus's** — the out-point stop mints one (`bus::slates`), where there
+    /// is an anchor worth carrying.
     fn end_of_stream(&mut self) {
         if !self.playing {
             return;
