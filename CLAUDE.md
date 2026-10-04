@@ -427,6 +427,19 @@ field, captured at the input event on the UI thread, never assigned by the bus
 handler. Queue delay would reintroduce the drift that puts drawings behind the
 ball on replay. Querying position on a running pipeline is the only direct
 pipeline access permitted outside the bus task.
+- **One documented exception, and it is the shape of the rule rather than a hole
+  in it:** the slate out-point stop (`bus::slates::stop_at_slate_out`) mints
+  `now_ns()` itself. The contract is about the **queue delay between an input
+  event and the handler that stamps it**, and a crossing has no input event —
+  the poll *is* the event, so nothing was queued, and the time wanted is when
+  the picture stopped, which is now. What keeps it honest is that the
+  **position is still not a reading**: the pause is anchored at the stored
+  `out_seconds`, exactly as `shoot_slate` seeks to a stored `in_seconds`. A new
+  bus-minted timestamp has to clear that same bar — no queued input, and an
+  anchor that is stored rather than queried. `transport.rs` declines to log a
+  pause at a player error and at EOS, and **the reason there is not a bus-side
+  clock either** — it is that neither has anything to anchor to; both comments
+  used to say otherwise and were corrected with this change.
 
 **Pixel work split.** GStreamer owns every full-frame pixel operation, on the
 GPU. Rust owns the edit (which decoded frame lands at each output PTS) and the
