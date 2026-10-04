@@ -13,6 +13,9 @@ made things worse.
 
 ### Next, in order
 
+- **121.** A workspace test build compiles the whole UI six times at once and
+  froze the laptop out of memory (2026-10-02) — one test binary for the app's UI
+  tests
 - **78.** App settings for the things an export writes. The coach (2026-09-24):
 - **96.** Every hot key should be reassignable. The coach (2026-09-25): "we need
 - **77.** An export queue across projects. The coach (2026-09-24): "i open…
@@ -21,7 +24,9 @@ made things worse.
   "snap to events in the scrubber as an option" — which marks it covers is the
   open question (needs #78 for the control; **#100's per-field read has landed**)
 - **104.** Double-clicking a slate should take the player to its in point, as a
-  clip row's double-click does (and a click should stop toggling the selection)
+  clip row's double-click does — and a right-click menu like the clip row's
+  (jump to start / end, Record, Delete); a click should stop toggling the
+  selection
 - **105.** A slate's tag field should offer the tags already in use — the clip
   inspector's suggestion list, lifted into one shared `TagField`
 - **120.** Filter slates by tag, then work through all of them with that tag —
@@ -2098,6 +2103,23 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   recording, and `seekable()` covers a preview and a missing source. A
   half-marked slate (`out_seconds: None`) still has an in point, so it jumps
   like any other.
+- **And a right-click menu to match the clip row's** (the coach, 2026-10-04:
+  "add 'slates' right click menu like the clips, e.g. jump to slate start").
+  The slate row already has a `ContextMenuArea`, but its one item is **Delete
+  slate**; the clip row's has Jump to clip start, Preview clip, Export video…,
+  Add to basket and Delete clip. The slate's menu should be:
+  - **Jump to slate start** — the same `JumpToSlate` the double-click sends, so
+    the menu and the double-click are one command, as "Jump to clip start" and
+    the clip row's double-click are.
+  - **Jump to slate end** — the out point, greyed for a half-marked slate
+    (`out_seconds: None`). Worth having because there's no other way to check
+    where a range ends (#119).
+  - **Record** — `shoot-slate`, the same action as the Record button under the
+    selected slate, so a slate can be shot without selecting it first.
+  - **Delete slate**, last, as now.
+  - **Not copied:** *Add to basket* (a basket piece is a clip; a slate has no
+    recording); *Export* is #98's silent breakdown film; *Preview* is #119. Each
+    joins the menu when its own entry ships.
 - **Why deferred:** filed while the coach was using the app; a small UX gap, not
   a bug, and the other session is mid-#88.
 - **When to revisit:** any time — it is a row handler and one bus command, and
@@ -2924,3 +2946,56 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   rather than guessable.
 - **When to revisit:** after #114. Then this, #119 and #114 are one piece of
   work: mark, check, adjust, and talk through a themed set.
+
+121. **A workspace test build compiles the whole UI six times at once, and on
+  2026-10-02 that ran the laptop out of memory.** The machine froze and went
+  down uncleanly (`last -x` shows the session ending in `crash`, no shutdown
+  record) while a debug `cargo test --workspace`-shaped build ran in the main
+  checkout. From the previous boot's journal and `target/`'s timestamps:
+  - **21:42–21:47** test binaries are built; at **21:47** the compiles still in
+    flight are `pundit-app`'s — `fit_window`, `panel_widths`, `slate_fields`,
+    `self_view_placement` and two `pundit` targets (the bin and its unit
+    tests) — each writing an incremental `dep-graph.part.bin` of **~330 MB**
+    (measured, 322–340 MB), and every one's `.rcgu.o` still **0 bytes**: none
+    finished.
+  - **21:48** `systemd-journald` and `systemd-resolved` start logging "Under
+    memory pressure", every few seconds.
+  - **21:51:43** the journal stops mid-stream. **No OOM kill was logged** — with
+    31 GiB of RAM and only 1.9 GiB of swap the machine thrashed to a standstill
+    before the kernel's OOM killer acted. No worktree under `.claude/worktrees/`
+    was building in that window; it was the one build.
+- **The cause is structural:** `build.rs` compiles `ui/app.slint` for the app,
+  and **four integration tests compile it again each**, through their own
+  `slint::include_modules!()` (`tests/fit_window.rs`, `panel_widths.rs`,
+  `slate_fields.rs`, `self_view_placement.rs`). Each is a separate test binary,
+  so each is a separate rustc holding the whole generated UI — 6,375 lines of
+  `.slint` — and cargo runs them in parallel across the eight cores. (`scrubber.rs`
+  and `splitter.rs` are not part of it: they `slint!` only their own component.)
+  The per-rustc resident size was **not** measured — doing so means running the
+  build that froze the machine — so "several GB each" is an estimate; the
+  dep-graph sizes and the six concurrent compiles are what the files show.
+- **The cargo flock does not help** (the cargo-coordination rule): it stops two
+  `cargo` commands overlapping, and this was one.
+- **The fix: one test binary for the app's UI tests.** Move the four into
+  modules of a single `tests/ui/main.rs` (or one `tests/ui.rs` with `mod`s), with
+  **one** `slint::include_modules!()`, so the UI is generated and compiled once
+  for all of them rather than once per file. It also cuts the build time those
+  four cost every run, and every future UI test joins the existing binary rather
+  than adding another full compile — which is the trend: four of the six
+  arrived in the last week (#87, #88, #95, the slate fields). `scrubber` and
+  `splitter` can join it too or stay as they are.
+  - **Check before merging them:** whether any of the four relies on being alone
+    in its process — Slint's platform/backend is set once per process, and a
+    test that installs its own (a testing backend, a window size) may need the
+    others to share it. That is the one thing that could make the merge more
+    than a move.
+- **Not the fix:** capping `jobs` in `.cargo/config.toml`. It would stop the
+  freeze, but it slows every build on the machine to hide one shape of test
+  layout. On the machine itself, more swap or an OOM daemon (`earlyoom`,
+  `systemd-oomd`) would turn a future freeze into one killed build — worth doing
+  as a backstop, but it is the coach's machine and not a repo change.
+- **Why deferred:** filed from the crash investigation; a test-layout change in
+  `pundit-app` while other sessions are working in the same crate.
+- **When to revisit:** next time anyone touches `pundit-app/tests/` — and before
+  a fifth test adds `include_modules!()`. Until then, a full workspace test run
+  on this laptop with other work open risks the same freeze.
