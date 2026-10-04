@@ -22,7 +22,14 @@ local 1.98 is not the gate.
 
 ## Where this stands (update it as tasks land)
 
-- **A — the span on the scrubber.** Not started.
+- **A — the span on the scrubber.** **Landed.** Two floats on the `Scrubber`,
+  one translucent `Rectangle` drawn *before the marks* as well as the slider (so
+  a goal tagged inside the range still reads), fed from
+  `main.rs::show_slate_span` on the two paths item 2 names. The concat mapping
+  and the three "nothing to draw" cases are pinned in a new sibling module,
+  `crates/pundit-app/src/slate_span.rs`. One addition the plan did not call for:
+  the span is dropped while a preview is open, for the same reason `marks`
+  already is — a preview's scale is its clip's, not the concat timeline's.
 - **B — the stop.** **Landed.** `Bus.armed_slate: Option<Uuid>`, the bounded
   poll in the loop's `.min()` chain, and the check in the loop's tail, all as
   written. The lifecycle is the four sites item 11 names (`start_recording`
