@@ -119,6 +119,15 @@ const AVATAR_SIZE: u32 = 512;
 /// it"; nothing was broken, there was simply nothing to pan at 1×). It is the
 /// only place either is written down in the app, which is BACKLOG #94.
 const DRAWING_HINT: &str = "Ctrl+scroll to zoom, then drag to pan — or press R to draw";
+/// What a re-mark from the wrong video says (BACKLOG #122). A slate belongs to
+/// one source, so "Set in" / "Set out" can only move a mark within it — and the
+/// refusal is **spoken**, because the bus refuses an inverting re-mark out loud
+/// and these two buttons would otherwise be the one slate refusal that says
+/// nothing at all. Naming the video is the whole message: it is the single
+/// thing the coach has to change to make the press work.
+fn slate_elsewhere(video: &str) -> String {
+    format!("That slate is on {video} — scrub to that video to re-mark it")
+}
 /// What a drag in the H tool says while the picture plays (spec H3). A key
 /// sits on the frame it was placed on, and while the picture runs that frame
 /// is gone before the drag ends.
@@ -1282,18 +1291,32 @@ fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
                 return;
             };
             // A slate belongs to one source, so a mark can only be moved within
-            // it. Re-marking from another video would silently move the range
-            // onto footage it was never about.
-            let on_its_source = UI.with_borrow(|ui| {
-                ui.snapshot.as_ref().is_some_and(|s| {
-                    s.project
-                        .slates
-                        .iter()
-                        .any(|sl| sl.id == id && sl.source_index == source_index)
-                })
+            // it: re-marking from another video would move the range onto
+            // footage it was never about. **Spoken, not silent** (BACKLOG
+            // #122). The bus refuses the other bad re-mark — one that would
+            // invert the range — out loud, and these buttons must not be the
+            // one slate refusal that does nothing and says nothing. `None`
+            // means the slate is gone, which stays silent: that is
+            // `Bus::edit_slates`' own rule, and the row is not on screen to
+            // have been pressed.
+            let elsewhere = UI.with_borrow(|ui| {
+                let project = &ui.snapshot.as_ref()?.project;
+                let slate = project.slates.iter().find(|sl| sl.id == id)?;
+                if slate.source_index == source_index {
+                    return None;
+                }
+                // The row's own label, so the sentence names the video the
+                // way the list the coach is looking at does.
+                Some(
+                    project
+                        .source_videos
+                        .get(slate.source_index)
+                        .map(|v| v.display_name.clone())
+                        .unwrap_or_else(|| format!("video {}", slate.source_index + 1)),
+                )
             });
-            if !on_its_source {
-                return;
+            if let Some(video) = elsewhere {
+                return show_notice(&w, slate_elsewhere(&video));
             }
             let edit = match mark {
                 SlateMark::InPoint => SlateEdit::In(seconds),

@@ -2999,3 +2999,63 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** next time anyone touches `pundit-app/tests/` — and before
   a fifth test adds `include_modules!()`. Until then, a full workspace test run
   on this laptop with other work open risks the same freeze.
+
+122. **"Set in" / "Set out" refused silently from the wrong video — FIXED
+  2026-10-04.** The coach: "setout test - it doesn't move it but i don't show
+  any warning or anything."
+- **What it was:** `main.rs`'s `on_set_slate_mark` guarded the cross-source
+  re-mark with a bare `return`. The guard itself is right — a slate belongs to
+  one source, and re-marking from another video would move the range onto
+  footage it was never about — but it said nothing, so the button did nothing
+  and gave no reason.
+- **Why review missed it:** the path is **unreachable in a single-source
+  project**, and every fixture is one. With one video, every press either moves
+  the mark or meets the bus's inverting-move notice. A match is two halves, so
+  the coach met it on first real use.
+- **Why it is a defect and not a nit:** `bus/slates.rs`' header says "a refusal
+  here is a notice, never a modal", and the bus honours that for the *other*
+  bad re-mark. These two buttons were the one slate refusal that said nothing.
+- **The fix** names the video, because that is the one thing the coach has to
+  change: "That slate is on <video> — scrub to that video to re-mark it". A
+  slate that is **gone** stays silent, which is `Bus::edit_slates`' own rule and
+  unreachable from a row on screen to be pressed.
+- **Not unit-tested, deliberately:** the guard needs the playhead's source,
+  which only the UI layer has, and `main.rs` carries no test module — the four
+  other UI-side `show_notice` refusals (`FIT_IMPOSSIBLE`, `FIT_FULLSCREEN`,
+  `DRAWING_HINT`, `HIGHLIGHT_PAUSE_HINT`) are uncovered for the same reason. A
+  module for one two-branch rule would not earn its place; the bus-side sibling
+  **is** covered
+  (`slates.rs::moving_a_mark_works_and_an_inverting_move_is_a_spoken_refusal`).
+- **The lesson worth keeping:** a guard unreachable in the one-source project
+  every fixture uses is a guard no test will exercise. When the next slate rule
+  lands, ask which of them needs two sources to reach.
+
+123. **The slate tag filter could not be cleared, and took the whole slates
+  panel with it — FIXED 2026-10-04.** The coach: "when i try to filter slates,
+  there is no way to clear the filter", and then "i need the slate filter
+  cleared so i can record tho". **It blocked recording**, which makes it the
+  most serious thing shipped in this run.
+- **What it was:** the slates section is gated `if root.slates.length > 0`, to
+  keep a third list out of a 240 px column on every project that has never
+  marked a slate. #120's T1 then made `root.slates` the **filtered** list
+  without touching the gate, so the gate quietly changed meaning: a filter
+  matching nothing hid the rows *and the filter field that set it*. The filter
+  string survived in `slate-tag-filter` with no control left to clear it.
+- **It was every use, not an edge case.** The match is an **exact** tag
+  comparison, so typing `corner` matches nothing at `c`, `co`, `cor`… — the
+  field deleted itself on the first keystroke of every attempt.
+- **The workaround, for the record:** restart. `slate-tag-filter` is window
+  state and is never written to `state.json`, so it does not survive one. That
+  is what unblocked the coach.
+- **The fix is three parts:** the gate also holds while a filter is set
+  (`|| root.slate-tag-filter != ""`), so the field can always undo itself; a
+  **✕ button** beside it, because the filter is turned off as often as on and
+  the field is narrow; and an empty-state line naming the tag, so a filter that
+  matches nothing reads as "none tagged X" rather than as a blank panel saying
+  your slates are gone. The gate's original reason is untouched: a project with
+  no slates has no filter either, so it still shows nothing.
+- **The lesson, which is the general one:** #120 changed what an existing
+  property *means* (all slates → matching slates) and every reader of it
+  silently inherited the new meaning. The gate was such a reader. When a filter
+  is added over a list, the readers of that list's **count** are the review
+  surface — the rows take care of themselves.
