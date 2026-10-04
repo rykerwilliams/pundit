@@ -1083,6 +1083,13 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   `a_seek_in_the_final_second_stays_in_its_source` — the *first* sighting's test —
   same panic site, same `Position { source_index: 0, target_abs: Some(0.0) }`. That
   branch adds a new module nothing calls yet, so again nothing can be implicated.
+- **Eighth sighting, 2026-10-04**, run 37139820604 on the #110 branch:
+  `each_edit_is_one_undo_step` in `pundit-harness --test slates` — a **sixth**
+  distinct test name, same `lib.rs:164` panic site, same "timed out waiting for a
+  settled position". The branch it failed on is **documentation only** — a single
+  BACKLOG entry, no Rust touched at all — which is the cleanest exoneration of the
+  code this entry has: nothing in that push could have caused it. A `--failed`
+  rerun went green on the same commit, as every previous rerun has.
 - **Do not read a rate off 2026-10-01 without separating the two causes**, which is
   a mistake this entry made for a few hours. Of six workspace runs that day, **two
   failed to this flake and two to a slow Ubuntu mirror** — `azure.archive.ubuntu.com`
