@@ -6,8 +6,9 @@
 //! One input channel carries commands, the player's forwarded GStreamer
 //! messages, and the recorder's and the exporter's messages, so the thread
 //! never has to choose between queues. The loop waits with `recv_timeout` on
-//! the earlier of two deadlines (the skip debounce and the recording start
-//! timeout); with neither armed it simply blocks.
+//! the earliest of two deadlines (the skip debounce and the recording start
+//! timeout) and one poll (an armed slate's out point, `bus::slates`); with
+//! none of them armed it simply blocks.
 
 mod basket;
 mod clips;
@@ -692,6 +693,18 @@ pub struct Bus {
     capture: CaptureKind,
     /// The recording in progress.
     recording: Option<recording::Active>,
+    /// The slate whose out point the footage stops at (BACKLOG #114), while a
+    /// take shot from it plays.
+    ///
+    /// **An id, resolved at every check — not the `(source_index, out)` pair
+    /// it stands for.** That pair is a cache of two fields of a project the
+    /// bus owns, and it goes stale: `MarkSlateOut` is on the recording
+    /// allow-list, so a take shot from a half-marked range can gain its out
+    /// point mid-take, and the cache would stop at the old one (or, there,
+    /// never). Resolving also means a slate remapped by a source move needs no
+    /// fixing up and a deleted one disarms itself, so there is no "cleared on
+    /// a source change" clause. Its lifecycle is `bus::slates`'.
+    armed_slate: Option<Uuid>,
     /// The latest recorder's generation. Messages from any other are stale.
     generation: u64,
     /// The clip undo history (Phase 3 spec C1). Cleared on every open.
@@ -794,6 +807,7 @@ impl Bus {
             skip_since: Instant::now(),
             capture,
             recording: None,
+            armed_slate: None,
             generation: 0,
             history: UndoController::default(),
             export: None,
@@ -830,6 +844,7 @@ impl Bus {
                 .skip_deadline
                 .into_iter()
                 .chain(self.start_deadline())
+                .chain(self.out_poll())
                 .min();
             let input = match deadline {
                 Some(deadline) => {
@@ -884,6 +899,14 @@ impl Bus {
             // After every input, not only on a timeout, so a busy channel
             // (level messages at 10 Hz) can't starve them.
             self.dispatch_deadlines();
+            // An armed slate's out point (BACKLOG #114), checked here rather
+            // than on a deadline of its own: there is nothing to arm or
+            // re-arm, `out_poll` above is only what guarantees the tail runs
+            // while nothing else would wake the thread, and during a take the
+            // recorder's level messages already run it 10 times a second.
+            // Before `publish_position`, so the pause it may issue is in the
+            // position published for this iteration.
+            self.stop_at_slate_out();
             self.publish_position();
             // The one place a transcription starts (Phase 10 spec S5), which
             // is enough because a recording, an export and a preview can only

@@ -173,6 +173,14 @@ impl Bus {
             started: Instant::now(),
             media_seen: false,
         });
+        // What the footage stops at, if this take was shot from a range
+        // (BACKLOG #114). **Assigned unconditionally, so a plain `R` take
+        // clears whatever was armed:** without that a take started while a
+        // slate was armed from elsewhere would inherit its out point and pause
+        // at a range it has nothing to do with. **Here**, where nothing can
+        // refuse any more — every refusal above must leave the arm it found
+        // alone, exactly as it leaves the player.
+        self.armed_slate = from.map(|shot| shot.slate);
         self.emit(Event::Recording(RecordingStatus::Starting));
         // Recording always wins (Phase 10 spec S5): the transcript running
         // gives way and goes back to the front of the queue. **Here**, once
@@ -366,6 +374,12 @@ impl Bus {
         let Some(active) = self.recording.take() else {
             return;
         };
+        // The arm goes with the take (BACKLOG #114): the range has had its
+        // commentary, and the log below is closed, so nothing is left to write
+        // a pause into. Cleared here and in `abort_recording` rather than in
+        // `stop_recording`, which is not the only way to either — the start
+        // timeout aborts directly.
+        self.armed_slate = None;
         let events = active.log.finish();
         let clip_id = active.pending.id;
         let outcome = active.recorder.stop(STOP_TIMEOUT);
@@ -412,6 +426,8 @@ impl Bus {
         let Some(active) = self.recording.take() else {
             return;
         };
+        // As in `finish_recording`: the arm goes with the take.
+        self.armed_slate = None;
         // NULL first, so nothing still writes the file.
         drop(active.recorder);
         remove_recording(&active.path);

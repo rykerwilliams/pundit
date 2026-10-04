@@ -333,6 +333,9 @@ impl Bus {
         // Nothing of the previous project survives: not its requests, its
         // skip burst, nor its frame.
         self.unload();
+        // Nor the slate its footage was going to stop at (BACKLOG #114): the
+        // id means nothing in the project being opened.
+        self.armed_slate = None;
         // Undo is in-memory only, so the trash it held is unreachable now
         // (Phase 3 spec C4). That includes the previous project's: its
         // history is being cleared, so its trash can never be restored.

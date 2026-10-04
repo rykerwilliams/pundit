@@ -2420,7 +2420,31 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** if the coach is confused by it a second time, or with any
   work on what a take shows on the picture.
 
-114. **Shooting a slate doesn't stop at its out point.** The coach (2026-10-02):
+114. **Shooting a slate doesn't stop at its out point — FIXED 2026-10-04**, as
+  shape **(a)**: the footage pauses where the range ends and the **recording
+  keeps running**, so the picture holds on the range's last frame while the
+  coach finishes the sentence, and Stop ends the take as before. Shapes (b) and
+  (c) were not built. The range is also drawn on the scrubber during the take
+  (task A), which is the visible end this entry guessed was "probably part of
+  the answer".
+- **The two halves:** `bus::slates::stop_at_slate_out`, armed by
+  `Bus.armed_slate: Option<Uuid>` and checked in the bus loop's tail, plus
+  `slate_span`/the scrubber band. Tasks A and B of
+  `docs/superpowers/plans/2026-10-03-slate-workflow.md`.
+- **What this entry demanded and got:** a deliberate move past the out point
+  must not trigger the stop. A forward skip makes `query_position` read the
+  skip's *target* within 5 ms, so a position-only check fired and wrote a pause
+  anchored at the range's end while the picture was seconds past it — replay
+  would freeze behind the footage being talked over. The distinguisher is the
+  **event, not the position**: a landing at or past the out point disarms
+  without pausing, and the sabotage proof reproduced the original wrong anchor
+  exactly before the fix removed it.
+- **One behaviour nobody specified, now reachable:** a take from a
+  *half-marked* range closed with `o` mid-take pauses at once, because the
+  position is already at the out point just marked. Read as correct under S1
+  and tested, but the coach has not seen it.
+
+  The original report follows. The coach (2026-10-02):
   "when i record a clip, it doesn't stop at the end of the clip." Shooting a
   slate seeks to its in point and starts the take (`start_recording`'s `from`),
   and from there the game video plays on past `out_seconds` until the coach
