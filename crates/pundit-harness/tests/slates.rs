@@ -1,36 +1,46 @@
 //! Bus end to end: slates — marking a range while watching, the refusal that
-//! is a notice, the one command pair that is live during a take, and the undo
-//! step each edit is. What a slate *is* and what the mutators refuse are
-//! core's tests.
+//! is a notice, the one command pair that is live during a take, the undo
+//! step each edit is, and the out-point stop (BACKLOG #114). What a slate *is*
+//! and what the mutators refuse are core's tests.
 //!
 //! Layout per test: `<tmp>/config` holds the state file, `<tmp>/project` the
 //! project, `<tmp>/media` the fixture game videos.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
-use pundit_app::bus::{Command, RecordingStatus, UserError};
-use pundit_core::project::{Project, SlateEdit};
+use pundit_app::bus::{Command, Event, RecordingStatus, UserError};
+use pundit_core::event::{CommentaryEvent, EventKind};
+use pundit_core::project::{Clip, Project, SlateEdit};
 use pundit_core::store;
 use pundit_core::zoom::Zoom;
-use pundit_harness::{write_project, Harness};
+use pundit_harness::{write_project, Harness, FRAME};
 use tempfile::TempDir;
+use uuid::Uuid;
 
-/// A project of 2-second fixture videos, as written.
+/// A project of fixture videos, as written.
 struct Proj {
     folder: PathBuf,
     _tmp: TempDir,
 }
 
 impl Proj {
+    /// Two-second videos, which is all a test about marking needs.
     fn open(videos: &[&str]) -> (Harness, Self) {
+        let videos: Vec<(&str, u32)> = videos.iter().map(|&name| (name, 2)).collect();
+        Self::open_lengths(&videos)
+    }
+
+    /// [`Proj::open`] with each video's length in seconds: the out-point tests
+    /// need footage to play through.
+    fn open_lengths(videos: &[(&str, u32)]) -> (Harness, Self) {
         gstreamer::init().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let folder = tmp.path().join("project");
         let media = tmp.path().join("media");
         std::fs::create_dir(&folder).unwrap();
         std::fs::create_dir(&media).unwrap();
-        let videos: Vec<(&str, u32)> = videos.iter().map(|&name| (name, 2)).collect();
-        write_project(&folder, &media, &videos);
+        write_project(&folder, &media, videos);
 
         let mut h = Harness::new(&tmp.path().join("config"));
         h.send(Command::OpenProject(folder.clone()));
@@ -398,4 +408,305 @@ fn shooting_while_recording_is_refused() {
     let saved = p.saved();
     assert_eq!(saved.clips.len(), 1, "one take, not two");
     assert_eq!(saved.clips[0].slate_id, None, "and it was not the slate's");
+}
+
+// -------------------------------------------- stopping at the out point
+
+/// Shoots slate `id` and waits for the take to be recording.
+fn shoot(h: &mut Harness, id: Uuid) {
+    h.send(Command::ShootSlate {
+        id,
+        zoom: Zoom::IDENTITY,
+    });
+    assert_eq!(h.wait_recording(), RecordingStatus::Starting);
+    assert!(matches!(
+        h.wait_recording(),
+        RecordingStatus::Recording { .. }
+    ));
+}
+
+/// Stops the take and returns the clip it made.
+fn stop(h: &mut Harness) -> Clip {
+    h.send(Command::StopRecording);
+    let changed = h.wait_changed();
+    assert_eq!(h.wait_recording(), RecordingStatus::Idle);
+    changed
+        .project
+        .clips
+        .last()
+        .expect("the take made a clip")
+        .clone()
+}
+
+/// The latest `Position` the bus published: source index and target.
+fn latest_position(h: &Harness) -> Option<(usize, Option<f64>)> {
+    h.log().iter().rev().find_map(|e| match e {
+        Event::Position {
+            source_index,
+            target_abs,
+        } => Some((*source_index, *target_abs)),
+        _ => None,
+    })
+}
+
+/// Every pause in `events` but the one `RecordingLog::new` writes at record
+/// time 0, which every take opens with — "every clip starts on a still frame".
+fn pauses_after_the_first(events: &[CommentaryEvent]) -> Vec<&CommentaryEvent> {
+    let mut pauses: Vec<&CommentaryEvent> = events
+        .iter()
+        .filter(|e| matches!(e.kind, EventKind::Pause { .. }))
+        .collect();
+    assert!(
+        pauses.first().is_some_and(|e| e.record_time == 0.0),
+        "every log opens with a pause at record time 0: {events:?}"
+    );
+    pauses.remove(0);
+    pauses
+}
+
+/// **The feature** (BACKLOG #114, spec S1): a take shot from a timed slate
+/// plays to the range's out point and the *footage* pauses there while the
+/// recording runs on, so the picture holds on the range's last frame while the
+/// coach finishes the sentence.
+///
+/// The anchor is the stored `out`, exactly — not a reading of the playhead,
+/// which is what makes replay freeze on the frame the coach was looking at.
+#[test]
+fn a_take_from_a_timed_slate_pauses_at_its_out_point() {
+    let (mut h, p) = Proj::open_lengths(&[("a.webm", 4)]);
+    h.wait_settled();
+    h.send(mark_in(0, 0.2));
+    let id = h.wait_changed().project.slates[0].id;
+    h.send(mark_out(0, 1.2));
+    h.wait_changed();
+
+    shoot(&mut h, id);
+    h.toggle_play();
+    assert!(h.wait_playing(), "the take plays from the in point");
+
+    // Nobody sends a command for this: the bus pauses the footage itself.
+    assert!(!h.wait_playing(), "the footage pauses at the out point");
+    let at_pause = h.position_secs().expect("a position");
+    assert!(
+        (1.2..2.0).contains(&at_pause),
+        "paused at the end of the range, not well past it: {at_pause}"
+    );
+    std::thread::sleep(Duration::from_millis(300));
+    let later = h.position_secs().expect("a position");
+    assert!(
+        (later - at_pause).abs() < FRAME,
+        "the footage really stopped: played on from {at_pause} to {later}"
+    );
+
+    // The recording was never stopped, and its log ends with that pause.
+    let clip = stop(&mut h);
+    assert_eq!(
+        clip.events.last().map(|e| e.kind.clone()),
+        Some(EventKind::Pause { source_time: 1.2 }),
+        "anchored at the stored out point, not at a reading: {:?}",
+        clip.events
+    );
+    assert!(
+        clip.events.last().is_some_and(|e| e.record_time > 0.0),
+        "and it happened during the take: {:?}",
+        clip.events
+    );
+    h.shutdown();
+    assert_eq!(p.saved().slates.len(), 1, "the slate survives its take");
+}
+
+/// **A deliberate move past the out point disarms and never pauses** (#114's
+/// own rule, and the plan's item 6).
+///
+/// Measured: a forward skip makes `query_position` read the skip's *target*
+/// within 5 ms, so a check that trusted the position alone would fire here and
+/// log a pause anchored at `out` while the picture is seconds past it — replay
+/// would then freeze behind the footage the coach is talking over. The
+/// distinguisher is therefore the **event**: the landing spends the arm in
+/// silence, and the poll only ever sees a position playback reached.
+#[test]
+fn a_forward_skip_past_the_out_point_disarms_without_pausing() {
+    let (mut h, _p) = Proj::open_lengths(&[("a.webm", 8)]);
+    h.wait_settled();
+    h.send(mark_in(0, 0.2));
+    let id = h.wait_changed().project.slates[0].id;
+    h.send(mark_out(0, 2.0));
+    h.wait_changed();
+
+    shoot(&mut h, id);
+    h.toggle_play();
+    assert!(h.wait_playing());
+    // Well short of the out point, so nothing has fired when the skip is sent.
+    h.poll_until("playback past 0.4 s", |h| {
+        h.position_secs().is_some_and(|p| p > 0.4)
+    });
+    h.skip(4.0);
+    // Its landing is past the out point: this is where a naive check fires.
+    h.poll_until("the skip landed past the out point", |h| {
+        h.position_secs().is_some_and(|p| p > 3.0)
+    });
+    // Several polls' worth of wall time, so "it hasn't fired yet" can't pass
+    // for "it never fires".
+    std::thread::sleep(Duration::from_millis(400));
+    let clip = stop(&mut h);
+
+    assert!(
+        pauses_after_the_first(&clip.events).is_empty(),
+        "the skip spends the arm without logging a pause: {:?}",
+        clip.events
+    );
+    assert!(
+        !h.log().iter().any(|e| matches!(e, Event::Playing(false))),
+        "and nothing paused the footage: {:?}",
+        h.log()
+    );
+    h.shutdown();
+}
+
+/// A half-marked range has no end, so its take behaves as one started with
+/// `R`: the footage plays on.
+#[test]
+fn a_half_marked_slates_take_never_pauses() {
+    let (mut h, _p) = Proj::open_lengths(&[("a.webm", 4)]);
+    h.wait_settled();
+    h.send(mark_in(0, 0.2));
+    let id = h.wait_changed().project.slates[0].id;
+
+    shoot(&mut h, id);
+    h.toggle_play();
+    assert!(h.wait_playing());
+    h.poll_until("playback past 1.5 s", |h| {
+        h.position_secs().is_some_and(|p| p > 1.5)
+    });
+    let clip = stop(&mut h);
+
+    assert!(
+        pauses_after_the_first(&clip.events).is_empty(),
+        "nothing to stop at: {:?}",
+        clip.events
+    );
+    h.shutdown();
+}
+
+/// A plain `R` take is unchanged by a timed range sitting elsewhere in the
+/// project: the arm belongs to a take shot *from* a slate, and nothing else
+/// arms it.
+///
+/// What this cannot reach yet is the arm *surviving* into a plain take — the
+/// arm is only ever set where a take starts, so a refused shoot leaves nothing
+/// behind. The inherited-arm case arrives with the preview path (task C), which
+/// is why `start_recording` assigns the arm unconditionally rather than only
+/// for a shoot.
+#[test]
+fn a_plain_take_is_not_stopped_by_a_timed_slate_on_another_video() {
+    let (mut h, p) = Proj::open_lengths(&[("a.webm", 2), ("b.webm", 6)]);
+    h.wait_settled();
+    h.send(mark_in(0, 0.2));
+    h.wait_changed();
+    h.send(mark_out(0, 0.5));
+    h.wait_changed();
+
+    // A plain take on the second video, played well past the first range's
+    // out point in its own source time.
+    let second = p.saved().source_videos[0].duration_seconds + 0.1;
+    h.send(Command::ScrubRelease { abs: second });
+    h.poll_until("the second video, settled", |h| {
+        latest_position(h) == Some((1, None))
+    });
+    h.send(Command::ToggleRecording {
+        zoom: Zoom::IDENTITY,
+    });
+    assert_eq!(h.wait_recording(), RecordingStatus::Starting);
+    assert!(matches!(
+        h.wait_recording(),
+        RecordingStatus::Recording { .. }
+    ));
+    h.toggle_play();
+    assert!(h.wait_playing());
+    h.poll_until("playback past 1.5 s into the second video", |h| {
+        h.position_secs().is_some_and(|p| p > 1.5)
+    });
+    let clip = stop(&mut h);
+
+    assert_eq!(clip.source_index, 1);
+    assert!(
+        pauses_after_the_first(&clip.events).is_empty(),
+        "another video's range is not this take's business: {:?}",
+        clip.events
+    );
+    h.shutdown();
+}
+
+/// **The arm is an id, resolved at every check — never the `(source_index,
+/// out)` pair it stands for.** `MarkSlateOut` is on the recording allow-list,
+/// so a take shot from a *half-marked* range can gain its out point mid-take:
+/// `o` closes the range and the footage stops where the coach said it ends.
+/// A pair cached when the take began could not do this — there was no out
+/// point to cache.
+#[test]
+fn closing_the_range_mid_take_stops_the_footage_there() {
+    let (mut h, _p) = Proj::open_lengths(&[("a.webm", 4)]);
+    h.wait_settled();
+    h.send(mark_in(0, 0.2));
+    let id = h.wait_changed().project.slates[0].id;
+
+    shoot(&mut h, id);
+    h.toggle_play();
+    assert!(h.wait_playing());
+    h.poll_until("playback past 1.0 s", |h| {
+        h.position_secs().is_some_and(|p| p > 1.0)
+    });
+    // `o`, with the position the UI read at the key press.
+    let at_mark = h.position_secs().expect("a position");
+    h.send(mark_out(0, at_mark));
+    assert_eq!(
+        h.wait_changed().project.slates[0].out_seconds,
+        Some(at_mark)
+    );
+    assert!(!h.wait_playing(), "the range just acquired its end");
+    let clip = stop(&mut h);
+
+    assert_eq!(
+        clip.events.last().map(|e| e.kind.clone()),
+        Some(EventKind::Pause {
+            source_time: at_mark
+        }),
+        "anchored at the out point just marked: {:?}",
+        clip.events
+    );
+    h.shutdown();
+}
+
+/// **The arm goes with the take.** A take stopped before its out point leaves
+/// nothing armed, so scanning on afterwards runs through the range — the stop
+/// is the take's, not the footage's, and the commentary is already recorded.
+#[test]
+fn the_arm_does_not_outlive_the_take() {
+    let (mut h, _p) = Proj::open_lengths(&[("a.webm", 4)]);
+    h.wait_settled();
+    h.send(mark_in(0, 0.2));
+    let id = h.wait_changed().project.slates[0].id;
+    h.send(mark_out(0, 1.2));
+    h.wait_changed();
+
+    // Shot and stopped without ever playing: the out point is still ahead.
+    shoot(&mut h, id);
+    stop(&mut h);
+
+    h.toggle_play();
+    assert!(h.wait_playing());
+    // A stale arm would pause the footage at 1.2 and this would never land.
+    h.poll_until("playback through the range and past it", |h| {
+        h.position_secs().is_some_and(|p| p > 1.8)
+    });
+    assert!(
+        !h.log()
+            .iter()
+            .rev()
+            .take_while(|e| !matches!(e, Event::Playing(true)))
+            .any(|e| matches!(e, Event::Playing(false))),
+        "the footage is still playing: {:?}",
+        h.log()
+    );
+    h.shutdown();
 }

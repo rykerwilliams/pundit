@@ -23,7 +23,29 @@ local 1.98 is not the gate.
 ## Where this stands (update it as tasks land)
 
 - **A — the span on the scrubber.** Not started.
-- **B — the stop.** Not started.
+- **B — the stop.** **Landed.** `Bus.armed_slate: Option<Uuid>`, the bounded
+  poll in the loop's `.min()` chain, and the check in the loop's tail, all as
+  written. The lifecycle is the four sites item 11 names (`start_recording`
+  after `recording = Some(…)`, `finish_recording` / `abort_recording`, and
+  `project::commit`, which is what every open goes through), plus the disarm.
+  **One deviation, and it is a simplification:** item 6's "one line at the
+  skip/scrub/load landing sites" is **one** line, in `load` — every one of
+  those sites funnels through it ("the one path every request takes"), and it
+  takes the *request* after `load`'s clamp rather than a position reading, so
+  the arm is spent before the seek is even issued. It also covers a frame step
+  and a jump, which the three named sites do not. The detector lives in
+  `bus/slates.rs` rather than `recording.rs`/`transport.rs`: it is slate
+  behaviour, and that module's header is where the minted timestamp's exception
+  is written down. Both of `transport.rs`'s contradictory comments are amended
+  (item 7).
+  **What the tests reach and what they do not:** the six harness tests include
+  the forward-skip bug (which fails, with the measured wrong anchor, without
+  the one-line disarm) and a take whose range is closed mid-take, which is the
+  one reachable proof that the arm must be an id rather than a cached pair.
+  Item 10's *inherited* arm and the `source_index` guard are **not reachable
+  today** — the arm is only ever set where a take starts, and a take's source
+  never changes — so both wait on C for a test; the unconditional assignment
+  and the guard are in, with their reasons.
 - **C — the preview.** Not started.
 - **D — the pass.** Not started.
 
