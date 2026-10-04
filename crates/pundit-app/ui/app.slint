@@ -3532,6 +3532,17 @@ export component AppWindow inherits Window {
         }
         root.show-slate();
     }
+    /// The selected slate's marked range on the scrubber's concat scale
+    /// (spec S6), `to <= from` for nothing to draw.
+    ///
+    /// **Pushed by Rust, not derived here.** The `slates` rows carry a
+    /// formatted range for reading, not seconds, and the mapping a span needs
+    /// is `project.abs_seconds(source_index, …)` — the selection alone does
+    /// not say which video it is on. `show-slate` above sets it on every
+    /// selection change, and the project-changed path sets it again, which is
+    /// what moves it when a mark is re-set under an unchanged selection.
+    in property <float> slate-span-from;
+    in property <float> slate-span-to;
     /// A slate's name or tag field has focus, folded into `text-editing` —
     /// without which typing a tag fires every letter shortcut, `i` and `o`
     /// included, and the letters never reach the field.
@@ -5706,6 +5717,11 @@ export component AppWindow inherits Window {
                         // The concat timeline's: a preview's scale is its
                         // clip's, where they would mean nothing.
                         marks: root.previewing ? [] : root.match-marks;
+                        // Dropped in a preview for the same reason the marks
+                        // are: these are concat seconds and a preview's scale
+                        // is its clip's.
+                        slate-span-from: root.previewing ? 0 : root.slate-span-from;
+                        slate-span-to: root.previewing ? 0 : root.slate-span-to;
                         value <=> root.position-seconds;
                         moved(value) => { root.scrub-move(value); }
                         released(value) => { root.scrub-release(value); }

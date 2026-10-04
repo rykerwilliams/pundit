@@ -37,6 +37,7 @@ use pundit_app::match_panel::{
 };
 use pundit_app::new_match::{self, Draft};
 use pundit_app::recents;
+use pundit_app::slate_span::slate_span;
 use pundit_app::wheel::Wheel;
 use pundit_app::zoom_input::{self, DragPan, Viewport};
 use pundit_core::avatar;
@@ -1331,13 +1332,15 @@ fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             let Some(w) = weak.upgrade() else { return };
             let selected = w.get_selected_slate();
             let found = UI.with_borrow(|ui| {
-                ui.snapshot.as_ref().and_then(|s| {
-                    s.project
-                        .slates
-                        .iter()
-                        .find(|slate| slate.id.to_string() == selected.as_str())
-                        .map(|slate| (slate.name.clone(), slate.tags.join(", ")))
-                })
+                let project = ui.snapshot.as_ref().map(|s| &*s.project);
+                // Inside the same borrow as the fields: a selection change is
+                // one of the two things that moves the span.
+                show_slate_span(&w, project);
+                project?
+                    .slates
+                    .iter()
+                    .find(|slate| slate.id.to_string() == selected.as_str())
+                    .map(|slate| (slate.name.clone(), slate.tags.join(", ")))
             });
             let (name, tags) = found.unwrap_or_default();
             w.set_slate_name(name.into());
@@ -3384,6 +3387,10 @@ fn show_project(w: &AppWindow, snapshot: Snapshot) {
         w.set_selected_slate(SharedString::new());
     }
     show_slates(w, project);
+    // The second of the span's two movers: a re-mark changes `in_seconds` or
+    // `out_seconds` without touching the selection, so `changed
+    // selected-slate` never fires for it.
+    show_slate_span(w, Some(project));
     w.set_clip_count(project.clips.len() as i32);
     // Exactly when the sheet would have a row (spec R1), asked of the sheet's
     // own list rather than restated here: a project of goals and no clips has
@@ -3561,6 +3568,27 @@ fn slate_range(slate: &Slate) -> String {
         Some(end) => format!("{start}–{}", format_hms(end)),
         None => format!("{start}–"),
     }
+}
+
+/// The selected slate's range as the scrubber's span (spec S6).
+///
+/// Drawn for the **selected** slate, and the bus publishes nothing for it: the
+/// armed slate is always the selected one at every entry point, and the
+/// selection is the window's own state, so there is no `Event` to add. The two
+/// callers are the selection changing and the project changing — the second is
+/// what moves it when a mark is re-set under an unchanged selection.
+///
+/// `None`, which includes no project at all, writes `(0, 0)`: the scrubber
+/// draws nothing when `to <= from`.
+fn show_slate_span(w: &AppWindow, project: Option<&Project>) {
+    // `Uuid::parse_str(…).ok()`, as `selected_id` does it, not `parse_id`: no
+    // selection is the ordinary case here, and `parse_id` would log "not an
+    // id" for the empty string on every project change.
+    let selected = Uuid::parse_str(&w.get_selected_slate()).ok();
+    let span = project.and_then(|p| slate_span(p, selected));
+    let (from, to) = span.unwrap_or((0.0, 0.0));
+    w.set_slate_span_from(from as f32);
+    w.set_slate_span_to(to as f32);
 }
 
 /// A clip's name as the lists and the preview indicator show it.
