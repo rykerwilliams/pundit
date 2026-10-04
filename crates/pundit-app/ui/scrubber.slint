@@ -28,6 +28,20 @@ export component Scrubber {
     /// Drawn on the track, under the thumb and the pointer: a click on a
     /// mark scrubs there like anywhere else.
     in property <[Mark]> marks;
+    /// The selected slate's marked range (spec S6), on the same scale as
+    /// `marks`.
+    ///
+    /// **Two floats here rather than a wide `Mark`.** A mark is a point and
+    /// the loop below draws it *centred* on its value; a span drawn that way
+    /// would start half its own length before the in point. And it is one
+    /// range, not a list — S6 is one slate at a time — which is what lets it
+    /// take its own height and colour: a tick-shaped bar over a region does
+    /// not read like a region.
+    ///
+    /// `slate-span-to <= slate-span-from` is "nothing to draw", which covers
+    /// no selection and a half-marked range alike.
+    in property <float> slate-span-from;
+    in property <float> slate-span-to;
     in-out property <float> value;
     /// A scrub is under way: from the press to its end, however it ends.
     out property <bool> scrubbing;
@@ -69,6 +83,25 @@ export component Scrubber {
     function scrub-to(x: length) {
         root.value = value-at(x);
         root.moved(root.value);
+    }
+
+    // Before the marks as well as the slider: a goal tagged inside the range
+    // has to stay readable, and the rail and thumb are drawn over both.
+    //
+    // Taller than a tick (16px of the 20px track against a tick's 12px), so
+    // what shows above and below the opaque 4px rail brackets the ticks
+    // instead of imitating them, and rounded on the rail's own 2px so the
+    // ends read as a band's rather than a tick's. Teal: the three things
+    // already on this track are a goal's amber, a start/stop's white and the
+    // filled rail's accent blue.
+    Rectangle {
+        visible: root.slate-span-to > root.slate-span-from;
+        x: root.mark-x(root.slate-span-from);
+        y: (root.height - self.height) / 2;
+        width: root.mark-x(root.slate-span-to) - self.x;
+        height: 16px;
+        border-radius: 2px;
+        background: #2ec4b6.transparentize(0.3);
     }
 
     // Before the slider, so its thumb paints over them.
