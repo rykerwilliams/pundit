@@ -69,6 +69,23 @@ to survive separately — the second especially, because it exists so the picker
 can never lose the board, and a clip's cue slot is **not** where its board can
 live.
 
+**Amended 2026-10-05: `carry_scoreboard` has moved under this paragraph's feet,
+and in a helpful direction.** The mute-source-audio feature
+(`2026-10-04-mute-source-audio-design.md`) now passes it a `with_audio: bool`,
+because it is `can_copy`'s only caller and the gate has to be asked the muted
+question. Three consequences for whoever plans #78:
+- **The precedent for "an input, not a carried field" is now set in that exact
+  function.** The mute is handed *in* and `Carry` gained **no** field, on the
+  reasoning that `job` already holds the value and a carried copy would be two
+  truths for one fact. Prising the cues out of `carry_scoreboard` is the same
+  move in the opposite direction, and the two should read consistently.
+- **The function is no longer only about the board**, so its name is already
+  approximate. If #78 removes the cue coupling, that is the moment to rename it
+  rather than grow a third concern under a board-shaped name.
+- **`job.cues` is still derived from the picker as of `d585d24`** — the
+  overturned decision above has been recorded, not implemented. Read the code,
+  not this paragraph, when the plan is written.
+
 **2. #102 is an on/off setting**, not the snap-always-Shift-to-suppress shape
 §U1 recommended.
 
