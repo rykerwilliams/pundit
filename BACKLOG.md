@@ -2202,7 +2202,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   is five bindings per site, against the ~60 lines a copy would have been and
   the second copy of the Tab / Esc rules it would have left to keep in step.
 - **Esc still cascades, and it is now pinned at both sites.**
-  `crates/pundit-app/tests/tag_field.rs` drives the real `AppWindow` on the
+  `crates/pundit-app/tests/ui/tag_field.rs` (a module of #121's one UI binary) drives the real `AppWindow` on the
   headless backend: two letters, then Tab completes the tag in the clip
   inspector and in the slate editor; then Esc, which dismisses the list and
   *keeps* the field (the next letter is typed, and `i`/`o` fire no shortcut),

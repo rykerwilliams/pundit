@@ -21,7 +21,7 @@ use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-slint::include_modules!();
+use crate::{AppWindow, SlateRow};
 
 /// The tags already in use, as a project of a few clips would have them.
 const VOCABULARY: [&str; 3] = ["corner", "counter", "set piece"];
