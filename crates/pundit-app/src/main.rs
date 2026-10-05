@@ -1242,6 +1242,25 @@ fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             }
         }
     });
+    // The row's menu and its double-click (BACKLOG #104). Neither carries a
+    // position: the in point is a stored field, which is `ShootSlate`'s own
+    // reasoning.
+    window.on_jump_to_slate({
+        let bus = bus.clone();
+        move |id| {
+            if let Some(id) = parse_id(&id) {
+                bus.borrow().send(Command::JumpToSlate(id));
+            }
+        }
+    });
+    window.on_preview_slate({
+        let bus = bus.clone();
+        move |id| {
+            if let Some(id) = parse_id(&id) {
+                bus.borrow().send(Command::PreviewSlate(id));
+            }
+        }
+    });
     window.on_edit_slate_field({
         let (bus, weak) = (bus.clone(), window.as_weak());
         move |field, text| {

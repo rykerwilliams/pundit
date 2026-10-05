@@ -3971,6 +3971,13 @@ export component AppWindow inherits Window {
     callback mark-out();
     callback shoot-slate(string);
     callback delete-slate(string);
+    /// Park the game video on a slate's first frame (BACKLOG #104), the clip
+    /// row's "Jump to clip start".
+    callback jump-to-slate(string);
+    /// Watch the marked range: the jump, then play, then the stop at the out
+    /// point (spec P2). The row's double-click, as a clip row's double-click
+    /// is its jump.
+    callback preview-slate(string);
     callback edit-slate-field(SlateField, string);
     /// Move the selected slate's in or out point to the playhead (BACKLOG
     /// #119). No position argument: Rust reads the same heading position `i`
@@ -4445,7 +4452,15 @@ export component AppWindow inherits Window {
                 } else if (root.previewing) {
                     root.close-preview();
                 } else {
+                    // **Both lists' selections, not the clips' alone**: a
+                    // slate row stopped toggling when it gained a
+                    // double-click (BACKLOG #104), so Esc is now the only way
+                    // out of a slate selection, and "the selection" in a
+                    // panel with two lists means whichever one is set. Each
+                    // row's own list has a selection of at most one, so there
+                    // is nothing to order here.
                     root.selected-clip = "";
+                    root.selected-slate = "";
                 }
             }
             return accept;
@@ -4810,18 +4825,34 @@ export component AppWindow inherits Window {
 
                                         TouchArea {
                                             enabled: !root.recording;
+                                            // **Selects, never toggles**
+                                            // (BACKLOG #104): a double-click
+                                            // delivers two clicks first, so a
+                                            // toggle would preview the range
+                                            // and leave the row deselected --
+                                            // and the span on the scrubber is
+                                            // the *selected* slate's (spec
+                                            // S6), so the arm and the span
+                                            // would then disagree. Esc clears
+                                            // it, as it does a clip's.
                                             clicked => {
-                                                root.selected-slate = slate.id == root.selected-slate
-                                                    ? "" : slate.id;
+                                                root.selected-slate = slate.id;
                                                 // Off any field, so the keys
                                                 // work -- the clip row's rule.
                                                 keys.focus();
+                                            }
+                                            double-clicked => {
+                                                root.preview-slate(slate.id);
                                             }
                                         }
 
                                         ContextMenuArea {
                                             enabled: !root.recording;
                                             Menu {
+                                                MenuItem {
+                                                    title: "Jump to slate start";
+                                                    activated => { root.jump-to-slate(slate.id); }
+                                                }
                                                 MenuItem {
                                                     title: "Delete slate";
                                                     activated => { root.delete-slate(slate.id); }

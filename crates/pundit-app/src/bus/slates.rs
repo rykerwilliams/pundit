@@ -102,6 +102,61 @@ impl Bus {
         self.start_recording(zoom, Some(shot));
     }
 
+    /// Park the game video on the slate's first frame (BACKLOG #104), so a
+    /// marked range can be watched again without being hunted for on the
+    /// scrubber. Says whether the seek went out.
+    ///
+    /// **It is `jump_to_clip`'s body over a slate's fields** — the shared
+    /// [`Bus::park_at`] — because a slate row is the same kind of row in the
+    /// same panel as a clip row and should land the same way. A half-marked
+    /// slate still has an in point, so it jumps like any other; `park_at`
+    /// switches video when the slate is on another one.
+    pub(super) fn jump_to_slate(&mut self, id: Uuid) -> bool {
+        let Some(slate) = self
+            .open
+            .as_ref()
+            .and_then(|open| open.project.slates.iter().find(|s| s.id == id))
+        else {
+            eprintln!("bus: JumpToSlate on slate {id}, which isn't there");
+            return false;
+        };
+        let (index, secs) = (slate.source_index, slate.in_seconds);
+        self.park_at(index, secs)
+    }
+
+    /// Watch the marked range: park at the in point, play, and let the armed
+    /// stop end it at the out point (spec P2).
+    ///
+    /// **Not the preview pipeline** (spec P1): `OpenPreview` composites a
+    /// clip's recording, and a slate has no recording. This is the game
+    /// video, played between two marks, which is why it is here and not in
+    /// `bus::preview`.
+    ///
+    /// **So the arm is not a take's alone**, and that is what
+    /// `start_recording` assigns it unconditionally for: a plain `R` take
+    /// started over a live preview would otherwise inherit this arm and pause
+    /// the footage at a range it has nothing to do with.
+    ///
+    /// **It plays at 1x (spec P3) with no rule of its own for it.** The park
+    /// pauses, and every pause of the game video returns it to 1x
+    /// ([`Bus::set_playing`]), so the rate is 1.0 by the time this plays —
+    /// a `store_rate(1.0)` here would be a second copy of that rule. What P3
+    /// needs on top is that it *stays* 1x, which is `scan_speed`'s refusal
+    /// while a range is armed, for the reason written there.
+    ///
+    /// A half-marked range is armed too and simply plays on, as a take shot
+    /// from one does: `o` during the preview then stops the footage where the
+    /// coach says the range ends.
+    pub(super) fn preview_slate(&mut self, id: Uuid) {
+        if !self.jump_to_slate(id) {
+            return;
+        }
+        // After the park, never before: the arm is what `load` spends when a
+        // request lands past the out point, and this request is the in point.
+        self.armed_slate = Some(id);
+        self.set_playing(true);
+    }
+
     /// When to wake to check the armed slate's out point, if one is armed and
     /// the footage is playing.
     ///
@@ -159,12 +214,27 @@ impl Bus {
     /// **game** pipeline, so without it a stale arm would stop a clip preview
     /// dead, with no notice and no log.
     ///
-    /// **`query_position` is safe to compare against a stored source time,
-    /// measured:** after a flushing seek it returns `None` for 0–15 ms and
-    /// then the seek's *target* — never the pre-seek value — and the same
-    /// across a source change. So there is no stale read to defend against,
-    /// which is why no previous position is kept. What it cannot do is tell a
-    /// deliberate move past the out point from playback reaching it, which is
+    /// **`query_position` is only the player's own answer once the slot is
+    /// idle, and that is measured the hard way.** Settled, it is safe to
+    /// compare against a stored source time: after a flushing seek it returns
+    /// `None` for 0–15 ms and then the seek's *target* — never the pre-seek
+    /// value — and the same across a source change, so there is no stale read
+    /// to keep a previous position against. But a seek that has been
+    /// **issued and not yet acted on** still reads the position before it:
+    /// that is this iteration of the bus loop, because `preview_slate` parks
+    /// and plays in one go, and without `is_idle` a range previewed from
+    /// anywhere past its own out point stopped on its first frame — the park
+    /// seeks to 1.0, the tail reads the 4.5 the coach was watching, and the
+    /// stop fires at once (pinned by the harness's
+    /// `previewing_a_slate_plays_the_range_and_stops_at_its_end`, which is
+    /// how this was found). `step_frame` refuses on the same condition for
+    /// the same reason. A take can reach it too, pressing space inside the
+    /// shoot's seek, so the guard belongs here rather than in the preview.
+    /// Costs at most one poll: a skip's flight is not idle either, and the
+    /// next one is 100 ms later.
+    ///
+    /// What the position cannot do, settled or not, is tell a deliberate move
+    /// past the out point from playback reaching it, which is
     /// [`Bus::disarm_if_past_slate_out`]'s job.
     ///
     /// The source check is the slate's own rule — one source per slate — and
@@ -173,7 +243,7 @@ impl Bus {
     /// point.
     fn slate_out_reached(&self) -> Option<f64> {
         let id = self.armed_slate?;
-        if !self.playing || self.preview.is_some() {
+        if !self.playing || self.preview.is_some() || !self.player.is_idle() {
             return None;
         }
         let slate = self

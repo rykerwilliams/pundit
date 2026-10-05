@@ -20,7 +20,6 @@ use std::path::{Path, PathBuf};
 use pundit_core::project::Clip;
 use pundit_core::store::RECORDINGS_DIRNAME;
 use pundit_core::undo::{ClipEdit, UndoAction};
-use pundit_media::Origin;
 use uuid::Uuid;
 
 use super::{Bus, Event, UserError};
@@ -125,9 +124,9 @@ impl Bus {
         self.publish_project();
     }
 
-    /// Pauses the game video at the clip's start: an accurate user seek, like
-    /// a scrub release. The skip burst is dropped first, so its debounce
-    /// can't move the video afterwards.
+    /// Pauses the game video at the clip's start, through the `park_at` a
+    /// slate row's jump shares (BACKLOG #104): the same row in the same panel
+    /// lands the same way.
     pub(super) fn jump_to_clip(&mut self, id: Uuid) {
         let Some(clip) = self
             .open
@@ -137,11 +136,7 @@ impl Bus {
             return eprintln!("bus: JumpToClip on a clip that isn't there: {id}");
         };
         let (index, secs) = (clip.source_index, clip.start_source_seconds);
-        self.reset_skip();
-        self.set_playing(false);
-        if self.seekable() {
-            self.load(index, secs, true, Origin::Scrub);
-        }
+        self.park_at(index, secs);
     }
 
     pub(super) fn undo(&mut self) {
