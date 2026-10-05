@@ -108,11 +108,17 @@ impl Rig {
 
     /// Runs `targets`, smallest and cheapest: these render on llvmpipe.
     fn export(&self, targets: Vec<ExportTarget>) {
+        self.export_with(targets, false);
+    }
+
+    /// As [`Rig::export`], with "Mute source audio" as given.
+    fn export_with(&self, targets: Vec<ExportTarget>, mute_source: bool) {
         self.h.send(Command::Export {
             targets,
             resolution: Resolution::R720,
             quality: Quality::Low,
             scoreboard: None,
+            mute_source,
         });
     }
 
@@ -417,18 +423,43 @@ fn a_target_with_nothing_in_it_is_refused() {
 
 /// The pickers' values become the project's, so the next run uses them
 /// without being told (spec E4).
+///
+/// **The mute is run second, and unmuted, on purpose.** `Rig::export` sends
+/// 720p / Low, which already differ from a fresh project's 1080p / Medium, so
+/// a run that *adds* the mute writes the project back whatever `Pickers::of`
+/// read — and an assertion on it would pass even if `of` never looked at the
+/// field. The second run below changes **nothing but the mute**, in the
+/// direction the stored value has to be read to notice: a muted project asked
+/// for an unmuted run. That is what pins `Pickers::of`.
 #[test]
-fn a_run_persists_the_resolution_and_quality() {
+fn a_run_persists_the_resolution_quality_and_mute() {
     let mut rig = Rig::open(&[1.0]);
-    rig.export(vec![ExportTarget::AllClips]);
+    rig.export_with(vec![ExportTarget::AllClips], true);
     let snapshot = rig.h.wait_changed();
     let prefs = &snapshot.project.preferences;
     assert_eq!(prefs.last_export_resolution, Resolution::R720);
     assert_eq!(prefs.last_export_quality, Quality::Low);
+    assert_eq!(prefs.export_source_volume, 0.0);
 
     outcome(&mut rig.h);
-    let saved = store::read(&rig.tmp.path().join("project")).unwrap();
+    let folder = rig.tmp.path().join("project");
+    let saved = store::read(&folder).unwrap();
     assert_eq!(saved.preferences.last_export_resolution, Resolution::R720);
+    assert_eq!(saved.preferences.export_source_volume, 0.0);
+
+    // Everything the sheet sends now matches what is stored but the mute.
+    rig.export_with(vec![ExportTarget::AllClips], false);
+    let snapshot = rig.h.wait_changed();
+    assert_eq!(snapshot.project.preferences.export_source_volume, 1.0);
+    outcome(&mut rig.h);
+    assert_eq!(
+        store::read(&folder)
+            .unwrap()
+            .preferences
+            .export_source_volume,
+        1.0,
+        "unmuting a muted project left it muted"
+    );
     rig.h.shutdown();
 }
 
@@ -543,9 +574,10 @@ fn a_refused_run_leaves_the_pickers_alone() {
     let mut rig = Rig::open_with(&[1.0], |_, media| {
         std::fs::remove_file(media.join("a.webm")).unwrap();
     });
-    // The sheet's pickers are 720p / Low; the project has never exported, so
-    // its own are the defaults.
-    rig.export(vec![ExportTarget::AllClips]);
+    // The sheet's pickers are 720p / Low and the mute is on; the project has
+    // never exported, so its own are the defaults. **The mute is sent**, or
+    // asserting the stored volume is still `1.0` says nothing.
+    rig.export_with(vec![ExportTarget::AllClips], true);
     rig.h.wait_for_error();
     let rest = rig.h.shutdown();
     assert!(
@@ -558,4 +590,5 @@ fn a_refused_run_leaves_the_pickers_alone() {
         Resolution::default()
     );
     assert_eq!(saved.preferences.last_export_quality, Quality::default());
+    assert_eq!(saved.preferences.export_source_volume, 1.0);
 }

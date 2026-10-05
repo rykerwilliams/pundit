@@ -21,7 +21,25 @@ coach's rule.
 
 ## Where this stands (update it as tasks land)
 
-- **1 — the mute, end to end.** Not started.
+- **1 — the mute, end to end.** Done. `CURRENT_FORMAT_VERSION` took **15**
+  (#115 had not landed, so no bump was shared). **Two deviations**, both
+  recorded here rather than left to be rediscovered:
+  - **`carry_scoreboard` did *not* take the bool** (step 10's first clause). In
+    task 1 `can_copy` keeps its signature, so the argument would have had no
+    reader and `-D warnings` fails an unused parameter. Everything else in
+    step 10 stands — `Carry` gains no field, `job` builds
+    `Render::Copy { files, with_audio }` from `pickers`, and the one negation
+    is at the bus's boundary. Task 2 adds the argument along with
+    `can_copy(&files, with_audio)`, which is its only reader.
+  - **The write-back test runs muted *first*, then unmuted** — the reverse of
+    the Tests section's order, which does not catch its own sabotage proof.
+    `Rig::export` sends 720p/Low, so a run that *adds* the mute differs from
+    the stored prefs in three fields and writes back whatever `Pickers::of`
+    read; with `of`'s volume hardcoded `1.0` that run still differs and still
+    passes. Asking a **muted** project for an **unmuted** run is the direction
+    the stored value has to be read to notice: `of` == `pickers`, no write-back,
+    and the project stays muted. §R.5 twice over, and the test's own doc
+    comment says why.
 - **2 — the copy gate's widening.** Not started.
 
 **They are sequential and ship together.** The first draft claimed two of its

@@ -124,11 +124,22 @@ impl Match {
     }
 
     fn export(&self, targets: Vec<ExportTarget>, scoreboard: Option<ScoreboardMode>) {
+        self.export_with(targets, scoreboard, false);
+    }
+
+    /// As [`Match::export`], with "Mute source audio" as given.
+    fn export_with(
+        &self,
+        targets: Vec<ExportTarget>,
+        scoreboard: Option<ScoreboardMode>,
+        mute_source: bool,
+    ) {
         self.h.send(Command::Export {
             targets,
             resolution: Resolution::R720,
             quality: Quality::Low,
             scoreboard,
+            mute_source,
         });
     }
 
@@ -183,6 +194,14 @@ fn video_packets(path: &Path) -> i64 {
         .unwrap_or_else(|| panic!("no packet count in {probe}"))
 }
 
+/// How many streams of kind `select` (`"a"`, `"s"`) `path` has.
+fn streams(path: &Path, select: &str) -> usize {
+    ffprobe(path, &["-select_streams", select, "-show_streams"])["streams"]
+        .as_array()
+        .expect("a streams array")
+        .len()
+}
+
 /// The whole match asked for on a separate track is copied, not re-encoded,
 /// and the scoreboard lands beside it as core formats it.
 #[test]
@@ -207,6 +226,8 @@ fn the_whole_match_is_copied_with_a_sidecar() {
     // Every source packet is in the output: a copy, not a re-encode, which
     // would have written 1280x720 frames of its own.
     assert_eq!(video_packets(path), m.packets.iter().sum::<i64>());
+    // The sources' sound, carried — which is what the muted run below drops.
+    assert_eq!(streams(path, "a"), 1);
 
     let written = std::fs::read_to_string(path.with_extension("srt")).unwrap();
     assert_eq!(written, srt);
@@ -214,6 +235,45 @@ fn the_whole_match_is_copied_with_a_sidecar() {
     assert!(
         first.starts_with("Rovers 0 - 0 United · "),
         "the first cue reads {first:?}"
+    );
+    m.h.shutdown();
+}
+
+/// "Mute source audio" on a copied whole match: still a copy, packet for
+/// packet, with the audio track simply not carried (spec M2).
+///
+/// **The copy is the half of the mute the bus could get wrong**, because the
+/// encode path expresses it as an empty region list in core and this one as a
+/// pad the muxer never requests. The sidecar is unaffected — the scoreboard
+/// is text, and muting is about sound.
+#[test]
+fn a_muted_whole_match_is_copied_without_its_sound() {
+    let mut m = Match::open(&[("first half", 640, 360, 60), ("second half", 640, 360, 45)]);
+    let target = ExportTarget::WholeMatch;
+
+    m.export_with(vec![target], Some(ScoreboardMode::Track), true);
+    let run = m.outcome();
+    let TargetState::Done(path) = &run.targets[0].state else {
+        panic!("{:?}", run.targets[0]);
+    };
+
+    // A copy, not a re-encode: every source packet is still there.
+    assert_eq!(video_packets(path), m.packets.iter().sum::<i64>());
+    assert_eq!(
+        streams(path, "a"),
+        0,
+        "the muted copy carried the sound it was told to drop"
+    );
+    // **Only** the sound: the board still rides inside the file on its own
+    // `tx3g` track, which is the other pad track mode requests.
+    assert_eq!(
+        streams(path, "s"),
+        1,
+        "the mute took the scoreboard with it"
+    );
+    assert_eq!(
+        outputs(&m.exports()),
+        ["Whole match - Game.mp4", "Whole match - Game.srt"]
     );
     m.h.shutdown();
 }

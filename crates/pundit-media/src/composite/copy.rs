@@ -174,11 +174,20 @@ pub fn can_copy(files: &[PathBuf]) -> Result<(), ExportError> {
 /// Copies `files` into `part`, one per plan entry and in that order
 /// (spec L1b).
 ///
+/// `with_audio` is the export sheet's "Mute source audio", inverted: `false`
+/// drops the sound rather than copying it. It is applied **after** the gate,
+/// so every audio refusal in [`declare`] still stands on a copy that carries
+/// no sound — a non-AAC track or two halves differing only in sound are still
+/// refused. Widening the gate — pushing the mute into [`declare`], which *is*
+/// [`can_copy`], so that muting makes those pairs copyable — is the other half
+/// of the feature and deliberately a change of its own.
+///
 /// The file it leaves is finished but unchaptered and still named `.part`:
 /// [`run`](super::export::run) owns the rest, for both renderers alike.
 pub(super) fn copy(
     job: &ExportJob,
     files: &[PathBuf],
+    with_audio: bool,
     part: &Path,
     cancel: &AtomicBool,
     on_message: &mut impl FnMut(ExportMessage),
@@ -191,7 +200,12 @@ pub(super) fn copy(
     let files: Vec<&Path> = files.iter().map(PathBuf::as_path).collect();
     // Every source is asked first and refused here, so the muxing pipeline —
     // and with it the `.part` — is built only once they can all be joined.
-    let audio_rate = declare(&files, &watch)?;
+    // Muting is one `filter` here and nothing else: every downstream rule
+    // already handles `None` as "no sound at all" (spec E4), so `Source::play`
+    // builds no audio branch and leaves the demuxer's audio pad unlinked —
+    // which `qtdemux`'s flow combiner tolerates, as `read_header` relies on
+    // for every non-A/V pad — and `Output::start` requests no `audio_%u` pad.
+    let audio_rate = declare(&files, &watch)?.filter(|_| with_audio);
 
     // `None` is "leave the scoreboard beside this output alone" (spec T1); it
     // is no more a track here than it is a sidecar.

@@ -364,7 +364,7 @@ fn fiducial(kind: CounterKind) {
     let recording =
         fixtures::solid_video(&dir.path().join("rec.webm"), 320, 180, 30, 30, GREEN, true);
     let path = dir.path().join("out.mp4");
-    let audio = audio_regions(&compilation, &Preferences::default());
+    let audio = audio_regions(&compilation, &Preferences::default(), 1.0);
     let done = export(ExportJob {
         tags: FileTags::default(),
         compilation,
@@ -467,7 +467,7 @@ fn a_three_clip_export_shows_each_entry_s_frames_in_its_own_rect() {
     assert_eq!(frames.len(), 3 * per_entry as usize);
 
     let path = dir.path().join("out.mp4");
-    let audio = audio_regions(&compilation, &Preferences::default());
+    let audio = audio_regions(&compilation, &Preferences::default(), 1.0);
     export(ExportJob {
         tags: FileTags::default(),
         compilation,
@@ -1650,7 +1650,7 @@ fn an_avatar_and_a_camera_clip_export_together() {
     let per_entry = compilation.plan.entries[0].frames;
     let total = compilation.frames.len();
     let path = dir.path().join("out.mp4");
-    let audio = audio_regions(&compilation, &Preferences::default());
+    let audio = audio_regions(&compilation, &Preferences::default(), 1.0);
     // One match behind both entries, as every single-project export has.
     let match_media = with_avatar(avatar);
     export(ExportJob {
@@ -1812,7 +1812,7 @@ fn sounded_job(
     path: PathBuf,
 ) -> ExportJob {
     let compilation = fixtures::one_clip(&clip, source_duration);
-    let audio = audio_regions(&compilation, &Preferences::default());
+    let audio = audio_regions(&compilation, &Preferences::default(), 1.0);
     ExportJob {
         tags: FileTags::default(),
         compilation,
@@ -2009,7 +2009,7 @@ fn an_entry_with_no_media_exports_game_audio_only_with_a_filler_pip() {
     compilation.plan.entries[0].clip_id = None;
     let frames = compilation.plan.total_frames();
     let path = dir.path().join("out.mp4");
-    let audio = audio_regions(&compilation, &Preferences::default());
+    let audio = audio_regions(&compilation, &Preferences::default(), 1.0);
     export(ExportJob {
         tags: FileTags::default(),
         compilation,

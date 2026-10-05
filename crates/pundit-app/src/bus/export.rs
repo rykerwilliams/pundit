@@ -313,11 +313,19 @@ impl Bus {
         resolution: Resolution,
         quality: Quality,
         scoreboard: Option<ScoreboardMode>,
+        mute_source: bool,
     ) {
+        // **One negation, here at the boundary**: `mute` is the coach's word
+        // and the checkbox's, and everything below this line is a volume or a
+        // `with_audio`.
         let pickers = Pickers {
             resolution,
             quality,
             scoreboard,
+            source_volume: match mute_source {
+                true => 0.0,
+                false => 1.0,
+            },
         };
         if let Err(e) = self.start_run(targets, pickers) {
             self.emit(Event::Error(e));
@@ -366,6 +374,7 @@ impl Bus {
                 prefs.last_export_resolution = pickers.resolution;
                 prefs.last_export_quality = pickers.quality;
                 prefs.last_export_scoreboard = pickers.scoreboard;
+                prefs.export_source_volume = pickers.source_volume;
                 self.project_changed();
             }
         }
@@ -533,15 +542,23 @@ fn de_duplicate(labels: &mut [String]) {
     }
 }
 
-/// The export sheet's three pickers, which travel together: through the run
+/// The export sheet's four pickers, which travel together: through the run
 /// into every job, and into the project's `Preferences` when it starts (spec
 /// E4, M2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// **`PartialEq` but not `Eq`**, which `source_volume`'s `f64` cannot be. The
+/// write-back's `!=` is all that is wanted, and the only values the sheet
+/// writes are `0.0` and `1.0` — literals, which compare exactly.
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Pickers {
     resolution: Resolution,
     quality: Quality,
     /// `None` is the sheet's "Default": the target's own mode.
     scoreboard: Option<ScoreboardMode>,
+    /// How loud the game video is: `0.0` for "Mute source audio" ticked, `1.0`
+    /// for unticked. **An `f64`, not a `bool`**, so a level (BACKLOG #126) is
+    /// a change to the sheet and not to the format (spec M1).
+    source_volume: f64,
 }
 
 impl Pickers {
@@ -552,6 +569,7 @@ impl Pickers {
             resolution: prefs.last_export_resolution,
             quality: prefs.last_export_quality,
             scoreboard: prefs.last_export_scoreboard,
+            source_volume: prefs.export_source_volume,
         }
     }
 }
@@ -576,6 +594,13 @@ struct Carry {
 /// with no scoreboard set up — which means no cues either, since there is
 /// nothing to derive them from (spec E5). `files` is what a copy would join,
 /// one per plan entry and in that order.
+///
+/// **It is not told about the mute, and `Carry` carries no flag for it.** The
+/// renderer needs one bool, which [`job`] already holds on `pickers`, and a
+/// copy of it here would be a second truth the encode arm ignores. The one
+/// thing the mute *would* change in here is the question
+/// [`pundit_media::can_copy`] is asked — this is its only caller — and
+/// widening that gate is deliberately a change of its own.
 fn carry_scoreboard(
     target: &ExportTarget,
     picked: Option<ScoreboardMode>,
@@ -798,9 +823,19 @@ fn job(
     });
     let job = ExportJob {
         render: match carry.copy {
-            true => Render::Copy(files),
+            // The mute reaches each renderer in its own vocabulary (spec M2):
+            // a copy simply doesn't carry the track, an encode has no game
+            // region to mix.
+            true => Render::Copy {
+                files,
+                with_audio: pickers.source_volume != 0.0,
+            },
             false => Render::Encode(Encode {
-                audio: audio_regions(&compilation, &open.project.preferences),
+                audio: audio_regions(
+                    &compilation,
+                    &open.project.preferences,
+                    pickers.source_volume,
+                ),
                 entries: pieces
                     .into_iter()
                     .map(|(source, clip)| EntryMedia {

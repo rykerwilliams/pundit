@@ -102,19 +102,35 @@ pub fn envelope(region: &Region, sample: u64) -> f64 {
 
 /// Every audio region of `compilation`, in output order.
 ///
-/// Gains are the **preview** volumes: one pair of numbers decides how loud a
-/// clip is in the app and in the file, so what the coach hears while recording
-/// is what the export contains.
+/// **`source_volume` is the choice for this run, not a stored preference**
+/// (spec M2): the export sheet's "Mute source audio" writes
+/// [`Preferences::export_source_volume`] and the bus passes it here, while a
+/// basket passes its own — which is what lets `bus/basket.rs` keep mixing at
+/// `Preferences::default()` on purpose (basket spec J6) and still be mutable.
+/// At `0.0` the game contributes **no region at all** rather than a gain of
+/// zero, so nothing downstream opens a reader to decode samples it would
+/// multiply away. `0.0` and `1.0` round-trip exactly through JSON and the
+/// checkbox writes literals, so the equality is exact — a level (BACKLOG #126)
+/// must quantize its bottom detent to exactly `0.0`.
+///
+/// The commentary's gain is still read from `prefs`, which has no writer
+/// (BACKLOG #124's remaining half).
 ///
 /// Adjacent play segments stay separate regions even when the source is
 /// continuous across them. A `Skip` or `Play` event is a source discontinuity,
 /// and media seeks its audio pipeline per region regardless, so the fade pair
 /// at the join is honest rather than an artefact of the splice.
-pub fn audio_regions(compilation: &Compilation, prefs: &Preferences) -> Vec<Region> {
+pub fn audio_regions(
+    compilation: &Compilation,
+    prefs: &Preferences,
+    source_volume: f64,
+) -> Vec<Region> {
     let mut regions = Vec::new();
     for (i, entry) in compilation.plan.entries.iter().enumerate() {
         let end = entry.start_frame + entry.frames;
-        game_regions(entry, i, prefs.preview_source_volume, &mut regions);
+        if source_volume != 0.0 {
+            game_regions(entry, i, source_volume, &mut regions);
+        }
         // One per entry with a clip: the recording runs from its own zero for
         // the whole entry, freezes included. An entry without one has no
         // recording, so its only sound is the game's.

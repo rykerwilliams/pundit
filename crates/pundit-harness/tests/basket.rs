@@ -134,6 +134,7 @@ fn a_refused_start_changes_no_project() {
         name: "Corners".into(),
         resolution: Resolution::R720,
         quality: Quality::Low,
+        mute_source: false,
     });
     assert_eq!(
         h.wait_for_error(),
@@ -188,6 +189,7 @@ fn a_basket_of_two_matches_renders_one_film() {
         name: "Corners".into(),
         resolution: Resolution::R720,
         quality: Quality::Low,
+        mute_source: false,
     });
 
     let run = h.wait_export();
@@ -223,6 +225,7 @@ fn a_repeat_start_writes_a_second_film() {
             name: "Corners".into(),
             resolution: Resolution::R720,
             quality: Quality::Low,
+            mute_source: false,
         });
         let run = h.wait_export();
         assert_eq!(run.targets[0].label, label);
@@ -311,6 +314,7 @@ fn every_refusal_names_its_piece_and_writes_nothing() {
             name: "Corners".into(),
             resolution: Resolution::R720,
             quality: Quality::Low,
+            mute_source: false,
         })
     };
     start(&h);
@@ -422,6 +426,7 @@ fn removing_and_moving_pieces_changes_the_run() {
         name: "One".into(),
         resolution: Resolution::R720,
         quality: Quality::Low,
+        mute_source: false,
     });
     let run = h.wait_export();
     assert_eq!(run.targets[0].frames, 30);

@@ -72,6 +72,16 @@ struct Stored {
     resolution: Option<String>,
     #[serde(default)]
     quality: Option<String>,
+    /// "Mute source audio". **A plain `bool`, not a label**: the label rule
+    /// above is about an *enum* gaining variants a build can't read, and a
+    /// bool has none to gain, so `#[serde(default)]` is the whole of it.
+    ///
+    /// **A downgrade silently unmutes a basket.** A build without this field
+    /// ignores the key and drops it on its next save — which is the right
+    /// trade for machine state with no version of its own, but is written
+    /// down here rather than discovered.
+    #[serde(default)]
+    mute_source: bool,
     /// **The document.** A malformed list is the one thing here that costs a
     /// re-gather, so it is logged rather than passed over in silence.
     #[serde(default)]
@@ -127,6 +137,7 @@ pub(super) struct Basket {
     name: String,
     resolution: Resolution,
     quality: Quality,
+    mute_source: bool,
     pieces: Vec<Piece>,
 }
 
@@ -149,6 +160,7 @@ impl Basket {
                 .as_deref()
                 .and_then(quality_from_label)
                 .unwrap_or_default(),
+            mute_source: stored.mute_source,
             pieces: stored.pieces,
         }
     }
@@ -161,6 +173,7 @@ impl Basket {
             name: self.name.clone(),
             resolution: Some(resolution_label(self.resolution).to_owned()),
             quality: Some(quality_label(self.quality).to_owned()),
+            mute_source: self.mute_source,
             pieces: self.pieces.clone(),
         };
         if let Err(e) = write(path, &stored) {
@@ -200,6 +213,7 @@ pub struct BasketView {
     pub name: String,
     pub resolution: Resolution,
     pub quality: Quality,
+    pub mute_source: bool,
     pub pieces: Vec<BasketRow>,
 }
 
@@ -326,6 +340,7 @@ impl Bus {
                 name: self.basket.name.clone(),
                 resolution: self.basket.resolution,
                 quality: self.basket.quality,
+                mute_source: self.basket.mute_source,
                 pieces: self
                     .basket
                     .pieces
@@ -373,10 +388,21 @@ impl Bus {
     /// The sheet's name and pickers become the basket's whichever way that
     /// goes, and the file is written on every change, a refused Start included:
     /// it *is* the sheet's memory, and there is no project to dirty (spec C3).
-    pub(super) fn export_basket(&mut self, name: String, resolution: Resolution, quality: Quality) {
+    pub(super) fn export_basket(
+        &mut self,
+        name: String,
+        resolution: Resolution,
+        quality: Quality,
+        mute_source: bool,
+    ) {
         self.basket.name = name;
         self.basket.resolution = resolution;
         self.basket.quality = quality;
+        self.basket.mute_source = mute_source;
+        // **Eagerly, before `basket_job`'s refusals**, which is the opposite of
+        // the export sheet's `a_refused_run_leaves_the_pickers_alone` and is
+        // deliberate: `basket.json` *is* this sheet's memory and there is no
+        // project to dirty, while losing it costs a re-gather. Not a bug.
         self.basket.save();
         match self.basket_job() {
             Ok(job) => self.begin(vec![job]),
@@ -471,8 +497,18 @@ impl Bus {
                 // The default volumes, not the open project's: a project's
                 // preview volumes are a scanning convenience, and a film whose
                 // level jumps between pieces for an invisible reason is worse
-                // than one that doesn't (spec J6).
-                audio: audio_regions(&compilation, &Preferences::default()),
+                // than one that doesn't (spec J6). **The mute is the basket's
+                // own**, which is why core takes it as a parameter rather than
+                // reading it here: this `Preferences::default()` stays literally
+                // the default (spec M2).
+                audio: audio_regions(
+                    &compilation,
+                    &Preferences::default(),
+                    match self.basket.mute_source {
+                        true => 0.0,
+                        false => 1.0,
+                    },
+                ),
                 entries,
                 resolution: self.basket.resolution,
                 quality: self.basket.quality,

@@ -1835,6 +1835,10 @@ component ExportSheet inherits Sheet {
     /// How the scoreboard is carried: 0 Default (the target's own), 1 burned
     /// into the picture, 2 a separate track (spec M1).
     in-out property <int> scoreboard;
+    /// Drop the game video's sound and keep the commentary (spec M1). Stored
+    /// as a level, so a slider later is this property widening and no format
+    /// change; here it is a switch.
+    in-out property <bool> mute-source;
     /// The whole match is ticked, and so the run may copy rather than
     /// re-encode. `src/main.rs` owns it, beside the ticks themselves.
     in property <bool> whole-match-ticked;
@@ -1904,6 +1908,18 @@ component ExportSheet inherits Sheet {
             color: Palette.alternate-foreground;
             font-size: 11px;
             wrap: word-wrap;
+        }
+    }
+
+    // **Source audio**, which is what this codebase calls the game video
+    // throughout, and the commentary is deliberately untouched (spec M1).
+    CheckBox {
+        text: "Mute source audio";
+        enabled: !root.exporting;
+        checked <=> root.mute-source;
+
+        Tooltip {
+            text: @markdown("Drop the game video's sound. Your commentary is kept -- but a whole match or a goals reel has none, so it comes out silent.");
         }
     }
 
@@ -2008,6 +2024,11 @@ component BasketSheet inherits Sheet {
     /// export sheet's own two.
     in-out property <int> resolution;
     in-out property <int> quality;
+    /// Drop each piece's game sound and keep its commentary -- the export
+    /// sheet's own switch, remembered in `basket.json` beside the pickers
+    /// (spec M3). A basket is clips from several matches, so commentary-only
+    /// is its natural film.
+    in-out property <bool> mute-source;
     /// The name field has focus, which the window folds into its own
     /// `text-editing`: without the fold the first Esc closes the sheet from
     /// inside the field and the window's "Esc leaves the field" cascade is
@@ -2159,6 +2180,16 @@ component BasketSheet inherits Sheet {
                 enabled: !root.exporting;
                 current-index <=> root.quality;
             }
+        }
+    }
+
+    CheckBox {
+        text: "Mute source audio";
+        enabled: !root.exporting;
+        checked <=> root.mute-source;
+
+        Tooltip {
+            text: @markdown("Drop every piece's game sound and keep its commentary.");
         }
     }
 
@@ -3733,6 +3764,7 @@ export component AppWindow inherits Window {
     in-out property <int> export-resolution;
     in-out property <int> export-quality;
     in-out property <int> export-scoreboard;
+    in-out property <bool> export-mute-source;
     /// Whether the whole-match row is ticked, which is what decides whether
     /// the Scoreboard picker's explanatory line applies.
     in property <bool> export-whole-match-ticked;
@@ -3803,6 +3835,7 @@ export component AppWindow inherits Window {
     in-out property <string> basket-name;
     in-out property <int> basket-resolution;
     in-out property <int> basket-quality;
+    in-out property <bool> basket-mute-source;
     /// The run in progress is the basket's, not an ordinary export's, so the
     /// sheet draws it as its own.
     in property <bool> basket-run;
@@ -6293,6 +6326,7 @@ export component AppWindow inherits Window {
                 resolution <=> root.export-resolution;
                 quality <=> root.export-quality;
                 scoreboard <=> root.export-scoreboard;
+                mute-source <=> root.export-mute-source;
                 whole-match-ticked: root.export-whole-match-ticked;
                 tick(index, ticked) => { root.tick-target(index, ticked); }
                 start => { root.start-export(); }
@@ -6316,6 +6350,7 @@ export component AppWindow inherits Window {
                 name <=> root.basket-name;
                 resolution <=> root.basket-resolution;
                 quality <=> root.basket-quality;
+                mute-source <=> root.basket-mute-source;
                 editing <=> root.basket-editing;
                 // Off the name field first, as every other button in this app
                 // does -- a click doesn't take focus from a field by itself.

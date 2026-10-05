@@ -926,6 +926,7 @@ fn wire_export(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
                     2 => Some(ScoreboardMode::Track),
                     _ => None,
                 },
+                mute_source: w.get_export_mute_source(),
             });
         }
     });
@@ -1038,7 +1039,7 @@ fn inset_placement(size: InsetSize, corner: InsetCorner) -> InsetPlacement {
 /// row ticked or everything but it (spec E8), and the pickers at the
 /// project's last choice (spec E4).
 fn open_export_sheet(w: &AppWindow, clip: Option<Uuid>, only_clip: bool) {
-    let Some((resolution, quality, scoreboard, rows)) = UI.with_borrow_mut(|ui| {
+    let Some((resolution, quality, scoreboard, mute_source, rows)) = UI.with_borrow_mut(|ui| {
         let project = &ui.snapshot.as_ref()?.project;
         let targets = export_targets(project, clip);
         let rows: Vec<TargetRow> = targets
@@ -1072,6 +1073,9 @@ fn open_export_sheet(w: &AppWindow, clip: Option<Uuid>, only_clip: bool) {
             prefs.last_export_resolution,
             prefs.last_export_quality,
             prefs.last_export_scoreboard,
+            // Stored as a level so a slider later is pure UI (spec M1); the
+            // checkbox is the one place that reads it as a switch.
+            prefs.export_source_volume == 0.0,
             rows,
         );
         // The rows the sheet shows and the targets a tick means, in the same
@@ -1088,6 +1092,7 @@ fn open_export_sheet(w: &AppWindow, clip: Option<Uuid>, only_clip: bool) {
         Some(ScoreboardMode::Burned) => 1,
         Some(ScoreboardMode::Track) => 2,
     });
+    w.set_export_mute_source(mute_source);
     w.set_export_any_ticked(rows.iter().any(|row| row.ticked));
     w.set_export_whole_match_ticked(whole_match_ticked(rows.iter().cloned()));
     w.set_export_targets(ModelRc::new(VecModel::from(rows)));
@@ -1153,6 +1158,7 @@ fn wire_basket(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
                 name: w.get_basket_name().to_string(),
                 resolution: resolution_at(w.get_basket_resolution()),
                 quality: quality_at(w.get_basket_quality()),
+                mute_source: w.get_basket_mute_source(),
             });
         }
     });
@@ -3351,6 +3357,7 @@ fn show_basket(w: &AppWindow, view: &BasketView) {
         w.set_basket_name(view.name.as_str().into());
         w.set_basket_resolution(resolution_index(view.resolution));
         w.set_basket_quality(quality_index(view.quality));
+        w.set_basket_mute_source(view.mute_source);
     }
 }
 

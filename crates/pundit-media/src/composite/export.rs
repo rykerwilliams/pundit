@@ -89,9 +89,15 @@ pub enum Render {
     /// The composite graph: every frame decoded, drawn on and encoded.
     Encode(Encode),
     /// The stream copy ([`copy`](super::copy)): the sources' own packets
-    /// joined, which only the whole match in track mode may ask for. Carries
-    /// the files to join, one per plan entry and in that order.
-    Copy(Vec<PathBuf>),
+    /// joined, which only the whole match in track mode may ask for.
+    Copy {
+        /// The files to join, one per plan entry and in that order.
+        files: Vec<PathBuf>,
+        /// Carry the sources' sound. `false` is the export sheet's "Mute
+        /// source audio": the audio track is simply not copied, which costs
+        /// nothing and re-encodes nothing (spec M2).
+        with_audio: bool,
+    },
 }
 
 /// What only the encoded export reads: the pixels it composites, the sound it
@@ -260,7 +266,7 @@ impl Exporter {
                 entries,
                 "every plan entry needs its files"
             ),
-            Render::Copy(files) => debug_assert_eq!(
+            Render::Copy { files, .. } => debug_assert_eq!(
                 files.len(),
                 entries,
                 "every plan entry needs the file it is copied from"
@@ -411,7 +417,9 @@ fn run(
     // holds the file open.
     let result = match &job.render {
         Render::Encode(encode) => export(job, encode, &part, cancel, inject, on_message),
-        Render::Copy(files) => super::copy::copy(job, files, &part, cancel, on_message),
+        Render::Copy { files, with_audio } => {
+            super::copy::copy(job, files, *with_audio, &part, cancel, on_message)
+        }
     }
     .and_then(|rendered| finish(job, &part, rendered));
     if result.is_err() {

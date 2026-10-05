@@ -93,7 +93,10 @@ fn job(m: &Match, path: PathBuf) -> ExportJob {
         cues: Some(Vec::new()),
         // One file per plan entry, in entry order: a whole match's entries are
         // its sources, in the order the project lists them.
-        render: Render::Copy(m.files.clone()),
+        render: Render::Copy {
+            files: m.files.clone(),
+            with_audio: true,
+        },
     }
 }
 
@@ -451,6 +454,61 @@ fn sources_with_no_sound_are_copied_without_an_audio_track() {
         streams(&path),
         1,
         "the copy invented a track nothing was asked to be put on"
+    );
+}
+
+/// Muting the source: the same copy, minus the audio track (spec M2).
+///
+/// **The picture is what the mute must not touch**, so the proof is the rest
+/// of the file being what it was — the same `stsd`, the same packet count,
+/// the same frames in the same order — beside a file with one stream where
+/// the unmuted one has two. The two runs are built from one `Match`, so they
+/// read the same sources.
+///
+/// `ffprobe` cannot hash a bitstream, so "packet for packet" is the claim
+/// here, as it is for the tags: the packet list and the stream's own
+/// description, which is what the copy could have got wrong.
+#[test]
+fn a_muted_copy_drops_the_audio_track_and_nothing_else() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = whole_match(
+        dir.path(),
+        &[("first half", 640, 360, 45), ("second half", 640, 360, 30)],
+    );
+
+    let loud = dir.path().join("loud.mp4");
+    copy(job(&m, loud.clone())).unwrap();
+    assert_eq!(
+        streams(&loud),
+        2,
+        "the sounded copy has to carry audio for this to mean anything"
+    );
+
+    let muted = dir.path().join("muted.mp4");
+    copy(ExportJob {
+        render: Render::Copy {
+            files: m.files.clone(),
+            with_audio: false,
+        },
+        ..job(&m, muted.clone())
+    })
+    .unwrap();
+
+    assert_eq!(
+        streams(&muted),
+        1,
+        "a muted copy carries a track it was told to drop"
+    );
+    assert_eq!(
+        video_stream(&muted),
+        video_stream(&loud),
+        "the mute re-described the video or lost a packet"
+    );
+    assert_eq!(video_pts(&muted), video_pts(&loud), "the frames moved");
+    assert_eq!(
+        decode_counters(&muted),
+        want(&m),
+        "the join lost, repeated or reordered frames"
     );
 }
 

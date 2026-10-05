@@ -70,10 +70,11 @@ fn regions_at(clips: Vec<Clip>, source: f64, commentary: f64) -> Vec<Region> {
         display_aspect: 16.0 / 9.0,
     });
     p.clips = clips;
-    p.preferences.preview_source_volume = source;
     p.preferences.preview_commentary_volume = commentary;
     let c = compilation_schedule(&p, &ExportTarget::AllClips);
-    audio_regions(&c, &p.preferences)
+    // The source volume is the run's own, not the project's: core takes it as
+    // a parameter so a basket can mute without faking a `Preferences`.
+    audio_regions(&c, &p.preferences, source)
 }
 
 fn regions(clips: Vec<Clip>) -> Vec<Region> {
@@ -121,10 +122,8 @@ fn a_playing_clip_is_one_game_region_and_one_commentary_region() {
     assert!(approx(mic.source_offset, PRIMING_SAMPLES as f64 / RATE));
 }
 
-/// An entry with no clip (a goals-reel entry) has no recording, so the game is
-/// all it plays.
-#[test]
-fn an_entry_without_a_clip_is_game_audio_only() {
+/// One entry with no clip, two seconds of play: a goals-reel entry.
+fn reel_compilation() -> Compilation {
     let entry = PlanEntry {
         clip_id: None,
         source_index: 0,
@@ -137,7 +136,7 @@ fn an_entry_without_a_clip_is_game_audio_only() {
         frames: 60,
         text: String::new(),
     };
-    let compilation = Compilation {
+    Compilation {
         frames: (0..60)
             .map(|n| FrameSpec {
                 entry: 0,
@@ -149,13 +148,63 @@ fn an_entry_without_a_clip_is_game_audio_only() {
             entries: vec![entry],
             chapters: Vec::new(),
         },
-    };
+    }
+}
 
-    let rs = audio_regions(&compilation, &Project::new("p").preferences);
+/// An entry with no clip (a goals-reel entry) has no recording, so the game is
+/// all it plays.
+#[test]
+fn an_entry_without_a_clip_is_game_audio_only() {
+    let rs = audio_regions(&reel_compilation(), &Project::new("p").preferences, 1.0);
     assert_eq!(track(&rs, Track::Commentary), vec![]);
     let game = track(&rs, Track::Game);
     assert_eq!(game.len(), 1);
     assert_eq!(game[0].out_samples, 0..60 * SPF - PRIMING_SAMPLES);
+}
+
+/// Muting the source leaves the commentary exactly as it was, and takes the
+/// game away entirely rather than turning it down (spec M2).
+///
+/// **The commentary regions are compared, not the whole `Vec`**, which
+/// interleaves the game's: the two runs cannot have the same length. What the
+/// comparison pins is that muting touches one track — same spans, same
+/// offsets, same gain — which holds because `region`'s priming drop is
+/// computed per region from the entry's own frames, so entry 0's commentary
+/// loses the same 1024 samples either way.
+#[test]
+fn a_muted_source_leaves_the_commentary_untouched_and_no_game_region() {
+    let clips = || {
+        vec![
+            clip(10.0, 3.0, vec![pause(1.0, 11.0), play(2.0, 11.0)]),
+            clip(40.0, 2.0, Vec::new()),
+        ]
+    };
+    let loud = regions_at(clips(), 1.0, 1.0);
+    let muted = regions_at(clips(), 0.0, 1.0);
+
+    assert!(
+        !track(&loud, Track::Game).is_empty(),
+        "the unmuted run has to have game regions for this to mean anything"
+    );
+    // The untouched half first, so a run that only turned the game *down*
+    // fails on the half that is about the game.
+    assert_eq!(
+        track(&muted, Track::Commentary),
+        track(&loud, Track::Commentary),
+        "the mute moved the commentary"
+    );
+    assert!(
+        muted.iter().all(|r| r.track == Track::Commentary),
+        "a muted run carries a game region: {muted:#?}"
+    );
+}
+
+/// A muted reel is silent: its entries have no clip, so there is no
+/// commentary region either and the whole list is empty (spec M6).
+#[test]
+fn a_muted_reel_entry_has_no_regions_at_all() {
+    let rs = audio_regions(&reel_compilation(), &Project::new("p").preferences, 0.0);
+    assert_eq!(rs, vec![], "a muted reel entry still carries sound");
 }
 
 #[test]
@@ -232,8 +281,10 @@ fn an_empty_entry_contributes_nothing() {
     assert_eq!(rs.len(), 2);
 }
 
+/// The two gains come from two different places on purpose: the game's is the
+/// run's own argument, the commentary's is read off `Preferences`.
 #[test]
-fn gains_come_from_the_preview_volumes() {
+fn gains_come_from_the_source_argument_and_the_commentary_preference() {
     let rs = regions_at(vec![clip(10.0, 1.0, vec![])], 0.25, 0.75);
     assert_eq!(track(&rs, Track::Game)[0].gain, 0.25);
     assert_eq!(track(&rs, Track::Commentary)[0].gain, 0.75);
