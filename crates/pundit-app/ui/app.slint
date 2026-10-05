@@ -32,7 +32,10 @@ export struct SlateRow {
     name: string,
     /// Comma-separated, already normalized.
     tags: string,
-    /// A clip was recorded from it. It stays in the list: a coach re-records.
+    /// A clip was recorded from it. It stays in the list: a coach re-records —
+    /// and that is also what makes the themed pass safe, since a list nothing
+    /// leaves is a stable frame of reference for "the next one after this"
+    /// (`slate_pass::next_slate`).
     shot: bool,
     /// Both marks are set (BACKLOG #120). A half-marked range — `i` pressed,
     /// `o` not — is **shown and skipped by the themed pass**, so the row has to
@@ -3945,7 +3948,20 @@ export component AppWindow inherits Window {
     callback scrub-scroll(length, length, bool);
     /// R, Record or Stop: the bus starts a recording when idle, else stops
     /// (or aborts) it.
-    callback toggle-recording();
+    ///
+    /// **It carries the selected range, and the bus decides what to do with
+    /// it** (BACKLOG #120): with one, R is that range's take — seeking to its
+    /// in point and stopping the footage at its out — and the clip carries the
+    /// `slate_id` that marks it shot, which is what makes the themed pass two
+    /// keys (spec T5). Empty for a plain take.
+    ///
+    /// **Why the window does not choose between this and `shoot-slate`:** the
+    /// phase it would branch on lags the bus's, and a second R inside a take's
+    /// start-up is a cancel the bus already honours — a `shoot-slate` sent
+    /// there is refused by the recording guard, so the key would do nothing.
+    /// The *mode* is still visible, which is the slates spec's §S6 objection
+    /// answered: the highlighted row, and the word on the Record button.
+    callback toggle-recording(string);
     /// Esc: stop (or abort) the recording.
     callback stop-recording();
     /// The Devices popover opened: look the devices up.
@@ -3971,6 +3987,13 @@ export component AppWindow inherits Window {
     callback mark-out();
     callback shoot-slate(string);
     callback delete-slate(string);
+    /// Park the game video on a slate's first frame (BACKLOG #104), the clip
+    /// row's "Jump to clip start".
+    callback jump-to-slate(string);
+    /// Watch the marked range: the jump, then play, then the stop at the out
+    /// point (spec P2). The row's double-click, as a clip row's double-click
+    /// is its jump.
+    callback preview-slate(string);
     callback edit-slate-field(SlateField, string);
     /// Move the selected slate's in or out point to the playhead (BACKLOG
     /// #119). No position argument: Rust reads the same heading position `i`
@@ -4422,7 +4445,7 @@ export component AppWindow inherits Window {
         // R and Space toggle, so an auto-repeat would toggle straight back.
         if (event.text == "r" || event.text == "R") {
             if (pressed && !event.repeat) {
-                root.toggle-recording();
+                root.toggle-recording(root.selected-slate);
             }
             return accept;
         }
@@ -4445,7 +4468,15 @@ export component AppWindow inherits Window {
                 } else if (root.previewing) {
                     root.close-preview();
                 } else {
+                    // **Both lists' selections, not the clips' alone**: a
+                    // slate row stopped toggling when it gained a
+                    // double-click (BACKLOG #104), so Esc is now the only way
+                    // out of a slate selection, and "the selection" in a
+                    // panel with two lists means whichever one is set. Each
+                    // row's own list has a selection of at most one, so there
+                    // is nothing to order here.
                     root.selected-clip = "";
+                    root.selected-slate = "";
                 }
             }
             return accept;
@@ -4810,18 +4841,34 @@ export component AppWindow inherits Window {
 
                                         TouchArea {
                                             enabled: !root.recording;
+                                            // **Selects, never toggles**
+                                            // (BACKLOG #104): a double-click
+                                            // delivers two clicks first, so a
+                                            // toggle would preview the range
+                                            // and leave the row deselected --
+                                            // and the span on the scrubber is
+                                            // the *selected* slate's (spec
+                                            // S6), so the arm and the span
+                                            // would then disagree. Esc clears
+                                            // it, as it does a clip's.
                                             clicked => {
-                                                root.selected-slate = slate.id == root.selected-slate
-                                                    ? "" : slate.id;
+                                                root.selected-slate = slate.id;
                                                 // Off any field, so the keys
                                                 // work -- the clip row's rule.
                                                 keys.focus();
+                                            }
+                                            double-clicked => {
+                                                root.preview-slate(slate.id);
                                             }
                                         }
 
                                         ContextMenuArea {
                                             enabled: !root.recording;
                                             Menu {
+                                                MenuItem {
+                                                    title: "Jump to slate start";
+                                                    activated => { root.jump-to-slate(slate.id); }
+                                                }
                                                 MenuItem {
                                                     title: "Delete slate";
                                                     activated => { root.delete-slate(slate.id); }
@@ -4960,6 +5007,17 @@ export component AppWindow inherits Window {
                                 text: "Record";
                                 enabled: !root.recording && !root.previewing;
                                 clicked => { root.shoot-slate(root.selected-slate); }
+
+                                // What the pass is: two presses a range, and
+                                // the list walks itself (BACKLOG #120). The
+                                // still frame is deliberate — `start-recording`
+                                // pauses and the log seeds a pause at record
+                                // time 0 — so the coach is told where the
+                                // second press goes rather than left to find
+                                // a take that records a frozen picture.
+                                Tooltip {
+                                    text: @markdown("Record this range (R), then **Space** to play it. Stopping moves on to the next range with this tag");
+                                }
                             }
                         }
                         }
@@ -5837,7 +5895,16 @@ export component AppWindow inherits Window {
                             }
                         }
                         Button {
-                            text: root.recording ? "Stop" : "Record";
+                            // **"Record range" is the mode, said out loud**
+                            // (BACKLOG #120, spec T5): with a range selected,
+                            // this button and `R` shoot it — seeking to its
+                            // in point and stopping the footage at its out —
+                            // rather than starting a take where the playhead
+                            // is. The word is what keeps that off the list of
+                            // things a coach discovers by surprise.
+                            text: root.recording
+                                ? "Stop"
+                                : root.selected-slate != "" ? "Record range" : "Record";
                             enabled: (root.can-play && !root.exporting && !root.previewing) || root.recording;
                             min-width: 72px;
                             // Off any field first: a click doesn't take focus
@@ -5845,7 +5912,7 @@ export component AppWindow inherits Window {
                             // focus would keep blocking the recording keys.
                             clicked => {
                                 keys.focus();
-                                root.toggle-recording();
+                                root.toggle-recording(root.selected-slate);
                             }
 
                             Tooltip {
@@ -5855,7 +5922,9 @@ export component AppWindow inherits Window {
                                         ? @markdown("Not while exporting")
                                         : root.previewing
                                             ? @markdown("Not while previewing a clip")
-                                            : @markdown("Record (R)");
+                                            : root.selected-slate != ""
+                                                ? @markdown("Record the selected range (R), then **Space** to play it. Esc clears the selection to record freely")
+                                                : @markdown("Record (R)");
                             }
                         }
                         // The stretch item, right-aligned: it holds the

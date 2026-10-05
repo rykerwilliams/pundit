@@ -44,6 +44,7 @@ fn record_a_take(avatar: Option<&str>) -> (Clip, PathBuf, TempDir) {
     h.wait_settled();
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
+        slate: None,
     });
     assert_eq!(h.wait_recording(), RecordingStatus::Starting);
     assert!(matches!(

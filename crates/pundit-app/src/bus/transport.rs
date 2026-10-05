@@ -83,11 +83,38 @@ impl Bus {
         }
     }
 
+    /// Pauses the game video on the frame at `secs` in source `index`,
+    /// switching video when that is another one, and says whether the seek
+    /// went out.
+    ///
+    /// **What a list row's double-click asks for** (BACKLOG #104), and the
+    /// one body behind all three of them: a clip's start, a slate's in point,
+    /// and the play a slate's preview opens with. They differ only in which
+    /// stored field they read, so they share this. An accurate seek, like a
+    /// scrub release, and the skip burst is dropped first so its debounce
+    /// can't move the video afterwards.
+    pub(super) fn park_at(&mut self, index: usize, secs: f64) -> bool {
+        self.reset_skip();
+        self.set_playing(false);
+        self.seekable() && self.load(index, secs, true, Origin::Scrub)
+    }
+
     /// Plays the game video a speed faster or slower (spec S1), only while it
     /// plays, with no preview open. The recording guard in `Bus::command`
     /// refuses it while recording (S2).
+    ///
+    /// **It is refused while a slate's range is armed**, which is what makes
+    /// spec P3's "the preview forces 1x" hold for longer than its first
+    /// frame: a slate preview is plain playback as far as everything else is
+    /// concerned, so without this `J` and `L` would be live inside it, and at
+    /// 32x the stop misses the mark it is named after twice over — the poll
+    /// overshoots by `rate x OUT_POLL` (0.64 s), and the pause's own seek
+    /// lands on `shown_secs()`, which at 32x trails the position by up to
+    /// 0.6 s (spec S5), so the footage would come to rest *before* the out
+    /// point. During a take the guard above already refuses this; the arm is
+    /// what covers the preview.
     pub(super) fn scan_speed(&mut self, step: ScanStep) {
-        if !self.playing || self.preview.is_some() {
+        if !self.playing || self.preview.is_some() || self.armed_slate.is_some() {
             return;
         }
         let rate = next_speed(self.player.rate(), step);

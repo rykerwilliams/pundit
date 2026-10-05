@@ -313,6 +313,7 @@ fn while_a_run_is_going_a_second_run_and_recording_are_refused() {
     rig.export(vec![ExportTarget::AllClips]);
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
+        slate: None,
     });
 
     assert!(rig.h.wait_export().is_running());
@@ -445,6 +446,7 @@ fn an_export_while_recording_is_dropped() {
     });
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
+        slate: None,
     });
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
 

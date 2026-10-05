@@ -23,23 +23,16 @@ made things worse.
 - **102.** Snap the scrubber to events, as an option. The coach (2026-09-28):
   "snap to events in the scrubber as an option" — which marks it covers is the
   open question (needs #78 for the control; **#100's per-field read has landed**)
-- **104.** Double-clicking a slate should take the player to its in point, as a
-  clip row's double-click does — and a right-click menu like the clip row's
-  (jump to start / end, Record, Delete); a click should stop toggling the
-  selection
+- **127.** The rest of the slate row's right-click menu — Jump to slate end,
+  Record and Preview slate beside the "Jump to slate start" #104 shipped; two of
+  the three have to set the selection first, which is the bit to get right
+- **128.** The themed pass is silent at both of its ends — no keyboard way to
+  start one, and nothing said when it runs out of ranges
 - **105.** A slate's tag field should offer the tags already in use — the clip
   inspector's suggestion list, lifted into one shared `TagField`
-- **120.** Filter slates by tag, then work through all of them with that tag —
-  the thematic pass ("all these clips are corner kicks"); the filter is nearly
-  free, the queue wants #114's stop-at-out first
-- **119.** A slate's in/out can't be previewed or adjusted — `SlateEdit` is
-  `Name | Tags` only, and "preview" here is a scan with a stop point, not the
-  preview pipeline; share the stop with #114
 - **110.** The scoreboard over the picture disappears during a take — it shows
   while watching and in a preview; not yet reproduced, and no code gates it on
   recording
-- **114.** Shooting a slate doesn't stop at its out point — pause the footage
-  there and keep recording is the likely shape; the coach picks
 - **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
   clip, sticky for the next recording, as #88's inset size and corner are (v15 —
   v14 went to #117's arrowhead).
@@ -137,6 +130,12 @@ problem — which is the entry, not an excuse for it.
   with #78
 - **107.** The docs site — shipped 2026-09-28; CI builds the book on every change
   and publishes it from `main` (filed as #104, renumbered for a collision)
+- **104.** A slate row's double-click — shipped 2026-10-04 as the range's
+  *preview* (it starts at the in point, so the ask is met in a stronger form);
+  the click selects instead of toggling, and the rest of the row's menu is #127
+- **119.** A slate's in and out can be adjusted and previewed — the two
+  playhead buttons shipped 2026-10-03, the preview 2026-10-04; it shares #114's
+  stop, as the entry said it should
 
 - 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 92, 94
 
@@ -2023,8 +2022,14 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   points at. The one thing the copy path and the encode path share is
   `mp4mux`, the `.part` handling and the chapter splice. **That intersection is
   where to look first now**, and it is much smaller than "the export path".
-- **When to revisit: now, not later.** The trigger this entry set for itself has
-  fired. The experiment is unchanged (`GST_DEBUG` plus ASan or valgrind on
+- **THE COACH'S RULE (2026-10-04), which is what to follow:** *"If it comes back
+  up then move it up in the queue."* So a **seventh sighting promotes this entry**
+  ahead of whatever feature work is in flight — no further discussion needed, and
+  nobody has to re-make the case. Until then it waits, and the sighting log above
+  is the whole mechanism: **record every one**, because the count is now what
+  schedules the work.
+- **When to revisit: on the next sighting**, by the coach's rule above. The
+  trigger this entry set for itself has fired. The experiment is unchanged (`GST_DEBUG` plus ASan or valgrind on
   `--test whole_match` and `--test export` under an artificial load), but it is
   no longer optional work on a rare flake: a memory-safety bug that reaches CI
   will eventually corrupt an export the coach keeps, and a wrong byte in a
@@ -2106,7 +2111,10 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   clustering and the detector are most of the work — or sooner if the coach
   settles on (a) and a ball-free proxy is worth measuring on its own.
 
-104. **Double-clicking a slate should take the player to its in point.** The
+104. **Double-clicking a slate should take the player to its in point —
+  RESOLVED 2026-10-04**, as the range's *preview*: the double-click parks on the
+  in point and plays to the out point, which is the ask in a stronger form (spec
+  P2 of `2026-10-02-slate-workflow-design.md` subsumes this entry). The
   coach (2026-09-28): "when i select a slate, i expect to be taken to the
   beginning of it in the timeline? or like, if i double click it i guess?"
   Today a slate row's click only toggles the selection (`app.slint`, the slates
@@ -2152,8 +2160,21 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
     joins the menu when its own entry ships.
 - **Why deferred:** filed while the coach was using the app; a small UX gap, not
   a bug, and the other session is mid-#88.
-- **When to revisit:** any time — it is a row handler and one bus command, and
-  it pairs naturally with the next slate work (#97 or #98).
+- **What shipped** (task C of `docs/superpowers/plans/2026-10-03-slate-workflow.md`):
+  `Command::JumpToSlate` — `jump_to_clip`'s body over a slate's fields, through
+  the `park_at` both now share — on the row's new **Jump to slate start** menu
+  item; `Command::PreviewSlate` on the double-click, which is that jump plus a
+  play plus #114's stop; and the click **selects** instead of toggling, with Esc
+  clearing both lists' selections, since the toggle was the thing that would
+  have left a double-clicked row deselected.
+- **What did not, and is now #127:** the other three menu items. **Jump to
+  slate end** lost its reason — the entry wanted it because "there's no other
+  way to check where a range ends", and there are now two: the span drawn on the
+  scrubber (spec S6) and a preview that stops there. **Record** and **Preview
+  slate** need a decision this task did not want to take unreviewed: both *arm*
+  a range, and the span on the scrubber is the **selected** slate's, so a menu
+  item acting on a row that is not selected would leave the arm and the span
+  naming different slates. Selecting first inside the item is the likely answer.
 
 105. **A slate's tag field should offer the tags already in use.** The coach
   (2026-09-28): "tags in slates should be saveable so i can select them or
@@ -2897,7 +2918,14 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   projects *live* at once rather than reachable in one click — comparing two
   matches side by side would be that, and would be a different feature (two
   pictures, not two tabs).
-119. **A slate's in and out cannot be previewed or adjusted.** The coach
+119. **A slate's in and out cannot be previewed or adjusted — RESOLVED
+  2026-10-04.** Both halves came out as the entry predicted: the adjust half is
+  two playhead buttons in the slate editor (spec M1, shipped 2026-10-03, with
+  #122 fixing its silent refusal), and the preview half is a scan with a stop
+  point sharing #114's stop, not a GL graph — `Command::PreviewSlate`, the row's
+  double-click (#104). **The one thing it got wrong** is that "it reads as `i`/`o`
+  again with the slate selected": the slates spec's §S6 had already refused
+  that, so the control is two buttons instead. The coach
   (2026-10-02), asking whether it was filed: "preview slate and end in/out
   times". Two gaps, and neither is in the backlog anywhere — #104 is navigation
   (double-click jumps to the in point), #114 is a *take* not stopping at the out
@@ -2927,15 +2955,17 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   talking). Doing them apart would mean writing the stop twice.
 - **Why deferred:** filed on the day it was asked for; the plumbing for the
   adjust half is small but the control is a design question, and the preview half
-  should wait for #114 so the stop is written once.
-- **When to revisit:** with #114, which is the entry to read first.
+  should wait for #114 so the stop is written once. **Waiting paid:** the stop is
+  written once, in the bus, and the preview is three lines over it — the jump,
+  the arm, and a play.
 
-120. **Filter slates by tag, then work through all the slates with that tag.**
-  The coach (2026-10-02): "i want to be able to filter slates on tags too, then
-  record all the slates with that tag. the use case is like 'all these clips are
-  corner kicks' or similar." A **thematic pass** over a match: mark the ranges
-  while watching, tag them, then sit down and talk over every corner in one go.
-  This is the workflow slates were for and the half that was never built.
+120. **Filter slates by tag, then work through all the slates with that tag —
+  RESOLVED, shipped 2026-10-05.** The coach (2026-10-02): "i want to be able
+  to filter slates on tags too, then record all the slates with that tag. the
+  use case is like 'all these clips are corner kicks' or similar." A **thematic
+  pass** over a match: mark the ranges while watching, tag them, then sit down
+  and talk over every corner in one go. This is the workflow slates were for
+  and the half that was never built.
 - **The filter half is nearly free and has a precedent to copy.** Slates already
   carry `tags` (`SlateEdit::Tags`), and `tag_vocabulary` is deliberately
   clips ∪ slates so a tag invented on a slate autocompletes. The clips list
@@ -3000,6 +3030,39 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   rather than guessable.
 - **When to revisit:** after #114. Then this, #119 and #114 are one piece of
   work: mark, check, adjust, and talk through a themed set.
+- **What shipped**, in two halves — the filter and the row states (spec T1,
+  2026-10-03) and then the advance (task **D** of
+  `docs/superpowers/plans/2026-10-03-slate-workflow.md`) — and the open
+  questions above are answered by it:
+  - **The filter is the Slates panel's own property**, not the window's
+    `tag-filter` — that one is written by the bus on `Event::Select` and would
+    have cleared a pass mid-way. Clearing it is a ✕ beside the field, and the
+    panel stays visible while a filter is set, or a filter matching nothing took
+    away the field that set it (#123).
+  - **Auto-advance, and it pauses** — the middle shape this entry sketched. On
+    `Event::Recording(RecordingStatus::Idle)` the window parks on the next range
+    with `JumpToSlate` and waits for `R`.
+  - **Order:** the list's, which is `slates_sorted` — footage order, as this
+    entry guessed.
+  - **It skips the shot ones, and re-recording one still works**: a shot slate
+    **stays in the list** (that is what makes the advance safe) and the Record
+    button shoots it again.
+  - **The filter drives the queue** — the cheapest answer, and the one that
+    turned out to carry the design: because the queue *is* the displayed list,
+    the advance is "the first `timed && !shot` row **at or after** the selected
+    one" (`slate_pass::next_slate`) with nothing snapshotted, and the
+    skip-every-second bug the spec's T3 found cannot be written. A tag typed
+    between two takes is honoured for free.
+  - **Only timed slates**, as the coach asked, and the take is bounded by
+    #114's stop rather than by anything this feature stores.
+- **The one thing it needed that nothing had written down:** `R` had to carry
+  the selected range. It sent a plain `ToggleRecording`, which records the right
+  frames under a clip with **no `slate_id`** — so the range never read as shot,
+  the footage never stopped at its out point, and the advance landed back on the
+  same row for ever. `Command::ToggleRecording` now carries
+  `slate: Option<Uuid>` and the *bus* decides, because the window's phase lags
+  the bus's and a `ShootSlate` sent into a running take is refused.
+- **What it is still silent about** is #128.
 
 121. **A workspace test build compiles the whole UI six times at once, and on
   2026-10-02 that ran the laptop out of memory.** The machine froze and went
@@ -3214,3 +3277,53 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   whole film, as it already has one name and one quality.
 - **When to revisit:** once the coach has used the mute switch and knows whether
   he reaches for a level. That is the question deferring it is meant to answer.
+
+127. **The rest of the slate row's right-click menu.** The coach (2026-10-04):
+  "add 'slates' right click menu like the clips, e.g. jump to slate start".
+  #104 shipped the item they named — **Jump to slate start** — beside the
+  **Delete slate** that was already there. Three of the clip row's five remain,
+  and two of them carry one question.
+- **Record** (`shoot-slate`) and **Preview slate** (`PreviewSlate`) both *arm* a
+  range, and the span drawn on the scrubber is the **selected** slate's (spec
+  S6) — so a menu item acting on a row that is not selected would leave the arm
+  and the span naming different slates, which is the one invariant the span's
+  task leaned on ("the armed slate is always the selected slate at every entry
+  point"). `root.selected-slate = slate.id;` inside the item, before the
+  callback — exactly what the row's own click does — is the likely answer. It is
+  a rule about what a context menu may change, and task C did not want to take
+  it unreviewed.
+- **Jump to slate end is dropped, not deferred.** #104 wanted it because "there
+  is no other way to check where a range ends"; there are now two — the span on
+  the scrubber (spec S6) and a preview that stops there.
+- **Not copied from the clip row:** *Add to basket* (a piece is a clip and a
+  slate has no recording) and *Export video…* (#98's silent breakdown film).
+- **Why deferred:** task C's plan scoped #104 to the navigation, and #104's menu
+  bullet was written the day after that plan was reviewed.
+- **When to revisit:** any time — two menu items and a line of selection each.
+  Naturally with #105 (the slate tag field) or #120's pass, which are the same
+  rows.
+
+128. **The themed pass is silent at both of its ends.** #120 shipped the pass
+  and it works from the keyboard once it is going — `R`, space, talk, `R`, and
+  the list hands on to the next range. Two things it does not say, neither of
+  which blocks the workflow:
+- **There is no keyboard way to start one.** The first range has to be clicked:
+  the Slates list has no focus, no arrow-key selection and no "select the first
+  row" key, so a coach who has typed a tag into the filter must reach for the
+  mouse once before the keyboard loop begins. The same gap #99 records for the
+  side columns and #96 owns in general, but here it is one specific missing
+  move: *select the first candidate*.
+- **Nothing is said when the pass runs out.** `slate_pass::next_slate` returns
+  `None` on the last range of a set and the selection simply stays where it is —
+  correct (there is nothing better to select) and indistinguishable from the
+  advance having failed. The row's `●` is the only evidence, and it was already
+  there before the take. A status-bar notice naming what finished ("last corner
+  of 8") is the obvious shape; it is also the kind of line that is worth having
+  the coach's words for rather than inventing.
+- **Why deferred:** both are discoverability rather than behaviour, and the pass
+  was shipped to be *used* before being polished — what the coach reaches for
+  after a real session is better evidence than either guess. The end-of-pass
+  notice in particular wants to know whether they count ranges.
+- **When to revisit:** after the coach has run a themed pass over a real match.
+  The keyboard half is naturally part of #96; the notice is its own small
+  change.
