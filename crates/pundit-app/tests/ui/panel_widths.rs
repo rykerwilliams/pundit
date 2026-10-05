@@ -32,8 +32,10 @@ use pundit_app::bus::PanelWidths;
 use slint::platform::{PointerEventButton, WindowEvent};
 use slint::{ComponentHandle, LogicalPosition, ModelRc, PhysicalSize, SharedString, VecModel};
 
-// The window as `main.rs` builds it: the row the columns share is the test.
-slint::include_modules!();
+// The window as `main.rs` builds it: the row the columns share is the test. The
+// generated UI is compiled once for this whole test binary, in its `main.rs`
+// (BACKLOG #121).
+use crate::{AppWindow, ClipRow, SlateRow, SourceRow};
 
 /// A window carrying what both columns were fitted to hold — a source, a clip,
 /// a slate and a selected clip's inspector, with names long enough to want more
@@ -158,7 +160,7 @@ fn the_stored_defaults_are_the_layouts_minima() {
 
 /// **A release stores the width the coach can see, not the one the pointer asked
 /// for** (spec W5) — the one rule of this shipment nothing else can pin.
-/// `tests/splitter.rs` drives the component against a stand-in window that has
+/// `tests/ui/splitter.rs` drives the component against a stand-in window that has
 /// no write-back of its own, and `main.rs`'s `state.json` write is in a `[[bin]]`
 /// no test can reach; what is left, and what is under test here, is `app.slint`'s
 /// `released` handler on the real grip.

@@ -14,8 +14,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 // The window itself, as `main.rs` builds it: these two failures are about
-// where a field lives in the real tree, so a stand-in would not have them.
-slint::include_modules!();
+// where a field lives in the real tree, so a stand-in would not have them. The
+// generated UI is compiled once for this whole test binary, in its `main.rs`
+// (BACKLOG #121).
+use crate::{AppWindow, SlateRow};
 
 fn slate(id: &str, name: &str) -> SlateRow {
     SlateRow {
