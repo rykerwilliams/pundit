@@ -228,6 +228,15 @@ pub enum Command {
         id: Uuid,
         zoom: Zoom,
     },
+    /// Pause the game video on the slate's first frame (BACKLOG #104), as
+    /// [`Command::JumpToClip`] does for a clip: a row's menu item, and the
+    /// park the themed pass lands on.
+    JumpToSlate(Uuid),
+    /// Watch the marked range: the jump above, then play, then the out-point
+    /// stop (spec P2). **Not [`Command::OpenPreview`]** — that composites a
+    /// clip's recording and a slate has none; this is the game video played
+    /// between two marks.
+    PreviewSlate(Uuid),
     /// Rename or recolour a highlight from the Highlights panel.
     EditHighlight {
         id: Uuid,
@@ -272,7 +281,8 @@ pub enum Command {
     /// `J`, `L` and the speed button: play the game video a speed slower or
     /// faster (spec S). Only while it plays, with no preview open. Not while
     /// recording: the clip model, replay and export are 1x. Any pause returns
-    /// to 1x.
+    /// to 1x. Not while a slate's range is armed either, which is what keeps
+    /// its stop on the out point (`scan_speed` says how).
     ScanSpeed(ScanStep),
     /// Linear slider value in `0..=1`. Persisted to `scan_volume` only when
     /// `commit` is set (on slider release).
@@ -1024,6 +1034,10 @@ impl Bus {
             Command::EditSlate { id, edit } => self.edit_slate(id, edit),
             Command::DeleteSlate(id) => self.delete_slate(id),
             Command::ShootSlate { id, zoom } => self.shoot_slate(id, zoom),
+            Command::JumpToSlate(id) => {
+                self.jump_to_slate(id);
+            }
+            Command::PreviewSlate(id) => self.preview_slate(id),
             Command::EditHighlight { id, edit } => self.edit_highlight(id, edit),
             Command::DeleteHighlightKey { id, source_seconds } => {
                 self.delete_highlight_key(id, source_seconds)

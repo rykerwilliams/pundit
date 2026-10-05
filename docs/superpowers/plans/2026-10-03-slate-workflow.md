@@ -53,7 +53,36 @@ local 1.98 is not the gate.
   today** — the arm is only ever set where a take starts, and a take's source
   never changes — so both wait on C for a test; the unconditional assignment
   and the guard are in, with their reasons.
-- **C — the preview.** Not started.
+- **C — the preview.** **Landed.** `Command::JumpToSlate(Uuid)` and
+  `Command::PreviewSlate(Uuid)` — **two commands, not one**: item 1's jump
+  *pauses* (which is what D4 needs of it) and item 2's preview is that plus an
+  arm plus a play, so one command cannot be both. The jump's body is
+  `jump_to_clip`'s, **factored into `Bus::park_at` rather than copied**, so the
+  two rows land the same way by construction. `ScanSpeed` takes the one extra
+  condition (item 3), and the row selects on click — with Esc now clearing
+  *both* lists' selections, which it had to gain, because the toggle was the
+  only way out of a slate selection (item 4). The double-click previews, as spec
+  P2 says, so #104's ask is met in a stronger form than it asked for.
+  **One deviation, and it is a bug this task found in B's code:**
+  `slate_out_reached` also requires `self.player.is_idle()` now. B's measured
+  claim — after a flushing seek `query_position` returns `None` and then the
+  seek's *target*, never the pre-seek value — does not cover a seek that has
+  been **issued and not yet acted on**, which is exactly this iteration of the
+  bus loop, because `preview_slate` parks and plays in one go. Measured: a range
+  previewed from anywhere past its own out point read the position the coach was
+  watching, fired at once, and stopped the preview on its first frame. A take
+  can reach it too (space pressed inside the shoot's seek), so the guard belongs
+  in the check and not in the preview. It is `step_frame`'s own condition, and
+  it costs at most one poll.
+  **Item 2's two unreachable cases are now tests** — the inherited arm and the
+  `source_index` guard — each proved by sabotage to be the only test that fails
+  when its line goes.
+  **#104's right-click menu is not all shipped.** It gained *Jump to slate
+  start*, which is also `JumpToSlate`'s live sender; the other three items are
+  BACKLOG **#127**, because two of them (Record, Preview slate) *arm* a range
+  from a row that may not be selected, and the span is the **selected** slate's
+  — a rule that wants the review this plan got rather than a line written under
+  task C.
 - **D — the pass.** Not started.
 
 ---
