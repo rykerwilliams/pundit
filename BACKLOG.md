@@ -26,16 +26,13 @@ made things worse.
 - **127.** The rest of the slate row's right-click menu — Jump to slate end,
   Record and Preview slate beside the "Jump to slate start" #104 shipped; two of
   the three have to set the selection first, which is the bit to get right
+- **128.** The themed pass is silent at both of its ends — no keyboard way to
+  start one, and nothing said when it runs out of ranges
 - **105.** A slate's tag field should offer the tags already in use — the clip
   inspector's suggestion list, lifted into one shared `TagField`
-- **120.** Filter slates by tag, then work through all of them with that tag —
-  the thematic pass ("all these clips are corner kicks"); the filter is nearly
-  free, the queue wants #114's stop-at-out first
 - **110.** The scoreboard over the picture disappears during a take — it shows
   while watching and in a preview; not yet reproduced, and no code gates it on
   recording
-- **114.** Shooting a slate doesn't stop at its out point — pause the footage
-  there and keep recording is the likely shape; the coach picks
 - **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
   clip, sticky for the next recording, as #88's inset size and corner are (v15 —
   v14 went to #117's arrowhead).
@@ -2962,12 +2959,13 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   written once, in the bus, and the preview is three lines over it — the jump,
   the arm, and a play.
 
-120. **Filter slates by tag, then work through all the slates with that tag.**
-  The coach (2026-10-02): "i want to be able to filter slates on tags too, then
-  record all the slates with that tag. the use case is like 'all these clips are
-  corner kicks' or similar." A **thematic pass** over a match: mark the ranges
-  while watching, tag them, then sit down and talk over every corner in one go.
-  This is the workflow slates were for and the half that was never built.
+120. **Filter slates by tag, then work through all the slates with that tag —
+  RESOLVED, shipped 2026-10-05.** The coach (2026-10-02): "i want to be able
+  to filter slates on tags too, then record all the slates with that tag. the
+  use case is like 'all these clips are corner kicks' or similar." A **thematic
+  pass** over a match: mark the ranges while watching, tag them, then sit down
+  and talk over every corner in one go. This is the workflow slates were for
+  and the half that was never built.
 - **The filter half is nearly free and has a precedent to copy.** Slates already
   carry `tags` (`SlateEdit::Tags`), and `tag_vocabulary` is deliberately
   clips ∪ slates so a tag invented on a slate autocompletes. The clips list
@@ -3032,6 +3030,39 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   rather than guessable.
 - **When to revisit:** after #114. Then this, #119 and #114 are one piece of
   work: mark, check, adjust, and talk through a themed set.
+- **What shipped**, in two halves — the filter and the row states (spec T1,
+  2026-10-03) and then the advance (task **D** of
+  `docs/superpowers/plans/2026-10-03-slate-workflow.md`) — and the open
+  questions above are answered by it:
+  - **The filter is the Slates panel's own property**, not the window's
+    `tag-filter` — that one is written by the bus on `Event::Select` and would
+    have cleared a pass mid-way. Clearing it is a ✕ beside the field, and the
+    panel stays visible while a filter is set, or a filter matching nothing took
+    away the field that set it (#123).
+  - **Auto-advance, and it pauses** — the middle shape this entry sketched. On
+    `Event::Recording(RecordingStatus::Idle)` the window parks on the next range
+    with `JumpToSlate` and waits for `R`.
+  - **Order:** the list's, which is `slates_sorted` — footage order, as this
+    entry guessed.
+  - **It skips the shot ones, and re-recording one still works**: a shot slate
+    **stays in the list** (that is what makes the advance safe) and the Record
+    button shoots it again.
+  - **The filter drives the queue** — the cheapest answer, and the one that
+    turned out to carry the design: because the queue *is* the displayed list,
+    the advance is "the first `timed && !shot` row **at or after** the selected
+    one" (`slate_pass::next_slate`) with nothing snapshotted, and the
+    skip-every-second bug the spec's T3 found cannot be written. A tag typed
+    between two takes is honoured for free.
+  - **Only timed slates**, as the coach asked, and the take is bounded by
+    #114's stop rather than by anything this feature stores.
+- **The one thing it needed that nothing had written down:** `R` had to carry
+  the selected range. It sent a plain `ToggleRecording`, which records the right
+  frames under a clip with **no `slate_id`** — so the range never read as shot,
+  the footage never stopped at its out point, and the advance landed back on the
+  same row for ever. `Command::ToggleRecording` now carries
+  `slate: Option<Uuid>` and the *bus* decides, because the window's phase lags
+  the bus's and a `ShootSlate` sent into a running take is refused.
+- **What it is still silent about** is #128.
 
 121. **A workspace test build compiles the whole UI six times at once, and on
   2026-10-02 that ran the laptop out of memory.** The machine froze and went
@@ -3170,3 +3201,28 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** any time — two menu items and a line of selection each.
   Naturally with #105 (the slate tag field) or #120's pass, which are the same
   rows.
+
+128. **The themed pass is silent at both of its ends.** #120 shipped the pass
+  and it works from the keyboard once it is going — `R`, space, talk, `R`, and
+  the list hands on to the next range. Two things it does not say, neither of
+  which blocks the workflow:
+- **There is no keyboard way to start one.** The first range has to be clicked:
+  the Slates list has no focus, no arrow-key selection and no "select the first
+  row" key, so a coach who has typed a tag into the filter must reach for the
+  mouse once before the keyboard loop begins. The same gap #99 records for the
+  side columns and #96 owns in general, but here it is one specific missing
+  move: *select the first candidate*.
+- **Nothing is said when the pass runs out.** `slate_pass::next_slate` returns
+  `None` on the last range of a set and the selection simply stays where it is —
+  correct (there is nothing better to select) and indistinguishable from the
+  advance having failed. The row's `●` is the only evidence, and it was already
+  there before the take. A status-bar notice naming what finished ("last corner
+  of 8") is the obvious shape; it is also the kind of line that is worth having
+  the coach's words for rather than inventing.
+- **Why deferred:** both are discoverability rather than behaviour, and the pass
+  was shipped to be *used* before being polished — what the coach reaches for
+  after a real session is better evidence than either guess. The end-of-pass
+  notice in particular wants to know whether they count ranges.
+- **When to revisit:** after the coach has run a themed pass over a real match.
+  The keyboard half is naturally part of #96; the notice is its own small
+  change.

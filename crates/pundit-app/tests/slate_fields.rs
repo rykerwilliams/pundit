@@ -1,9 +1,12 @@
-//! The slate fields against the **real** `AppWindow`, on Slint's headless
+//! The slate panel against the **real** `AppWindow`, on Slint's headless
 //! backend: the two failures that made the first version of this section a
-//! trap, neither of which any bus-level test can see.
+//! trap, neither of which any bus-level test can see, and what `R` means when
+//! a range is selected (BACKLOG #120).
 //!
-//! Both come from where a field *lives* rather than what it does, which is why
-//! they are pinned here and not in the harness.
+//! The first two come from where a field *lives* rather than what it does,
+//! which is why they are pinned here and not in the harness. `R`'s is here for
+//! a related reason: which command the key sends is decided in `app.slint`, so
+//! the harness — which has no window — can only see whichever one arrives.
 
 use slint::platform::WindowEvent;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
@@ -115,4 +118,58 @@ fn rebuilding_the_list_leaves_the_keyboard_alive() {
         ["mark-in"],
         "the keyboard should work again once the field is gone"
     );
+}
+
+/// A window with two ranges and nothing selected, recording what `R` sent
+/// (BACKLOG #120).
+fn record_window() -> (AppWindow, Rc<RefCell<Vec<String>>>) {
+    i_slint_backend_testing::init_no_event_loop();
+    let w = AppWindow::new().unwrap();
+    let sent: Rc<RefCell<Vec<String>>> = Rc::default();
+    w.on_toggle_recording({
+        let sent = Rc::clone(&sent);
+        move |slate| sent.borrow_mut().push(format!("toggle {slate:?}"))
+    });
+    w.set_can_play(true);
+    w.set_slates(ModelRc::new(VecModel::from(vec![
+        slate("s1", "corner"),
+        slate("s2", "corner"),
+    ])));
+    w.show().unwrap();
+    (w, sent)
+}
+
+fn press_r(w: &AppWindow) {
+    w.window()
+        .dispatch_event(WindowEvent::KeyPressed { text: 'r'.into() });
+    w.window()
+        .dispatch_event(WindowEvent::KeyReleased { text: 'r'.into() });
+}
+
+/// **`R` carries the selected range**, which is the whole of what the window
+/// decides about it — the bus turns it into that range's take, or into a stop.
+///
+/// It is what makes the themed pass work from the keyboard: a plain take would
+/// record the right frames under a clip with no `slate_id`, so the range would
+/// never read as shot, the footage would never stop at its out point, and the
+/// pass would park on the same row for ever.
+#[test]
+fn r_carries_the_selected_range() {
+    let (w, sent) = record_window();
+    w.set_selected_slate("s2".into());
+
+    press_r(&w);
+
+    assert_eq!(*sent.borrow(), [r#"toggle "s2""#]);
+}
+
+/// With nothing selected it is the plain take it always was. The selection is
+/// the whole of the mode, and Esc is how a coach leaves it.
+#[test]
+fn r_with_nothing_selected_carries_no_range() {
+    let (w, sent) = record_window();
+
+    press_r(&w);
+
+    assert_eq!(*sent.borrow(), [r#"toggle """#]);
 }

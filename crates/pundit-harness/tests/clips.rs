@@ -452,6 +452,7 @@ fn clip_commands_are_refused_while_recording() {
     settle_at(&mut h, 0, 0.0);
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
+        slate: None,
     });
     assert_eq!(h.wait_recording(), RecordingStatus::Starting);
     assert!(matches!(
@@ -478,6 +479,7 @@ fn an_edit_while_recording_is_applied_and_saved() {
     settle_at(&mut h, 0, 0.0);
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
+        slate: None,
     });
     assert_eq!(h.wait_recording(), RecordingStatus::Starting);
     assert!(matches!(

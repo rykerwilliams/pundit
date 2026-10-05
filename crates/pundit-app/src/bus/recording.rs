@@ -84,11 +84,19 @@ impl Bus {
     /// R: starts a recording while idle, else stops (or aborts) it. The UI's
     /// status can lag the bus's, so the bus decides: a second R during
     /// start-up cancels, as the user means.
-    pub(super) fn toggle_recording(&mut self, zoom: Zoom) {
-        if self.recording.is_some() {
-            self.stop_recording();
-        } else {
-            self.start_recording(zoom, None);
+    ///
+    /// **`slate` is the selected range, and the same lag is why it arrives
+    /// here rather than being branched on in the window** (BACKLOG #120). With
+    /// one, R is that range's take — [`Bus::shoot_slate`] — so the themed
+    /// pass is two keys and the clip carries the `slate_id` that marks the
+    /// range shot. A window that chose between two commands from its own
+    /// phase would send a `ShootSlate` into a take the recording guard
+    /// refuses it in, and the R meant as a cancel would do nothing.
+    pub(super) fn toggle_recording(&mut self, zoom: Zoom, slate: Option<Uuid>) {
+        match (self.recording.is_some(), slate) {
+            (true, _) => self.stop_recording(),
+            (false, Some(id)) => self.shoot_slate(id, zoom),
+            (false, None) => self.start_recording(zoom, None),
         }
     }
 

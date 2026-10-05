@@ -292,11 +292,21 @@ pub enum Command {
     },
 
     // Recording (spec R6).
-    /// R: while idle, starts a recording from where the player is heading,
-    /// with `zoom` (the UI's) as the log's first event; while recording,
-    /// [`Command::StopRecording`].
+    /// R: while idle, starts a recording with `zoom` (the UI's) as the log's
+    /// first event; while recording, [`Command::StopRecording`].
+    ///
+    /// **`slate` is whichever range is selected** (BACKLOG #120), and with one
+    /// the take is that range's: [`Command::ShootSlate`]'s seek to the in
+    /// point and its arm at the out. **The bus decides which, not the UI**,
+    /// which is why this carries the range rather than the window choosing
+    /// between two commands: the UI's status lags the bus's, so a second R
+    /// inside a take's start-up has to cancel it — "as the user means" — and a
+    /// window that read its own stale phase would send a `ShootSlate` the
+    /// recording guard refuses, leaving the take running under a key press
+    /// that meant to stop it.
     ToggleRecording {
         zoom: Zoom,
+        slate: Option<Uuid>,
     },
     /// Stops the recording, or aborts it if no video has arrived yet.
     StopRecording,
@@ -1053,7 +1063,7 @@ impl Bus {
             Command::StepFrame { forward } => self.step_frame(forward),
             Command::ScanSpeed(step) => self.scan_speed(step),
             Command::SetVolume { value, commit } => self.set_volume(value, commit),
-            Command::ToggleRecording { zoom } => self.toggle_recording(zoom),
+            Command::ToggleRecording { zoom, slate } => self.toggle_recording(zoom, slate),
             Command::StopRecording => self.stop_recording(),
             Command::Zoom { host_ns, zoom } => self.log_zoom(host_ns, zoom),
             Command::Stroke { host_ns, stroke } => self.log_stroke(host_ns, stroke),

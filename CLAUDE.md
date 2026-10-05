@@ -708,6 +708,27 @@ v12; spec `docs/superpowers/specs/2026-09-25-slates-design.md`).
 - The tag **vocabulary** is clips ∪ slates (`tag_vocabulary`), so a tag invented
   on a slate autocompletes; the tag **overview** stays clips-only, because its
   columns are a clip count and a duration.
+- **The themed pass is the Slates list itself, filtered by tag** (#120, spec T):
+  the coach works through "all these are corner kicks" by shooting a range and
+  letting the list hand on to the next. The whole advance is
+  `slate_pass::next_slate` — **the first `timed && !shot` row at or after the
+  selected one**, parked on with `JumpToSlate`, which pauses. Three things about
+  it are load-bearing. **Nothing is snapshotted and the list is the queue:** a
+  shot slate *stays* in the list, so "at or after" moves on by itself after a
+  successful take and parks on the same range again after an aborted one, and
+  the spec's T3 bug — a queue of unshot ids, `[A,B,C]`, shoot A, index + 1 is
+  **C** and B is never offered — cannot be written. It also means a tag filter
+  changed between takes is honoured with no state. **It advances on
+  `Event::Recording(RecordingStatus::Idle)` and never on `ProjectChanged`:** an
+  abort emits only the former (nothing changed to save), and the latter fires
+  for things with no command behind them — a transcript landing — which would
+  move the footage under the coach's hands. And **`R` carries the selected
+  range** (`ToggleRecording { slate }`), with the *bus* choosing the shoot: the
+  window's recording phase lags the bus's, and a `ShootSlate` sent into a
+  running take is refused by the recording guard, so a window that branched on
+  its own phase would swallow the second R that means "cancel". The transport
+  button reads **"Record range"** while one is selected, which is how the mode
+  stays visible rather than being state on the primary key.
 
 **Player highlights** (`pundit-core/src/highlight.rs`, spec H).
 - **A highlight belongs to the footage, not to a clip.** It is stored on the

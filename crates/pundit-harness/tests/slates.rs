@@ -1,8 +1,10 @@
 //! Bus end to end: slates — marking a range while watching, the refusal that
 //! is a notice, the one command pair that is live during a take, the undo
-//! step each edit is, the out-point stop (BACKLOG #114) and the preview that
-//! shares it (BACKLOG #104, spec P). What a slate *is* and what the mutators
-//! refuse are core's tests.
+//! step each edit is, the out-point stop (BACKLOG #114), the preview that
+//! shares it (BACKLOG #104, spec P), and `R` carrying the selected range
+//! (BACKLOG #120). What a slate *is* and what the mutators refuse are core's
+//! tests; where the themed pass goes *next* is a unit test, because the queue
+//! is the window's own row model and the harness has no window.
 //!
 //! Layout per test: `<tmp>/config` holds the state file, `<tmp>/project` the
 //! project, `<tmp>/media` the fixture game videos.
@@ -175,6 +177,7 @@ fn marking_works_while_recording_and_the_other_edits_are_refused() {
 
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
+        slate: None,
     });
     h.wait_recording();
     h.wait_recording();
@@ -390,6 +393,7 @@ fn shooting_while_recording_is_refused() {
 
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
+        slate: None,
     });
     h.wait_recording();
     assert!(matches!(
@@ -409,6 +413,80 @@ fn shooting_while_recording_is_refused() {
     let saved = p.saved();
     assert_eq!(saved.clips.len(), 1, "one take, not two");
     assert_eq!(saved.clips[0].slate_id, None, "and it was not the slate's");
+}
+
+/// **`R` with a range selected is that range's take** (BACKLOG #120): the
+/// window hands `ToggleRecording` whatever is selected and the bus turns it
+/// into the shoot, so the clip starts at the in point and carries the
+/// `slate_id` that marks the range shot — which is what the themed pass
+/// advances on. A plain take here would record the right frames under a clip
+/// that left the range looking unshot for ever.
+#[test]
+fn toggling_a_recording_with_a_range_selected_shoots_it() {
+    let (mut h, p) = Proj::open(&["a.webm"]);
+    h.wait_settled();
+    h.send(mark_in(0, 1.1));
+    let id = h.wait_changed().project.slates[0].id;
+
+    h.send(Command::ToggleRecording {
+        zoom: Zoom::IDENTITY,
+        slate: Some(id),
+    });
+    h.wait_recording();
+    h.wait_recording();
+    h.send(Command::StopRecording);
+    h.wait_changed();
+    h.wait_recording();
+    h.shutdown();
+
+    let clip = &p.saved().clips[0];
+    assert_eq!(clip.slate_id, Some(id), "the take is the range's");
+    assert!(
+        (clip.start_source_seconds - 1.1).abs() < 0.05,
+        "and it starts at the in point: {}",
+        clip.start_source_seconds
+    );
+}
+
+/// **And a second `R` still stops it**, which is why the range travels on
+/// `ToggleRecording` rather than the window choosing `ShootSlate` itself. The
+/// window's phase lags the bus's, so that choice would be made on a stale
+/// reading — and `shooting_while_recording_is_refused` above is what the
+/// mistake costs: the key would be swallowed and the take would run on. The
+/// range is selected throughout its own take, so this is the ordinary case and
+/// not an edge one.
+#[test]
+fn a_second_toggle_stops_the_range_take_rather_than_starting_another() {
+    let (mut h, p) = Proj::open(&["a.webm"]);
+    h.wait_settled();
+    h.send(mark_in(0, 0.5));
+    let id = h.wait_changed().project.slates[0].id;
+
+    h.send(Command::ToggleRecording {
+        zoom: Zoom::IDENTITY,
+        slate: Some(id),
+    });
+    assert_eq!(h.wait_recording(), RecordingStatus::Starting);
+    assert!(matches!(
+        h.wait_recording(),
+        RecordingStatus::Recording { .. }
+    ));
+
+    h.send(Command::ToggleRecording {
+        zoom: Zoom::IDENTITY,
+        slate: Some(id),
+    });
+    h.wait_changed();
+    assert_eq!(
+        h.wait_recording(),
+        RecordingStatus::Idle,
+        "the second R stops the take"
+    );
+    h.shutdown();
+
+    let saved = p.saved();
+    assert_eq!(saved.clips.len(), 1, "one take, not two");
+    assert_eq!(saved.clips[0].slate_id, Some(id));
 }
 
 // -------------------------------------------- stopping at the out point
@@ -616,6 +694,7 @@ fn a_plain_take_is_not_stopped_by_a_timed_slate_on_another_video() {
     });
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
+        slate: None,
     });
     assert_eq!(h.wait_recording(), RecordingStatus::Starting);
     assert!(matches!(
@@ -830,6 +909,7 @@ fn a_plain_take_does_not_inherit_a_previews_arm() {
     // take is parked well short of the out point, which is still ahead of it.
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
+        slate: None,
     });
     assert_eq!(h.wait_recording(), RecordingStatus::Starting);
     assert!(matches!(

@@ -641,6 +641,7 @@ fn new_match_while_recording_is_dropped() {
 
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
+        slate: None,
     });
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
     let live = rig.h.wait_recording();
