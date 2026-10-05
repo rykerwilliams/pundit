@@ -381,6 +381,29 @@ stands".)*
 
 Recorded here because it is the last task, not because any of it blocks:
 
+- **`R`'s new meaning is SETTLED, by the coach, 2026-10-04.** Asked directly
+  ("r is for recroding i thought") and then offered the three ways out — keep
+  it, revert the trigger to the slate row's Record button, or give the shoot a
+  key of its own — he chose **keep it**: with a range selected, `R` shoots that
+  range from its in point. So this is no longer an open question and should not
+  be reopened without him.
+  - **He had not approved it before.** Task D inferred it from spec T5 ("a
+    bounded take is two keys") and from his earlier "keep R-then-space", which
+    was an answer about *not auto-playing the footage* — a different question.
+    The inference turned out to be right, but it was an inference, and D was
+    right to flag it rather than let it pass as approved.
+  - **It was also not optional**, which is the other half of why it stands: a
+    plain `R` produced a clip with no `slate_id`, so the range never read as
+    `shot`, #114's stop never armed, and "at or after" parked on the same row
+    for ever. An infinite loop, not a nicety.
+  - **The remaining risk is a stale selection** — select a row to rename it,
+    press `R` without thinking, and the footage jumps to that range. The guards
+    are the three already shipped: a second `R` always stops regardless of
+    selection, the transport button reads "Record range", and Esc clears the
+    selection. **If it bites in real use the trigger is a small revert** and the
+    row's Record button already does the job; that is the fallback, written down
+    so nobody has to re-derive it.
+
 - **The spec's three open questions are still open**, and D touched none of
   them. **T5** — should the pass's own start play the footage, saving the space
   press — is the live one: the coach said "keep R-then-space" and both Record
