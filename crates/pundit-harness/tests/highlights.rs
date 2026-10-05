@@ -175,6 +175,7 @@ fn a_key_lands_while_recording_and_the_other_edits_are_refused() {
 
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
+        slate: None,
     });
     h.wait_recording();
     h.wait_recording();

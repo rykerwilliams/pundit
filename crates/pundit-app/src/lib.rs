@@ -13,6 +13,7 @@ pub mod highlight_view;
 pub mod match_panel;
 pub mod new_match;
 pub mod recents;
+pub mod slate_pass;
 pub mod slate_span;
 pub mod wheel;
 pub mod zoom_input;

@@ -37,6 +37,7 @@ use pundit_app::match_panel::{
 };
 use pundit_app::new_match::{self, Draft};
 use pundit_app::recents;
+use pundit_app::slate_pass::{self, PassRow};
 use pundit_app::slate_span::slate_span;
 use pundit_app::wheel::Wheel;
 use pundit_app::zoom_input::{self, DragPan, Viewport};
@@ -766,12 +767,22 @@ fn wire_callbacks(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, pickers: &Pi
         value,
         commit: true,
     }));
-    // The bus decides start or stop: the UI's status can lag it.
+    // The bus decides start or stop: the UI's status can lag it. **And start
+    // of what**: the selected range's take or a plain one (BACKLOG #120), so
+    // the window passes the selection rather than choosing a command on a
+    // phase that may be stale — see `Bus::toggle_recording`.
     window.on_toggle_recording({
         let send = send(bus);
-        move || {
+        move |slate| {
             let zoom = UI.with_borrow(|ui| ui.zoom);
-            send(Command::ToggleRecording { zoom })
+            // `Uuid::parse_str(…).ok()`, not `parse_id`, for
+            // `show_slate_span`'s reason: no selection is the ordinary case
+            // here, and `parse_id` would log "not an id" for the empty
+            // string on every plain take.
+            send(Command::ToggleRecording {
+                zoom,
+                slate: Uuid::parse_str(&slate).ok(),
+            })
         }
     });
     window.on_stop_recording({
@@ -3076,6 +3087,18 @@ fn on_event(w: &AppWindow, event: Event) {
                 RecordingStatus::Starting => RecordingPhase::Starting,
                 RecordingStatus::Recording { .. } => RecordingPhase::Recording,
             });
+            // The themed pass advances here (BACKLOG #120) — **on `Idle`, not
+            // on `ProjectChanged`**, and that is two decisions. An aborted
+            // take emits only this, since nothing changed to save, so the
+            // pass would never recover from one; and `ProjectChanged` fires
+            // for things with no command behind them at all — a transcript
+            // landing — which would move the footage under the coach's hands
+            // mid-pass. `finish_recording` publishes the project *before* this
+            // event, so the rows `advance_pass` reads already know the clip
+            // exists and the range it was shot from is `shot`.
+            if status == RecordingStatus::Idle {
+                advance_pass(w);
+            }
             if status == RecordingStatus::Starting {
                 w.set_level_seen(false);
                 w.set_level(0.0);
@@ -3608,6 +3631,45 @@ fn show_slate_span(w: &AppWindow, project: Option<&Project>) {
     let (from, to) = span.unwrap_or((0.0, 0.0));
     w.set_slate_span_from(from as f32);
     w.set_slate_span_to(to as f32);
+}
+
+/// The themed pass's one move: park on the next range of the set (BACKLOG
+/// #120), called when a take ends.
+///
+/// **The selected row is the cursor, and it needs nothing to keep it there.**
+/// Every take started while a range is selected is *that range's* — `R` and
+/// both Record buttons shoot the selection — so a plain take has no range
+/// selected, `next_slate` finds no cursor in the list, and nothing moves. That
+/// is why there is no pass mode to turn on, and no flag saying whether the
+/// take that just ended was a slate's.
+///
+/// **The park is `Command::JumpToSlate` through the window's own callback**,
+/// which is where the bus handle lives — so the pass lands a range exactly as
+/// the row's "Jump to slate start" does, and it *pauses*, which is the point:
+/// `ScrubRelease` would leave the footage running on through the next range
+/// (spec T4). The take then starts on `R` and the footage on space, both
+/// deliberately (spec T5): `start_recording` pauses unconditionally and the
+/// log seeds a pause at record time 0.
+///
+/// The selection is set **before** the jump, so the scrubber's span (spec S6)
+/// names the range the footage is heading for rather than the one just
+/// recorded.
+fn advance_pass(w: &AppWindow) {
+    let rows: Vec<SlateRow> = w.get_slates().iter().collect();
+    let pass: Vec<PassRow> = rows
+        .iter()
+        .map(|row| PassRow {
+            id: row.id.as_str(),
+            timed: row.timed,
+            shot: row.shot,
+        })
+        .collect();
+    let Some(next) = slate_pass::next_slate(&pass, w.get_selected_slate().as_str()) else {
+        return;
+    };
+    let next = SharedString::from(next);
+    w.set_selected_slate(next.clone());
+    w.invoke_jump_to_slate(next);
 }
 
 /// A clip's name as the lists and the preview indicator show it.

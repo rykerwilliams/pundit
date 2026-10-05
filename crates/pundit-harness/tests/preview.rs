@@ -217,6 +217,7 @@ fn a_recording_is_refused_while_previewing() {
     rig.previewing();
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
+        slate: None,
     });
     assert_eq!(
         rig.h.wait_for_error(),
@@ -244,6 +245,7 @@ fn a_preview_while_recording_is_dropped() {
     });
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
+        slate: None,
     });
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
 

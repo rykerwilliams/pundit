@@ -83,7 +83,57 @@ local 1.98 is not the gate.
   from a row that may not be selected, and the span is the **selected** slate's
   — a rule that wants the review this plan got rather than a line written under
   task C.
-- **D — the pass.** Not started.
+- **D — the pass.** **Landed.** `slate_pass::next_slate` — *the first
+  `timed && !shot` row at or after the selected one* — called from
+  `main.rs::advance_pass` on `Event::Recording(RecordingStatus::Idle)`, which
+  sets the selection and then parks with `JumpToSlate` (item 4), in that order,
+  so the scrubber's span names the range the footage is heading for rather than
+  the one just recorded. Items 1, 2, 3 and 6 as written, and `pundit-core` is
+  untouched. The rule is a sibling lib module with its own tests for
+  `slate_span.rs`'s reason — `main.rs` is wiring and has no `#[cfg(test)]`
+  module at all — and `PassRow` exists because the *library* cannot see the
+  window's generated `SlateRow`, which is in the binary: it is a borrowed
+  projection of the two flags T1 put on that row, built at the one call site.
+  **Two deviations. The first is the thing the plan did not reach, and without
+  it the feature does not work:**
+  1. **`R` has to shoot the selected range.** Item 5 says "`R` arms and space
+     starts" and spec T5 says "a bounded take is two keys" — but `R` sent
+     `ToggleRecording`, a plain take from where the player was heading. The
+     right *frames*, under a clip with no `slate_id`: the range never read as
+     `shot`, the footage never stopped at its out point (#114's arm is the
+     shoot's, not `start_recording`'s), and item 2's "at or after" therefore
+     parked on the same row **for ever**. So `Command::ToggleRecording` now
+     carries `slate: Option<Uuid>`, the window passes whatever is selected, and
+     **the bus** turns it into `shoot_slate`. Twenty-two harness call sites
+     gained `slate: None`, which reads as what they are.
+     **The window must not make that choice itself**, and this is measured by
+     the code rather than guessed: `recording.rs` says "the UI's status can lag
+     the bus's, so the bus decides: a second R during start-up cancels, as the
+     user means", and `ShootSlate` is **refused** by the recording guard
+     (`shooting_while_recording_is_refused`). A window branching on its own
+     phase would send a `ShootSlate` into the take it meant to cancel, and the
+     key would be swallowed. The *mode* stays visible, which is what the slates
+     spec's §S6 asks of it: the highlighted row, and a transport button that
+     reads **"Record range"**.
+  2. **The advance needs no gate, as a consequence of 1.** The draft of this
+     task had one: on `Idle` with *any* slate selected, a plain take would have
+     thrown the footage to another range — the coach selects a row to rename it,
+     records something unrelated at minute 70, and lands at minute 12. With `R`
+     carrying the selection, **every take started while a range is selected is
+     that range's**, so the selected row simply *is* the pass's cursor, a plain
+     take has no cursor and advances nothing, and no flag says whether the take
+     that ended was a slate's.
+  **What it is tested by, and what it cannot be.** The plan's "Tests. Harness:
+  shoot the first of three candidates and assert the second is next" is **not
+  implementable**: the advance reads the row model and the selection, both UI
+  state, and the harness has no window — which the spec's own crate table says
+  ("`pundit-app`'s UI: … the pass's advance over ids"). So the rule is pinned by
+  seven unit tests in `slate_pass.rs` (the advance, the abort, the half-marked
+  skip, no going back, the end of the set, a filter change between takes, and a
+  cursor that is not in the list), `R`'s two cases by the window test in
+  `tests/slate_fields.rs`, and the bus's new branch by two harness tests in
+  `tests/slates.rs`. The wiring in `advance_pass` is untested, as all of
+  `main.rs` is.
 
 ---
 
@@ -322,6 +372,33 @@ not in the spec's first draft):
 is next. Under item 2 that passes by construction, so the test is a regression
 guard rather than a proof — which is the point of choosing a design where the bug
 cannot be written.
+
+*(As shipped this is a **unit** test and not a harness one: the advance reads the
+row model and the selection, and the harness has no window. See "Where this
+stands".)*
+
+### What the whole feature leaves open
+
+Recorded here because it is the last task, not because any of it blocks:
+
+- **The spec's three open questions are still open**, and D touched none of
+  them. **T5** — should the pass's own start play the footage, saving the space
+  press — is the live one: the coach said "keep R-then-space" and both Record
+  buttons' tooltips now say so, but nothing has been tried in anger.
+  **T2's phrasing** (are the skipped rows marked, or filtered out) stands as
+  shipped: half-marked rows render as `14:05–` and shot ones carry a `●`.
+  **P** (does previewing want a key of its own) waits on #96.
+- **The pass is silent at both of its ends** — it cannot be started from the
+  keyboard (the first row is a click) and says nothing when it runs out of
+  ranges. BACKLOG **#128**.
+- **A shoot from an untimed row advances to the next timed one**, which falls
+  out of "at or after" and is the one place the rule is presumptuous rather than
+  obvious. Left alone: the row is in the list the coach is working, and the
+  alternative is a case to remember.
+- **#127**, the rest of the slate row's right-click menu, is untouched and still
+  wants the review this plan got: *Record* and *Preview slate* from a row that
+  may not be selected is the span invariant that D now leans on harder, since
+  the selection is also the pass's cursor.
 
 ---
 
