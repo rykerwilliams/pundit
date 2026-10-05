@@ -2025,8 +2025,14 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   points at. The one thing the copy path and the encode path share is
   `mp4mux`, the `.part` handling and the chapter splice. **That intersection is
   where to look first now**, and it is much smaller than "the export path".
-- **When to revisit: now, not later.** The trigger this entry set for itself has
-  fired. The experiment is unchanged (`GST_DEBUG` plus ASan or valgrind on
+- **THE COACH'S RULE (2026-10-04), which is what to follow:** *"If it comes back
+  up then move it up in the queue."* So a **seventh sighting promotes this entry**
+  ahead of whatever feature work is in flight — no further discussion needed, and
+  nobody has to re-make the case. Until then it waits, and the sighting log above
+  is the whole mechanism: **record every one**, because the count is now what
+  schedules the work.
+- **When to revisit: on the next sighting**, by the coach's rule above. The
+  trigger this entry set for itself has fired. The experiment is unchanged (`GST_DEBUG` plus ASan or valgrind on
   `--test whole_match` and `--test export` under an artificial load), but it is
   no longer optional work on a rare flake: a memory-safety bug that reaches CI
   will eventually corrupt an export the coach keeps, and a wrong byte in a
