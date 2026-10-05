@@ -48,12 +48,17 @@ permanently `1.0`. Two consequences:
   project's" (spec J6) is **currently a no-op**, because the defaults are the
   only reachable values. The reasoning stays right; it has no teeth yet.
 
-**This spec does not revive those preferences.** A remembered *slider* over
-source gain is a different feature with the failure mode J6 exists to refuse — a
-film quiet for an invisible reason. What the coach asked for is a switch. The
-vestigial preferences are BACKLOG **#124**, and this feature is what would make
-deleting `preview_source_volume` possible, since the switch becomes the one
-reachable version of "make the game quieter".
+**So this feature is "make that gain reachable", not "add a knob beside it."**
+The coach, asked whether a source *level* was ever wanted: *"Maybe I would want
+source level"* — so the field is **not** deleted and the switch is **not** stored
+as a `bool`. `preview_source_volume` is renamed `export_source_volume` (M5), the
+export sheet drives it, and the switch writes `0.0` or `1.0` into it. A slider
+later is then pure UI work with no format change, and **#124 is closed by using
+the field rather than deleting it**.
+
+**The level itself is deferred** (BACKLOG **#126**), at the coach's direction:
+*"It should be an option also? Right if it's harder then defer."* It is harder,
+and M6 says exactly how much.
 
 ---
 
@@ -64,7 +69,10 @@ those three (`Preferences::last_export_*`).
 
 - **It mutes the game video's track only.** The commentary is untouched — that is
   the point of the feature.
-- **It is a switch, not a level.** A level is #124's argument to have.
+- **It is a switch now, over level-shaped storage.** Two states in the UI, an
+  `f64` on disk. The coach may want a level (*"Maybe I would want source
+  level"*), and this is what makes that a UI change rather than a second format
+  bump. The level is #126.
 - **Wording:** the UI says **source audio**, because that is what the codebase
   calls the game video throughout (`EntryMedia::source`, `source_index`).
 - **What the coach rejected was a separate *control*, not project storage.** He
@@ -78,8 +86,10 @@ those three (`Preferences::last_export_*`).
 This is the `carry_scoreboard` pattern. One function maps the coach's choice into
 each renderer's own terms; neither carries a flag the other reads.
 
-**Encoded exports: no game regions at all.**
-`core::audio::audio_regions` omits them, so there is nothing to express
+**Encoded exports at zero: no game regions at all.**
+The rule is `if volume == 0.0 { omit the region } else { gain = volume }`, so a
+level other than zero is the behaviour that exists today and zero is the cheap
+path. `core::audio::audio_regions` omits them, so there is nothing to express
 downstream — `Mixer::new` builds `paths` *from the regions*, so no region means
 no path, no `Reader` and no decode. **Not a gain of `0.0`**, which would decode
 every sample to multiply it away and hold a reader open per source file for
@@ -87,21 +97,34 @@ nothing. An empty region list is already a handled, exercised case (`Encode::aud
 doc: *"Empty is a silent track, which is still a track"*, plus ~10 media tests
 built with `audio: Vec::new()`).
 
-**How it gets there: a parameter, never a field core reads.**
-`audio_regions(&compilation, &prefs, mute_source: bool)`.
+**How the gain gets there: a parameter, and core stops reading the stored field.**
+`audio_regions(&compilation, &prefs, source_volume: f64)`.
 
-- **Core must not read `last_export_mute_source`.** No `last_export_*` field is
-  read by core today — resolution, quality and scoreboard all flow sheet →
-  `Pickers` → job, and core only stores them. Making the mute the first
-  exception would break the pattern this spec claims to follow.
-- **And the basket makes it a trap.** `bus/basket.rs` calls
+This is the one place the design changed shape once the switch became a renamed
+`f64` rather than a new `bool`, so it is worth being exact: **core reads that
+gain from `Preferences` today** — `audio_regions` applies
+`prefs.preview_source_volume` to every game region. That is precisely what makes
+the basket awkward, and it is what this spec changes.
+
+- **The stored field becomes the *memory*, the parameter the *choice for this
+  run*** — exactly how `last_export_resolution`, `_quality` and `_scoreboard`
+  already behave: the sheet reads them into `Pickers`, the bus builds a job, and
+  core is handed a value rather than consulting a preference. After this, **no
+  `Preferences` field is read inside core's audio path at all**, which is a
+  simplification the feature pays for rather than a cost it adds.
+- **The basket is what forces it.** `bus/basket.rs` calls
   `audio_regions(&compilation, &Preferences::default())` **on purpose**, under a
-  comment citing J6. If core read the field, a muted basket would have to
-  synthesise `Preferences { last_export_mute_source: mute, ..Default::default() }`
-  — a value that is no longer the default, at the one call site whose whole point
-  is that it is untouched. With a parameter, `bus/export.rs::job` passes
-  `prefs.last_export_mute_source`, the basket passes its own field, and J6's
-  comment stays literally true.
+  comment citing J6. While core reads the gain out of the struct, a muted basket
+  has one route: synthesise
+  `Preferences { export_source_volume: v, ..Default::default() }` — no longer the
+  default, at the one call site whose entire point is that it is untouched,
+  quietly falsifying the comment beside it. With a parameter,
+  `bus/export.rs::job` passes the project's remembered volume, the basket passes
+  its own, and J6's comment stays literally true.
+- **`prefs` stays an argument** because `preview_commentary_volume` is read from
+  it. Narrowing `audio_regions` to two bare floats would simplify further and is
+  deliberately **not** taken: seven call sites to save one struct reference, and
+  the commentary volume is #124's question, not this spec's.
 
 **The stream copy: the audio track is not copied.** The coach's own answer, and
 the better one — *"you can just copy the video stream"*. No re-encode.
@@ -153,7 +176,13 @@ absent key. **Do not add machinery for it:** `Option<bool>` buys nothing that
 
 ## M5. The format: the next free version, which is contested
 
-`Preferences::last_export_mute_source: bool`.
+**`Preferences::export_source_volume: f64`** — a **rename** of the existing
+`preview_source_volume`, not a new field, with
+`#[serde(alias = "previewSourceVolume")]` so every existing project still reads.
+
+The old name was always wrong: that field affects **exports** and never
+previews (a preview carries no source audio at all). Leaving a misnomer behind a
+control the coach can see would be worse than the rename, and the coach chose it.
 
 - **Take the next free `formatVersion`, and do not hard-code it here.** v14 is
   #117's arrowhead `StrokeEnd`, and **BACKLOG #115 already claims v15** for the
@@ -176,6 +205,12 @@ absent key. **Do not add machinery for it:** `Option<bool>` buys nothing that
   change"* sits in the macOS-conventions section and is already contradicted by
   `last_export_scoreboard` (v11) and `last_inset_*` (v13). The spec is not
   missing it.
+- **The bump is for the *write*, not the read.** The alias means an older file
+  reads fine. What needs the bump is the other direction: once this build saves
+  `exportSourceVolume`, an **older** build would not know the key, fall back to
+  the container default `1.0`, and export at full volume a film the coach had
+  muted — silently. That is exactly what the version guard is for, and what
+  `project.json.v<old>` is the escape hatch for.
 - **No field-level `#[serde(default)]`.** The live reason is that `Preferences`
   carries a **container** default filling from its hand-written `Default`, so a
   field-level one would be a second copy. `CLAUDE.md`'s "never a field-level
@@ -217,6 +252,25 @@ so muting cannot make a copy fail that previously succeeded, and it legitimately
 makes copyable a project that was not — two halves differing only in sound. That
 is the answer to "could this change a refusal", and it is a better story than the
 first draft's.
+
+### Why the level is deferred, and what it would cost (#126)
+
+**A partial level cannot ride a stream copy, but it does *not* cost a re-encode
+of the film.** Measured: `ffmpeg -af volume=0.5 -c:a copy` refuses outright
+(*"Filtering and streamcopy cannot be used together"*), and our own copy path
+carries audio as `aacparse` only — parsed, never decoded — while GStreamer's
+`volume` element needs raw audio. So scaling requires decoding the audio.
+
+But only the **audio**: the video would stay a lossless stream copy, and a level
+on a whole match costs **one AAC generation on the sound**, not a re-encode of
+the picture. An earlier draft of this reasoning said the whole match would have
+to re-encode; that was wrong, and the coach's instinct that it should not be
+necessary was right.
+
+So #126 is a new branch in the copy path — demux audio, decode, `volume`,
+`avenc_aac`, back to the muxer — beside the existing copy-or-drop choice. That
+is the "harder" the coach deferred it for, and it is real but bounded. The two
+extremes stay free: `1.0` copies the track, `0.0` drops it.
 
 **Two consequences to state rather than fix:**
 
@@ -262,7 +316,7 @@ may veto the line; the refusal decision above does not depend on it.)*
    proving it needs an `ffmpeg` helper `fixtures.rs` does not have. Add one only
    if the stronger claim is wanted.
 3. **Harness + format.** The sheet's choice reaches
-   `Preferences::last_export_mute_source` by the existing write-back, and a
+   `Preferences::export_source_volume` by the existing write-back, and a
    refused run does not dirty it — two assertions added to
    `export.rs`'s existing write-back and `a_refused_run_leaves_the_pickers_alone`
    tests, not a group of their own. The bus-level muted copy belongs in
@@ -278,9 +332,13 @@ Two blocking faults, found independently by both reviewers:
 
 1. **It had core read the `Preferences` field.** `audio_regions(compilation,
    prefs)` takes no other argument, so the only reading was that core consults
-   `last_export_mute_source` — the first `last_export_*` core would ever read,
-   and it would have forced the basket to fake a non-default `Preferences` at the
-   one site whose comment says it is untouched. Now a parameter (M2).
+   the stored value — which would have forced the basket to fake a non-default
+   `Preferences` at the one site whose comment says it is untouched. Now a
+   parameter, and core stops reading the gain it reads today (M2). *(The
+   reviewers framed this as "no `last_export_*` field is read by core"; that
+   stopped applying once the field became a rename of `preview_source_volume`,
+   which core does read. The basket half of the argument survives, and is
+   sufficient.)*
 2. **It designed the copy half as "no refusal anywhere" and that was false.**
    Four audio refusals in `declare` survive a post-hoc `audio_rate = None`, and
    `can_copy` *is* `declare`, so Default mode would have silently re-encoded over

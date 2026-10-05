@@ -3132,8 +3132,17 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   reason is worse than one that doesn't"). That reasoning is right, but it
   currently distinguishes nothing, because the defaults are the only reachable
   values.
-- **The options, and they are not equal.** (a) Delete
-  `preview_source_volume` — the mute switch
+- **RESOLVED for the source half** (2026-10-04): the mute switch
+  (`docs/superpowers/specs/2026-10-04-mute-source-audio-design.md`) **renames
+  `preview_source_volume` to `export_source_volume` and gives it the export
+  sheet's control**, so the source gain stops being unreachable. The coach was
+  asked whether a source *level* was ever wanted and said *"Maybe I would want
+  source level"*, which is why the field is kept as an `f64` and **not** deleted
+  or replaced by a `bool`; the level itself is **#126**. **What remains open here
+  is `preview_commentary_volume`**, which is still read with no writer — see the
+  last bullet.
+- **The options as they stood, kept because the commentary half is still open.**
+  (a) Delete the field — the mute switch
   (`docs/superpowers/specs/2026-10-04-mute-source-audio-design.md`) is the one
   reachable version of "make the game quieter", so the field's only purpose is
   now served; but a field **removal** is a format change no rule in `CLAUDE.md`
@@ -3175,3 +3184,33 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   exports rather than removing it.
 - **When to revisit:** if the coach is surprised by an export's sound a second
   time, or alongside any work on the preview's audio graph.
+
+126. **A source *level* in the export sheet, not just a mute.** Deferred at the
+  coach's own direction (2026-10-04): asked whether a level was ever wanted he
+  said *"Maybe I would want source level"*, and then, told what it costs,
+  *"It should be an option also? Right if it's harder then defer."*
+- **The storage is already right, which is the point of deferring rather than
+  dropping it.** #124's rename makes the stored field an `f64`
+  (`Preferences::export_source_volume`), and the mute switch writes `0.0` or
+  `1.0` into it. So this is a **UI change plus one copy-path branch** — no format
+  bump, no new field, no migration.
+- **What makes it "harder", measured 2026-10-04.** A partial level cannot ride a
+  stream copy: `ffmpeg -af volume=0.5 -c:a copy` refuses outright (*"Filtering
+  and streamcopy cannot be used together"*), and this codebase's copy path
+  carries audio as `aacparse` only — parsed, never decoded — while GStreamer's
+  `volume` element needs raw audio.
+- **But it is cheaper than it first looks, and the coach was right about that.**
+  Only the **audio** needs decoding; the video stays a lossless stream copy. A
+  level on a whole match costs **one AAC generation on the sound**, not a
+  re-encode of the picture. An earlier draft of the spec claimed the whole match
+  would have to re-encode and that was wrong.
+- **So the work is:** a fourth branch in `composite/copy.rs` — demux audio,
+  decode, `volume`, `avenc_aac`, back to `mp4mux` — beside the existing
+  copy-the-track and drop-the-track choices, and a slider in place of the switch.
+  The two extremes stay free: `1.0` copies the track untouched, `0.0` drops it.
+- **The trap to avoid:** J6 refuses "a film whose level jumps between pieces for
+  an invisible reason". A per-project level is fine; a **basket** mixing pieces at
+  each match's own level is what J6 forbids, so a basket needs one level for the
+  whole film, as it already has one name and one quality.
+- **When to revisit:** once the coach has used the mute switch and knows whether
+  he reaches for a level. That is the question deferring it is meant to answer.
