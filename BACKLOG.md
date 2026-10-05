@@ -30,12 +30,10 @@ made things worse.
   start one, and nothing said when it runs out of ranges
 - **105.** A slate's tag field should offer the tags already in use — the clip
   inspector's suggestion list, lifted into one shared `TagField`
-- **110.** The scoreboard over the picture disappears during a take — it shows
-  while watching and in a preview; not yet reproduced, and no code gates it on
-  recording
 - **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
-  clip, sticky for the next recording, as #88's inset size and corner are (v15 —
-  v14 went to #117's arrowhead).
+  clip, sticky for the next recording, as #88's inset size and corner are (**v16
+  — v15 went to the mute switch, v14 to #117's arrowhead; take the next free
+  number from `store.rs` rather than this line**).
   **Three states, not two:** off, whole entry, or the first few seconds
 
 ### Waiting on the coach

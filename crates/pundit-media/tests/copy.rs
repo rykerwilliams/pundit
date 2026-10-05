@@ -57,11 +57,26 @@ fn whole_match_with(
     kind: CounterKind,
     quirks: CounterQuirks,
 ) -> Match {
+    let sources: Vec<_> = sources
+        .iter()
+        .map(|&(name, w, h, frames)| (name, w, h, frames, kind))
+        .collect();
+    whole_match_of(dir, &sources, quirks)
+}
+
+/// A whole match whose sources need **not** share a [`CounterKind`] — the one
+/// shape [`whole_match_with`] can't build, and the one the mute's widening is
+/// about: a pair of halves that differ only in whether they carry sound.
+fn whole_match_of(
+    dir: &Path,
+    sources: &[(&str, u32, u32, u32, CounterKind)],
+    quirks: CounterQuirks,
+) -> Match {
     gst::init().unwrap();
     let mut project = Project::new("Match");
     let files = sources
         .iter()
-        .map(|&(name, w, h, frames)| {
+        .map(|&(name, w, h, frames, kind)| {
             let file = format!("{name}.mp4");
             project.source_videos.push(SourceRef {
                 relative_path: file.clone(),
@@ -78,7 +93,7 @@ fn whole_match_with(
         .collect();
     Match {
         files,
-        frames: sources.iter().map(|&(_, _, _, frames)| frames).collect(),
+        frames: sources.iter().map(|&(_, _, _, frames, _)| frames).collect(),
         compilation: compilation_schedule(&project, &ExportTarget::WholeMatch),
     }
 }
@@ -505,6 +520,65 @@ fn a_muted_copy_drops_the_audio_track_and_nothing_else() {
         "the mute re-described the video or lost a packet"
     );
     assert_eq!(video_pts(&muted), video_pts(&loud), "the frames moved");
+    assert_eq!(
+        decode_counters(&muted),
+        want(&m),
+        "the join lost, repeated or reordered frames"
+    );
+}
+
+/// **Muting *widens* the gate** (spec M6): one pair of halves, refused when
+/// the sound is carried and copied when it isn't.
+///
+/// The two sources differ in **nothing but sound** — the same width, height,
+/// frame rate and x264 settings, since `H264AacMp4`'s video leg is
+/// `H264Mp4BFrames`' with a `queue` in it — so `agree`'s video check passes
+/// and its `first.audio.is_some() != header.audio.is_some()` is the one and
+/// only objection. Muted, both headers read as having no sound at all, that
+/// objection has nothing to compare, and the pair copies.
+///
+/// **This is the test that fails if the mute is applied after the gate**
+/// rather than inside it, which is how the mute was first written: the
+/// refusal is unconditional there, so the coach is held to sound he asked to
+/// drop and "Default" re-encodes an hour of footage to avoid it.
+#[test]
+fn muting_makes_two_halves_that_differ_only_in_sound_copyable() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = whole_match_of(
+        dir.path(),
+        &[
+            ("first half", 640, 360, 45, CounterKind::H264AacMp4),
+            ("second half", 640, 360, 30, CounterKind::H264Mp4BFrames),
+        ],
+        CounterQuirks::default(),
+    );
+
+    let loud = dir.path().join("loud.mp4");
+    let refused = copy(job(&m, loud.clone()));
+    let Err(ExportError::Failed(why)) = &refused else {
+        panic!("a half with sound joined to one without: {refused:?}");
+    };
+    assert!(
+        why.contains("second half") && why.contains("sound"),
+        "the pair was refused over something other than its sound: {why}"
+    );
+    assert!(!loud.exists(), "a refused copy left a file");
+
+    let muted = dir.path().join("muted.mp4");
+    copy(ExportJob {
+        render: Render::Copy {
+            files: m.files.clone(),
+            with_audio: false,
+        },
+        ..job(&m, muted.clone())
+    })
+    .expect("muting the sound the halves disagree about makes them joinable");
+
+    assert_eq!(
+        streams(&muted),
+        1,
+        "the copy carried a track one half hasn't got"
+    );
     assert_eq!(
         decode_counters(&muted),
         want(&m),

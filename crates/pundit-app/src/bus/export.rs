@@ -595,18 +595,23 @@ struct Carry {
 /// nothing to derive them from (spec E5). `files` is what a copy would join,
 /// one per plan entry and in that order.
 ///
-/// **It is not told about the mute, and `Carry` carries no flag for it.** The
-/// renderer needs one bool, which [`job`] already holds on `pickers`, and a
-/// copy of it here would be a second truth the encode arm ignores. The one
-/// thing the mute *would* change in here is the question
-/// [`pundit_media::can_copy`] is asked — this is its only caller — and
-/// widening that gate is deliberately a change of its own.
+/// **`with_audio` is here for one reason: it is part of the question
+/// [`pundit_media::can_copy`] is asked**, and this is that function's only
+/// caller. A muted copy carries no sound, so the gate's four audio rules have
+/// nothing to hold it to — ask the unmuted question and "Default" re-encodes a
+/// whole match it could have copied in seconds, over sound the coach just
+/// asked to drop, and says so only to stderr.
+///
+/// **`Carry` still carries no flag for the mute.** The renderer needs one
+/// bool, which [`job`] already holds, and a copy of it on `Carry` would be a
+/// second truth the encode arm ignores.
 fn carry_scoreboard(
     target: &ExportTarget,
     picked: Option<ScoreboardMode>,
     compilation: &Compilation,
     context: Option<ScoreboardContext>,
     files: &[PathBuf],
+    with_audio: bool,
 ) -> Carry {
     // The board burned into the picture, which is what every target but a
     // copied whole match does with it.
@@ -640,7 +645,7 @@ fn carry_scoreboard(
         // the worst available answer.
         ScoreboardMode::Track => {
             if picked.is_none() {
-                if let Err(why) = pundit_media::can_copy(files) {
+                if let Err(why) = pundit_media::can_copy(files, with_audio) {
                     eprintln!(
                         "bus: the whole match can't be copied ({why}), \
                          so it is re-encoded with the scoreboard burned in"
@@ -800,6 +805,11 @@ fn job(
     // The files a copy would join, in entry order — every one of them asked
     // for above, so there is nothing to drop and nothing to report.
     let files: Vec<PathBuf> = pieces.iter().map(|(source, _)| source.clone()).collect();
+    // **The one negation, at the boundary** (spec M2): the coach's choice is a
+    // mute down to here and the renderers' own word for it from here on. Both
+    // readers below get this same bool — the gate `carry_scoreboard` asks and
+    // the copy it may choose have to be answering one question.
+    let with_audio = pickers.source_volume != 0.0;
     let carry = carry_scoreboard(
         target,
         pickers.scoreboard,
@@ -808,6 +818,7 @@ fn job(
         // events on the concat timeline (spec S2).
         ScoreboardContext::for_project(&open.project),
         &files,
+        with_audio,
     );
     // One record of the match for the whole run, shared by every entry of it.
     let match_media = Arc::new(MatchMedia {
@@ -826,10 +837,7 @@ fn job(
             // The mute reaches each renderer in its own vocabulary (spec M2):
             // a copy simply doesn't carry the track, an encode has no game
             // region to mix.
-            true => Render::Copy {
-                files,
-                with_audio: pickers.source_volume != 0.0,
-            },
+            true => Render::Copy { files, with_audio },
             false => Render::Encode(Encode {
                 audio: audio_regions(
                     &compilation,
