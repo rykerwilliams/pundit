@@ -36,8 +36,9 @@ use slint::platform::WindowEvent;
 use slint::{ComponentHandle, ModelRc, PhysicalSize, SharedString, VecModel};
 
 // The window itself, as `main.rs` builds it. A stand-in would have a stand-in's
-// chrome, and the chrome is the whole subject.
-slint::include_modules!();
+// chrome, and the chrome is the whole subject. The generated UI is compiled once
+// for this whole test binary, in its `main.rs` (BACKLOG #121).
+use crate::{AppWindow, PictureRect, SlateRow};
 
 /// The window with the parts of `main.rs` this file measures against: the
 /// production letterbox, footage on screen, and a 16:9 frame.

@@ -86,6 +86,22 @@ cheap way to check before pushing is `rustup run 1.92 cargo clippy …`, which
 needs that toolchain installed; the pin is deliberate and is not the thing to
 change.
 
+**`pundit-app`'s Slint tests are one test binary, `tests/ui/`, and a new one is
+a `mod` of it.** `build.rs` compiles `ui/app.slint` — 6,375 lines — and every
+`slint::include_modules!()` compiles that generated Rust again, so one per test
+file is one rustc per file holding the whole UI, and cargo compiles test
+binaries in parallel across every core. Six of them thrashed this 31 GiB laptop
+to a standstill on 2026-10-02 and took it down with no OOM kill logged (BACKLOG
+#121). There is **one** `include_modules!()` in the crate's tests, in
+`tests/ui/main.rs`; `scrubber` and `splitter` are modules of it too, although
+they `slint!` only their own component, because one rule is simpler than one
+with an exception. Measured on the merge: eight test binaries to three,
+`rustup run 1.92 cargo clippy --workspace --all-targets -j 3` from 428.6 s to
+227.2 s and `cargo test -p pundit-app --no-run -j 3` from 667.7 s to 337.9 s.
+**Sharing the process is free**: Slint's platform lives in a `thread_local!`
+and libtest gives each `#[test]` a thread, so each fixture calls
+`init_no_event_loop()` for itself and none may assume it is first.
+
 **Speech recognition needs `cmake` and `libclang-dev`** (`sudo apt install
 cmake libclang-dev`). `pundit-media` depends on `whisper-rs`
 unconditionally — there is no feature gate, by decision — so without them

@@ -12,7 +12,7 @@
 //!
 //! What is under test is everything from the properties inward. The feed itself
 //! is in `main.rs`, a `[[bin]]` no test can reach — the same limit
-//! `tests/panel_widths.rs` records for the splitter's `state.json` write.
+//! `tests/ui/panel_widths.rs` records for the splitter's `state.json` write.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -20,8 +20,9 @@ use std::rc::Rc;
 use slint::{ComponentHandle, PhysicalSize};
 
 // The window as `main.rs` builds it: the binding that calls the callback is the
-// test, so a stand-in would prove nothing.
-slint::include_modules!();
+// test, so a stand-in would prove nothing. The generated UI is compiled once for
+// this whole test binary, in its `main.rs` (BACKLOG #121).
+use crate::{AppWindow, InsetCorner, InsetSize, PictureRect};
 
 /// Every placement the window asked for, in order.
 type Seen = Rc<RefCell<Vec<(InsetSize, InsetCorner)>>>;

@@ -13,9 +13,6 @@ made things worse.
 
 ### Next, in order
 
-- **121.** A workspace test build compiles the whole UI six times at once and
-  froze the laptop out of memory (2026-10-02) — one test binary for the app's UI
-  tests
 - **78.** App settings for the things an export writes. The coach (2026-09-24):
 - **96.** Every hot key should be reassignable. The coach (2026-09-25): "we need
 - **77.** An export queue across projects. The coach (2026-09-24): "i open…
@@ -3063,10 +3060,10 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **What it is still silent about** is #128.
 
 121. **A workspace test build compiles the whole UI six times at once, and on
-  2026-10-02 that ran the laptop out of memory.** The machine froze and went
-  down uncleanly (`last -x` shows the session ending in `crash`, no shutdown
-  record) while a debug `cargo test --workspace`-shaped build ran in the main
-  checkout. From the previous boot's journal and `target/`'s timestamps:
+  2026-10-02 that ran the laptop out of memory — FIXED 2026-10-05.** The machine
+  froze and went down uncleanly (`last -x` shows the session ending in `crash`,
+  no shutdown record) while a debug `cargo test --workspace`-shaped build ran in
+  the main checkout. From the previous boot's journal and `target/`'s timestamps:
   - **21:42–21:47** test binaries are built; at **21:47** the compiles still in
     flight are `pundit-app`'s — `fit_window`, `panel_widths`, `slate_fields`,
     `self_view_placement` and two `pundit` targets (the bin and its unit
@@ -3081,7 +3078,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
     was building in that window; it was the one build.
 - **The cause is structural:** `build.rs` compiles `ui/app.slint` for the app,
   and **four integration tests compile it again each**, through their own
-  `slint::include_modules!()` (`tests/fit_window.rs`, `panel_widths.rs`,
+  `slint::include_modules!()` (then `tests/fit_window.rs`, `panel_widths.rs`,
   `slate_fields.rs`, `self_view_placement.rs`). Each is a separate test binary,
   so each is a separate rustc holding the whole generated UI — 6,375 lines of
   `.slint` — and cargo runs them in parallel across the eight cores. (`scrubber.rs`
@@ -3091,29 +3088,55 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   dep-graph sizes and the six concurrent compiles are what the files show.
 - **The cargo flock does not help** (the cargo-coordination rule): it stops two
   `cargo` commands overlapping, and this was one.
-- **The fix: one test binary for the app's UI tests.** Move the four into
-  modules of a single `tests/ui/main.rs` (or one `tests/ui.rs` with `mod`s), with
-  **one** `slint::include_modules!()`, so the UI is generated and compiled once
-  for all of them rather than once per file. It also cuts the build time those
-  four cost every run, and every future UI test joins the existing binary rather
-  than adding another full compile — which is the trend: four of the six
-  arrived in the last week (#87, #88, #95, the slate fields). `scrubber` and
-  `splitter` can join it too or stay as they are.
-  - **Check before merging them:** whether any of the four relies on being alone
-    in its process — Slint's platform/backend is set once per process, and a
-    test that installs its own (a testing backend, a window size) may need the
-    others to share it. That is the one thing that could make the merge more
-    than a move.
+- **The fix: one test binary for the app's UI tests**, which is what shipped.
+  All six are modules of `crates/pundit-app/tests/ui/main.rs`, which carries the
+  crate's **one** `slint::include_modules!()`; each module gained a
+  `use crate::{…}` for the generated types and nothing else. `scrubber` and
+  `splitter` joined too, though neither compiles a copy of the app's UI: "every
+  Slint test is a module of `tests/ui`" is one rule and "except the two that only
+  drive their own component" is two, and it takes two more rustc processes out of
+  a contended build. Every future UI test joins the binary rather than adding
+  another full compile — which was the trend: four of the six arrived in one week
+  (#87, #88, #95, the slate fields).
+- **Nothing about the tests changed but how they are compiled.** 189 test names
+  in `pundit-app` before, the same 189 after, all passing; the 24 integration
+  ones now carry a `<module>::` prefix, which is libtest's own doing.
+- **Measured** on the reference laptop at base `1c35d8f`, `-j 3`, dependencies
+  warm, with `cargo clean -p pundit-app` before each run so the two sides start
+  level:
+  - `pundit-app` test binaries **8 → 3**: the two `unittests` targets stay, and
+    six integration binaries become one.
+  - `rustup run 1.92 cargo clippy --workspace --all-targets -j 3`
+    **428.6 s → 227.2 s** (7m08 → 3m46), a 47% cut.
+  - `cargo test -p pundit-app --no-run -j 3` — the build shape that froze the
+    machine, and the only one that also *links* each binary —
+    **667.7 s → 337.9 s** (11m07 → 5m37), a 49% cut.
+  - Peak resident memory is **still not measured**, for the reason above:
+    measuring it means running the build that froze the machine. What is known
+    is that the count of concurrent rustc processes each holding the whole
+    generated UI went from four to one.
+- **The one thing that could have made this more than a move did not bite.**
+  `init_no_event_loop()` ends in `.expect("platform already initialized")`,
+  which reads like a once-per-process install. It is not: the slot
+  `set_platform` claims is `i_slint_core::context::GLOBAL_CONTEXT`, a
+  `thread_local!`, and `init_no_event_loop` asks for no event-loop proxy
+  (`threading: false`, so `TestingBackend`'s `queue` is `None`) — the backend's
+  only process-wide slot. Each fixture therefore installs a backend on its own
+  test's thread, which is already how it worked *within* each file: every one of
+  the six calls `init_no_event_loop()` once per fixture across two to five
+  tests. Checked empirically on the **pre-merge** `panel_widths` binary as well,
+  since `--test-threads=1` is where libtest might have run two tests on one
+  thread: it passes, with and without `--nocapture`. No fixture needed changing.
 - **Not the fix:** capping `jobs` in `.cargo/config.toml`. It would stop the
   freeze, but it slows every build on the machine to hide one shape of test
   layout. On the machine itself, more swap or an OOM daemon (`earlyoom`,
   `systemd-oomd`) would turn a future freeze into one killed build — worth doing
   as a backstop, but it is the coach's machine and not a repo change.
-- **Why deferred:** filed from the crash investigation; a test-layout change in
-  `pundit-app` while other sessions are working in the same crate.
-- **When to revisit:** next time anyone touches `pundit-app/tests/` — and before
-  a fifth test adds `include_modules!()`. Until then, a full workspace test run
-  on this laptop with other work open risks the same freeze.
+- **The lesson:** the cost was never one test, it was the *shape*. A crate whose
+  UI is 6,375 lines of `.slint` cannot afford a test binary per test file, and
+  four of the six had arrived in the week before the crash. `CLAUDE.md`'s build
+  conventions say so now, so the rule is somewhere a reader will meet it before
+  writing the seventh.
 
 122. **"Set in" / "Set out" refused silently from the wrong video — FIXED
   2026-10-04.** The coach: "setout test - it doesn't move it but i don't show
