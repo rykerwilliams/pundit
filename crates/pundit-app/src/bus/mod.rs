@@ -360,6 +360,10 @@ pub enum Command {
         /// sheet's "Default" — which is per target
         /// (`pundit_core::plan::default_scoreboard_mode`).
         scoreboard: Option<ScoreboardMode>,
+        /// "Mute source audio": the game video's track is dropped and the
+        /// commentary left alone (spec M1). The sheet's word is `mute`; below
+        /// the bus it is a volume or a `with_audio`, negated once.
+        mute_source: bool,
     },
     /// Stop the running export, if any. Its outcome still arrives as the
     /// run's own: a cancel too late to stop a target reports it done.
@@ -392,6 +396,8 @@ pub enum Command {
         name: String,
         resolution: Resolution,
         quality: Quality,
+        /// "Mute source audio", as the export sheet's own (spec M3).
+        mute_source: bool,
     },
 
     // Transcription (Phase 10 spec S5, S6).
@@ -1078,7 +1084,8 @@ impl Bus {
                 resolution,
                 quality,
                 scoreboard,
-            } => self.export(targets, resolution, quality, scoreboard),
+                mute_source,
+            } => self.export(targets, resolution, quality, scoreboard, mute_source),
             Command::CancelExport => self.cancel_export(),
             Command::AddToBasket { clip_id } => self.add_to_basket(clip_id),
             Command::RemoveFromBasket { index } => self.remove_from_basket(index),
@@ -1089,7 +1096,8 @@ impl Bus {
                 name,
                 resolution,
                 quality,
-            } => self.export_basket(name, resolution, quality),
+                mute_source,
+            } => self.export_basket(name, resolution, quality, mute_source),
             Command::Transcribe { clip_id } => self.transcribe(clip_id),
             Command::CancelTranscription => self.cancel_transcription(),
             Command::SetTranscribeModel(model) => self.set_transcribe_model(model),

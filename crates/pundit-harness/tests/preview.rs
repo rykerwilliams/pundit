@@ -111,6 +111,7 @@ impl Rig {
             resolution: Resolution::R720,
             quality: Quality::Low,
             scoreboard: None,
+            mute_source: false,
         });
     }
 }

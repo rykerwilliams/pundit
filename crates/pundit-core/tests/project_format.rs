@@ -143,7 +143,7 @@ fn write_raw(dir: &Path, value: serde_json::Value) {
 fn preferences_defaults_are_not_zero() {
     let p: Preferences = serde_json::from_str("{}").unwrap();
     assert_eq!(p.scan_volume, 1.0);
-    assert_eq!(p.preview_source_volume, 1.0);
+    assert_eq!(p.export_source_volume, 1.0);
     assert_eq!(p.preview_commentary_volume, 1.0);
     assert_eq!(p.last_export_resolution, Resolution::R1080);
     assert_eq!(p.last_export_quality, Quality::Medium);
@@ -159,7 +159,7 @@ fn preferences_defaults_are_not_zero() {
 fn partial_preferences_keep_real_defaults_for_missing_keys() {
     let p: Preferences = serde_json::from_str(r#"{"scanVolume":0.25}"#).unwrap();
     assert_eq!(p.scan_volume, 0.25);
-    assert_eq!(p.preview_source_volume, 1.0);
+    assert_eq!(p.export_source_volume, 1.0);
     assert!(p.pip_for_new_recordings);
 }
 
@@ -556,6 +556,58 @@ fn a_v12_file_loads_under_the_current_version() {
     let value: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(value["formatVersion"], json!(CURRENT_FORMAT_VERSION));
     assert_eq!(value["clips"][0]["insetSize"], json!("large"));
+}
+
+/// F1, for v15. A v14 file spells the export's source volume
+/// `previewSourceVolume`: it loads through the alias, the next save stamps the
+/// current version, writes the new key alone and keeps the v14 file beside it.
+/// Every bump owes this test.
+///
+/// **The literal `v14` is what pins the bump.** Every version assertion in this
+/// file reads `CURRENT_FORMAT_VERSION`, so none of them can tell 14 from 15;
+/// `store::write` only keeps a copy of a file *older* than what it writes.
+///
+/// **The bump is for the write, not the read.** An older build would read
+/// `exportSourceVolume` as an unknown key, fall back to the container default
+/// `1.0` and export at full volume a film the coach had muted — and, worse,
+/// stream-copy a muted whole match with its sound, since its `carry_scoreboard`
+/// consults no stored field at all.
+#[test]
+fn a_v14_file_loads_under_the_current_version() {
+    let dir = TempDir::new().unwrap();
+    let mut p = sample_project();
+    p.preferences.export_source_volume = 0.0;
+    let mut raw = serde_json::to_value(&p).unwrap();
+    raw["formatVersion"] = json!(14);
+    let prefs = raw["preferences"].as_object_mut().unwrap();
+    let volume = prefs
+        .remove("exportSourceVolume")
+        .expect("v15 writes the key this test renames");
+    // A v14 file's own spelling, which only the alias reads. The value is
+    // deliberately `0.0`: the container's default is `1.0`, so a key the alias
+    // failed to match could not be mistaken for one that was read.
+    prefs.insert("previewSourceVolume".into(), volume);
+    write_raw(dir.path(), raw);
+
+    let mut p = store::read(dir.path()).expect("a v14 file loads");
+    assert_eq!(p.preferences.export_source_volume, 0.0);
+
+    store::write(dir.path(), &mut p).unwrap();
+    assert_eq!(p.format_version, CURRENT_FORMAT_VERSION);
+    assert_eq!(store::read(dir.path()).unwrap(), p);
+    assert!(dir.path().join("project.json.v14").exists());
+
+    // One key on the way out: the alias is deserialize-only, so the old
+    // spelling self-cleans out of the document on the first save.
+    let text = std::fs::read_to_string(dir.path().join("project.json")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["formatVersion"], json!(CURRENT_FORMAT_VERSION));
+    assert_eq!(value["preferences"]["exportSourceVolume"], json!(0.0));
+    assert_eq!(
+        value["preferences"].get("previewSourceVolume"),
+        None,
+        "the old key was written again"
+    );
 }
 
 /// v13. The size and the corner are the clip's own fields and the sticky pair is

@@ -118,6 +118,7 @@ fn the_reel_exports_through_the_bus() {
         resolution: Resolution::R720,
         quality: Quality::Low,
         scoreboard: None,
+        mute_source: false,
     });
     let done = p.h.wait_map("the run's outcome", |e| match e {
         Event::Export(run) if !run.is_running() => Some(run.clone()),
@@ -260,6 +261,7 @@ fn the_whole_match_exports_with_the_matchs_own_chapters() {
         // the coach never asked for. The copy's own chapters are
         // `media/tests/copy.rs`.
         scoreboard: None,
+        mute_source: false,
     });
     let done = p.h.wait_map("the run's outcome", |e| match e {
         Event::Export(run) if !run.is_running() => Some(run.clone()),
@@ -379,6 +381,7 @@ fn a_missing_game_video_is_refused_naming_the_file() {
         resolution: Resolution::R720,
         quality: Quality::Low,
         scoreboard: None,
+        mute_source: false,
     });
     assert_eq!(
         p.h.wait_for_error(),

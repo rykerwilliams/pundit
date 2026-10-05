@@ -596,6 +596,7 @@ fn new_match_during_an_export_is_refused_and_the_run_finishes() {
         resolution: Resolution::R720,
         quality: Quality::Low,
         scoreboard: None,
+        mute_source: false,
     });
     assert!(rig.h.wait_export().is_running());
 

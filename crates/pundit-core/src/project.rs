@@ -133,7 +133,23 @@ pub enum Quality {
 #[serde(rename_all = "camelCase", default)]
 pub struct Preferences {
     pub scan_volume: f64,
-    pub preview_source_volume: f64,
+    /// How loud the game video is in an **export**, which the export sheet's
+    /// "Mute source audio" writes as `0.0` or `1.0`. v15.
+    ///
+    /// **Renamed from `previewSourceVolume`**, which the alias still reads: the
+    /// old name was always wrong — a preview carries no source audio at all
+    /// (BACKLOG #125), so this has only ever reached the file. The alias is
+    /// matched verbatim against the camelCase key the container's
+    /// `rename_all` produces, and is deserialize-only, so a save writes one
+    /// key and the old one self-cleans out of the document.
+    ///
+    /// **Zero is "no game region", not a gain of zero** — `crate::audio` makes
+    /// that call, from the value it is handed rather than from here (spec M2),
+    /// so a basket can mute without faking a non-default `Preferences`. The
+    /// `f64` is kept over a `bool` because the coach may want a level
+    /// (BACKLOG #126), which is then UI work and no format change.
+    #[serde(alias = "previewSourceVolume")]
+    pub export_source_volume: f64,
     pub preview_commentary_volume: f64,
     pub last_export_resolution: Resolution,
     pub last_export_quality: Quality,
@@ -166,7 +182,7 @@ impl Default for Preferences {
     fn default() -> Self {
         Preferences {
             scan_volume: 1.0,
-            preview_source_volume: 1.0,
+            export_source_volume: 1.0,
             preview_commentary_volume: 1.0,
             last_export_resolution: Resolution::R1080,
             last_export_quality: Quality::Medium,
