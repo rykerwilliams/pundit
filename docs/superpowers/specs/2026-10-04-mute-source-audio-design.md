@@ -109,9 +109,12 @@ the basket awkward, and it is what this spec changes.
 - **The stored field becomes the *memory*, the parameter the *choice for this
   run*** — exactly how `last_export_resolution`, `_quality` and `_scoreboard`
   already behave: the sheet reads them into `Pickers`, the bus builds a job, and
-  core is handed a value rather than consulting a preference. After this, **no
-  `Preferences` field is read inside core's audio path at all**, which is a
-  simplification the feature pays for rather than a cost it adds.
+  core is handed a value rather than consulting a preference. **`prefs` stays an
+  argument**, because `audio_regions` still reads `preview_commentary_volume`
+  from it — an earlier revision of this bullet claimed no `Preferences` field
+  would be read in core's audio path at all, and that is false. Narrowing the
+  signature to two bare floats would be a further simplification and is #124's
+  question, not this spec's.
 - **The basket is what forces it.** `bus/basket.rs` calls
   `audio_regions(&compilation, &Preferences::default())` **on purpose**, under a
   comment citing J6. While core reads the gain out of the struct, a muted basket
@@ -369,6 +372,14 @@ Claims review corrected:
    lever, and claimed an `ffprobe` assertion it cannot make.
 9. **M1 contradicted M5** on whether a remembered switch is "a project setting".
 10. **The `.v<old>` backup** is named from the project's own version.
-11. **The bool default hazard does not bite**, and this would be the first
-    `Preferences` field whose correct default is the zero value — which
-    `preferences_defaults_are_not_zero` cannot cover.
+11. **The bool default hazard does not bite.** *(This bullet also claimed the
+    field would be the first `Preferences` field whose correct default is the
+    zero value, which `preferences_defaults_are_not_zero` could not cover. That
+    was left over from the `bool` draft: once the field became a renamed `f64`
+    its default is `1.0`, so that test covers it as it always did and simply
+    needs the new name — as does
+    `partial_preferences_keep_real_defaults_for_missing_keys`.)*
+12. **And this spec said core would read no `Preferences` field** after the
+    change (M2, corrected in place): `preview_commentary_volume` is still read
+    from it. Found by the **plan's** review pass, which is the argument for
+    reviewing the plan separately rather than trusting a reviewed spec.
