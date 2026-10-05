@@ -3177,6 +3177,107 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   is added over a list, the readers of that list's **count** are the review
   surface — the rows take care of themselves.
 
+124. **The two preview volumes are unreachable, and one of them silently sets an
+  export's gain.** Found 2026-10-04 while investigating the coach's muted-clip
+  report. `Preferences::preview_source_volume` and
+  `preview_commentary_volume` have **no writer and no UI control anywhere in
+  production code** — the only assignments are in `pundit-core/tests/audio.rs`
+  — so both are permanently `1.0`.
+- **Why it matters beyond being dead weight.** `core::audio::audio_regions`
+  applies `preview_source_volume` as the gain on **every game region of every
+  encoded export**. So a field with no way to set it is in the path of every
+  export's sound. `preview_commentary_volume` is at least *read* meaningfully
+  (`bus/preview.rs` sets the preview's `volume` element from it), but it too can
+  never be anything but 1.0.
+- **And it makes an existing, correct piece of reasoning toothless.** The basket
+  deliberately mixes at `Preferences::default()` rather than the open project's
+  volumes (spec J6: "a film whose level jumps between pieces for an invisible
+  reason is worse than one that doesn't"). That reasoning is right, but it
+  currently distinguishes nothing, because the defaults are the only reachable
+  values.
+- **RESOLVED for the source half** (2026-10-04): the mute switch
+  (`docs/superpowers/specs/2026-10-04-mute-source-audio-design.md`) **renames
+  `preview_source_volume` to `export_source_volume` and gives it the export
+  sheet's control**, so the source gain stops being unreachable. The coach was
+  asked whether a source *level* was ever wanted and said *"Maybe I would want
+  source level"*, which is why the field is kept as an `f64` and **not** deleted
+  or replaced by a `bool`; the level itself is **#126**. **What remains open here
+  is `preview_commentary_volume`**, which is still read with no writer — see the
+  last bullet.
+- **The options as they stood, kept because the commentary half is still open.**
+  (a) Delete the field — the mute switch
+  (`docs/superpowers/specs/2026-10-04-mute-source-audio-design.md`) is the one
+  reachable version of "make the game quieter", so the field's only purpose is
+  now served; but a field **removal** is a format change no rule in `CLAUDE.md`
+  covers, and J6's comment would need rewording. (b) Give both a control and
+  let J6 finally bite. (c) Leave them. **Do not do (c) silently** — a gain in
+  every export's path that nothing can set is the kind of thing that costs an
+  afternoon the next time sound is wrong.
+- **Why deferred:** the mute switch is the feature the coach asked for, and it
+  neither needs nor is blocked by this. Deciding between (a) and (b) is a
+  judgement about whether a source **level** is ever wanted, which is the
+  coach's call.
+- **When to revisit:** when the mute switch lands — it is what makes (a)
+  possible — or the next time an export's sound is wrong.
+
+125. **A preview does not tell you what the export will sound like.** Found
+  2026-10-04, from the coach's report: *"when i recorded a clip with zero
+  volume, and preview it, the source audio is silenced."* It is silenced in
+  **every** preview of **every** clip.
+- **What it is:** `composite/preview.rs`'s only audio chain is
+  `queue ! audioconvert ! audioresample ! volume ! autoaudiosink`, fed from the
+  **recording's** `decodebin3` alone. The pumped source branch is video-only.
+  So a preview plays the commentary and nothing else, while the export of the
+  same clip mixes the game's audio in underneath it (`core::audio`'s `Game`
+  regions).
+- **Why it is worth an entry even though it is deliberate.** `CLAUDE.md` says
+  preview and export "share one composite", and they do for the picture — which
+  is exactly what makes the sound difference surprising. A preview is the coach's
+  only way to check a clip before exporting it, and the one thing it cannot check
+  is the mix. The coach reported it as a bug, which is the evidence that it reads
+  as one.
+- **Not a trivial fix, which is why it is deferred.** Preview's audio sink is
+  the pipeline **clock** (measured: "the audio sink is the clock"), and the
+  commentary needs no pump because record time *is* output time, while the game
+  audio would have to be mixed per play segment against the source's own
+  timeline — the export's `Mixer` work, on the preview's clock. Getting it wrong
+  costs the preview's A/V sync, which currently measures 2–7 ms.
+- **The cheap half, if the whole is not wanted:** the mute switch makes a muted
+  export finally *match* its preview. That narrows the surprise to unmuted
+  exports rather than removing it.
+- **When to revisit:** if the coach is surprised by an export's sound a second
+  time, or alongside any work on the preview's audio graph.
+
+126. **A source *level* in the export sheet, not just a mute.** Deferred at the
+  coach's own direction (2026-10-04): asked whether a level was ever wanted he
+  said *"Maybe I would want source level"*, and then, told what it costs,
+  *"It should be an option also? Right if it's harder then defer."*
+- **The storage is already right, which is the point of deferring rather than
+  dropping it.** #124's rename makes the stored field an `f64`
+  (`Preferences::export_source_volume`), and the mute switch writes `0.0` or
+  `1.0` into it. So this is a **UI change plus one copy-path branch** — no format
+  bump, no new field, no migration.
+- **What makes it "harder", measured 2026-10-04.** A partial level cannot ride a
+  stream copy: `ffmpeg -af volume=0.5 -c:a copy` refuses outright (*"Filtering
+  and streamcopy cannot be used together"*), and this codebase's copy path
+  carries audio as `aacparse` only — parsed, never decoded — while GStreamer's
+  `volume` element needs raw audio.
+- **But it is cheaper than it first looks, and the coach was right about that.**
+  Only the **audio** needs decoding; the video stays a lossless stream copy. A
+  level on a whole match costs **one AAC generation on the sound**, not a
+  re-encode of the picture. An earlier draft of the spec claimed the whole match
+  would have to re-encode and that was wrong.
+- **So the work is:** a fourth branch in `composite/copy.rs` — demux audio,
+  decode, `volume`, `avenc_aac`, back to `mp4mux` — beside the existing
+  copy-the-track and drop-the-track choices, and a slider in place of the switch.
+  The two extremes stay free: `1.0` copies the track untouched, `0.0` drops it.
+- **The trap to avoid:** J6 refuses "a film whose level jumps between pieces for
+  an invisible reason". A per-project level is fine; a **basket** mixing pieces at
+  each match's own level is what J6 forbids, so a basket needs one level for the
+  whole film, as it already has one name and one quality.
+- **When to revisit:** once the coach has used the mute switch and knows whether
+  he reaches for a level. That is the question deferring it is meant to answer.
+
 127. **The rest of the slate row's right-click menu.** The coach (2026-10-04):
   "add 'slates' right click menu like the clips, e.g. jump to slate start".
   #104 shipped the item they named — **Jump to slate start** — beside the
