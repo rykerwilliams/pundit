@@ -160,27 +160,28 @@ fn unreadable(name: &str) -> ExportError {
 /// coach asked for the copy.
 ///
 /// It is the gate's own header pass, so it costs a header read per file and
-/// answers exactly what the copy would answer.
-pub fn can_copy(files: &[PathBuf]) -> Result<(), ExportError> {
+/// answers exactly what the copy would answer — which is why it takes
+/// `with_audio` too (spec M6). Muted, the four audio refusals never run, so
+/// the answer can only ever be *more* yes than the unmuted one: two halves
+/// differing only in sound, or H.264 with an AC-3 track, copy once the coach
+/// has said he doesn't want the sound.
+pub fn can_copy(files: &[PathBuf], with_audio: bool) -> Result<(), ExportError> {
     let files: Vec<&Path> = files.iter().map(PathBuf::as_path).collect();
     let cancel = AtomicBool::new(false);
     let watch = Watch {
         cancel: &cancel,
         error: Arc::default(),
     };
-    declare(&files, &watch).map(|_| ())
+    declare(&files, with_audio, &watch).map(|_| ())
 }
 
 /// Copies `files` into `part`, one per plan entry and in that order
 /// (spec L1b).
 ///
 /// `with_audio` is the export sheet's "Mute source audio", inverted: `false`
-/// drops the sound rather than copying it. It is applied **after** the gate,
-/// so every audio refusal in [`declare`] still stands on a copy that carries
-/// no sound — a non-AAC track or two halves differing only in sound are still
-/// refused. Widening the gate — pushing the mute into [`declare`], which *is*
-/// [`can_copy`], so that muting makes those pairs copyable — is the other half
-/// of the feature and deliberately a change of its own.
+/// drops the sound rather than copying it. It is handed to [`declare`], which
+/// is both the gate and the rate reader, so a muted copy is never refused over
+/// sound the coach asked to drop.
 ///
 /// The file it leaves is finished but unchaptered and still named `.part`:
 /// [`run`](super::export::run) owns the rest, for both renderers alike.
@@ -200,12 +201,12 @@ pub(super) fn copy(
     let files: Vec<&Path> = files.iter().map(PathBuf::as_path).collect();
     // Every source is asked first and refused here, so the muxing pipeline —
     // and with it the `.part` — is built only once they can all be joined.
-    // Muting is one `filter` here and nothing else: every downstream rule
-    // already handles `None` as "no sound at all" (spec E4), so `Source::play`
-    // builds no audio branch and leaves the demuxer's audio pad unlinked —
-    // which `qtdemux`'s flow combiner tolerates, as `read_header` relies on
-    // for every non-A/V pad — and `Output::start` requests no `audio_%u` pad.
-    let audio_rate = declare(&files, &watch)?.filter(|_| with_audio);
+    // A muted run comes back `None`, and every downstream rule already handles
+    // that as "no sound at all" (spec E4): `Source::play` builds no audio
+    // branch and leaves the demuxer's audio pad unlinked — which `qtdemux`'s
+    // flow combiner tolerates, as `read_header` relies on for every non-A/V
+    // pad — and `Output::start` requests no `audio_%u` pad.
+    let audio_rate = declare(&files, with_audio, &watch)?;
 
     // `None` is "leave the scoreboard beside this output alone" (spec T1); it
     // is no more a track here than it is a sidecar.
@@ -262,11 +263,30 @@ struct Header {
 /// on every machine and every run. Opening them all at once needed a slot per
 /// entry, a shared refusal and a poll over the lot of them to say the same
 /// thing more slowly.
-fn declare(files: &[&Path], watch: &Watch) -> Result<Option<u32>, ExportError> {
+///
+/// **`with_audio: false` forgets each file's sound as it is read** (spec M6),
+/// which is the whole of how the mute reaches the gate: a header with no
+/// audio is a file with no sound as far as everything below is concerned, so
+/// [`absolutely`] skips its AAC check, both of [`agree`]'s audio checks pass
+/// on `(None, None)`, and [`audio_rate`] answers `Ok(None)` rather than
+/// refusing a rate it couldn't read. Nothing is special-cased and no refusal
+/// is suppressed by hand — all four simply have nothing left to object to. **So muting can only widen what can
+/// be copied**: it removes checks and adds none, and the video rules are
+/// untouched. Two halves differing only in sound, or H.264 carrying AC-3,
+/// become copyable; nothing that copied before stops.
+///
+/// Dropping it *after* this returns — which is what the first cut of the mute
+/// did — leaves all four live, so a muted whole match is still refused over
+/// sound it will not carry, and "Default" quietly spends an hour re-encoding
+/// a file it could have copied in seconds.
+fn declare(files: &[&Path], with_audio: bool, watch: &Watch) -> Result<Option<u32>, ExportError> {
     let mut first: Option<Header> = None;
     for file in files {
         let name = file_name(file);
-        let header = read_header(file, &name, watch)?;
+        let mut header = read_header(file, &name, watch)?;
+        if !with_audio {
+            header.audio = None;
+        }
         absolutely(&header, &name)?;
         match &first {
             Some(first) => agree(first, &header, &name)?,

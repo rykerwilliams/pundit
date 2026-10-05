@@ -40,7 +40,28 @@ coach's rule.
     the stored value has to be read to notice: `of` == `pickers`, no write-back,
     and the project stays muted. §R.5 twice over, and the test's own doc
     comment says why.
-- **2 — the copy gate's widening.** Not started.
+- **2 — the copy gate's widening.** Done, as written. `declare` takes
+  `with_audio` and forgets each header's sound as it reads it;
+  `can_copy(&files, with_audio)`; `carry_scoreboard` takes the bool task 1
+  could not give it, and `job` computes it once for the gate and the renderer
+  both. `copy()`'s `.filter(|_| with_audio)` is gone — the gate returns `None`
+  itself.
+  - **The mixed-kind fixture worked first time.** `H264AacMp4` +
+    `H264Mp4BFrames` at 640×360/30 fps joined with no `codec_data`
+    disagreement, so `renegotiable`'s subset check is happy across two
+    separate x264 runs at the same settings and the fallback (an AAC leg on a
+    copy of the existing kind) was not needed. Rather than hand-build the
+    `Match` in the test, `whole_match_with` now delegates to
+    **`whole_match_of`**, which takes a `CounterKind` per source — one body,
+    and the mixed shape is a fixture helper rather than a test's private
+    copy of one.
+  - **The sabotage proof ran and is exactly the recorded bug.** With
+    `header.audio = None` moved after `declare`,
+    `muting_makes_two_halves_that_differ_only_in_sound_copyable` failed on
+    `second half.mp4 has sound the first video hasn't`, while
+    `a_muted_copy_drops_the_audio_track_and_nothing_else` and
+    `sources_with_no_sound_are_copied_without_an_audio_track` both still
+    passed.
 
 **They are sequential and ship together.** The first draft claimed two of its
 three tasks were file-disjoint and parallel; they both rewrite `job` in
