@@ -3546,3 +3546,111 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   is a bigger feature than the request.
 - **When to revisit:** with #78's settings surface, or sooner if the band turns
   out to read badly on a particular venue's footage.
+
+133. **A title maker: words over the footage for a marked window.** The coach
+  (2026-10-06), having asked whether an image could be a source and then said
+  what for — *"yeah basically title card ability or simlar, but also, sometime
+  i'd want to draw over top a soccer field layout or similar"* — **chose the
+  whiteboard** when offered the two separately, and scoped this out for now.
+  He then gave it its own shape: *"the follow on feature for the backlog is
+  'title maker' or similar, and it would use a slate and a timing maybe"*. The
+  whiteboard is specced at
+  `docs/superpowers/specs/2026-10-06-tactics-whiteboard-design.md`; this is the
+  other half, deliberately not in it.
+- **It is an overlay with a time window, not a still inserted into the film.**
+  The footage keeps playing underneath. That reading comes from the coach's own
+  words ("a slate and a timing") and it is what makes this cheap: **no
+  sourceless plan entry is needed**, so the match clock
+  (`ScoreboardContext::state_at(entry.source_index, frame.source_time)` per
+  frame), the scoreboard, `source_offsets`' running sum over
+  `source_videos` and the aspect gate (`project::aspects_match`) are **all
+  untouched**. An earlier framing of this entry had it as a title *card* — a
+  plan entry with no source at all — which would have touched every one of
+  those. That framing is wrong and is recorded here so it is not re-derived.
+- **The burn-in machinery already exists, and more of it than #115 thinks.**
+  The export already draws a text strip over the picture: `core::layout::bar_rect(out_w,
+  out_h, inset: Option<InsetPlacement>)` for the geometry, `media/src/overlay.rs`
+  for the glyphs, and the z-order rule in
+  `composite::install_overlay_pad` (`composite/mod.rs:309`) — the overlay is
+  mixer pad 2, over everything, *"because the coach's pen is what must never be
+  hidden"*. Two things verified in `overlay.rs` on 2026-10-06 that **correct
+  #115's own text**, which says *"nothing in the overlay knows about time"* and
+  calls the timing *"the one part of this entry that is not a copy of something
+  already shipped"*:
+  - **`OverlayFrame` already carries a clock.** `record_time: f64` is a field
+    (`overlay.rs:114`), passed every frame from `entry.record_time(n)`.
+  - **Emptying the text is the documented way to suppress the bar.**
+    `OverlayFrame::text`'s doc: *"**Empty draws no bar at all** — neither its
+    background nor its glyphs: that is how a caller suppresses the bar. Neither
+    shipping caller does."*
+
+  So a timed line is a **driver-side** decision — pick the string per frame —
+  and needs no new plumbing in `overlay.rs` at all. The one correction to make
+  in the other direction: a title keyed to a *marked range of the footage* is
+  bounded in **source** time, so it reads `frame.source_time`, not
+  `record_time`. The driver has both.
+- **Is a slate the right carrier? Checked, and the answer is "the UX, not the
+  record."** `Project.slates` (v12) is `{ id, source_index, in_seconds,
+  out_seconds: Option<f64>, name, tags }` — a marked range whose commentary is
+  recorded later, with `Clip.slate_id` linking a take back to it. Two things
+  argue against making a slate *be* a title:
+  - `Slate`'s own doc (`core/src/project.rs:429`–`433`) says it carries no
+    `created_at` and no `sort_index` because **"slates are never exported"**.
+    A slate that burns words into a film breaks that invariant, and the doc
+    would have to be rewritten rather than amended.
+  - A slate's job is "this range is waiting for its commentary". A title's is
+    "these words show here". Folding both into one record means a row that is
+    simultaneously un-shot and a title, and `o` closing *"the most recently
+    opened range on that video"* would be closing a title.
+- **So: a new record, modelled on `PlayerHighlight`, created *from* a slate
+  row.** A title *belongs to the footage* — keyed `(source_index, source
+  seconds)`, showing wherever that footage shows, in every clip export that
+  crosses it and in the reel — which is exactly `Project.player_highlights`
+  (v9) and its stated reason (`core/src/highlight.rs`'s module comment, H1).
+  So `Project.titles: Vec<Title>` with `{ id, source_index, in_seconds,
+  out_seconds, text }`, **a new struct, so every field required and no
+  defaults** (`CLAUDE.md`'s format rule F2), plus the next free
+  `formatVersion` in `store.rs` — which is contested: 15 is taken by the mute
+  switch, and #78, #115 and the whiteboard all want 16. The slate stays the
+  **UX**: "Make a title from this slate" on the slate row's menu seeds a title
+  with that range and that name, the way a basket piece is added from a clip
+  row's menu, and the two records then live apart.
+- **It overlaps #115 and whoever builds either must read both.** #115 is the
+  caption bar being switchable, and its own text already records the coach
+  asking for *"three states, not two: off, whole entry, or the first few
+  seconds"* — the same "a timing" idea, with 3 s as his own figure.
+  **My reading: two features, one mechanism, and neither entry should absorb
+  the other.** #115's words are *derived* (`PlanEntry::text`, the clip's name
+  and tags) and its control is a per-clip switch; a title's words are *typed*
+  and need storage that does not exist. What they share is one thing — "the
+  overlay draws text for a sub-window rather than for the whole entry" — and
+  per the two facts above that mechanism is a few lines in the driver, not a
+  subsystem. **Whichever ships first owns the windowing and the second reuses
+  it**, and the plan for the second must say which lines it is reusing. If they
+  ship together they should share one `formatVersion` bump.
+  - **The unresolved interaction:** both want the same strip. A title and a
+    caption bar on screen at once needs either a second line or a rule that the
+    title replaces the bar for its window. Ask the coach; do not invent it.
+- **What the whiteboard spec gives this for free, if the whiteboard ships
+  first:** the still-decode-and-upload path
+  (`media::decode_still`, `Texture::upload`/`stamped` moved to
+  `composite/mod.rs`, both tails fed from it), which is what a title *card* —
+  if the coach ever asks again for a full-frame still — would need; and the
+  worked-through answers to "what does the scoreboard do when the picture is
+  not the match" and "which per-clip features are meaningful". None of it is
+  needed for a text overlay, which is the honest summary: this entry is cheap
+  **because** it is not the whiteboard.
+- **What it would owe the whiteboard if built after it:** nothing structural,
+  and one check. A title is keyed to the footage by `(source_index, source
+  seconds)`, and a **whiteboard clip has a `source_index` anchor it never
+  draws** (whiteboard spec W2). So a title whose range covers a whiteboard
+  clip's anchor must **not** be drawn over the diagram — the same refusal
+  `PlayerHighlight` takes there (W7), and for the same reason. That is one
+  condition, in one place, and it must be in the title maker's plan rather than
+  discovered.
+- **Why deferred:** the coach chose the whiteboard when offered the two, and
+  this is the follow-on he named himself. It also has one real open question
+  (the shared strip, above) and a contested format version.
+- **When to revisit:** with #115, which is the same mechanism from the other
+  end — or straight after the whiteboard ships, since the coach asked for both
+  in one breath.
