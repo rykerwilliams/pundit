@@ -732,6 +732,121 @@ component FoldHeader inherits Rectangle {
     }
 }
 
+/// A comma-separated tag field that offers the tags already in use (C8). The
+/// clip inspector's and the slate editor's are one component (BACKLOG #105),
+/// so the Tab / Esc rules and the focus trap exist once.
+///
+/// **The list of suggestions is a separate element, `TagSuggestions` below,
+/// which the caller places last in a non-layout parent.** Slint draws in
+/// declaration order and has no z-order, so a list declared inside this
+/// component would be drawn *under* whatever the caller lays out after the
+/// field -- the inspector's checkbox and pickers, the slate editor's clips
+/// list. It is the field that is reused twice; the list costs the caller five
+/// bindings off the field's own geometry and state, which is cheaper than the
+/// rules would be to keep in step twice.
+component TagField inherits LineEdit {
+    /// The tags already in use that the text so far could become.
+    pure callback suggest(string) -> [string];
+    /// The text with a suggestion spliced into it.
+    pure callback splice(string, string) -> string;
+    /// Enter: a commit that keeps focus. **Its own callback rather than
+    /// `LineEdit`'s `accepted`**, which a caller would be overriding -- the
+    /// suggestions would then stay open over a committed field, silently.
+    callback committed(string);
+    /// Focus arrived (`true`) or left, which commits. Its own callback for the
+    /// reason `committed` is.
+    callback focus-moved(bool, string);
+
+    /// For the current fragment, from the last edit. The caller's
+    /// `TagSuggestions` renders them.
+    out property <[string]> suggestions;
+    /// Esc closed them; the next edit reopens them.
+    property <bool> dismissed;
+    /// There is a list on screen, so Tab and Esc are the list's.
+    out property <bool> suggesting: root.has-focus && root.suggestions.length > 0 && !root.dismissed;
+
+    /// Takes `tag` into the field, keeping focus, with the cursor at the end.
+    /// It doesn't commit: Enter or leaving the field does.
+    public function take(tag: string) {
+        root.text = root.splice(root.text, tag);
+        root.suggestions = [];
+        // Past the end, which clamps to it.
+        root.set-selection-offsets(2147483647, 2147483647);
+    }
+
+    accepted(text) => {
+        root.suggestions = [];
+        root.committed(text);
+    }
+    changed has-focus => {
+        root.suggestions = [];
+        root.focus-moved(root.has-focus, root.text);
+    }
+    edited(text) => {
+        root.dismissed = false;
+        root.suggestions = root.suggest(text);
+    }
+    // Tab takes the top suggestion; Esc closes them. Otherwise Tab moves focus
+    // on, and Esc bubbles to the window, which leaves the field -- which is
+    // why this has to `accept`: the window's `text-editing` rejects Esc down
+    // to the focused field, and a reject here would send it back up to leave
+    // the field and throw away a half-typed tag.
+    key-pressed(event) => {
+        if (root.suggesting && event.text == Key.Tab) {
+            root.take(root.suggestions[0]);
+            return accept;
+        }
+        if (root.suggesting && event.text == Key.Escape) {
+            root.dismissed = true;
+            return accept;
+        }
+        reject
+    }
+}
+
+/// A `TagField`'s suggestions, over whatever is below the field.
+///
+/// **Not a `PopupWindow`**, whose `show()` would take focus from the field and
+/// commit it (C8). And not a child of the field, for the drawing order
+/// `TagField`'s own comment gives: the caller declares it last in a parent
+/// that is not a layout, so it claims no cell and is drawn over its siblings.
+component TagSuggestions inherits Rectangle {
+    in property <[string]> suggestions;
+    /// One was clicked.
+    callback take(string);
+
+    height: list.preferred-height;
+    background: Palette.background;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Palette.border;
+
+    list := VerticalLayout {
+        padding: 4px;
+
+        for tag in root.suggestions: Rectangle {
+            height: 26px;
+            border-radius: 4px;
+            background: suggestion-touch.has-hover ? Palette.selection-background : transparent;
+
+            // A click doesn't take focus from the field.
+            suggestion-touch := TouchArea {
+                clicked => { root.take(tag); }
+            }
+            HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                Text {
+                    text: tag;
+                    color: Palette.foreground;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
 /// The selected clip's fields (Phase 3 C7). The window renders them through
 /// the `in-out` properties, and the fields report focus and commits; which
 /// clip a commit is for is the window's business.
@@ -829,28 +944,15 @@ component Inspector inherits Rectangle {
     /// The tag field's text with the suggestion taken.
     pure callback take-suggestion(string, string) -> string;
 
-    /// For the tag field's current fragment, from its last edit.
-    property <[string]> suggestions;
-    /// Esc closed them; the next edit reopens them.
-    property <bool> suggestions-dismissed;
-    property <bool> suggesting: tags.has-focus && root.suggestions.length > 0 && !root.suggestions-dismissed;
+    /// Focus the tag field, for the test that pins Tab and Esc in it.
+    public function focus-tags() { tags.focus(); }
 
     function focus-changed(field: ClipField, focused: bool, text: string) {
-        root.suggestions = [];
         if (focused) {
             root.begin-edit();
         } else {
             root.end-edit(field, text);
         }
-    }
-
-    /// Takes `tag` into the tag field, keeping focus, with the cursor at the
-    /// end. It doesn't commit: Enter or leaving the field does.
-    function take(tag: string) {
-        root.tags-text = root.take-suggestion(root.tags-text, tag);
-        root.suggestions = [];
-        // Past the end, which clamps to it.
-        tags.set-selection-offsets(2147483647, 2147483647);
     }
 
     layout := VerticalLayout {
@@ -868,33 +970,14 @@ component Inspector inherits Rectangle {
 
         FieldLabel { text: "Tags"; }
         // A direct child of the layout, so its x and y place the suggestions.
-        tags := LineEdit {
+        tags := TagField {
             enabled: root.enabled;
             placeholder-text: "Comma-separated";
             text <=> root.tags-text;
-            accepted(text) => {
-                root.suggestions = [];
-                root.commit(ClipField.tags, text);
-            }
-            changed has-focus => { root.focus-changed(ClipField.tags, self.has-focus, self.text); }
-            edited(text) => {
-                root.suggestions-dismissed = false;
-                root.suggestions = root.suggest-tags(text);
-            }
-            // Tab takes the top suggestion; Esc closes them. Otherwise Tab
-            // moves focus on, and Esc bubbles to the window, which leaves the
-            // field.
-            key-pressed(event) => {
-                if (root.suggesting && event.text == Key.Tab) {
-                    root.take(root.suggestions[0]);
-                    return accept;
-                }
-                if (root.suggesting && event.text == Key.Escape) {
-                    root.suggestions-dismissed = true;
-                    return accept;
-                }
-                reject
-            }
+            suggest(text) => { return root.suggest-tags(text); }
+            splice(text, tag) => { return root.take-suggestion(text, tag); }
+            committed(text) => { root.commit(ClipField.tags, text); }
+            focus-moved(focused, text) => { root.focus-changed(ClipField.tags, focused, text); }
         }
 
         CheckBox {
@@ -1086,42 +1169,15 @@ component Inspector inherits Rectangle {
         }
     }
 
-    // Over the fields below, not a `PopupWindow`, whose `show()` would take
-    // focus from the field and commit it (C8).
-    if root.suggesting: Rectangle {
+    // Over the fields below: a sibling of the layout rather than a child of
+    // it, so it claims no cell and is drawn last. `TagSuggestions` says why it
+    // is placed here and not inside the field.
+    if tags.suggesting: TagSuggestions {
         x: tags.x;
         y: tags.y + tags.height + 2px;
         width: tags.width;
-        height: suggestion-list.preferred-height;
-        background: Palette.background;
-        border-radius: 6px;
-        border-width: 1px;
-        border-color: Palette.border;
-
-        suggestion-list := VerticalLayout {
-            padding: 4px;
-
-            for tag in root.suggestions: Rectangle {
-                height: 26px;
-                border-radius: 4px;
-                background: suggestion-touch.has-hover ? Palette.selection-background : transparent;
-
-                // A click doesn't take focus from the field.
-                suggestion-touch := TouchArea {
-                    clicked => { root.take(tag); }
-                }
-                HorizontalLayout {
-                    padding-left: 6px;
-                    padding-right: 6px;
-                    Text {
-                        text: tag;
-                        color: Palette.foreground;
-                        overflow: elide;
-                        vertical-alignment: center;
-                    }
-                }
-            }
-        }
+        suggestions: tags.suggestions;
+        take(tag) => { tags.take(tag); }
     }
 }
 
@@ -3585,7 +3641,28 @@ export component AppWindow inherits Window {
     /// writing one bool on `changed has-focus` gets this wrong: moving from
     /// one to the other raises the new field's flag *before* lowering the old
     /// one's, so the last write is `false` while a field still has focus.
-    property <bool> slate-editing: slate-name-edit.has-focus || slate-tags-edit.has-focus;
+    ///
+    /// **The filter field is in this list, and it was left out once** (#130):
+    /// the tag filter shipped with #120 as a bare `LineEdit`, so every letter
+    /// typed into it fired its shortcut instead — `i` and `o` marking a slate
+    /// in and out, which is the exact failure the paragraph above describes.
+    /// The lesson is that this list is not "the fields that edit a slate" but
+    /// **every field in the slates panel**, and a new one joins it.
+    property <bool> slate-editing: slate-name-edit.has-focus || slate-tags-edit.has-focus
+        || (root.slate-filter-focused
+            && (root.slates.length > 0 || root.slate-tag-filter != ""));
+    /// The tag filter has focus. **Assigned, unlike the two above**, because it
+    /// lives inside the slates section's own `if` and its id is not reachable
+    /// from here.
+    ///
+    /// One field writing one bool, so the ordering hazard the paragraph above
+    /// describes does not apply — that one is about *two* fields sharing a flag.
+    /// What does apply is the hazard `close-basket` guards: an `if` cannot run
+    /// code when it is destroyed, so a field that had focus when its section
+    /// vanished would leave the window's shortcuts switched off for good. Hence
+    /// the gate is repeated in `slate-editing` above rather than trusted here:
+    /// if the section is gone the flag cannot matter, however stale it is.
+    property <bool> slate-filter-focused;
     /// The selected slate's name and tags, two-way as the inspector's fields
     /// are: a `text:` binding breaks the first time it is typed in.
     in-out property <string> slate-name;
@@ -4039,6 +4116,9 @@ export component AppWindow inherits Window {
     /// the whole window's focus order.
     public function focus-slate-name() { slate-name-edit.focus(); }
     public function focus-slate-tags() { slate-tags-edit.focus(); }
+    /// The clip inspector's tag field, for the test that pins Tab and Esc in
+    /// the shared `TagField` from both of its two sites.
+    public function focus-clip-tags() { inspector.focus-tags(); }
     /// Seeds the two fields from the selected slate, as `show-clip` does for
     /// the inspector.
     callback show-slate();
@@ -4832,6 +4912,13 @@ export component AppWindow inherits Window {
                                     placeholder-text: "Filter by tag";
                                     text <=> root.slate-tag-filter;
                                     horizontal-stretch: 1;
+                                    // Folded into the window's `text-editing`
+                                    // (#130), or every letter typed here fires
+                                    // its shortcut instead -- `i` and `o`
+                                    // marking a slate in and out.
+                                    changed has-focus => {
+                                        root.slate-filter-focused = self.has-focus;
+                                    }
                                 }
                                 // Clearing is one press, not a select-all: the
                                 // field is narrow in a 240 px column and the
@@ -5086,20 +5173,29 @@ export component AppWindow inherits Window {
                             HorizontalLayout {
                                 spacing: 6px;
 
-                                slate-tags-edit := LineEdit {
+                                // The clip inspector's picker, which is the
+                                // same field over the same vocabulary --
+                                // `tag_vocabulary` has always been clips ∪
+                                // slates, so a tag typed on a clip
+                                // autocompletes here and back (BACKLOG #105).
+                                // Its suggestions are drawn at the column's
+                                // level; see the bottom of `sidebar-column`.
+                                slate-tags-edit := TagField {
                                     placeholder-text: "Tags, comma separated";
                                     text <=> root.slate-tags;
                                     enabled: !root.recording;
                                     horizontal-stretch: 1;
-                                    changed has-focus => {
-                                        if (self.has-focus) {
+                                    suggest(text) => { return root.suggest-tags(text); }
+                                    splice(text, tag) => { return root.take-suggestion(text, tag); }
+                                    focus-moved(focused, text) => {
+                                        if (focused) {
                                             root.editing-slate-id = root.selected-slate;
                                         } else {
-                                            root.edit-slate-field(SlateField.tags, self.text);
+                                            root.edit-slate-field(SlateField.tags, text);
                                             root.editing-slate-id = "";
                                         }
                                     }
-                                    accepted => { root.edit-slate-field(SlateField.tags, self.text); }
+                                    committed(text) => { root.edit-slate-field(SlateField.tags, text); }
                                 }
                             // Re-mark from the playhead (BACKLOG #119).
                             // **Buttons, not `i`/`o`**: those match `"i" || "I"`
@@ -5303,6 +5399,33 @@ export component AppWindow inherits Window {
                                 }
                             }
                         }
+                    }
+
+                    // The slate tag field's suggestions (BACKLOG #105).
+                    //
+                    // **At the column's level, not beside the field**, which
+                    // is the one thing this half of the picker costs that the
+                    // inspector's did not. Slint draws in declaration order:
+                    // the fields sit above the Clips header and the clip list
+                    // in the column's layout, so a list declared there would
+                    // be drawn under both of them -- the header's `Button` and
+                    // the `ListView` paint opaque backgrounds, so most of it
+                    // would simply not be there. Here it is the last child of
+                    // the column, and the column is a `Rectangle` rather than a
+                    // layout, so it claims no cell, is drawn over everything
+                    // and takes its own clicks.
+                    //
+                    // The two `absolute-position` subtractions are what the
+                    // field's own `x`/`y` cannot give: it is three layouts deep
+                    // and they are relative to its own row. The match setup
+                    // sheet's colour picker anchors the same way.
+                    if slate-tags-edit.suggesting: TagSuggestions {
+                        x: slate-tags-edit.absolute-position.x - parent.absolute-position.x;
+                        y: slate-tags-edit.absolute-position.y - parent.absolute-position.y
+                            + slate-tags-edit.height + 2px;
+                        width: slate-tags-edit.width;
+                        suggestions: slate-tags-edit.suggestions;
+                        take(tag) => { slate-tags-edit.take(tag); }
                     }
                 }
 

@@ -45,3 +45,4 @@ mod self_view_placement;
 mod slate_fields;
 mod slate_menu;
 mod splitter;
+mod tag_field;

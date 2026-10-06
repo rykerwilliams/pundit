@@ -1,596 +1,508 @@
 # App settings: what an export writes, and where a setting lives
 
-**BACKLOG #78** (`BACKLOG.md:1229-1255`). The coach (2026-09-24): *"add to the
-backlog an appsettings? we don't need a screen for it yet. maybe we already have
-it. e.g. the srt file gen, the other chapter track, etc. these are general app
-config settings to be turned off or on."*
+**BACKLOG #78.** The coach (2026-09-24): *"add to the backlog an appsettings? we
+don't need a screen for it yet. maybe we already have it. e.g. the srt file gen,
+the other chapter track, etc. these are general app config settings to be turned
+off or on."*
 
-**The entry was filed the same day `.chapters.txt` shipped** (0.6.0,
-`CHANGELOG.md:214-221`), and "the srt file gen, the other chapter track" names
-exactly the two things that had started appearing beside a whole-match export.
-What they were looking at when they wrote it is an inference, not something the
-entry says — which is why **Open question 3** asks rather than assumes.
+Asked on **2026-10-03** which of the files in `exports/` were unwanted, he
+answered *"I think all of them should be settings?"*, and chose **fully
+independent** switches over leaving any of them to follow the Scoreboard picker.
+This spec is written to those answers. **Its first version concluded the
+opposite** — one chapters checkbox, and no settings screen — and §R keeps that
+record.
 
-**#78 is cited as a prerequisite by four other entries** — #84, #102, #115
-and #116 — and in three of the four that citation is stale or wrong. So this
-spec has two jobs: answer what the coach asked, and stop #78 being the hook
-every unhoused option gets hung on. **"A settings screen is where features go to
-hide" is the standing risk here, and §X is the half of this document that earns
-its place.**
+Read `CLAUDE.md` first; this spec does not repeat the export, format or
+settings-location rules it states.
 
-**What the audit found** (§W2). #78's entry names six things that could become a
-setting. **Two already have one** (the `.srt` and the `tx3g`, both on the
-Scoreboard picker — §W3), **a third already has a better one** (the reel's
-lead-in and tail, per goal — §X2), **two are not settings at all** (the file
-tags, the avatar's pulse constants — §X1, §X3), and **one is real** (the
-chapters). So the answer is a single checkbox, on the sheet that already carries
-three like it, and **no new UI surface, no new file and no new command**.
-
-
-## Overturned by the coach, 2026-10-03 — read this before the sections below
-
-Two answers change this spec's headline decision, and the sections after this one
-have **not** been rewritten yet; they are the reasoning as it stood, which is
-still worth reading for the audit in §W2.
-
-**1. "I think all of them should be settings?"** — asked which files in
-`exports/` were unwanted when #78 was filed. So the spec's collapse of #78 to a
-single chapters checkbox is **not what was asked for**: the coach wants every
-export output switchable.
-
-**And the coach answered the fork it raises (2026-10-03): fully independent
-switches.** The question was put — the `.srt` and the embedded `tx3g` are not
-independently controlled today, they *follow* from the Scoreboard picker (burned
-in writes neither and removes a stale `.srt`; separate track writes both),
-because a subtitle track of a board already painted into the picture is the
-board twice. Asked whether to leave them following the picker, make them
-independent, or grey them when redundant, the coach chose **independent**.
-
-**So two combinations become reachable that are not today, and both are
-legitimate — but neither may be silent.**
-
-- **Board burned in *and* a subtitle track of it.** The board twice. The coach
-  asked for the control knowing this; it is their file.
-- **Scoreboard: Separate track with the subtitle outputs off** — which means
-  **no board anywhere**: not burned, not beside the file, not embedded. Read
-  charitably this is a thing a coach may well want (a clean copy with no board
-  at all), so it is not a state to refuse. But it is **the one combination where
-  what you asked for and what you get look nothing alike**, so the export
-  sheet's explanatory line — which already follows the *effective* mode — has to
-  say it in words before the run, not leave it to be discovered in `exports/`.
-
-**What this does to the code**, so the plan does not discover it: `job.cues`
-stops being derived from the picker. `carry_scoreboard` currently maps mode +
-target into **both** the renderer and the cue slot in one place; the cues become
-their own input. That is a coupling removed rather than added, but the two rules
-it currently states together ("track mode blanks `job.scoreboard`" and "a clip
-or reel asked for on a separate track burns it in rather than dropping it") have
-to survive separately — the second especially, because it exists so the picker
-can never lose the board, and a clip's cue slot is **not** where its board can
-live.
-
-**Amended 2026-10-05: `carry_scoreboard` has moved under this paragraph's feet,
-and in a helpful direction.** The mute-source-audio feature
-(`2026-10-04-mute-source-audio-design.md`) now passes it a `with_audio: bool`,
-because it is `can_copy`'s only caller and the gate has to be asked the muted
-question. Three consequences for whoever plans #78:
-- **The precedent for "an input, not a carried field" is now set in that exact
-  function.** The mute is handed *in* and `Carry` gained **no** field, on the
-  reasoning that `job` already holds the value and a carried copy would be two
-  truths for one fact. Prising the cues out of `carry_scoreboard` is the same
-  move in the opposite direction, and the two should read consistently.
-- **The function is no longer only about the board**, so its name is already
-  approximate. If #78 removes the cue coupling, that is the moment to rename it
-  rather than grow a third concern under a board-shaped name.
-- **`job.cues` is still derived from the picker as of `d585d24`** — the
-  overturned decision above has been recorded, not implemented. Read the code,
-  not this paragraph, when the plan is written.
-
-**2. #102 is an on/off setting**, not the snap-always-Shift-to-suppress shape
-§U1 recommended.
-
-**Together these retire §U1's conclusion that no settings screen is justified.**
-That conclusion rested on "this option has nothing to sit beside" — and there are
-now **three** tenants: #102's bool, the export-output switches, and #84's local
-music folder path. The sheet designed in §U3–U4 should be built, and §U1's rule
-("a setting sits beside what it configures") survives as the test a *new* setting
-has to pass, not as an argument against the screen.
-
-**What has not changed:** §X's refusals (the header tags, the reel trim, the
-avatar constants, anything already carrying a control, anything belonging to one
-clip), and the format-cost correction in §W3, which was independently verified
-and is now in `CLAUDE.md`.
-
-## Goal
-
-The coach can stop an export writing anything beside the video, from the sheet
-they are already looking at; and every candidate setting has a decided home, so
-the next one does not arrive as a sixth checkbox on a screen nobody designed.
-
-## Scope
-
-In: the audit of what an export writes (**§W2**), one `Preferences` field and the
-v14 bump it costs (**§S2**), one checkbox on the export sheet (**§U2**), and the
-**design** of the Settings sheet for whoever needs it first (**§U3**) — specified
-here, built by #84 or #102, not by this.
-
-Also in, because this change invalidates them:
-
-- **`bus/state.rs:8-11`**, whose header states the cost of a `Preferences` field
-  as *"`store::read`'s exact-version guard would make every existing project
-  unreadable"*. `store::read` is a **range** (`store.rs:124-137`), and §S3 states
-  the real cost. A wrong price on the only decision #78 turns on is the kind of
-  claim that sends the next three settings to the wrong file.
-- **`CLAUDE.md`'s speech-model paragraph**, which carries the same claim in
-  shorter form — *"a `Preferences` field would be a format change every existing
-  project fails `store::read`'s version guard on"* — and is the more-read copy of
-  the two. Both say the same untrue thing about the same guard, which is why they
-  are corrected together rather than one at a time. (The paragraph's *conclusion*
-  is unaffected: the speech model is the coach's, not the match's, so `state.json`
-  is still right for it. Only the price is wrong.)
-- **BACKLOG #78 itself**, resolved, with §W3's correction recorded in it; and
-  **#84, #102, #115, #116**, whose "needs #78" lines are rewritten per §D.
-
-Out: everything in **§X**.
+**The design, in one paragraph.** Two switches on the export sheet, beside the
+four controls already there: **Chapters** and **Scoreboard subtitles**. Each
+governs one output in both the forms it takes, each is remembered in
+`Preferences` by the write-back the other four already use, and each reaches
+media by **blanking the data media already reads** rather than by a new flag —
+so `pundit-media` changes nothing at all. Independence makes two combinations
+reachable that are not today; one is "no scoreboard anywhere", and §S4 is how it
+is said in words before the run rather than discovered in `exports/`. Three of
+the six things #78's entry names are **not** switched, each refused in **§X** —
+the half of this document that earns its place, and which the coach's *"all of
+them"* makes sharper rather than moot.
 
 ---
 
-## Decisions
+## §W. What #78 is, and what an export actually writes
 
-### W. What #78 actually is
+**W1. #78 is two requests under one number, answered separately.**
 
-**W1. #78 is two requests under one number, and this spec splits them.**
+- **(A) What the coach asked for:** switches for what an export puts on disk.
+  Decided here (**§S**, **§U1–U3**).
+- **(B) What five other entries cite #78 for:** *a place for a machine-wide
+  option to live* — a music folder, a snap toggle, a key map. None of those is a
+  thing an export writes.
 
-- **(A) What the coach asked for:** switches for the files an export puts on
-  disk. Concrete, scoped, and answered here.
-- **(B) What #84 and #102 cite #78 for:** *a place for a machine-wide option to
-  live* — a music folder, an API key, a snap toggle. None of those is a thing an
-  export writes.
+Reading them as one request is how #78 becomes a preferences system. (A) goes on
+the export sheet; (B) gets a Settings sheet, **designed** in §U4 and **built by
+its first real tenant**. §D says what #78 owes each citer, which is less than
+each currently claims.
 
-Reading them as one request is how #78 becomes a preferences system. They are
-answered separately: (A) on the export sheet (**§U2**), (B) by a Settings sheet
-that is designed in **§U3** and built by its first real tenant.
-
-**The entry's own "Why deferred" asks for exactly this**: *"it should arrive with
-its home already decided rather than as six checkboxes."* A spec that decides the
-home and builds one checkbox is that sentence taken literally.
-
-**W2. What an export writes today, in full.** Verified against the code rather
-than against the entry; this table is the whole of (A)'s subject matter.
+**W2. What an export writes today, in full.** Verified against the code; this
+table is the whole of (A)'s subject matter.
 
 | Written | Where from | Which runs write it |
 |---|---|---|
-| the `.mp4` | both renderers | all |
-| `chpl` chapters, inside the file | `chapters::splice` (`composite/export.rs:435`) from `plan.chapters` | any target with ≥2 entries (`plan.rs:152-155`) |
-| `.chapters.txt` beside it | `write_chapter_list` (`composite/export.rs:511`) → `core::chapters::chapter_list` | any target whose chapters survive YouTube's rules — ≥3 after the 10 s rule (`chapters.rs:28-31`) |
-| `.srt` beside it | `write_sidecar` (`composite/export.rs:462`) from `job.cues` | **only** the whole match on a separate track |
-| a `tx3g` subtitle track, inside the file | `composite/copy.rs:623-637` | **only** the whole match on a separate track |
-| header tags | `job.tags` → `composite/tags.rs`, both renderers | all |
+| the `.mp4` | both renderers | every run |
+| `chpl` chapters, inside the file | `chapters::splice` in `composite::export`'s `finish`, from `plan.chapters` | a compilation of two or more clips (`plan::entry_chapters`); the whole match's are the match's own moments, a reel's its goals |
+| `.chapters.txt` beside it | `write_chapter_list` → `core::chapters::chapter_list` | any target whose chapters survive YouTube's rules — at least `MIN_CHAPTERS` (3) after the `MIN_GAP_SECONDS` (10) rule |
+| `.srt` beside it | `write_sidecar`, from `job.cues` | **only** the whole match on a separate track |
+| a `tx3g` subtitle track, inside the file | `composite::copy`'s third `mp4mux` pad, from the same `job.cues` | **the copy only** — the whole match on a separate track |
+| header tags | `job.tags` → `composite::tags::apply`, both renderers | every run |
 
-Per target, the `cues` slot is decided in one place, `carry_scoreboard`
-(`bus/export.rs:579`): a non-whole-match target gets `cues: None` (`:602` — "no
-sidecar at all, so nothing at that path is written **or removed**"), a burned-in
-board gets `Some(empty)` (`:590` — writes none, removes a stale one), and only
-the track mode gets cues (`:628`). A basket film is `cues: None` too
-(`bus/basket.rs:482-484`).
+Two facts from that table do most of the work below.
 
-**W3. The `.srt` and the `tx3g` already have their switch, and #78's entry is
-out of date about it.** The entry says of everything it lists: *"All are 'on'
-today with no way to say otherwise."* For two of them that is false, and has been
-since 0.4.0 (`CHANGELOG.md:267-272`), a day **before** the entry was filed.
+- **`job.cues` is one input feeding two outputs, and each renderer carries what
+  it can.** `Some(cues)` writes the `.srt`; the copy additionally requests the
+  subtitle pad (`CLAUDE.md`: *"Only the copy carries it — the encoded path is
+  unchanged"*). `Some(empty)` writes neither **and removes a stale `.srt`**.
+  `None` is a target that carries no sidecar at all, so nothing at that path is
+  written or removed.
+- **`plan.chapters` is one input feeding two outputs too**, with exactly two
+  readers, both in `finish`. `splice` returns `Written(0)` for an empty list
+  *without opening the file*; `chapter_list` returns `None`, which makes
+  `write_chapter_list` **remove** a stale list.
 
-Both ride `job.cues`, and `job.cues` is the Scoreboard picker
-(`app.slint:1774-1778`). **Scoreboard: Burned into the picture** writes neither,
-and removes a stale `.srt`. Nothing to build; the control the coach wanted exists
-and is one row above where they were looking.
+**W3. The Scoreboard picker is the board's delivery, not an off switch for these
+files.** Its three values decide where the board goes *in the picture*: burned in
+(forcing a re-encode), kept out of it (letting the whole match be a stream copy),
+or Default, the best available. Today the subtitle outputs ride along: *Burned*
+writes neither, *Separate track* writes both — a real coupling with a reason, in
+that a subtitle line of a board already painted into the picture is the board
+twice.
 
-**The one gap this leaves is not worth a control.** A coach who wants the board
-as a separate track *inside* the file but no `.srt` beside it cannot have that.
-The embedded track and the sidecar are deliberately one decision —
-`composite/copy.rs:60-63` gives the reason (the track carries *"the same lines
-the `.srt` gets — so the board survives the file being copied to a phone or sent
-on, where a sidecar does not"*), and `CLAUDE.md:528` states the pair as one rule
-— and splitting them would be a second picker for a combination nobody has
-named.
+It is not the switch the coach asked for, because it cannot express either
+*"keep the board out of the picture and write no sidecar either"* (a clean stream
+copy with no board) or *"burn the board in and leave me an `.srt`"*. Offered the
+choice of leaving them to follow the picker, making them independent, or greying
+them when redundant, **the coach chose independent**. So the picker keeps its own
+job and the subtitle outputs get their own switch.
 
-**W4. What is left is the chapters, and one switch covers both forms of them.**
+The entry's *"All are 'on' today with no way to say otherwise"* is therefore
+**half right**: the `.srt` and the `tx3g` have been suppressible since 0.4.0, but
+only as a side effect of a control about something else, and not without moving
+the board into the picture.
 
-The `.chapters.txt` is the only file an export puts beside the video with no way
-to say no — and the `chpl` box inside it is the same list. **One switch, both
-forms**, because a coach who turns "Chapters" off and still finds chapters in the
-file has been told a half-truth, and the in-file box is the half they cannot see.
+---
 
-Default **on**. It costs nothing measurable (CLAUDE.md: *"Tags cost the copy no
-losslessness and the chapters no room"*, measured), a chapter list is the only
-way those chapters reach a YouTube viewer at all, and the coach asked to be able
-to turn it off — not for it to be off.
+## §S. The switches
 
-### S. Where a setting lives
+**S1. One switch per output, and each governs every form that output takes.**
 
-**S1. The rule is applied per setting, and the question is whose property it
-is.** CLAUDE.md's line, which #78's entry restates as the decision to take first:
-the *machine's* (`state.json`, no format change) or the *project's*
-(`Preferences` in `project.json`, a version bump). Applied to each candidate:
-
-| Candidate | Whose | Home |
+| Switch | Governs | Default |
 |---|---|---|
-| chapters on/off | the **export's** — "this one is going to YouTube" | `Preferences`, beside its three row-mates (**S2**) |
-| `.srt` / `tx3g` | the export's | already the Scoreboard picker (**W3**) |
-| header tags | nobody's: not a setting (**X1**) | — |
-| reel lead-in / tail | the **goal's**, and already stored there (**X2**) | — |
-| avatar pulse constants | nobody's: tuning (**X3**) | — |
-| snap to events (#102) | the **coach's** | `state.json` (**D1**) |
-| a music folder, an API key (#84) | the **coach's** | `state.json` (**D2**) |
+| **Chapters** | `plan.chapters` — the `chpl` box inside the file *and* `.chapters.txt` beside it | on |
+| **Scoreboard subtitles** | `job.cues` — the `.srt` beside the file *and* the `tx3g` track inside a copy | on |
 
-**S2. The chapters switch is a `Preferences` field, and it rides the export
-sheet's existing write-back.**
+**Why both forms ride one switch.** A coach who turns "Chapters" off and still
+finds chapters in the file has been told a half-truth, and the in-file box is the
+half they cannot see. The same argument covers the cues, and `composite/copy`'s
+header already states that pair as one decision (the `.srt` is *"what VLC loads
+without being asked"*, the embedded track *"what survives the file being sent
+on"*). Splitting either pair would be a third and fourth checkbox for a
+combination nobody has named — **deferred**, not refused.
 
-`Preferences` already holds `last_export_resolution`, `last_export_quality` and
-`last_export_scoreboard` (`project.rs:138-142`), and the sheet's whole
-stickiness is one mechanism: `Pickers::of(prefs)` reads them
-(`bus/export.rs:550-556`), `Command::Export` carries them
-(`bus/mod.rs:334-342`), and one write-back after `begin` stores them
-(`bus/export.rs:360-370`). A fourth field is four lines in that mechanism and
-nothing else.
+**Defaults stay on.** Both cost nothing measurable (`CLAUDE.md`: *"Tags cost the
+copy no losslessness and the chapters no room"*, measured), a chapter list is the
+only way those chapters reach a YouTube viewer, and the coach asked to be *able*
+to turn them off — not for them to be off.
 
-**The alternative was `state.json`, and it is rejected on one structural
-ground.** Not on cost — `state.json` is cheaper, and #78's entry is right that
-it is the cheap one. It is rejected because **splitting one sheet's four pickers
-across two files gives that sheet two write-back paths**, and the next person
-adding a picker to it has to guess which. The three that are there set the
-precedent, and consistency inside one control group is worth more than one
-avoided version bump.
+**A fourth value on the Scoreboard picker was the alternative and is rejected.**
+*Default / Burned in / Separate track / None* is cheaper by a row, but it is the
+*dependent* shape the coach declined, and it cannot express "burned in **and** an
+`.srt`" at all — one of the two things independence was chosen for.
 
-**It is also the better semantics, narrowly.** "Does this match go to YouTube"
-is a property of the match more than of the laptop: a coach filming for one club's
-channel and another's parents' WhatsApp wants them to differ, which `state.json`
-cannot express. That argument is *secondary* — the sticky-last-used shape makes
-either home work in practice — and it is stated second so nobody mistakes it for
-the load-bearing one.
+**S2. How "off" reaches media: by blanking the data media already reads.**
+Neither switch becomes a flag on `ExportJob`, and **media changes nothing**.
 
-**The field takes no serde attribute.** `Preferences` carries
-`#[serde(default)]` on the **container** (`project.rs:126-133`) and fills from
-its hand-written `Default` impl (`:165-181`), so a field-level one would be a
-second copy of the default — CLAUDE.md's rule, and the same call v11 and v13
-already made for their `Preferences` fields.
+- Chapters off → `job()` clears `compilation.plan.chapters`. Both readers already
+  mean "no chapters" for an empty list (**W2**), and the removal of a stale
+  `.chapters.txt` comes free, being the branch a single-clip export already takes.
+- Subtitles off → `job.cues` is `Some(Vec::new())` for the whole match: no `.srt`,
+  a stale one removed, and no subtitle pad requested by the copy (*"an empty cue
+  list leaves the output with no subtitle track at all"*, `composite/copy`).
 
-**S3. What a `Preferences` bump actually costs — and the doc comment that
-overstates it.**
+This is `carry_scoreboard`'s own rule reused. `CLAUDE.md`: *"Track mode blanks
+`job.scoreboard` rather than carrying a mode flag into media: `None` is already
+media's one 'don't draw the board', so there is no third state to keep consistent
+and `overlay.rs` never learns a picker exists."* An empty chapter list and an
+empty cue list are already media's one "no chapters" and one "no subtitles". A
+`bool` on `ExportJob` would be the third state that rule exists to refuse.
 
-`bus/state.rs:8-11` says a new `Preferences` field is *"a format change that
-`store::read`'s exact-version guard would make every existing project unreadable
-for"*, and `CLAUDE.md`'s speech-model paragraph says *"every existing project
-fails `store::read`'s version guard on"*. **There is no exact-version guard.**
-`read` accepts
-`MIN_READABLE_FORMAT_VERSION..=CURRENT_FORMAT_VERSION` — `found < MIN` is
-`LegacyProject` and `found > CURRENT` is `TooNew` (`store.rs:124-137`) — so a v14
-build reads every v7–v13 file, and the container default fills the new key. **No
-existing project becomes unreadable.**
+**S3. The cue slot leaves `carry_scoreboard`, which gets simpler for it.** That
+function currently maps the picker into the renderer *and* the cue slot, stating
+two rules together. Both must survive the split:
 
-The real cost, in full:
+- **`carry_scoreboard` keeps:** *a clip or a reel asked for on a separate track
+  burns the board in rather than dropping it* — the picker must never lose the
+  board, and a clip's cue slot is not where its board can live.
+- **A new `board_cues(target, want, compilation, context)` takes:** *only the
+  whole match carries the board beside the file.* Three arms, in order: not the
+  whole match → `None` (a `.srt` beside a clip is the coach's own file and no
+  export's business); `!want` → `Some(Vec::new())`; otherwise the cues, or
+  `Some(Vec::new())` where the project has no `ScoreboardContext` to derive them
+  from.
 
-1. `CURRENT_FORMAT_VERSION` 13 → 14 (`store.rs:21`); `MIN_READABLE_FORMAT_VERSION`
-   stays 7, since the field is additive.
-2. One new test, `a_v13_file_loads_under_the_current_version`, on
-   `a_v12_file_loads_under_the_current_version`'s shape
-   (`tests/project_format.rs:439`) — CLAUDE.md's every-bump rule.
-3. **The forward direction, which is the one that actually bites:** the first
-   save re-stamps the project to v14 (`store.rs:194`), after which 0.11.x refuses
-   it as `TooNew`. Mitigated already — that same save keeps `project.json.v13`,
-   once, never overwritten (`store.rs:182-192`, pinned by
-   `an_upgrade_keeps_the_old_file_once`, `:732`).
-4. **Not** the eighteen-file edit of BACKLOG #106. That is a **`Clip`** field's
-   cost. `Preferences` is constructed as a literal in exactly one place in the
-   whole tree — its own `Default` impl — so the field costs one line there and
-   nothing in any test.
+**`carry_scoreboard` then loses a parameter rather than gaining one**:
+`compilation` was passed *only* for `scoreboard_cues`. It returns `Carry { copy,
+scoreboard }` — exactly "how this target carries the board" — so it fits its name
+better than it does today, and **the rename the 2026-10-05 amendment proposed is
+not needed** (§R.5).
 
-Correcting both copies is in scope because that sentence is what this whole
-decision was going to be made against, and it is currently the app's written
-reason for sending a setting to `state.json`. The *conclusions* it was used to
-reach are all still right — the speech model, the pen, the recents and the panel
-widths are all the coach's rather than the match's — so nothing moves file; only
-the price changes.
+**S4. The two newly reachable combinations, and the one that must be said out
+loud.**
 
-**S4. What #100's per-field read bought, and what it did not.** BACKLOG #100
-landed 2026-10-02 (`BACKLOG.md:1922-1964`): `#[serde(default)]` moved to
-`State`'s container and a `lenient` deserializer went on each field
-(`bus/state.rs:53-54`, `:121`). It matters here because (B)'s settings go to
-`state.json`, so the next three options are priced against it.
+- **Board burned in *and* an `.srt` beside it.** Legitimate; the coach asked for
+  it knowing what it is. Note it is the `.srt` **alone**: a burned export
+  re-encodes, and the `tx3g` track rides the copy only, so there is no embedded
+  track to disagree with the picture.
+- **Separate track with the subtitles off: no board anywhere.** Not in the
+  picture, not beside the file, not inside it. Read charitably a coach may want
+  exactly that — a clean copy, no board — so it is **not a state to refuse**. But
+  it is the one combination where what you asked for and what you get look
+  nothing alike, so the sheet says so before the run (**§U2**).
 
-**It buys:** a new `state.json` key is **one attribute**, and a value this build
-cannot read costs **that key alone** rather than the last project, the pen, the
-speech model, the window size and the panel widths.
+**And "Default" never arrives there silently.** `CLAUDE.md`: *"'Default' means
+the best available, never a silent trade."* Default is the mode where the app
+chooses, so with the subtitles off it **burns the board in** instead of copying a
+film with no board on it — one condition in the `Track` arm, beside the
+`can_copy` fallback already there and for the same reason. Independence is
+untouched: the switch always does what it says, and what adapts is Default's own
+resolution, which is the whole of what Default is for. *Separate track* chosen by
+hand still gets no board, because there the coach asked.
 
-**It does not buy, and these are the shapes to know before choosing a type:**
+Both extra arguments `carry_scoreboard` now takes — `with_audio` (the mute, v15)
+and the subtitles bool — are there for this one reason: **Default cannot answer
+"the best available" without knowing what else the run carries.**
 
-- **One malformed *element* still costs a whole list**, because a `Vec` fails
-  whole. So an option stored as a **set** — #102's "which kinds of mark to snap
-  to", if it ever becomes one — loses the whole set to one bad entry, where a
-  bool or a label-string loses only itself. #102's defensible first cut (match
-  events only, a bool) sidesteps it; a set is a thing to decide with eyes open.
-- **Lost updates are untouched.** Every setter is `read` then `save` over the
-  whole document and there are two `AppFiles` handles — the bus's
-  (`bus/mod.rs:669`) and `main.rs`'s `machine_state` (`:380`) — so a bus-side
-  write interleaving with a UI-side one still loses a field. The write is a temp
-  file and a rename, so nothing tears, and the cost is one option's value. **Not
-  fixed, and no machinery for it**: stated so that a Settings sheet writing
-  several keys from the UI thread while the bus writes a recent project is
-  understood to cost at most one of them, and so nobody later claims #100 retired the class.
-- **The container defaults on `WindowSize` and `PanelWidths` are still doing a
-  different job** (rescuing a partial object), so a new *struct* in `state.json`
-  needs one of its own. A new scalar does not.
+---
 
-### U. Where the UI lives
+## §F. The format: one bump, two fields
 
-**U1. This app has no settings screen, and the absence is a pattern rather than
-a gap.** Every configurable thing in it is reached beside the thing it
-configures — and four of these are machine-wide values with no screen at all:
+Both switches are `Preferences` fields riding the export sheet's existing
+write-back: `Pickers::of(prefs)` reads the sheet's controls, `Command::Export`
+carries them, one write-back after `begin` stores them. Two more fields are a few
+lines in that mechanism and nothing else.
+
+- **`last_export_chapters: bool`**, `true` in the hand-written `Default`.
+- **`last_export_cues: bool`**, `true`. Named for `job.cues` and `core::cues`,
+  the vocabulary the code already uses for exactly this pair of outputs —
+  deliberately not `last_export_scoreboard_subtitles`, which reads as a qualifier
+  on `last_export_scoreboard` beside it.
+
+**Neither takes a serde attribute.** `Preferences` carries `#[serde(default)]` on
+the **container** and fills from its hand-written `Default`, so a field-level one
+would be a second copy — `CLAUDE.md`'s rule, and the call v11, v13 and v15 each
+made. The *"never a field-level default on a `bool`"* hazard is about that second
+copy resolving to `false`; here the container default is the only copy, and
+`project_format.rs::preferences_defaults_are_not_zero` guards it.
+
+**`state.json` was the alternative and is rejected on one structural ground.**
+Not cost — `state.json` is cheaper and #78's entry is right that it is the cheap
+one. It is rejected because **splitting one sheet's controls across two files
+gives that sheet two write-back paths**, and the next person adding one has to
+guess which. Four are already in `Preferences`. The semantics agree more weakly:
+"does this match go to YouTube" is a property of the match rather than of the
+laptop, which is the test `bus/state.rs`'s header states.
+
+**Take the next free `formatVersion` from `store.rs`, not a number written
+here.** It is **16** as of this writing (v14 is #117's `StrokeEnd`, v15 the
+mute's `export_source_volume`), and **BACKLOG #115 also claims 16**. Whichever
+lands first takes it, and **if they land together they share one bump** — one
+version, one every-readable-version test.
+
+**What the bump costs**, in full, because #78's entry and two load-bearing doc
+comments priced it wrong:
+
+1. `CURRENT_FORMAT_VERSION` to the next number; `MIN_READABLE_FORMAT_VERSION`
+   stays 7, both fields being additive.
+2. One new test on `a_v12_file_loads_under_the_current_version`'s shape —
+   `CLAUDE.md`'s every-bump rule.
+3. **The forward direction, which is the one that bites:** the first save
+   re-stamps the project, after which an older build refuses it as `TooNew`.
+   Already mitigated — that save keeps `project.json.v<old>`, once, never
+   overwritten, named from the project's own stored version.
+4. **Not** BACKLOG #106's eighteen-file edit, which is a **`Clip`** field's cost.
+   `Preferences` is constructed as a literal in exactly one place in the tree —
+   its own `Default` impl — so a field costs one line there and nothing in any
+   test.
+
+**There is no "exact-version guard", and the two docs that claimed one are
+already fixed.** `store::read` accepts `MIN_READABLE..=CURRENT`, so a new build
+reads every v7-onward file and the container default fills the key it hasn't got.
+`bus/state.rs`'s header and `CLAUDE.md`'s speech-model paragraph were corrected
+on 2026-10-02 in `65f3e47`, so **this spec owes that edit nothing**. The fact is
+kept because it is the price #78's entry still quotes, and a wrong price on the
+only decision #78 turns on is what sends the next three settings to the wrong
+file.
+
+---
+
+## §U. Where the UI lives
+
+**U1. Every configurable thing in this app is reached beside the thing it
+configures, and that is the rule a new setting has to pass.**
 
 | Setting | Where its control is | Stored |
 |---|---|---|
-| the pen's colour | the drawing row's swatches | `state.json` |
-| the pen's width | two dots beside the swatches (`app.slint:5692-5696`) | `state.json` |
-| which speech model runs | the inspector's transcript row (`app.slint:904-921`) | `state.json` |
+| the pen's colour and width | the drawing row's swatches, and two dots beside them | `state.json` |
+| which speech model runs | the inspector's transcript row | `state.json` |
 | camera, mic, avatar | the Devices popover | `Preferences` / the project |
-| resolution, quality, scoreboard | the export sheet | `Preferences` |
+| resolution, quality, scoreboard, mute | the export sheet | `Preferences` |
 | a clip's inset size and corner | the clip inspector | `Clip` + sticky `Preferences` |
-| the panels' widths, the folds, the window's size | dragged / clicked directly | `state.json` |
+| the panels' widths, the folds, the window's size | dragged or clicked directly | `state.json` |
 
-**#116 is the sharpest precedent and it shipped this morning** (`b6b93e8`): a
-machine-wide value, a two-value picker *at the thing it affects*, read back by
-label so an unknown value reads as the default, written through the UI thread's
-own `AppFiles` (`main.rs:2343-2350`, wired at `:409`) with **no bus command**,
+**#116 is the sharpest precedent**: a machine-wide value, a two-value picker at
+the thing it affects, read back by label so an unknown value reads as the
+default, written through the UI thread's own `AppFiles` with no bus command
 because the bus has nothing to hold. It needed no screen, and the entry that
 proposed one for it was answered without building it.
 
 So the bar for a settings sheet is not "there is an option" — it is **"this
-option has no thing to sit beside."** Two of #78's dependents clear that bar
-(**§D1**, **§D2**); #78's own content does not.
+option has no thing to sit beside."** #78's own switches do not clear it: what an
+export writes is configured per export, and the export sheet is where its other
+four controls and their write-back already are. Two of #78's citers *do* clear it
+(**§D1**, **§D2**), which is why §U4 exists.
 
-**U2. The chapters switch is a `CheckBox` on the export sheet, under the
-Scoreboard row.**
+**U2. Two `CheckBox`es on the export sheet, under the Scoreboard row.**
 
 ```text
 Scoreboard  [ Default                      ▾ ]
             The whole match is copied, not re-encoded: …
 [x] Chapters, in the file and as a list beside it
+[x] Scoreboard subtitles — an .srt beside the file, and a track inside a copy
+[ ] Mute source audio
 ```
 
-- **Its own row, not a fourth column.** The Scoreboard picker already took its
-  own row for the stated reason that *"'Burned into the picture' doesn't fit a
-  third of this sheet"* (`app.slint:1769-1771`); a 480px card
-  (`app.slint:1728`) has no fourth column.
-- **A `CheckBox`, not a two-item `ComboBox`.** Three combo boxes and a checkbox
-  reads as "three choices and one switch", which is what it is. `Auto-clear`
-  (`app.slint:5736-5739`) is the house's own checkbox idiom.
-- **The label says both halves**, because the switch governs both and the coach
-  can only see one. "Chapters" alone would read as the sidecar.
-- **`enabled: !root.exporting`**, as all three pickers are: a run's settings are
-  settled for it.
-- **It is sticky, so it is a once-ever decision in practice.** This is what makes
-  a per-export control the right place rather than a tax: set it once and every
-  later export inherits it, by the same write-back that already does this for
-  resolution and quality.
+- **`CheckBox`es, not two-item `ComboBox`es**, and the sheet already has the
+  idiom with its own tooltip: "Mute source audio" shipped as one with v15.
+- **Each label says both halves**, because each switch governs both and the coach
+  can only see one. "Chapters" alone would read as the file beside the video.
+- **Their own rows.** The Scoreboard picker already took its own for the stated
+  reason that *"'Burned into the picture' doesn't fit a third of this sheet"*, and
+  a 480px card has no fourth column.
+- **`enabled: !root.exporting`**, as the other four are.
+- **A tooltip on the subtitles switch carries the general warning**: off means the
+  scoreboard appears only if it is burned into the picture.
 
-**How "off" reaches media: by blanking the data media already reads, not by a new
-flag.** `job()` (`bus/export.rs:349`) clears `compilation.plan.chapters` when the
-switch is off, and **media is untouched**. Both readers already handle empty:
-`splice` returns `Written(0)` without opening the file (`media/src/chapters.rs:158`),
-and `chapter_list` returns `None`, which makes `write_chapter_list` remove a
-stale list (`composite/export.rs:511-521`). The `bus: exported …` line
-(`bus/export.rs:250`) already reports that outcome; it is what a single-clip
-export does today.
+**The explanatory line under the picker gains the combination that has to be said
+in words, and loses a case where it would now be wrong.**
 
-**This is `carry_scoreboard`'s own rule, reused rather than reinvented.** CLAUDE.md:
-*"Track mode blanks `job.scoreboard` rather than carrying a mode flag into media:
-`None` is already media's one 'don't draw the board', so there is no third state
-to keep consistent and `overlay.rs` never learns a picker exists."* An empty
-chapter list is already media's one "no chapters". A `bool` on `ExportJob` would
-be the third state that rule exists to refuse.
+- It reads *"The whole match is copied, not re-encoded: player highlights and pen
+  drawings can't ride a copy"* whenever the whole match is ticked and the picker
+  is not *Burned*. **Under §S4's Default rule that is false for
+  Default-with-subtitles-off**, which burns the board in. The condition becomes
+  "this run would copy": the whole match is ticked **and** (the picker is
+  *Separate track*, **or** it is *Default* and the subtitles are on) — one derived
+  property on the sheet, documented once, rather than the same boolean in two
+  `if`s.
+- A **second line** when the whole match is ticked, the picker is *Separate track*
+  and the subtitles are off: this export carries no scoreboard at all — not in the
+  picture, not beside the file, not inside it. Deterministic, because *Separate
+  track* chosen by hand refuses rather than falling back.
 
-**U3. The Settings sheet is designed here, and built by its first tenant rather
-than by #78.**
+The `can_copy` gate can still send *Default* back to a re-encode and only the bus
+knows that, which is as true of the existing line as of the new one; the bus says
+so on stderr, as today.
 
-(B) needs somewhere, and there is no honest way for #78 to build it: #78's own
-content does not belong in it (**U2**), so #78 would ship a sheet holding one
-checkbox that should be somewhere else, or a sheet holding nothing. **A container
-built before its contents is the thing this spec exists to prevent.**
+**U3. Nothing else moves.** No new UI surface, no new file, no new command, no new
+module, and — the load-bearing one — **no change in `pundit-media`**.
 
-So: **the design is settled here, and whichever of #84 or #102 lands first builds
-it** — one sheet, one control, on a shape the app already has six of. That costs that entry almost nothing and costs #78 nothing at all, and
-it is what #78's "with its home already decided" asks for.
+**U4. The Settings sheet: now justified, designed here, built by its first
+tenant.**
 
-**U4. If and when it is built: the seventh modal, on the shared `Sheet`.**
-Specified now so it is not re-litigated, and so the first tenant does not invent
-it.
+The first version of this spec concluded no settings screen was warranted,
+because the one option in hand had something to sit beside. The coach's answer
+to #102 (**an on/off setting**) retired that: there are **two** options with
+nothing to sit beside — #102's bool and #84's local music folder path — and
+§U1's rule survives as the test a *new* setting must pass rather than as an
+argument against the screen.
 
-- **A `Sheet`, like the other six.** `app.slint:1661-1662` names them — export,
-  the basket, New match, match setup, the match event editor, the error dialog —
-  and all six are built on the one `Sheet` component (`:1666`; match setup wraps
-  it in a `Rectangle` only so its colour picker can float over the card,
-  `:2504-2509`, `:2656-2660`). Not a panel: the two side columns already hold
-  Sources, Clips, Match and Highlights and only grow (#87, #113), and a settings
-  column would be permanently on screen for something touched twice a year. Not
-  a popover: the Devices and Recent popovers are *lists you pick from and
-  dismiss*, where a settings surface has fields that are typed into — and a
-  `PopupWindow` has no `editing` to fold into `text-editing`, which is exactly
-  the machinery a typed field needs (**below**).
-- **Reached from the window's menu-less toolbar, and the transport row cannot
-  take it.** That row is measured full: *"at the window's 1100px minimum,
-  sharing the transport's row pushed Export and Devices off its end and left the
-  notice no width at all"* (`app.slint:5641-5644`), against a 1100px minimum
-  (`:3214-3215`), and the recents work already spent its last slack on
-  `Recent ▾`. **So the button goes on the drawing row, beside `Fit`** — which is
-  where that comment's own precedent put the overflow, and `Fit` is there for
-  exactly this reason. This is an **estimate, not a measurement**, and it is on
-  the manual list.
-- **The Esc contract, which is the one thing a sheet with fields gets wrong.**
-  A sheet whose fields can hold focus must fold its own `editing` into the
-  window's `text-editing` (`app.slint:3783`), or the first Esc closes the sheet
-  and throws away what is half-typed — CLAUDE.md's rule, and the reason the
-  basket and New match sheets each carry the fold (`:1894`, `:3047`). A
-  settings sheet with a path or a key in it is in that class **from its first
-  field**, which is the single biggest reason it is a `Sheet` and not a popover.
-- **It is gated like the other sheets:** `!root.recording && !root.previewing`.
-  Nothing in it touches a running export, so no busy guard in the bus.
-- **It holds `state.json` values only**, written through `machine_state` on the
-  UI thread as the pen width and the panel widths are. A setting the **bus** must
-  read is read through its own handle (`bus/mod.rs:669`), as the whisper model
-  already is — **no new command**, unless the bus has to *act* on the change.
+**#78 still does not build it.** #78's own content belongs on the export sheet
+(**U2**), so #78 would ship a sheet holding one checkbox that should be elsewhere,
+or a sheet holding nothing. **A container built before its contents is the thing
+this spec exists to prevent.** The design is settled here, and whichever of #102
+or #84 lands first builds it. That costs that entry almost nothing, and it is
+what the entry's own *"it should arrive with its home already decided"* asks for.
 
-**U5. No keyboard shortcut, and no menu bar.** Every letter in this window is a
-global binding, and which ones are rebindable is #96's question, not this one.
-There is no menu bar to put a Preferences item in, and adding one for a single
-item is a second navigation model.
+When it is built:
 
-### D. The dependents, and what each actually needs
+- **A `Sheet`, the seventh.** That component's own comment names the six (export,
+  the basket, New match, match setup, the match event editor, the error dialog)
+  and this is the shape they share. **Not a panel:** the side columns already hold
+  Sources, Clips, Match and Highlights and only grow, and a settings column would
+  be permanently on screen for something touched twice a year. **Not a popover:**
+  a `PopupWindow` has no `editing` to fold into `text-editing`, which is exactly
+  the machinery the next bullet needs.
+- **The Esc contract, the one thing a sheet with fields gets wrong.** It must fold
+  its own `editing` into the window's `text-editing`, or the first Esc closes the
+  sheet and throws away what is half-typed — `CLAUDE.md`'s rule, and why the
+  basket and New match sheets each carry the fold. A sheet with a path in it is in
+  that class from its first field.
+- **Reached from the drawing row, beside `Fit`.** The transport row is measured
+  full (*"at the window's 1100px minimum, sharing the transport's row pushed
+  Export and Devices off its end and left the notice no width at all"*) and the
+  recents work spent its last slack on `Recent ▾`; the drawing row is where that
+  comment's own precedent put the overflow. **An estimate, not a measurement**,
+  and on the manual list.
+- **Gated like the other sheets** (`!root.recording && !root.previewing`), and
+  **holding `state.json` values only**, written through `machine_state` on the UI
+  thread as the pen width and panel widths are. A value the **bus** must read is
+  read through its own handle, as the whisper model is — **no new command**, unless
+  the bus has to *act* on the change. No keyboard shortcut: every letter in this
+  window is a global binding, and there is no menu bar to put a Preferences item
+  in.
+- **Under #100 a new `state.json` key is one attribute**, and an unreadable value
+  costs that key alone. Two shapes it does not cover, so a tenant picks its type
+  knowing them: a malformed *element* still costs a whole `Vec`, and a lost update
+  between the two `AppFiles` handles still costs one option's value. Neither is
+  machinery to add.
 
-**D1. #102 (snap the scrubber to events) needs one `state.json` bool and a
-control — and there is a shape that needs neither.**
+---
 
-What it needs from a settings surface is genuinely small: one bool — one
-attribute, under #100 (**S4**) — and one checkbox. The marks are already on the
-scrubber — `Mark { at, color }` at absolute timeline seconds
-(`scrubber.slint:14-19`, `:30`), built from the match events in
-`main.rs:1691-1707` — and the drag that would snap is one `TouchArea`
-(`scrubber.slint:108-126`). So #102 is a small build **plus** a home for its
-switch, and today that home is the whole of its blockage.
+## §D. The citers, and what #78 actually owes each
 
-**The shape that frees it: snap always, with a modifier to suppress.** Shift-drag
-scrubs raw; a plain drag snaps. Every timeline editor does this, it is
-discoverable by accident, it needs no stored value, no screen and no #78 — and it
-is reversible mid-gesture, which a checkbox in a sheet is not. **Recommended to
-the coach (§Open questions).** If they want the switch anyway, #102 is the
-Settings sheet's first tenant and builds it per **U4**.
+Six entries cite #78. **Not one needs #78 to ship**, and every correction below
+has been applied to `BACKLOG.md` in the same change as this spec.
 
-**Either way #102 is unblocked by this document**, which is the point: what it
-was waiting for was a decision, not a screen.
+**D1. #102 (snap the scrubber to events) — owed the sheet's design, nothing
+else.** The coach answered **an on/off setting** (2026-10-03), so the
+Shift-to-suppress shape this spec's first version recommended is withdrawn
+(§R.4). What #102 needs is small: one `state.json` bool and one checkbox; the
+marks are already on the scrubber and the drag that would snap is one
+`TouchArea`. It is the sheet's natural first tenant and builds it per **U4** —
+or, if it finds a cheaper home beside the scrubber itself, that is its own call.
 
-**D2. #84 (music under a goals reel) is the one entry that genuinely needs the
-sheet — and not for the reason its own entry gives.**
+**D2. #84 (music under a goals reel) — owed the sheet's design, and its entry was
+wrong twice about why.** Its *"When to revisit: after #78, which is where the key
+field lives"* was stale on both halves: the API key is **optional** (the entry's
+own 2026-09-25 decision is Openverse, *"anonymous queries need no key"*), and #78
+does not build the sheet. **The real blocker is the local music folder path** —
+shape (a), the mixer's only input, decided to be built first. A folder path is
+machine-wide, cannot be a picker beside anything, and a file-chooser button needs
+a surface; #84 is big enough to carry building the sheet for it. **Not in the
+sheet:** the genre pick, an export choice belonging on the export sheet with
+resolution and quality, for **U1**'s reason.
 
-Its entry says the sheet is *"where the key field lives"*, and the key is
-**optional**: the same entry's 2026-09-25 decision is Openverse, *"anonymous
-queries need no key"*, with Jamendo-direct as an upgrade. So the API key is not
-a blocker.
+**D3. #115 (the caption bar, switchable off) — owed nothing.** Its entry records
+the coach's *"per clip or in general"* — explicitly **not** the export sheet and
+explicitly #88's shape: a `Clip` field with an inspector control plus a sticky
+`Preferences` pair seeding the next recording. It is also not a bool (off, whole
+entry, or the first few seconds), and the timed variant is a real change in the
+overlay that being near a settings screen does not help. **Corrected in its
+entry:** its body said the bump was v15 in two places; v15 went to the mute, so
+it is the next free number from `store.rs` — which its own top-of-file line
+already said.
 
-**What is a blocker is the local music folder** — the entry's shape (a), *"the
-mixer's only input"*, decided to be built first. A folder path is machine-wide
-(it is where the coach keeps their music, not a property of a match), it cannot
-be a picker beside anything, and a file-chooser button needs a surface. That is
-a real settings field, and #84 is big enough to carry building the sheet for it.
+**D4. #116 (the pen's width) — owed nothing, shipped, correctly filed.** A
+two-value picker beside the swatches, in `state.json`, with no screen
+(2026-10-02). It cites #78 nowhere, its entry reads RESOLVED and it is not in the
+open list — so this spec's first version was wrong both to count it as a citer
+and to call its bookkeeping stale (§R.7, §R.8). Kept here as **U1**'s best
+evidence.
 
-**What does *not* go in the sheet:** the genre pick. That is an export choice —
-*"pick rock or EDM"* on the reel's export — and it belongs on the export sheet
-with resolution and quality, for **U1**'s reason.
+**D5. #96 (every hot key reassignable) — owed the sheet's design and one rule: a
+key map is not a row in it.** #96 says it *"wants #78's settings screen to land
+on"* and is the entry immediately after #78 in the open order, so this matters. A
+key map is a table with capture, conflict detection and a reset — its own
+surface. A keys **tab** in the sheet is a reasonable future; a tab-less sheet with
+a key map poured into it is not.
 
-**D3. #115 (the caption bar, switchable off) is NOT #78's, and folding it in
-would undo a decision the coach already took.**
+**D6. #88 (the inset's size and corner, closed) — owed nothing, and its line is
+corrected.** It said the two new preferences *"have no control of their own,
+which is #78's job, where `pip_for_new_recordings` would finally get one too"*.
+They are not #78's job: `last_inset_size` and `last_inset_corner` are the
+sticky **memory** of the clip inspector's own two controls, which is §X4.
+`pip_for_new_recordings` is genuinely unhoused — no control at all, written only
+by tests — but it is the **project's**, not the machine's, so a machine-wide sheet
+is the wrong home; its control belongs beside the inset's two.
 
-Its entry lays out three homes and records the answer (`BACKLOG.md:2386`): *"The
-coach answered (same day): 'per clip or in general'"* — explicitly **not** the
-export sheet, and explicitly the shape #88 shipped for the inset's size and
-corner: a `Clip` field with an inspector control, plus a sticky
-`Preferences` pair that seeds the next recording. That is **U1**'s pattern
-exactly, and it is already specified in the entry down to the serde attributes.
+---
 
-It also is not a bool — off, whole entry, or the first few seconds — and the
-timed variant is a real change in the overlay. Nothing about it gets easier for
-being near a settings screen, and a settings checkbox would be a fourth place
-the bar could be switched.
+## §X. What must not go in it
 
-**#115's "needs #78" line is removed.** It is independent and buildable now.
-
-**D4. #116 (the pen's width) is NOT #78's, is already shipped, and the backlog's
-own entry is stale.** `b6b93e8` shipped it this morning as a two-value picker
-beside the swatches, in `state.json`, with no screen. The entry still reads as
-open (`BACKLOG.md:2551`, and the top-of-file list at `:27`); that is a
-bookkeeping miss, not a decision, and it is corrected with #78's own resolution.
-It is kept in this spec as **U1**'s best evidence.
-
-**D5. #96 (every hot key reassignable) is adjacent and must not be folded in.**
-A key map is a table with capture, conflict detection and a reset — its own
-surface, not a row in a settings sheet — and #96 is open on the coach's own
-terms. If the Settings sheet ever exists, a keys **tab** in it is a reasonable
-future; a tab-less sheet with a key map poured into it is not.
-
-### X. What must not go in it
-
-This is the half of the spec that earns its place. Each of these is a candidate
-that has been named — three of them by #78's own entry — and each is refused with
-its reason.
+The half of the spec that earns its place, and the coach's *"all of them"* makes
+it sharper rather than moot: the question he answered was **which files in
+`exports/` were unwanted**, and three of the six things #78's entry names were
+never files an export writes.
 
 **X1. The header tags.** #78 names them (*"whether it writes the file tags"*).
-Refused:
+Refused on three grounds, the third decisive:
 
-- **The complaint was files, not metadata.** The coach's words name the `.srt`
-  and the chapter track — things that appear in a folder. `title`, `comment`, `keywords`, `date` and `encoder` are
-  boxes in `moov/udta` (`core::metadata::FileTags`, `metadata.rs:86-103`); no
-  coach has ever seen one without running `ffprobe`.
-- **They cost nothing** — measured, and written down in CLAUDE.md: *"not a
-  sample changes"*, and the `free` box the chapters eat into *"stayed exactly
-  842 bytes"*.
-- **Where a tag can't be told the truth it is already left out** (`metadata.rs`,
-  and CLAUDE.md's rule): no scoreboard, no `comment`; no teams, no `keywords`.
-  The honest cases are already handled, so a switch would only let a coach ship
-  files that say nothing about themselves.
+- **The complaint was files, not metadata.** `title`, `comment`, `keywords`,
+  `date` and `encoder` are boxes in `moov/udta`; no coach has seen one without
+  running `ffprobe`.
+- **They cost nothing** — measured, and in `CLAUDE.md`: *"not a sample changes"*,
+  and the `free` box the chapters eat into *"stayed exactly 842 bytes"*. Where a
+  tag can't be told the truth it is already left out, so a switch would only let a
+  coach ship files that say nothing about themselves.
+- **A switch could not even deliver an untagged file on the software encoder.**
+  `x264enc` pushes an `ENCODER` tag of its own into the same muxer and the merge
+  mode is `Keep` precisely so ours wins; with ours blank, x264's stands. "Tags
+  off" would be a control that does not do what its label says on one of the two
+  encoders.
 
-A switch here is a control with no symptom behind it, which is the definition of
-a settings screen feature.
+A switch here is a control with no symptom behind it. **The open question below
+puts it back to the coach anyway**, because it is the only place this spec reads
+*"all of them"* narrowly — and it is cheap to answer either way:
+`FileTags::default()` is already an untagged file, so it would be the same
+blanking move as the other two.
 
-**X2. The reel's lead-in and tail.** #78 names them (*"possibly the reel's
-default lead-in and tail (20 s / 6 s today, constants)"*). Refused, and this one
-is not close: **they already have a per-goal control.** `REEL_LEAD_IN` and
-`REEL_TAIL` (`reel.rs:30`, `:34`) are only the *defaults*; each goal stores its
-own override in `MatchEventRecord::reel_lead_in` / `reel_tail`
-(`scoreboard.rs:219-221`), and the Match panel's goal rows carry the trim
-buttons and the reel span beside them (`app.slint:1286-1326`). A global default
-beside a per-goal override is **two ways to say one thing, free to disagree** —
-and CLAUDE.md's rule for the reel is explicit: *"Never replace them with a guess
-that could be shorter: a cut-off assist is the one failure the reel must not
-have."* A coach who can lower the global default can give every untrimmed goal
-that failure in one click.
+**X2. The reel's lead-in and tail.** #78 names them. Refused, and not close:
+**they already have a per-goal control.** `REEL_LEAD_IN` and `REEL_TAIL` are only
+the *defaults*; each goal stores its own override in
+`MatchEventRecord::reel_lead_in` / `reel_tail`, and the Match panel's goal rows
+carry the trim buttons and the reel span beside them. A global default beside a
+per-goal override is two ways to say one thing, free to disagree — and
+`CLAUDE.md`'s rule is explicit: *"Never replace them with a guess that could be
+shorter: a cut-off assist is the one failure the reel must not have."* A coach who
+can lower the global default can give every untrimmed goal that failure in one
+click.
 
-**X3. The avatar's pulse constants.** #78 names them. Refused outright: they are
-six tuning constants (`PULSE_GROWTH`, `PULSE_FLOOR_DB`, `PULSE_CEILING_DB`,
-`PULSE_ATTACK`, `PULSE_RELEASE`, `PULSE_RATE` — `avatar.rs:20-36`) shared by
-**two estimators of one quantity** (the live one at `dt = 0.1`, the rendered one
-at `1/30`), and CLAUDE.md's rule for them is *"same constants, nothing
-persisted"*. Exposing them makes them a stored value that the two estimators can
-disagree about, for a visual effect nobody has asked to change. If the pulse is
-wrong, the constant is wrong, and that is a commit.
+**X3. The avatar's pulse constants.** #78 names them. Refused outright: six tuning
+constants (`PULSE_GROWTH`, `PULSE_FLOOR_DB`, `PULSE_CEILING_DB`, `PULSE_ATTACK`,
+`PULSE_RELEASE`, `PULSE_RATE`) shared by **two estimators of one quantity**, where
+`CLAUDE.md`'s rule is *"same constants, nothing persisted"*. Exposing them makes
+them a stored value the two estimators can disagree about, for a visual effect
+nobody has asked to change. If the pulse is wrong, the constant is wrong, and that
+is a commit.
 
 **X4. Anything that already has a control.** Resolution, quality, the scoreboard
-mode, the pen, the pen's width, the speech model, the camera, the mic, the
-avatar, the panel widths, the folds, the preview and scan volumes. A settings
-sheet listing these would be a second place each can be changed. **This is the
-rule that keeps the sheet small, and it is stated as a rule because every one of
-them is individually plausible.**
+mode, the mute, the pen and its width, the speech model, the camera, the mic, the
+avatar, the inset's size and corner, the panel widths, the folds, the preview and
+scan volumes. A settings sheet listing these would be a second place each can be
+changed. **Stated as a rule because every one is individually plausible** — and
+because a sticky `Preferences` pair behind an existing control is not an unhoused
+option looking for a screen (**D6**).
 
-**X5. Anything that is a property of one clip.** The inset's size and corner
-(v13), `show_pip`, the caption bar (#115), a clip's tags and notes. CLAUDE.md's
-line between `project.json` and `state.json` is about *who* a value belongs to,
-and a per-clip value belongs to the clip; a machine-wide default for it takes the
+**X5. Anything that is a property of one clip.** `show_pip`, the inset's size and
+corner, the caption bar (#115), a clip's tags and notes. `CLAUDE.md`'s line
+between `project.json` and `state.json` is about *who* a value belongs to, and a
+per-clip value belongs to the clip; a machine-wide default for it takes the
 sticky-`Preferences` shape #88 shipped, which needs no screen.
 
-**X6. The export's output directory.** Plausible, unasked, and not free: the
-directory is `open.folder.join(EXPORTS_DIRNAME)`, created on demand after every
-refusal (`bus/export.rs:341`, `:355-357`), and both sidecars hang off the output
-path it builds (`job.path.with_extension(…)`). A configurable one has to answer
-what happens when it is missing, unwritable or on another filesystem — and the
-project-is-a-folder convention says an export belongs in the project. Refused
-because nobody has asked, not on principle.
+**X6. The export's output directory.** Plausible and unasked. The directory is
+`open.folder.join(EXPORTS_DIRNAME)`, created on demand after every refusal, and
+both sidecars hang off the path it builds; a configurable one has to answer what
+happens when it is missing, unwritable or on another filesystem — and the
+project-is-a-folder convention says an export belongs in the project.
 
 **X7. A "reset to defaults" button, an import/export of settings, or a
-`settings.json` of its own.** Everything lives in two files that already exist,
-and both already fall back to their own written defaults on anything they cannot
-read — `lenient` per field in `state.json`, the container default in
-`Preferences`. Deleting the file *is* the reset, and a third settings file would
-be a third thing to keep in step with the two that are correct.
+`settings.json` of its own.** Every value lives in a file that already falls back
+to its own written defaults on anything it cannot read — `lenient` per field in
+`state.json`, the container default in `Preferences`. Deleting the file *is* the
+reset, and a third settings file is a third thing to keep in step with the two
+that are correct.
 
-**X8. A format version for any of (B).** Everything in **§U3**'s sheet is
-`state.json`. `CURRENT_FORMAT_VERSION` moves **once**, for **S2**'s one field,
-and not again for the sheet.
+**X8. A format version for anything in §U4's sheet.** It is all `state.json`.
+`CURRENT_FORMAT_VERSION` moves **once**, for §F's two fields, and not again for
+the sheet.
 
 ---
 
@@ -598,133 +510,162 @@ and not again for the sheet.
 
 | Crate | Contents |
 |---|---|
-| `pundit-core` | `Preferences::last_export_chapters: bool`, `true` in the `Default` impl, **no serde attribute** (`project.rs:126-181`); `CURRENT_FORMAT_VERSION` 13 → 14 (`store.rs:21`), `MIN_READABLE_FORMAT_VERSION` unchanged. Nothing else — `plan::CompilationPlan::chapters` and `chapters::chapter_list` are untouched, because the switch is expressed as an empty list, which both already mean. |
-| `pundit-media` | **Nothing.** `splice` already returns `Written(0)` for an empty list (`media/src/chapters.rs:158`) and `write_chapter_list` already removes a stale file when `chapter_list` says no (`composite/export.rs:511-521`). **If this table ever grows a media change, the design in §U2 has been abandoned.** |
-| `pundit-app` | `bus/mod.rs`: `chapters: bool` on `Command::Export` and its dispatch arm (`:334-342`, `:1029-1034`). `bus/export.rs`: the field on `Pickers` and in `Pickers::of` (`:540-556`) — including its doc comment, which says *"The export sheet's three pickers"* (`:536-538`) — the write-back (`:360-370`), and one line in `job` clearing `compilation.plan.chapters` when it is off (`:349`). `bus/state.rs`: the header's `store::read` claim corrected (**S3**) — a documentation fix, no code. UI: one `CheckBox` and one `in-out property <bool>` on `ExportSheet` (`app.slint:1704-1788`); `main.rs` passes it with the other three. |
-| `pundit-harness` | That an export with the switch off writes no `.chapters.txt` and removes a stale one, and that one with it on still writes it. |
+| `pundit-core` | `Preferences::last_export_chapters` and `last_export_cues`, both `bool`, both `true` in the `Default` impl, **no serde attribute**; `CURRENT_FORMAT_VERSION` to the next free number, `MIN_READABLE_FORMAT_VERSION` unchanged. Nothing else: `plan::CompilationPlan::chapters`, `chapters::chapter_list` and `cues` are untouched, both switches being expressed as an empty list, which all three already mean. |
+| `pundit-media` | **Nothing.** `splice` already returns `Written(0)` for an empty list, `write_chapter_list` already removes a stale file when `chapter_list` says no, `write_sidecar` already removes a stale `.srt` for `Some(empty)`, and `copy.rs` already requests no subtitle pad for an empty cue list. **If this row ever grows a media change, the design in §S2 has been abandoned.** |
+| `pundit-app` | `bus/mod.rs`: two `bool`s on `Command::Export` and its dispatch arm. `bus/export.rs`: the two fields on `Pickers` and `Pickers::of` (including the doc comment that counts the sheet's pickers), the write-back, one line in `job` clearing `compilation.plan.chapters`, the new `board_cues`, and `carry_scoreboard` losing its `compilation` parameter and its `cues` arm while gaining §S4's Default condition. UI: two `CheckBox`es and two `in-out property <bool>`s on `ExportSheet`, one derived "would copy" property, one new explanatory line; `main.rs` reads both on open and sends both on Start, beside the four it already does. |
+| `pundit-harness` | The switch pair, both ways, for both outputs — including the stale-file removals, which are the halves an implementation can miss. |
 
-**No new module, no new file, no new command, and no new UI surface.**
-
-**`CLAUDE.md` changes in three places**, all of them paragraphs that already
-exist and none of them a new section:
-
-- the **format-rules list** gains a `v14` bullet, on v11's and v13's shape —
-  the field, that `Preferences` takes **no** attribute, and that the readable
-  floor stays 7;
-- the **export-sheet paragraph** (*"The export sheet's third picker is
-  Scoreboard…"*) gains the fourth control and **W4**'s one-switch-both-forms
-  rule, beside `carry_scoreboard`'s own "blanks the field rather than carrying a
-  mode flag into media", which it is a second instance of;
-- the **speech-model paragraph**, per **S3**, loses the "every existing project
-  fails" price and keeps its conclusion.
-
-**`bus/state.rs`'s header** takes the matching correction. Both are
-documentation; no code moves for them.
+**`CLAUDE.md` changes in two existing paragraphs:** the **format-rules list**
+gains a bullet for the new version on v11's, v13's and v15's shape (the two
+fields, no attribute, the floor stays 7); the **export-sheet paragraph** gains the
+two switches, §S1's one-switch-both-forms rule and §S4's "Default never trades
+the board away", beside `carry_scoreboard`'s own "blanks the field rather than
+carrying a mode flag into media", which both switches are further instances of.
+Nothing is owed to `bus/state.rs` or the speech-model paragraph (**§F**).
 
 ## Testing
 
 **No test writes outside a `tempfile::tempdir()` and no test reads the coach's
 folders.**
 
-- **`pundit-core` (`tests/project_format.rs`):**
-  - **`a_v13_file_loads_under_the_current_version`**, on
-    `a_v12_file_loads_under_the_current_version`'s shape (`:439-476`): serialize
-    `sample_project`, remove `preferences.lastExportChapters`, stamp
-    `formatVersion: 13`, read, assert the field is `true` from the container
-    default, assert `project.json.v13` exists after the save, assert the file is
-    re-stamped to `CURRENT_FORMAT_VERSION`. The literal `13` is what fails if
-    the constant never moved — that test's own stated reason (`:429-437`).
-  - `preferences_defaults_are_not_zero` (`:143`) **amended** rather than joined:
-    it is already the test that a `Preferences` field's default is the written
-    one and not `Default::default()`, and a `bool` whose real default is `true`
-    is exactly its subject.
-- **Harness (`pundit-harness/tests/export.rs`):**
-  - **An All Clips export with the switch off writes no `.chapters.txt`, and
-    removes one already at that path.** The removal is the half an
-    implementation can miss, because "off" takes the same branch a single clip
-    already takes.
-  - **With it on, the same export writes one** — so the test pair proves the
-    switch and not just the absence.
-  - **The in-file chapters follow it**: `ExportDone::chapters` is
-    `Written(0)` with the switch off and `Written(n)` with it on. This is what
-    pins **W4**'s "both forms, one switch"; without it the two halves can drift.
-  - **The write-back**: an export with the switch flipped stores it in
-    `Preferences`, and the next sheet open reads it back. Amends the existing
-    picker write-back test rather than adding a fourth.
-  - **A refused run stores nothing** — the existing rule
-    (`bus/export.rs:360-362`: the write-back is after `begin`, so nothing on the
-    way to a refusal dirties the project). Amended, not added.
-- **Not tested, deliberately:** that `splice` and `chapter_list` handle an empty
-  list. Both are already covered by the single-clip path and by
-  `core/tests/chapters.rs`; a third assertion of the same rule through a slower
-  path earns nothing.
-- **Manual (batched):**
-  - export a whole match with the switch off and confirm `exports/` holds the
-    `.mp4` alone;
-  - confirm the export sheet still fits its 480px card with the fourth row, at
-    the 1100px window minimum — **an estimate, not a measurement**;
-  - confirm **W3** by hand, which is the claim this spec most depends on:
-    Scoreboard → *Burned into the picture* on a whole match writes no `.srt`
-    and removes one already there.
+- **`pundit-core` (`tests/project_format.rs`):** one new every-readable-version
+  test on `a_v12_file_loads_under_the_current_version`'s shape — serialize
+  `sample_project`, remove both new keys, stamp the previous version, read, assert
+  both fields are `true` from the container default, assert `project.json.v<old>`
+  exists after the save and that the file is re-stamped. Its literal version is
+  what fails if the constant never moved, which is that test's own stated reason.
+  `preferences_defaults_are_not_zero` is **amended**, not joined.
+- **Harness.** Extend the existing whole-match tests, which already assert on
+  `exports/`' contents and already count subtitle streams with `ffprobe`:
+  - **Chapters off** on an All Clips export writes no `.chapters.txt` and removes
+    one already at that path; **on**, the same export writes one. The pair proves
+    the switch rather than an absence.
+  - **The in-file chapters follow it**: `ExportDone::chapters` is `Written(0)` off
+    and `Written(n)` on. This pins §S1's "both forms, one switch"; without it the
+    two halves can drift.
+  - **Subtitles off on a copied whole match**: no `.srt`, a stale one removed, and
+    **no subtitle stream in the file** — the half that lives in `copy.rs`, and the
+    one an implementation can get right beside the file and wrong inside it.
+  - **Burned with the subtitles on writes the `.srt`** — unreachable today, and
+    the cheapest proof that independence is real.
+  - **Default with the subtitles off burns the board in** rather than copying. The
+    one behavioural inference in the spec, so it is pinned.
+  - **The write-back** stores either switch when flipped and reads it back on the
+    next open; **a refused run stores nothing.** Both amend
+    `a_run_persists_the_resolution_quality_and_mute` and
+    `a_refused_run_leaves_the_pickers_alone` rather than adding a pair beside them.
+- **Not tested, deliberately:** that `splice`, `chapter_list` and `write_sidecar`
+  handle an empty list. All three are already covered — by the single-clip path, by
+  `core/tests/chapters.rs`, and by `a_burned_whole_match_removes_a_stale_sidecar`.
+- **Manual (batched):** export a whole match with both switches off and confirm
+  `exports/` holds the `.mp4` alone; confirm the sheet still fits its 480px card
+  with two more rows at the 1100px window minimum (**an estimate, not a
+  measurement**); confirm the no-board-anywhere line appears for *Separate track*
+  with the subtitles off and not for *Default*.
 
 ## Risks
 
-1. **W3 is a code reading, and the whole "two already have a switch" conclusion
-   rests on it.** `carry_scoreboard` is one function and its three `cues` arms
-   are explicit (`bus/export.rs:590`, `:602`, `:628`), but the coach's actual
-   experience of it has not been checked — they may have had a `.srt` appear on
-   a run where they believed they had chosen *Burned*, which would mean the
-   picker is not discoverable as the off switch even though it is one. **On the
-   manual list, and it is the check that could change this spec's answer** (to:
-   the Scoreboard picker's explanatory line should say the `.srt` goes with it).
-2. **One switch covering both forms of chapters may be one switch too few.** A
-   coach who wants `chpl` for their own mpv playback but no text file beside the
-   video cannot have that. **Accepted**: the in-file box is invisible and free,
-   so the combination is implausible, and two checkboxes for it would be worse
-   than the gap. Revisit only if asked.
-3. **A version bump for a bool will look disproportionate to the next reader.**
-   It is: one field, one test, and a project that an older build then refuses.
-   **S2** states the structural reason (one sheet, one write-back path) rather
-   than leaving it to be re-derived, and **S3** prices the bump honestly so the
-   trade is visible. The reader who disagrees has everything they need to.
-4. **The Settings sheet, designed and unbuilt, is a design that can go stale.**
-   If neither #84 nor #102 lands for months, **U4** is a specification of a
-   component against an `app.slint` that has moved. Accepted: it is forty lines
-   of guidance against a `Sheet` component that has been stable across six
-   users, and the alternative — building it now — is the container-before-contents
-   mistake this spec refuses.
+1. **§S4's Default rule is an inference, not a coach answer.** He asked for
+   independent switches; "Default burns the board in when the subtitles are off"
+   is this spec reading *"Default means the best available, never a silent
+   trade"* as governing. The alternative is Default copying a film with no board
+   while the sheet warns about something it cannot predict (`can_copy` is the
+   bus's answer, not the UI's). **Accepted**: the rule is one condition in the arm
+   that already holds the `can_copy` fallback, it costs the hand-chosen modes
+   nothing, and it is the only version where every line the sheet shows is true.
+   Reversible in one line.
+2. **One switch per output may be one too few.** A coach wanting `chpl` for their
+   own mpv playback but no text file beside the video, or the embedded track but
+   no `.srt`, cannot have either. **Accepted:** the in-file forms are invisible
+   and free, so both are implausible, and four checkboxes would be worse than the
+   gap.
+3. **A version bump for two bools will look disproportionate.** It is: two
+   fields, one test, and a project an older build then refuses. §F states the
+   structural reason and prices the bump honestly, so a reader who disagrees has
+   what they need to.
+4. **The Settings sheet, designed and unbuilt, can go stale.** If neither #102 nor
+   #84 lands for months, §U4 specifies a component against an `app.slint` that has
+   moved. **Accepted:** it is guidance against a `Sheet` that has been stable
+   across six users, and building it now is the container-before-contents mistake
+   this spec refuses.
 
 ## Deferred
 
-1. **The Settings sheet itself** (**U3**, **U4**) — built by #84 or #102,
-   whichever lands first.
-2. **A chapters switch on the basket sheet.** That sheet has its own two
-   pickers, stored as string labels in `basket.json` (basket spec H1's reason),
-   and a basket film gets chapters one per piece. Adding a third picker there is
-   a second storage path for the same question and is not what the coach asked
-   about. Revisit when a basket film's sidecars are complained about.
-3. **Separating the `.srt` from the embedded `tx3g` track** (**W3**). One
-   decision today, deliberately. Revisit if a coach names the combination.
-4. **A keys tab** (**D5**, #96).
-5. **Splitting the Scoreboard picker's explanatory line to mention the `.srt`**
-   — depends on Risk 1's manual check.
+1. **The Settings sheet itself** (§U4) — built by #102 or #84, whichever lands
+   first.
+2. **Splitting `.srt` from `tx3g`, and `chpl` from `.chapters.txt`** (Risk 2). One
+   switch each, deliberately. Revisit if a coach names a combination.
+3. **A chapters switch on the basket sheet.** The mute went to both sheets, so the
+   precedent is not that the basket is exempt — but only the chapters half could
+   apply (a basket's board is burned in and its `cues` are `None` by design), and
+   `basket.json` is a separate storage path with no version and a whole-document
+   read. Revisit when a basket film's sidecars are complained about.
+4. **A keys tab** (§D5, #96).
+5. **A tags switch** — on the open question below.
 
-## Open questions for the coach
+## Open question for the coach
 
-1. **#102: a switch, or Shift to suppress the snap?** (**D1**.) The modifier
-   needs no stored value, no screen and no #78, is reversible mid-drag, and is
-   what every timeline editor does. A switch is what was asked for and is a
-   small build once a sheet exists. **Recommended: the modifier.** It decides
-   whether the Settings sheet is built soon or waits for #84, which needs it
-   either way (**D2**).
-2. **Does "turn the chapters off" mean the text file alone, or the chapters
-   too?** (**W4**, Risk 2.) This spec says both, on the grounds that the in-file
-   box is invisible. Worth one sentence of confirmation, because it is the only
-   place the switch does more than was literally asked.
-3. **Which files were in `exports/` when #78 was filed, and which of them were
-   unwanted?** (**W3**, Risk 1.) The entry names *"the srt file gen, the other
-   chapter track"*, and this spec reads that as the two sidecars beside a whole
-   match — but if the `.srt` was there on a run where *Burned into the picture*
-   was chosen, then the problem is the picker's discoverability rather than a
-   missing setting, and the fix is a word in its explanatory line instead of a
-   checkbox.
+**The header tags: did *"all of them"* include those?** (§X1.) This spec switches
+the two outputs a coach can see in a folder — the chapters and the scoreboard
+subtitles — and leaves the `moov/udta` tags on, because they are not files, they
+cost nothing, and `x264enc`'s own `ENCODER` tag means a switch could not even
+produce an untagged file on the software encoder. **It is the one place his words
+are read narrowly, so it is asked rather than assumed.** A yes is a third
+checkbox and the same blanking move, so it is cheap either way.
+
+Everything else this spec once asked has been answered or settled: #102's shape
+is the coach's on/off (§D1); what "turn the chapters off" covers is decided by
+§S1, with Risk 2 recording the cost; and which files were in `exports/` when #78
+was filed no longer changes the design now that every output is switchable.
+
+---
+
+## §R. What the first version got wrong, and what overturned it
+
+The first version (2026-10-02) concluded that #78 was a single chapters checkbox
+and that no settings screen was justified. Both are wrong. The record, because a
+spec that quietly rewrites its own conclusion teaches the next reader nothing:
+
+**Overturned by the coach (2026-10-03):**
+
+1. **The headline.** Asked which files in `exports/` were unwanted: *"I think all
+   of them should be settings?"* So collapsing #78 to one checkbox was not what
+   was asked for (§S1).
+2. **The `.srt` and the `tx3g` were read as "already having their switch"** in the
+   Scoreboard picker. Offered the choice of leaving them to follow the picker,
+   making them independent, or greying them when redundant, he chose
+   **independent** (§W3). The picker is the board's delivery, and reaching it as
+   an off switch required also moving the board into the picture.
+3. **"No settings screen is justified"** rested on "this option has nothing to sit
+   beside". #102's answer gave the screen a second tenant, so it is justified,
+   designed in §U4 — and still not built by #78.
+4. **#102's shape.** The first version recommended snap-always with Shift to
+   suppress. The coach answered **an on/off setting**; the recommendation is
+   withdrawn.
+
+**Claims that were wrong on their own terms, found by re-checking the code and the
+backlog:**
+
+5. **The 2026-10-05 amendment said `carry_scoreboard` should be renamed** once it
+   lost the cue coupling, because `with_audio` had made its name approximate. The
+   opposite: without the cue slot it returns `{ copy, scoreboard }` — exactly how
+   a target carries the board — and it **loses** its `compilation` parameter,
+   which was passed only for `scoreboard_cues`. No rename (§S3).
+6. **"Board burned in *and* a subtitle track of it"** overstated the first new
+   combination. The `tx3g` track rides the **copy** only; a burned export
+   re-encodes and gets the `.srt` alone (§S4, and `CLAUDE.md`'s own *"Only the
+   copy carries it"*).
+7. **"#78 is cited as a prerequisite by four other entries — #84, #102, #115 and
+   #116."** #116 cites #78 nowhere; #115 canvassed #78 as one of three homes and
+   then recorded the coach's answer against it; and two citers were missed, **#96**
+   and **#88** (§D5, §D6). Six entries name #78 and none needs it to ship.
+8. **"#116's entry still reads as open, and so does the top-of-file list."** Both
+   had already been corrected: the entry reads RESOLVED and #116 is not in the open
+   list.
+9. **The two doc corrections were listed as this spec's scope.** They landed
+   2026-10-02 in `65f3e47`, so §F records the fact and owes no edit.
+10. **The version was "13 → 14".** `CURRENT_FORMAT_VERSION` is **15** (v14 is
+    #117's `StrokeEnd`, v15 the mute's `export_source_volume`). §F takes the next
+    free number from `store.rs` rather than writing one down — the instruction
+    #115's own top-of-file line already gives, and which its body contradicted
+    until this change (§D3).
