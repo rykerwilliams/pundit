@@ -1084,6 +1084,20 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   BACKLOG entry, no Rust touched at all — which is the cleanest exoneration of the
   code this entry has: nothing in that push could have caused it. A `--failed`
   rerun went green on the same commit, as every previous rerun has.
+- **Ninth sighting, 2026-10-06**, run 37396107248 on the #78 spec-rewrite branch:
+  `a_seek_in_the_final_second_stays_in_its_source` — the **first** sighting's test
+  again — same `lib.rs:164`, same "timed out waiting for a settled position",
+  12 passed 1 failed. That branch changes **two markdown files and nothing
+  else**, so this is the **second** docs-only sighting (the eighth was the other)
+  and about as conclusive as evidence gets that the fault is the harness's and
+  not any branch's code. Seven distinct test names now.
+- **Nine sightings is past the point where the rate matters and into the point
+  where the cost does.** It has failed a merge on a branch that could not
+  possibly have caused it, twice. Every one has gone green on a `--failed`
+  rerun, which is why it has stayed a nuisance rather than a blocker — but the
+  nuisance is now a reliable tax on every PR, and #101's promotion rule (the
+  coach's: "if it comes back up then move it up in the queue") is a precedent
+  this entry arguably meets.
 - **Do not read a rate off 2026-10-01 without separating the two causes**, which is
   a mistake this entry made for a few hours. Of six workspace runs that day, **two
   failed to this flake and two to a slow Ubuntu mirror** — `azure.archive.ubuntu.com`
