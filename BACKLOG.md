@@ -14,12 +14,19 @@ made things worse.
 ### Next, in order
 
 - **78.** App settings for the things an export writes. The coach (2026-09-24):
+  "the srt file gen, the other chapter track" — and (2026-10-03) *"I think all of
+  them should be settings?"*, with **fully independent** switches. **Specced
+  2026-10-05**: two on the export sheet (Chapters, Scoreboard subtitles), and a
+  settings sheet designed but not built
 - **96.** Every hot key should be reassignable. The coach (2026-09-25): "we need
 - **77.** An export queue across projects. The coach (2026-09-24): "i open…
-- **84.** Music under a goals reel — Openverse search, then the mixer (needs #78)
+- **84.** Music under a goals reel — Openverse search, then the mixer (wants the
+  settings sheet #78 **designs**, for the music folder path; the API key was
+  never the blocker)
 - **102.** Snap the scrubber to events, as an option. The coach (2026-09-28):
   "snap to events in the scrubber as an option" — which marks it covers is the
-  open question (needs #78 for the control; **#100's per-field read has landed**)
+  open question (**an on/off setting**, the coach 2026-10-03; wants the settings
+  sheet #78 **designs**; **#100's per-field read has landed**)
 - **127.** The rest of the slate row's right-click menu — Jump to slate end,
   Record and Preview slate beside the "Jump to slate start" #104 shipped; two of
   the three have to set the selection first, which is the bit to get right
@@ -1244,7 +1251,13 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   and machine-wide in `$XDG_CONFIG_HOME/pundit/state.json` (the last project,
   the speech model, the window size). **Machine-wide is the cheap one:** a field
   added to `Preferences` is a `formatVersion` bump every time, which is why the
-  whisper model picker went to `state.json` in the first place.
+  whisper model picker went to `state.json` in the first place. **Half-corrected
+  2026-10-02 (`65f3e47`):** the bump is real, but it is **not** a read failure —
+  `store::read` accepts `MIN_READABLE..=CURRENT`, so a new build reads every
+  older project and the container default fills the key it hasn't got. What a
+  bump costs is the **forward** direction, which `project.json.v<old>` exists
+  for. The whisper model's home is right for what it *describes*, not for a
+  price.
 - **What would become a setting:** whether an export writes the `.srt` sidecar,
   the `.chapters.txt` list and the embedded `tx3g` track; whether it writes the
   file tags; possibly the reel's default lead-in and tail (20 s / 6 s today,
@@ -1259,8 +1272,30 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   the right default. It becomes real the first time a default is wrong for a
   coach, and then it should arrive with its home already decided rather than as
   six checkboxes.
-- **When to revisit:** the first "can I turn that off", or when a second coach
-  uses the app.
+- **ANSWERED by the coach (2026-10-03), twice.** Asked which of the files in
+  `exports/` were unwanted: *"I think all of them should be settings?"* — so
+  every output an export writes is switchable, not just the chapters. And asked
+  whether the `.srt` and the embedded `tx3g` should keep following the Scoreboard
+  picker, become independent, or grey out when redundant, he chose **fully
+  independent**.
+- **SPECCED, 2026-10-05:** `docs/superpowers/specs/2026-10-02-app-settings-design.md`.
+  Two switches on the export sheet (**Chapters**, **Scoreboard subtitles**), each
+  governing its output in both the forms it takes, each a `Preferences` field on
+  the write-back the other four controls already use, each reaching media by
+  blanking data media already reads — **no change in `pundit-media`**. The
+  `.chapters.txt` list above is **not** "on with no way to say otherwise" for the
+  `.srt` and the `tx3g`: those have been suppressible since 0.4.0, but only as a
+  side effect of a control about the board's *placement*. Three of the six things
+  this entry names are **refused** with reasons (the file tags, the reel's
+  lead-in and tail, the avatar's pulse constants — that spec's §X), and the one
+  open question left for the coach is whether *"all of them"* was meant to
+  include the header tags.
+- **It is cited by six entries and owes each of them less than they claim** —
+  #84, #96, #102, #115, #88 and (wrongly) nothing at all to #116, which never
+  cited it. What it owes is the **design** of a settings sheet (that spec's §U4),
+  built by whichever of #102 or #84 lands first; #78's own switches go on the
+  export sheet. Each of those entries has been corrected in place.
+- **When to revisit:** next — it is specced and waiting on a plan.
 
 79. **What the app does over a forwarded X11 display, and saying so.** The coach
   asked (2026-09-24) whether it runs over remote X11. Expected answer: **no, by
@@ -1465,8 +1500,17 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   catalogues — with **Jamendo direct as the upgrade** if tag matching proves too
   coarse for genre, and the coach's own Jamendo key an option in #78 rather than
   a requirement.
-- **When to revisit:** after #78, which is where the key field lives. Nothing
-  further is needed from the coach.
+- **Corrected 2026-10-05 (#78's spec, §D2): "after #78, which is where the key
+  field lives" was wrong twice.** The key is **optional** — this entry's own
+  Openverse decision is *"anonymous queries need no key"* — so it was never the
+  blocker. And #78 does not build the settings sheet: it **designs** it (that
+  spec's §U4) and leaves the build to its first real tenant, which for this entry
+  is the **local music folder path** — machine-wide, impossible to put beside
+  anything, and needing a file-chooser button. The genre pick is **not** a
+  settings field: it is an export choice and belongs on the export sheet with
+  resolution and quality.
+- **When to revisit:** any time. Nothing further is needed from the coach, and
+  nothing is owed by #78 beyond the sheet's design, which is written down.
 
 85. **Recent projects, and a drawer to switch between them — RESOLVED**
   (2026-10-02, five tasks across PRs #11-#14). The coach (2026-09-24):
@@ -1622,9 +1666,14 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **What was checked and needed no change:** the GL 1×1 filler (it feeds a pad
   whose rect is set in the PTS-keyed probe), and `shows_camera_pip` /
   `shows_avatar` / `shows_inset` (they answer *whether*; this is *where*).
-  **What is still open:** nothing of this entry — but the two new preferences
-  have no control of their own, which is #78's job, where
-  `pip_for_new_recordings` would finally get one too.
+  **What is still open:** nothing of this entry. (This used to say the two new
+  preferences *"have no control of their own, which is #78's job, where
+  `pip_for_new_recordings` would finally get one too"*. **Corrected 2026-10-05,
+  #78's spec §D6:** they are not #78's job — `last_inset_size` and
+  `last_inset_corner` are the sticky *memory* of the inspector's own two
+  controls, which is that spec's §X4. `pip_for_new_recordings` is genuinely
+  unhoused, but it is the **project's** and not the machine's, so a machine-wide
+  settings sheet is the wrong home; its control belongs beside the inset's two.)
 
 89. **The app's live self-view sat under the drawings; the export's inset sat
   over them — RESOLVED** (2026-09-25 review, the other way round). The inset had
@@ -1874,7 +1923,10 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
     share the same handler; a binding is a (modifiers, key) pair, not a letter.
 - **It wants #78's settings screen to land on**, and it should ship with a
   read-only view of the bindings first — that alone closes #94 and is most of
-  the value.
+  the value. **What #78 owes it (that spec's §D5): the sheet's design, and one
+  rule — a key map is not a row in it.** A table with capture, conflict
+  detection and a reset is its own surface; a keys **tab** in the sheet is the
+  shape, a tab-less sheet with a key map poured into it is not.
 - **Why deferred:** only by order; it is the natural companion to #78, and the
   table refactor should not be rushed into the same file four queued features
   are already editing (#87, #88, #92).
@@ -2055,8 +2107,9 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   that key alone rather than the coach's last project. Read #100's resolution for
   the one case it does not cover: a malformed *element* still costs a whole list,
   so if this option ever stores a **set** of mark kinds rather than a bool, that
-  is the shape to know about. #78's settings panel is still where the control
-  would live.
+  is the shape to know about. The settings sheet is where the control would live
+  — **designed** by #78's spec (§U4) and built by whichever of this entry and #84
+  lands first, since #78's own switches go on the export sheet instead.
 - **It must not fight the frame-accurate paths.** `,` / `.` step exactly one
   frame and the arrows skip fixed amounts; both are promises about exact
   distances, so snapping belongs to the **drag** alone, not to any keyed
@@ -2559,9 +2612,9 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   - **Per export, on the export sheet** — a checkbox beside the Resolution /
     Quality / Scoreboard pickers, remembered by the same write-back. Matches
     what was asked ("in exported clips") and how the other export choices
-    work. Remembered in `Preferences` it is a `formatVersion` bump (v15, with
-    the every-readable-version test); remembered machine-wide it is
-    `state.json`, the cheap home #78 describes.
+    work. Remembered in `Preferences` it is a `formatVersion` bump (the next
+    free number, with the every-readable-version test); remembered machine-wide
+    it is `state.json`, the cheap home #78 describes.
   - **Per clip, in the inspector** — beside "Show webcam in export", as
     `show_pip` is. Lets one clip carry a title and another not, but is a
     `Clip` field (format bump; an `Option`, never a field-level-defaulted
@@ -2600,8 +2653,9 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   and it should be copied, not reinvented:
   - **A `Clip` field** (`show_caption`, or whatever fits `show_pip`'s naming),
     with a checkbox in the inspector beside "Show webcam in export". Format
-    bump to v15 (v14 went to #117's arrowhead); per CLAUDE.md's rules a field
-    added to an existing struct is
+    bump to the **next free number in `store.rs`** — v14 went to #117's
+    arrowhead and **v15 to the mute switch**, so this is not v15 as this bullet
+    used to say; per CLAUDE.md's rules a field added to an existing struct is
     an `Option` with a field-level `#[serde(default)]` — `None` reading as
     shown, which is what every v7–v13 clip was — never a defaulted `bool`.
   - **"In general" is the sticky last-used preference**, as
@@ -3385,3 +3439,38 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** after the coach has run a themed pass over a real match.
   The keyboard half is naturally part of #96; the notice is its own small
   change.
+
+129. **`pip_for_new_recordings` has no control at all.** Surfaced 2026-10-05 by
+  #78's spec rewrite, which **removed the line that had parked it on #78** — so
+  without this entry the option has no owner.
+- **What it is:** `Preferences::pip_for_new_recordings`, read by
+  `Project::add_recorded_clip` as a new clip's `show_pip`. It decides whether
+  every take gets an inset. It defaults to `true` and **nothing can change it**:
+  the field's own doc says it "has no control at all and so is written only by
+  tests", and there is no `.slint` binding for it anywhere.
+- **It is the project's, not the machine's**, which is what makes it #78's
+  neighbour rather than `state.json`'s: whether a coach records on camera is a
+  property of how they work on this match, and it travels with the folder.
+- **Why it is not simply #78's job**, which is what the removed line assumed:
+  #78 is about **what an export writes** — the chapters and the subtitle
+  outputs. An inset on a new recording is not an export output, and hanging it
+  on #78 is exactly the "hook every unhoused option gets hung on" that spec
+  exists to stop. If a settings surface lands it may well live there; that is a
+  housing question, not a reason to call it #78's.
+- **The cheap shape, if it wants one:** `last_inset_size` / `last_inset_corner`
+  (v13) are the precedent and the field's own doc points at it — *sticky
+  last-used*, written back whenever a clip's own control changes, so there is no
+  field the coach cannot reach and no UI beyond the clip's existing controls.
+  The inspector already has a `show_pip` checkbox per clip; writing *that* back
+  would give this field a control with no new UI at all, and would make the three
+  inset preferences one mechanism instead of two plus an orphan.
+- **Check before building:** whether sticky-last-used is right here. An export
+  resolution is sticky because the coach picks it per run; "do I record on
+  camera" may be closer to a standing choice, and an avatar project has no camera
+  at all (`Project.avatar.is_some()` already overrides this). The answer decides
+  whether this is three lines or a control.
+- **Why deferred:** nobody has asked for it, and it defaults to the right thing
+  for a coach who records on camera. It is filed so it is not lost, not because
+  it is urgent.
+- **When to revisit:** with any settings surface, or the first time a coach wants
+  takes without an inset by default and finds they cannot say so.
