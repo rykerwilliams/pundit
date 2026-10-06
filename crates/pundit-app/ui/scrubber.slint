@@ -9,7 +9,7 @@
 // and the frame-accurate landing never comes. This TouchArea sees every end:
 // the pointer-up, and the cancel.
 
-import { Slider } from "std-widgets.slint";
+import { Palette, Slider } from "std-widgets.slint";
 
 /// A tick over the track: a chapter (spec C1), at `at` on the scrubber's own
 /// scale.
@@ -101,7 +101,16 @@ export component Scrubber {
         width: root.mark-x(root.slate-span-to) - self.x;
         height: 16px;
         border-radius: 2px;
-        background: #2ec4b6.transparentize(0.3);
+        // **The app's own selection colour, not an invented one** (#131). The
+        // band *is* the selected slate's range (spec S6), and the slate row it
+        // belongs to is painted with this exact colour, so the two read as one
+        // thing. An arbitrary hue also had to be picked against the three
+        // things already on this track -- a goal's amber, a start/stop's white,
+        // the filled rail's accent blue -- and the first guess (teal) clashed
+        // with the rail: the coach, 2026-10-05, "the slider bar color clashes a
+        // bit". A palette colour cannot clash with the palette, and it follows
+        // light and dark without a second literal.
+        background: Palette.selection-background.transparentize(0.25);
     }
 
     // Before the slider, so its thumb paints over them.
