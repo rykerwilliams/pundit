@@ -16,8 +16,8 @@ made things worse.
 - **78.** App settings for the things an export writes. The coach (2026-09-24):
   "the srt file gen, the other chapter track" — and (2026-10-03) *"I think all of
   them should be settings?"*, with **fully independent** switches. **Specced
-  2026-10-05**: two on the export sheet (Chapters, Scoreboard subtitles), and a
-  settings sheet designed but not built
+  2026-10-05, planned 2026-10-06**: two on the export sheet (Chapters,
+  Scoreboard subtitles), and a settings sheet designed but not built
 - **96.** Every hot key should be reassignable. The coach (2026-09-25): "we need
 - **77.** An export queue across projects. The coach (2026-09-24): "i open…
 - **84.** Music under a goals reel — Openverse search, then the mixer (wants the
@@ -1309,7 +1309,18 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   cited it. What it owes is the **design** of a settings sheet (that spec's §U4),
   built by whichever of #102 or #84 lands first; #78's own switches go on the
   export sheet. Each of those entries has been corrected in place.
-- **When to revisit:** next — it is specced and waiting on a plan.
+- **Seven, not six** (found while planning, 2026-10-06): **#131** was filed the
+  same day the spec was written and waits on the settings sheet too. **#129 is
+  deliberately not one** — its own words are "with *any* settings surface",
+  because hanging an unhoused option on #78 is what that spec exists to stop.
+- **PLANNED, 2026-10-06:** `docs/superpowers/plans/2026-10-06-app-settings.md`.
+  Two tasks, sequential, one PR: the switches reach the outputs (the fields, the
+  bump, `board_cues` out of `carry_scoreboard`, the harness tests), then the
+  sheet. The plan corrects five things in the spec — among them that
+  `ExportDone::chapters` never reaches the harness, that no fixture in the tree
+  can produce a `.chapters.txt`, and that two more bools take `Bus::export` past
+  clippy's `too_many_arguments`, so the command's payload becomes one struct.
+- **When to revisit:** next — it is specced and planned, waiting on execution.
 
 79. **What the app does over a forwarded X11 display, and saying so.** The coach
   asked (2026-09-24) whether it runs over remote X11. Expected answer: **no, by
@@ -3524,10 +3535,14 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   *"slate bands look dope tho"* and then *"i mean the band color should be in the
   settings"*.
 - **What it is today:** one literal in `ui/scrubber.slint` —
-  `#2ec4b6.transparentize(0.3)`, 16px of the 20px track — chosen by an agent
-  against the three things already on that track (a goal's amber, a start/stop's
-  white, the filled rail's accent blue) and never seen on a display until the
-  coach ran it.
+  `Palette.selection-background.transparentize(0.25)`, 16px of the 20px track.
+  **Corrected 2026-10-06:** this entry described the invented teal
+  (`#2ec4b6.transparentize(0.3)`) that `edba6fd` replaced on the day the entry
+  was filed, after the coach said the first guess clashed with the rail. It is
+  now the app's own selection colour, which is also what the selected slate's
+  row is painted with — so a *picker* would be overriding a palette colour, not
+  replacing a hand-picked one, which makes the "is this a setting at all"
+  question below sharper rather than moot.
 - **The tension to resolve before building it**, stated plainly because #78's
   spec exists to stop exactly this: *"a settings screen is where features go to
   hide"*. A colour picker for one overlay is the archetypal candidate. Against
@@ -3544,5 +3559,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **Scope question:** the band is one of four things drawn on that track. A
   colour setting for the band alone is odd; one for all four is a palette, which
   is a bigger feature than the request.
-- **When to revisit:** with #78's settings surface, or sooner if the band turns
-  out to read badly on a particular venue's footage.
+- **When to revisit:** with the settings sheet #78 **designs** — #78 does not
+  build it (that spec's §U4: whichever of #102 or #84 lands first does), and
+  #78's own two switches go on the export sheet. Or sooner if the band turns out
+  to read badly on a particular venue's footage.
