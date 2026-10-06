@@ -3402,3 +3402,38 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** after the coach has run a themed pass over a real match.
   The keyboard half is naturally part of #96; the notice is its own small
   change.
+
+129. **`pip_for_new_recordings` has no control at all.** Surfaced 2026-10-05 by
+  #78's spec rewrite, which **removed the line that had parked it on #78** — so
+  without this entry the option has no owner.
+- **What it is:** `Preferences::pip_for_new_recordings`, read by
+  `Project::add_recorded_clip` as a new clip's `show_pip`. It decides whether
+  every take gets an inset. It defaults to `true` and **nothing can change it**:
+  the field's own doc says it "has no control at all and so is written only by
+  tests", and there is no `.slint` binding for it anywhere.
+- **It is the project's, not the machine's**, which is what makes it #78's
+  neighbour rather than `state.json`'s: whether a coach records on camera is a
+  property of how they work on this match, and it travels with the folder.
+- **Why it is not simply #78's job**, which is what the removed line assumed:
+  #78 is about **what an export writes** — the chapters and the subtitle
+  outputs. An inset on a new recording is not an export output, and hanging it
+  on #78 is exactly the "hook every unhoused option gets hung on" that spec
+  exists to stop. If a settings surface lands it may well live there; that is a
+  housing question, not a reason to call it #78's.
+- **The cheap shape, if it wants one:** `last_inset_size` / `last_inset_corner`
+  (v13) are the precedent and the field's own doc points at it — *sticky
+  last-used*, written back whenever a clip's own control changes, so there is no
+  field the coach cannot reach and no UI beyond the clip's existing controls.
+  The inspector already has a `show_pip` checkbox per clip; writing *that* back
+  would give this field a control with no new UI at all, and would make the three
+  inset preferences one mechanism instead of two plus an orphan.
+- **Check before building:** whether sticky-last-used is right here. An export
+  resolution is sticky because the coach picks it per run; "do I record on
+  camera" may be closer to a standing choice, and an avatar project has no camera
+  at all (`Project.avatar.is_some()` already overrides this). The answer decides
+  whether this is three lines or a control.
+- **Why deferred:** nobody has asked for it, and it defaults to the right thing
+  for a coach who records on camera. It is filed so it is not lost, not because
+  it is urgent.
+- **When to revisit:** with any settings surface, or the first time a coach wants
+  takes without an inset by default and finds they cannot say so.
