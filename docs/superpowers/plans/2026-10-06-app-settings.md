@@ -482,8 +482,15 @@ The plan above is right where it differs.
    `last_export_cues` defaulting to `true`, it is also what **every** burned
    whole match now writes — including a *Default* run that fell back to burning
    because `can_copy` refused, which is every Matroska or HEVC project. That is
-   the literal reading of independence and this plan takes it (Risk 1), but the
-   spec should have said so where it says the picker's old coupling had a reason
+   the literal reading of independence and this plan takes it (Risk 1) —
+   **and the coach confirmed it on 2026-10-06**, shown the three options
+   (accept the redundant `.srt`, default the switch off, or go back to following
+   the picker) and choosing **accept**: the switch does what it says, and the
+   rule that matters more is that the board is never *lost* — defaulting the
+   switch off would have stopped today's whole-match copy writing an `.srt` at
+   all. So Risk 1 is a recorded, accepted cost rather than an open risk, and
+   `a_burned_whole_match_removes_a_stale_sidecar` is rewritten knowing it. The
+   spec should still have said so where it says the picker's old coupling had a reason
    (§W3: *"a subtitle line of a board already painted into the picture is the
    board twice"*).
 
@@ -529,11 +536,16 @@ the reason its entry gives. #131's entry also still describes the band as
   media change, stop: §S2's design has been abandoned and the plan is wrong, not
   the crate.
 
-## The coach's open question, and what it blocks
+## The coach's open question — ANSWERED 2026-10-06: no third switch
 
-**"The header tags: did *'all of them'* include those?"** (§X1.)
+**"The header tags: did *'all of them'* include those?"** (§X1.) Put to the coach
+with the timing spelled out — cheap now, its own format bump later — and he chose
+**no: leave them on, unswitched.** So this plan ships **two** switches and §X1's
+refusal stands as the design rather than as a default nobody confirmed. The
+reasoning below is kept because it is why the answer is the right one, not
+because the question is still open.
 
-**It blocks nothing.** The plan ships two switches either way.
+**It blocked nothing either way.** The plan ships two switches regardless.
 
 - **If it is unanswered, the default is the spec's:** the `moov/udta` tags stay
   on, unswitched, because they are not files, they cost nothing (measured: *"not
