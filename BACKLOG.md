@@ -3563,3 +3563,33 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   build it (that spec's §U4: whichever of #102 or #84 lands first does), and
   #78's own two switches go on the export sheet. Or sooner if the band turns out
   to read badly on a particular venue's footage.
+
+132. **Two clicks silently renamed the wrong slate — FIXED 2026-10-06.** Found
+  by #127's agent while reading the slate row's click path, not by a failure.
+- **What it was:** `on_show_slate` wrote `set_slate_name` / `set_slate_tags`
+  **unconditionally**, while `show_clip` has guarded the same thing since it was
+  written — *"Not while a field is being edited: that would overwrite what's
+  typed."* Both slate fields are `in-out` with `text <=> root.slate-name`, and
+  `edit_slate_field` commits to **`editing-slate-id`**, which its own comment
+  describes as *"the slate the field opened on, which needn't be the selection
+  any more"*.
+- **So the failure is data loss, not a cosmetic overwrite.** Type a name into
+  row A's field, click row B: the selection change overwrote the field with
+  **row B's** name, `editing-slate-id` still named **row A**, and the focus-loss
+  commit then wrote row B's name onto row A. The row's own `TouchArea` sets the
+  selection *before* `keys.focus()`, so the ordering makes it reachable in two
+  clicks with nothing unusual about the timing.
+- **The fix is `show_clip`'s guard, in the one place that lacked it.** The
+  scrubber span is deliberately left **outside** it: the span follows the
+  selection whatever a field is doing, and showing the newly selected range is
+  never wrong.
+- **Not tested, and `show_clip`'s guard is not either** — checked. The guard is
+  one line of `main.rs` wiring, which this crate has no test module for (the
+  precedent is #122's notice guard, and the four UI-side `show_notice`
+  refusals). What protects it instead is that the two paths now **read
+  identically**: a reader comparing `show_clip` with `on_show_slate` sees one
+  rule rather than an asymmetry, which is how this one went unnoticed.
+- **The lesson, which is #130's lesson again:** the slates panel was built by
+  copying the clip inspector's shape, and both bugs are a rule the inspector
+  already had that the copy did not. **When the slates panel grows, diff it
+  against the inspector rather than against itself.**
