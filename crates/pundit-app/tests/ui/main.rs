@@ -38,3 +38,4 @@ mod scrubber;
 mod self_view_placement;
 mod slate_fields;
 mod splitter;
+mod tag_field;

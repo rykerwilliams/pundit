@@ -25,8 +25,6 @@ made things worse.
   the three have to set the selection first, which is the bit to get right
 - **128.** The themed pass is silent at both of its ends — no keyboard way to
   start one, and nothing said when it runs out of ranges
-- **105.** A slate's tag field should offer the tags already in use — the clip
-  inspector's suggestion list, lifted into one shared `TagField`
 - **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
   clip, sticky for the next recording, as #88's inset size and corner are (**v16
   — v15 went to the mute switch, v14 to #117's arrowhead; take the next free
@@ -131,6 +129,10 @@ problem — which is the entry, not an excuse for it.
 - **119.** A slate's in and out can be adjusted and previewed — the two
   playhead buttons shipped 2026-10-03, the preview 2026-10-04; it shares #114's
   stop, as the entry said it should
+- **105.** A slate's tag field offers the tags already in use — shipped
+  2026-10-05 as one shared `TagField`, the inspector's own field lifted out of
+  it; the layout hazard the entry warned about bit, and the answer is that the
+  suggestion list is a second component the caller places (see the entry)
 
 - 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 92, 94
 
@@ -2171,12 +2173,47 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   item acting on a row that is not selected would leave the arm and the span
   naming different slates. Selecting first inside the item is the likely answer.
 
-105. **A slate's tag field should offer the tags already in use.** The coach
+105. **A slate's tag field should offer the tags already in use — RESOLVED
+  2026-10-05**, as the one shared component the entry asked for. The field, its
+  suggestion state and the Tab / Esc rules are `TagField` in `app.slint`
+  (`inherits LineEdit`, so the two sites keep their own `placeholder-text`,
+  `enabled` and two-way `text` binding and the component adds nothing to
+  re-expose them), and the inspector's field is now an instance of it. No Rust
+  changed at all: `suggest-tags` and `take-suggestion` were already on the
+  window root, and `tag_vocabulary` was already clips ∪ slates. The coach
   (2026-09-28): "tags in slates should be saveable so i can select them or
-  similar." The tags *are* saved — `Slate.tags`, v12, and `tag_vocabulary` is
-  already clips ∪ slates — but nothing lets the coach **pick** one: the slate's
-  field (`slate-tags-edit` in `app.slint`, under the slates list) is a bare
-  `LineEdit`, so every tag is typed out in full, and a typo makes a second tag.
+  similar." The tags *were* saved — `Slate.tags`, v12 — but nothing let him
+  **pick** one: the slate's field was a bare `LineEdit`, so every tag was typed
+  out in full and a typo made a second tag.
+- **The layout hazard bit, and the answer is that the list is a *second*
+  component.** Slint draws in declaration order and has no z-order, so a
+  suggestion list declared inside `TagField` is drawn *under* whatever the
+  caller lays out after the field — the inspector's checkbox and its two
+  `ComboBox`es, the slate editor's Clips header and clip `ListView`, all of
+  which paint opaque backgrounds. Room was never the problem (nothing on either
+  path clips); **drawing order was**. So `TagSuggestions` is its own component
+  and the caller places it last in a parent that is not a layout, where it
+  claims no cell and is drawn over its siblings — which is exactly where the
+  inspector's `Rectangle` already was, so that half is unchanged to the pixel.
+  The slate editor's goes at the bottom of `sidebar-column`, anchored on
+  `slate-tags-edit.absolute-position - parent.absolute-position` because the
+  field is three layouts deep and its own `x`/`y` are relative to its row; the
+  match setup sheet's colour picker anchors the same way. The cost of the split
+  is five bindings per site, against the ~60 lines a copy would have been and
+  the second copy of the Tab / Esc rules it would have left to keep in step.
+- **Esc still cascades, and it is now pinned at both sites.**
+  `crates/pundit-app/tests/ui/tag_field.rs` (a module of #121's one UI binary) drives the real `AppWindow` on the
+  headless backend: two letters, then Tab completes the tag in the clip
+  inspector and in the slate editor; then Esc, which dismisses the list and
+  *keeps* the field (the next letter is typed, and `i`/`o` fire no shortcut),
+  and a second Esc, which bubbles to the window and leaves it (`o` marks again).
+  That last pair is the whole of §S6's fold, tested rather than reasoned about.
+- **Still open: the "or similar" below** — clicking a tag to *filter* the slates
+  list. #120 has since shipped a tag filter for the themed pass, so the ask is
+  met by a field rather than a click; a clickable tag overview for slates is
+  not filed and nobody has asked twice.
+
+  The reasoning the entry was filed with, kept:
 - **The clip inspector already has the picker** (C8): its tags field calls
   `suggest-tags` on every edit (`main.rs`, `tag_suggestions` over
   `tag_vocabulary`), shows the list as a `Rectangle` over the fields below —
