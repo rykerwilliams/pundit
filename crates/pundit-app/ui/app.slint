@@ -3585,7 +3585,28 @@ export component AppWindow inherits Window {
     /// writing one bool on `changed has-focus` gets this wrong: moving from
     /// one to the other raises the new field's flag *before* lowering the old
     /// one's, so the last write is `false` while a field still has focus.
-    property <bool> slate-editing: slate-name-edit.has-focus || slate-tags-edit.has-focus;
+    ///
+    /// **The filter field is in this list, and it was left out once** (#130):
+    /// the tag filter shipped with #120 as a bare `LineEdit`, so every letter
+    /// typed into it fired its shortcut instead — `i` and `o` marking a slate
+    /// in and out, which is the exact failure the paragraph above describes.
+    /// The lesson is that this list is not "the fields that edit a slate" but
+    /// **every field in the slates panel**, and a new one joins it.
+    property <bool> slate-editing: slate-name-edit.has-focus || slate-tags-edit.has-focus
+        || (root.slate-filter-focused
+            && (root.slates.length > 0 || root.slate-tag-filter != ""));
+    /// The tag filter has focus. **Assigned, unlike the two above**, because it
+    /// lives inside the slates section's own `if` and its id is not reachable
+    /// from here.
+    ///
+    /// One field writing one bool, so the ordering hazard the paragraph above
+    /// describes does not apply — that one is about *two* fields sharing a flag.
+    /// What does apply is the hazard `close-basket` guards: an `if` cannot run
+    /// code when it is destroyed, so a field that had focus when its section
+    /// vanished would leave the window's shortcuts switched off for good. Hence
+    /// the gate is repeated in `slate-editing` above rather than trusted here:
+    /// if the section is gone the flag cannot matter, however stale it is.
+    property <bool> slate-filter-focused;
     /// The selected slate's name and tags, two-way as the inspector's fields
     /// are: a `text:` binding breaks the first time it is typed in.
     in-out property <string> slate-name;
@@ -4832,6 +4853,13 @@ export component AppWindow inherits Window {
                                     placeholder-text: "Filter by tag";
                                     text <=> root.slate-tag-filter;
                                     horizontal-stretch: 1;
+                                    // Folded into the window's `text-editing`
+                                    // (#130), or every letter typed here fires
+                                    // its shortcut instead -- `i` and `o`
+                                    // marking a slate in and out.
+                                    changed has-focus => {
+                                        root.slate-filter-focused = self.has-focus;
+                                    }
                                 }
                                 // Clearing is one press, not a select-all: the
                                 // field is narrow in a 240 px column and the

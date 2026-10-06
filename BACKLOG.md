@@ -3348,3 +3348,61 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** after the coach has run a themed pass over a real match.
   The keyboard half is naturally part of #96; the notice is its own small
   change.
+
+130. **Every letter typed into the slate tag filter fired its shortcut — FIXED
+  2026-10-05.** The coach, testing the themed pass: *"i can't type i or o into
+  the filter"*, then *"it gets caught as shortcut"* and *"it doesn't matter where
+  in the word it is"*. So `corner` and `possession` were both untypeable, which
+  made the filter — and therefore the pass — unusable for most real tags.
+- **What it was:** the window gates its letter shortcuts on `text-editing`, and
+  the slates panel contributes `slate-editing`, which read
+  `slate-name-edit.has-focus || slate-tags-edit.has-focus`. The tag filter
+  shipped with #120 as a **bare `LineEdit`** and was never added, so while it had
+  focus the window still took `i`/`o` as mark-in/mark-out and every other letter
+  as its own shortcut.
+- **The rule was already written down, in the very property I failed to
+  update.** `slate-editing`'s doc comment says: *"without which typing a tag
+  fires every letter shortcut, `i` and `o` included, and the letters never reach
+  the field."* That is this bug, described in advance, one line above the list
+  that needed the entry.
+- **The lesson, now in that comment:** the list is not "the fields that edit a
+  slate" but **every field in the slates panel**, and a new one joins it.
+- **The fix is assigned, not declarative**, which the other two are not: the
+  filter lives inside the section's own `if` and its id is unreachable from the
+  window root, so it writes a flag on `changed has-focus`. One field writing one
+  bool, so the ordering hazard that forced the other two to be declarative (two
+  fields racing one flag on focus *moves*) does not apply. And the section's gate
+  is **repeated** in `slate-editing` rather than trusted, because an `if` cannot
+  run code when it is destroyed — the hazard `close-basket()` exists for — so a
+  stale flag cannot leave the shortcuts switched off for good.
+- **Why review missed it:** #120's T1 added one `LineEdit` to a panel whose other
+  fields were already folded in, and no test covers "a letter typed into a field
+  reaches the field". #105's new `tag_field.rs` tests are the first of that kind
+  in the repo, and they only cover the two fields they were written for.
+
+131. **The slate band's colour should be a setting.** The coach (2026-10-05):
+  *"slate bands look dope tho"* and then *"i mean the band color should be in the
+  settings"*.
+- **What it is today:** one literal in `ui/scrubber.slint` —
+  `#2ec4b6.transparentize(0.3)`, 16px of the 20px track — chosen by an agent
+  against the three things already on that track (a goal's amber, a start/stop's
+  white, the filled rail's accent blue) and never seen on a display until the
+  coach ran it.
+- **The tension to resolve before building it**, stated plainly because #78's
+  spec exists to stop exactly this: *"a settings screen is where features go to
+  hide"*. A colour picker for one overlay is the archetypal candidate. Against
+  that: the coach asked, having used it, and a scrubber's marks are a viewing aid
+  on footage whose own colours vary by venue — a band that reads well on one
+  pitch may vanish on another, which is a real reason rather than a preference.
+- **If it is built, it is `state.json`, not `project.json`.** A colour is a
+  property of this machine and this coach's eyes, not of the match, and it must
+  not travel with a project folder — the test `bus/state.rs`'s header states.
+  That also makes it **not** a `formatVersion` bump, unlike #78's switches.
+- **The cheaper answer to ask about first:** whether what he wants is a *picker*
+  or simply a different default. If one colour works everywhere, this is a
+  one-literal change and no setting at all.
+- **Scope question:** the band is one of four things drawn on that track. A
+  colour setting for the band alone is odd; one for all four is a palette, which
+  is a bigger feature than the request.
+- **When to revisit:** with #78's settings surface, or sooner if the band turns
+  out to read badly on a particular venue's footage.
