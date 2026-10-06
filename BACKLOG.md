@@ -999,7 +999,25 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   the encoder; find the true source first by recording a few seconds with and
   without each element.
 
-72. **A source's first load at open once never settled, on CI.** GitHub run
+72. **A source's first load at open once never settled, on CI — FIXED
+  2026-10-06, and it was never only a test problem.** The cause is a GStreamer
+  1.24.2 bug and the symptom in the app is a project that **opens on a black
+  frame with the scrubber stuck at 0, for ever, with no error**. The full
+  diagnosis, the reproduction and the fix are below; this header says the part
+  that was wrong about the entry for eleven sightings, which is that it read as
+  CI noise.
+- **Sightings ten and eleven, 2026-10-06, are what moved it.** Within half an
+  hour: `shooting_a_slate_starts_at_its_in_point_and_the_clip_inherits_it` and
+  `eos_on_the_last_source_leaves_it_paused_at_the_end` — the latter on a branch
+  containing **two new markdown files**. That made **nine distinct test names**
+  and a third docs-only sighting, and **four failed CI runs in one day** (#47,
+  #49, #53), each needing a rerun that then went green. The coach's answer, asked
+  whether to fix it or log a twelfth: fix it next.
+- **And the timeout was never the problem**, which is worth recording because it
+  was the obvious fix and it was wrong: of 16 stalls, five given a full **40 s**
+  and eleven 10 s, **not one recovered by itself**.
+
+  The original report follows. GitHub run
   35697707647, attempt 1: `a_seek_in_the_final_second_stays_in_its_source`
   (`crates/pundit-harness/tests/transport.rs`) opened its project, the bus
   issued the load of source 0 at 0 s (`Position { target_abs: Some(0.0) }`), and
@@ -1144,6 +1162,168 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   the app whatever the cause; it would *not* make the test pass, and a bound
   loose enough to be safe on a loaded CI runner would fire well after the
   harness's own 15 s. So it waits for the diagnosis.
+- **Resolved 2026-10-06: `playbin3` collects the file's streams and then never
+  gives `playsink` its chains, so the load it is waiting for never arrives.**
+  Reproduced locally for the first time, by
+  running the open the way CI does rather than the way this laptop does: four
+  copies of a new soak (`player::tests::every_open_settles`, `#[ignore]`d) all
+  **pinned to the same two CPUs** against two busy loops, each opening a fresh
+  `playbin3` on a 2 s WebM fixture 500 times. **11 stalls in 2000 opens
+  (0.55%)**, against none in the first 320 opens run unpinned. The missing
+  ingredient in the ~6000 opens this entry already records was therefore not
+  load — those had eight busy loops — but **two cores**: on eight, every
+  GStreamer thread gets one and the window never opens.
+- **The mechanism, from the dump the soak prints — and the first reading of it
+  was wrong.** At the stall the slot is in `Flight::Loading` and the pipeline
+  reads `(Async, Ready, Paused)`: its READY → PAUSED never completed, the
+  load's `ASYNC_DONE` is never posted, `Flight::Loading` waits for a message
+  nobody will send, and `publish_position` stays silent because the slot still
+  has a target. The first dump printed only the elements that were *not*
+  settled, which was `playsink` alone, and this entry read that as "a bin that
+  lost the commit of a state change all its children had finished". **The full
+  tree says otherwise, and it is a better story:**
+
+  ```
+  playsink: Ok(Async)/Ready/Paused
+    audiotee: Ok(Success)/Paused/VoidPending
+    streamsynchronizer8: Ok(Success)/Paused/VoidPending
+  uridecodebin3: Ok(Success)/Paused/VoidPending
+    … every element of it at Paused/VoidPending …
+  ```
+
+  `playsink` holds **nothing but the two elements it always holds**: no video
+  chain, no audio chain, no sink. `uridecodebin3` has prerolled whole and its
+  `StreamCollection` is in the message log. So the stall is not a lost commit —
+  playsink had nothing to commit. **`playbin3` never reconfigured `playsink`
+  for the streams it had just collected**, and the state change it is waiting
+  on is one that was never set going. It is GStreamer 1.24.2 — Ubuntu 24.04's,
+  and CI's — and *where* inside that plumbing the reconfigure is lost is not
+  known: saying so would need a `GST_DEBUG` log of a stall, which nothing here
+  has yet.
+- **The harness's 15 s was never too short.** Not one stalled open recovered by
+  itself: **16 of them, five given a full 40 s** and the other eleven 10 s
+  apiece. Raising the timeout would have bought nothing and lost the evidence.
+  Issuing the load again, on the other hand, recovered **11 of the 11** it was
+  tried on, each inside 5.1 s of being asked.
+- **What that rules out**, each of which this entry had carried as live: not a
+  lost `ASYNC_DONE` in flight, not the `Loading` arm's staleness filter (no
+  `player: absorbed an ASYNC_DONE …` ever printed), not `Flight::Settling`,
+  not `apply_playing`'s redundant PAUSED, and not `Rig::open` consuming the
+  settled position with an earlier wait. The entry's "what is left, and it is
+  in the player" was right that the wedge is a flight waiting for an
+  `ASYNC_DONE`; the reason is one layer above the player, in `playbin3`.
+- **Three controls, all run under the condition that reproduces** — four soaks
+  pinned to two CPUs, not on the eight-core machine the earlier measurements in
+  this entry used, which is the mistake that makes an eight-core control
+  worthless here:
+  - **Our load sequence.** Skipping the two redundant state changes an open
+    does on a fresh pipeline (`take_down`'s `set_state(READY)` on a pipeline
+    already in NULL, then a READY → READY no-op, so an open is one
+    NULL → PAUSED) changed nothing: **17 stalls in 2000 opens**, if anything
+    worse. The change was dropped rather than kept as a tidy-up.
+  - **Our video sink**, which is the better suspect and the one this entry owes
+    an answer: an `appsink` handed to `playbin3` is placed *inside* `playsink`,
+    and an `appsink` whose preroll is never taken would hold up exactly the
+    state change that is stuck. Swapped for a plain `fakesink sync=false`,
+    changing nothing else, **it still stalls: 21 in 2000 against our appsink's
+    42 in 2000, back to back in one session.** And the tree above says why our
+    sink never could have been it: **at a stall no sink is in the graph at
+    all** — ours or that one — because playsink has not built the chain that
+    would hold it. All 42 appsink-arm stalls show playsink holding only
+    `audiotee` and `streamsynchronizer`, and `a frame reached the mailbox:
+    false` every time.
+  - **Our bus handling.** The sync handler returns `Drop` for every message,
+    the last thing we do that could in principle starve `playbin3`'s own
+    plumbing. Passing them instead (`BusSyncReply::Pass`, nothing else
+    changed): **22 in 2000 against 21 for `Drop`**, back to back. No effect.
+  - **Do not read a rate across sessions**, which is the trap this entry has
+    already fallen into once over apt mirrors. The same appsink-and-`Drop`
+    configuration measured **42 in 2000** in one session and **21 in 2000** in
+    the next at a similar load average, so the machine moves the rate by 2x on
+    its own. Only arms run back to back are comparable, and on that basis what
+    the controls establish is **necessity, not rate**: the stall happens
+    without our sink and without our message handling, so neither is needed to
+    produce it, and no difference in rate between them can be claimed from
+    these runs.
+  - To repeat either of the last two, return a `fakesink` from
+    `player::sink::video_sink` or `Pass` from the sync handler under an
+    environment variable — four lines each, deliberately **not** committed.
+  - To repeat either of the last two, return a `fakesink` from
+    `player::sink::video_sink` or `Pass` from the sync handler under an
+    environment variable — four lines each, deliberately **not** committed.
+- **The fix: the bus bounds a load, and the player issues it again.**
+  `bus::sources::LOAD_BOUND` (3 s) is armed and cleared by `watch_the_load` in
+  the bus loop's tail while `player.loading()`, dispatched with the other
+  deadlines, and `SourcePlayer::reload_stalled_load` takes the pipeline down
+  and issues the same request again. **A second stall on the same request is
+  reported** as a pipeline error (`SeekFailed` + `Error`) rather than retried
+  for ever: a file that genuinely never prerolls would otherwise be re-opened
+  every few seconds. The bound covers the **load alone**, never a skip burst,
+  and never a load the GL gate is holding — `SourcePlayer::loading()` is where
+  both exclusions live. **The entry's own proposal above was half right:** the
+  bound was the answer, an `Event::Error` on expiry was not. Reloading is what
+  makes the test pass *and* what the app should do, now that it is known the
+  pipeline is fine and only one state change was lost.
+- **Two numbers worth keeping.** The recovery takes **about 8 s**: the 3 s
+  bound, plus the 5 s `take_down` spends letting a preroll finish (BACKLOG
+  #47's workaround, which in a stall can only run to its full bound), plus the
+  reload. That is what sets the bound at 3 s — 3 + 5 + a load has to fit
+  inside the harness's 15 s. And those 5 s are spent **on the bus thread**, so
+  a stall in the app costs one five-second freeze; that is the price of not
+  taking a pipeline down mid-typefind, and it is worth paying once in two
+  thousand opens.
+- **The retry's bound is armed after the reload, never before** — the one trap
+  in the change, and it was measured rather than reasoned: armed first, the
+  bound is already in the past when the retry is issued, the next pass of the
+  loop takes the retry for a second stall, and every stalled open is reported
+  as a failure instead of recovering. The soak caught it, 4 of 500 opens.
+- **Demonstrated**, same soak, same two pinned CPUs, same load, 2000 opens
+  each way. With the retry: **5 stalled and every one of them settled**, the
+  slowest at 8.16 s. With `PUNDIT_SOAK_SABOTAGE=1`, which leaves the retry out
+  and changes nothing else: **10 opens never settled inside the harness's
+  15 s**, the flight still `Loading` — the CI failure to the word. The soak is
+  the reproduction and the sabotage proof both, and it is `#[ignore]`d because
+  it needs minutes and a pinned machine to say anything.
+- **And demonstrated end to end, on the real test binaries.** The four harness
+  suites that have failed to this — `transport`, `slates`,
+  `project_and_sources`, `highlights` — run 25 rounds each pinned to the same
+  two CPUs against two busy loops: **100 runs, 15 stalls, 0 failures and not
+  one "timed out waiting"**. Each stall reads `player: the load of … stalled on
+  its way to PAUSED` followed by the `bus: loaded …` of the retry, and each one
+  is an open that would have failed its test before this change — it is the
+  open's own load that stalls, which is what the sabotaged soak shows never
+  settling. The suite that carried one still passed whole: `transport` 13 of 13
+  in 48.95 s, against the 13.81 s it takes on an unloaded machine.
+- **The tradeoff taken, so it is on the record:** a load that is *genuinely*
+  slower than 3 s twice over — footage on a network mount whose header takes
+  seconds to read — is now refused ("never opened: its load stalled twice")
+  where before it would eventually have opened. It was taken because the
+  alternative fixes are worse: a bound loose enough to cover slow media does
+  not fit inside the harness's 15 s, and keying the recovery on the stall's
+  *signature* (every element at PAUSED but `playsink`) would stop working
+  silently the day the signature changes. The refusal is visible and the coach
+  can open the project again, which issues a fresh load with a retry of its
+  own. **If a coach ever reports a video refused with that message, this is
+  the entry to come back to** — and the fix would be to raise the bound and
+  lower the harness's reliance on it, not to remove the retry.
+- **What is not fixed, and what is still unknown.** The GStreamer fault itself:
+  a `playbin3` that collects its streams and then never reconfigures `playsink`
+  for them is worth reporting upstream (1.24.2; newer releases are untested
+  here), and if it is ever fixed the bound becomes dead weight that can go.
+  **What nobody here has yet is the inside of that failure** — which of
+  `playbin3`'s own paths drops the reconfigure — because that needs a
+  `GST_DEBUG` log taken at a stall, and the soak does not take one. That is the
+  next step if the attribution is ever doubted again, and it is cheap now that
+  the stall reproduces in a few hundred opens. Until then this entry's number
+  is cited by `reload_stalled_load`, `LOAD_BOUND` and the soak.
+- **Why the attribution is trusted even so**, stated plainly because "it is a
+  library bug" is the sort of conclusion that stops people looking: it rests on
+  the three controls above and on one structural fact from the tree — at the
+  stall the pipeline contains nothing of ours but `playbin3` itself. No sink of
+  ours is plugged, no bin of ours exists, the load sequence is irrelevant
+  (measured) and the bus handling is irrelevant (measured). What is left is the
+  code between `uridecodebin3`'s collection and `playsink`'s chains, all of
+  which is GStreamer's.
 
 
 73. **`,` looks stuck across a timestamp gap longer than half a frame.** A back
