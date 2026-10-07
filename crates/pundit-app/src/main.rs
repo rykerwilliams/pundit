@@ -1378,6 +1378,22 @@ fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
                     .find(|slate| slate.id.to_string() == selected.as_str())
                     .map(|slate| (slate.name.clone(), slate.tags.join(", ")))
             });
+            // **Not while a field is being edited** (#132), which is
+            // `show_clip`'s rule and was missing here. Both fields are
+            // `in-out` with `text <=> root.slate-name`, and
+            // `edit_slate_field` commits to `editing-slate-id` — "the slate
+            // the field opened on, which needn't be the selection any more".
+            // So without this guard, typing a name into one row and clicking
+            // another overwrote the field with the *new* row's name and then
+            // committed that onto the **old** row on focus loss: two clicks
+            // to silently rename the wrong slate.
+            //
+            // The span above is deliberately **outside** the guard: it
+            // follows the selection whatever a field is doing, and showing
+            // the newly selected range is never wrong.
+            if !w.get_editing_slate_id().is_empty() {
+                return;
+            }
             let (name, tags) = found.unwrap_or_default();
             w.set_slate_name(name.into());
             w.set_slate_tags(tags.into());
