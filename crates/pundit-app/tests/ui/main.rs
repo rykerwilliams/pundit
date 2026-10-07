@@ -47,3 +47,4 @@ mod slate_fields;
 mod slate_menu;
 mod splitter;
 mod tag_field;
+mod text_editing;
