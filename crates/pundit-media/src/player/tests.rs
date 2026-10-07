@@ -545,6 +545,9 @@ fn a_gl_sink_holds_the_pipeline_in_null_until_the_context_arrives() {
     assert_eq!(player.pipeline.current_state(), gst::State::Null);
     assert_eq!(player.pipeline.pending_state(), gst::State::VoidPending);
     assert!(matches!(player.flight, Flight::Loading(_)));
+    // And it is not a load the bus's bound may re-issue (BACKLOG #72): it is
+    // waiting for the UI's context, not for the pipeline.
+    assert!(!player.loading());
 }
 
 #[test]
@@ -613,4 +616,223 @@ fn a_step_back_aims_into_the_previous_frame() {
     assert!((step_back(5.0, 5.0 + p, p) - before).abs() < 1e-9);
     // Held six frames, 5.0..5.2.
     assert!((step_back(5.0, 5.2, p) - before).abs() < 1e-9);
+}
+
+/// A load that never prerolls is issued again and lands (BACKLOG #72). The
+/// stall itself is GStreamer's and comes once in a few hundred opens under
+/// load (`every_open_settles` below is the soak that produces it); what is
+/// deterministic, and what this pins, is the recovery: nothing is fed to the
+/// slot, so its load never completes, which is exactly what the stall looks
+/// like from here.
+#[test]
+fn a_stalled_load_is_issued_again_and_lands() {
+    let mut rig = Rig::new();
+    let a = rig.fixture("a.webm", 2, 320, 180);
+    rig.seek(&a, 1.0, true, Origin::System);
+    assert!(rig.player.loading());
+
+    // A stalled load posts no ASYNC_DONE, so drop what the pipeline has
+    // posted rather than handing it to the slot.
+    rig.rx.try_iter().count();
+    let events = rig.player.reload_stalled_load();
+    assert!(
+        events.is_empty(),
+        "a first retry reports nothing: {events:?}"
+    );
+    assert!(rig.player.loading(), "the load was issued again");
+
+    rig.wait_for("Loaded", |e| matches!(e, PlayerEvent::Loaded { .. }));
+    rig.wait_done(Origin::System);
+    assert_lands(rig.frame().0, 1.0);
+}
+
+/// A second stall on the same request is reported, not retried for ever: a
+/// file that genuinely never prerolls would otherwise be re-opened every few
+/// seconds (BACKLOG #72).
+#[test]
+fn a_load_that_stalls_twice_is_reported() {
+    let mut rig = Rig::new();
+    let a = rig.fixture("a.webm", 2, 320, 180);
+    rig.seek(&a, 1.0, true, Origin::System);
+
+    rig.rx.try_iter().count();
+    assert!(rig.player.reload_stalled_load().is_empty());
+    rig.rx.try_iter().count();
+    let events = rig.player.reload_stalled_load();
+    assert!(
+        matches!(
+            events.as_slice(),
+            [
+                PlayerEvent::SeekFailed {
+                    origin: Origin::System
+                },
+                PlayerEvent::Error(_)
+            ]
+        ),
+        "{events:?}"
+    );
+    assert!(rig.player.is_idle(), "the slot is free again");
+    assert!(!rig.player.holds(&a), "and the source was dropped");
+
+    // The next request loads from scratch, with a retry of its own.
+    rig.rx.try_iter().count();
+    rig.seek(&a, 0.5, true, Origin::System);
+    rig.wait_done(Origin::System);
+}
+
+/// BACKLOG #72's reproduction: open after open on a **fresh** pipeline, as a
+/// fresh bus does, driven the way the bus drives it — a bound on the load,
+/// and `reload_stalled_load` when it passes. Reports the slot's own state
+/// for every stall: the flight, the pipeline's state, every element that is
+/// not settled at PAUSED, and every message the load posted.
+///
+/// `#[ignore]`d, because it is a soak and not a check: the stall it exists to
+/// produce came 11 times in 2000 opens with four of these **pinned to the
+/// same two CPUs** (CI's shape) against two busy loops, and never once
+/// unpinned. Two cores is the ingredient, not load.
+///
+/// ```bash
+/// PUNDIT_SOAK_ROUNDS=500 taskset -c 0,1 \
+///   cargo test -p pundit-media player::tests::every_open_settles \
+///   -- --ignored --nocapture
+/// ```
+///
+/// `PUNDIT_SOAK_SABOTAGE=1` leaves the retry out, which is the measurement
+/// the fix is argued from: 10 of 2000 opens then never settled at all, while
+/// with the retry all 5 that stalled did.
+#[test]
+#[ignore]
+fn every_open_settles() {
+    /// The bus's own bound (`bus::sources::LOAD_BOUND`).
+    const LOAD_BOUND: Duration = Duration::from_secs(3);
+    /// The harness's wait, which is what a stalled open has to settle
+    /// inside: it is the bound this flake failed against.
+    const BOUND: Duration = TIMEOUT;
+    let rounds: usize = std::env::var("PUNDIT_SOAK_ROUNDS")
+        .ok()
+        .and_then(|r| r.parse().ok())
+        .unwrap_or(50);
+    let sabotage = std::env::var("PUNDIT_SOAK_SABOTAGE").is_ok();
+    let rig = Rig::new();
+    let uri = rig.fixture("a.webm", 2, 320, 180);
+    let mut slowest = Duration::ZERO;
+    let (mut stalls, mut lost) = (0, 0);
+    for round in 0..rounds {
+        let (tx, rx) = mpsc::channel();
+        let mailbox = FrameMailbox::default();
+        let delivered = mailbox.clone();
+        let mut player = SourcePlayer::new(SinkKind::System, mailbox, move |m| {
+            let _ = tx.send(m);
+        });
+        // The bus's open, step for step: `commit`'s unload takes the fresh
+        // pipeline NULL -> READY, then `ensure_loaded` asks for source 0 at
+        // 0 s, and the bus publishes a settled position once the slot is
+        // idle.
+        player.unload();
+        let start = Instant::now();
+        let mut seen: Vec<String> = player
+            .seek_to(&uri, 0.0, true, Origin::System)
+            .iter()
+            .map(|e| format!("{e:?}"))
+            .collect();
+        let mut bound = Instant::now() + LOAD_BOUND;
+        let mut reported = false;
+        while !player.is_idle() && start.elapsed() < BOUND {
+            let left = bound.saturating_duration_since(Instant::now());
+            match rx.recv_timeout(left) {
+                Ok(msg) => {
+                    let at = start.elapsed().as_secs_f64() * 1e3;
+                    seen.push(format!("{:?}+{at:.0}ms", msg.type_()));
+                    for event in player.handle(&msg) {
+                        seen.push(format!("{event:?}"));
+                    }
+                    if !player.loading() {
+                        bound = Instant::now() + LOAD_BOUND;
+                    }
+                }
+                Err(_) if player.loading() => {
+                    // Once per round, so the count is stalled *opens*: left
+                    // to stall, one of them reports every bound until the
+                    // round gives up.
+                    if !reported {
+                        reported = true;
+                        stalls += 1;
+                        eprintln!(
+                            "round {round}: the load has not prerolled in {:.1} s\n  \
+                             flight: {:?}\n  pipeline: {:?}\n  a frame reached the \
+                             mailbox: {}\n{}  messages: {seen:?}",
+                            start.elapsed().as_secs_f64(),
+                            player.flight,
+                            player.pipeline.state(gst::ClockTime::ZERO),
+                            delivered.shown().is_some(),
+                            element_tree(player.pipeline.upcast_ref(), 1),
+                        );
+                    }
+                    if !sabotage {
+                        for event in player.reload_stalled_load() {
+                            seen.push(format!("{event:?}"));
+                        }
+                    }
+                    // After the reload, as `bus::sources::load_stalled`: the
+                    // take-down inside it spends longer than the bound.
+                    bound = Instant::now() + LOAD_BOUND;
+                }
+                Err(_) => bound = Instant::now() + LOAD_BOUND,
+            }
+        }
+        // A give-up counts as lost too: the slot is idle but no source
+        // loaded, so the position the bus publishes is of nothing.
+        let failed = seen.iter().any(|e| e.starts_with("Error"));
+        if !player.is_idle() || failed {
+            lost += 1;
+            eprintln!(
+                "round {round}: never settled in {:.1} s ({:?}, failed {failed})",
+                start.elapsed().as_secs_f64(),
+                player.flight
+            );
+        }
+        slowest = slowest.max(start.elapsed());
+    }
+    eprintln!(
+        "{rounds} opens, {stalls} stalled, {lost} never settled, slowest {:.3} s",
+        slowest.as_secs_f64()
+    );
+    assert_eq!(lost, 0, "{lost} of {rounds} opens never settled");
+}
+
+/// Every element under `bin`, depth first and indented, as
+/// `name: return/state/pending` — **the whole tree, settled or not, and
+/// inside every child bin**, so the record of a stall shows what is in
+/// `playsink` rather than only that `playsink` is in it. An `appsink` also
+/// reports the three properties that decide whether its preroll can block.
+///
+/// Walked through `GstBin::children` rather than `iterate_recurse` so the
+/// nesting is in the output and no level can be silently skipped.
+fn element_tree(bin: &gst::Bin, depth: usize) -> String {
+    use gst::prelude::*;
+    use gstreamer_app as gst_app;
+    let mut out = String::new();
+    for element in bin.children() {
+        let (ret, state, pending) = element.state(gst::ClockTime::ZERO);
+        out += &format!(
+            "{:indent$}{}: {ret:?}/{state:?}/{pending:?}",
+            "",
+            element.name(),
+            indent = depth * 2,
+        );
+        if let Some(appsink) = element.downcast_ref::<gst_app::AppSink>() {
+            out += &format!(
+                " [max-buffers {}, drop {}, emit-signals {}, eos {}]",
+                appsink.max_buffers(),
+                appsink.is_drop(),
+                appsink.property::<bool>("emit-signals"),
+                appsink.is_eos(),
+            );
+        }
+        out += "\n";
+        if let Some(child) = element.downcast_ref::<gst::Bin>() {
+            out += &element_tree(child, depth + 1);
+        }
+    }
+    out
 }

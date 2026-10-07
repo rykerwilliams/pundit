@@ -146,6 +146,10 @@ pub struct SourcePlayer {
     /// The `uri` the pipeline holds, set when its load starts and cleared when
     /// it can no longer be trusted (an error, or a load dropped by `clear`).
     loaded_uri: Option<String>,
+    /// Whether the load in flight has already been issued a second time after
+    /// stalling ([`SourcePlayer::reload_stalled_load`]). Cleared by the next
+    /// request of its own, so every request gets one retry and no more.
+    load_retried: bool,
     want_playing: bool,
     /// The playback rate every seek is issued at (spec S). See
     /// [`SourcePlayer::set_rate`].
@@ -200,6 +204,7 @@ impl SourcePlayer {
             flight: Flight::Idle,
             pending: None,
             loaded_uri: None,
+            load_retried: false,
             want_playing: false,
             rate: 1.0,
         }
@@ -391,6 +396,14 @@ impl SourcePlayer {
         matches!(self.flight, Flight::Idle)
     }
 
+    /// Whether a source is prerolling, which is the one flight that can be
+    /// stalled by [`SourcePlayer::reload_stalled_load`]'s GStreamer bug. A
+    /// load held by the GL gate is **not** one: it is waiting for the UI's
+    /// context and has asked the pipeline for nothing yet.
+    pub fn loading(&self) -> bool {
+        matches!(self.flight, Flight::Loading(_)) && !self.gl_gated()
+    }
+
     pub fn position_handle(&self) -> PositionHandle {
         PositionHandle {
             pipeline: self.pipeline.clone(),
@@ -462,6 +475,66 @@ impl SourcePlayer {
         events
     }
 
+    /// Issues the load in flight again, because it stalled on its way to
+    /// PAUSED and will never arrive (BACKLOG #72). Called by the bus when its
+    /// bound on a load passes; a no-op unless a load is in flight.
+    ///
+    /// **It stalls inside `playbin3`, before anything of ours is plugged, and
+    /// nothing short of taking the pipeline down clears it.** Measured on
+    /// GStreamer 1.24.2 (Ubuntu 24.04's, and CI's), with four soaks pinned to
+    /// two CPUs: `uridecodebin3` prerolls whole — every element of it at
+    /// PAUSED, its `StreamCollection` posted — while `playbin3`'s own
+    /// `playsink` sits at `Async/Ready/Paused` holding **nothing but its
+    /// `audiotee` and `streamsynchronizer`**. The chains it would put a sink
+    /// in were never built, so the pipeline's READY → PAUSED never completes,
+    /// the load's `ASYNC_DONE` is never posted, and the slot waits for a
+    /// message nobody will send. Not one stall recovered by itself — 16 of
+    /// them, five given a full 40 s — and a *retry* recovered 11 of the 11 it
+    /// was tried on. The symptom in the app is a project that opens on a
+    /// black frame with the scrubber stuck at 0, for ever; in the harness it
+    /// is "timed out waiting for a settled position", which is the flake
+    /// BACKLOG #72 is about.
+    ///
+    /// **It is not our video sink, nor our load sequence, nor our dropping of
+    /// the bus's messages** — three controls, all run two-core, all in the
+    /// entry. A plain `fakesink` in place of our `appsink` stalls just the
+    /// same, which the tree explains: at a stall no sink is in the graph at
+    /// all, ours or any.
+    ///
+    /// **One retry, then it is reported.** A second stall on the same request
+    /// is some other fault — a file that genuinely never prerolls — and
+    /// retrying it for ever would re-open it every few seconds, each time
+    /// spending `LOAD_SETTLE` on the bus thread inside the take-down. So the
+    /// second time the request is dropped and reported like any other
+    /// pipeline error.
+    pub fn reload_stalled_load(&mut self) -> Vec<PlayerEvent> {
+        let Flight::Loading(request) = std::mem::replace(&mut self.flight, Flight::Idle) else {
+            return Vec::new();
+        };
+        let mut events = Vec::new();
+        self.loaded_uri = None;
+        self.take_down(gst::State::Ready);
+        if self.load_retried {
+            // As the ERROR arm does: nothing is left to settle on.
+            self.reset();
+            events.push(PlayerEvent::SeekFailed {
+                origin: request.origin,
+            });
+            events.push(PlayerEvent::Error(format!(
+                "{} never opened: its load stalled twice",
+                request.uri
+            )));
+            return events;
+        }
+        eprintln!(
+            "player: the load of {} stalled on its way to PAUSED; loading it again (BACKLOG #72)",
+            request.uri
+        );
+        self.issue(request, &mut events);
+        self.load_retried = true;
+        events
+    }
+
     /// Forgets the flight, the pending request and the loaded source.
     fn reset(&mut self) {
         self.flight = Flight::Idle;
@@ -497,6 +570,9 @@ impl SourcePlayer {
     }
 
     fn issue(&mut self, request: Request, events: &mut Vec<PlayerEvent>) {
+        // A request of its own gets its own retry (`reload_stalled_load` sets
+        // this again for the one it issues itself).
+        self.load_retried = false;
         if self.loaded_uri.as_deref() == Some(request.uri.as_str()) {
             self.seek(request, events);
             return;

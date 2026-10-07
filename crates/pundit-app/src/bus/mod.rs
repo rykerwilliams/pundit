@@ -712,6 +712,9 @@ pub struct Bus {
     skip: SkipCoordinator,
     /// When the skip debounce fires, if armed.
     skip_deadline: Option<Instant>,
+    /// When the load in flight must have prerolled by (BACKLOG #72), armed
+    /// and cleared by `Bus::watch_the_load`.
+    load_deadline: Option<Instant>,
     /// When the skip burst's target was last where playback would be: its
     /// leading press, or play starting. See `Bus::apply_skip`.
     skip_since: Instant,
@@ -830,6 +833,7 @@ impl Bus {
             missing: Arc::new([]),
             skip: SkipCoordinator::default(),
             skip_deadline: None,
+            load_deadline: None,
             skip_since: Instant::now(),
             capture,
             recording: None,
@@ -869,6 +873,7 @@ impl Bus {
             let deadline = self
                 .skip_deadline
                 .into_iter()
+                .chain(self.load_deadline)
                 .chain(self.start_deadline())
                 .chain(self.out_poll())
                 .min();
@@ -934,6 +939,9 @@ impl Bus {
             // position published for this iteration.
             self.stop_at_slate_out();
             self.publish_position();
+            // After `dispatch_deadlines`, so a retry it issued is bounded
+            // from here rather than from the stalled load it replaced.
+            self.watch_the_load();
             // The one place a transcription starts (Phase 10 spec S5), which
             // is enough because a recording, an export and a preview can only
             // end while the bus is handling an input or a deadline -- so the
@@ -953,6 +961,9 @@ impl Bus {
         if self.skip_deadline.is_some_and(|d| d <= now) {
             self.skip_deadline = None;
             self.skip_debounce_passed();
+        }
+        if self.load_deadline.is_some_and(|d| d <= now) {
+            self.load_stalled();
         }
         if self.start_deadline().is_some_and(|d| d <= now) {
             self.start_timed_out();
