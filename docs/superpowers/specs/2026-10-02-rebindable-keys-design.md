@@ -445,7 +445,9 @@ moving it. Nothing to build.
 
 `state.json` is where #96 says to put it and the reasoning holds: a binding is a
 property of the coach's hands, not of a match, so it must never be a
-`project.json` field — **`CURRENT_FORMAT_VERSION` stays at 13**
+`project.json` field — **`CURRENT_FORMAT_VERSION` is not touched** (it was 13
+when this was written and is 16 now; the point is that this feature does not
+move it)
 (`store.rs:21`).
 
 **Four failure shapes, three of which cost nothing:**
@@ -587,7 +589,9 @@ re-premised.
 ## X. What this does not do
 
 - **No format version.** No field on any stored struct;
-  `CURRENT_FORMAT_VERSION` stays 13 (`store.rs:21`).
+  `CURRENT_FORMAT_VERSION` is untouched — read it from `store.rs` rather than
+  from here; it has moved three times since this spec was written (v14 the
+  arrowhead, v15 the mute switch, v16 #78's two).
 - **No new command, no bus change, no `pundit-core` change.** The keymap is a UI
   concern end to end, which is why there is no harness test (**T4**).
 - **No rebind UI** (**D3**), no "restore defaults" button (**Deferred 2**).
