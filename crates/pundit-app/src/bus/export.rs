@@ -307,25 +307,21 @@ impl Active {
 
 impl Bus {
     /// Starts a run over `targets`, or says why it can't.
-    pub(super) fn export(
-        &mut self,
-        targets: Vec<ExportTarget>,
-        resolution: Resolution,
-        quality: Quality,
-        scoreboard: Option<ScoreboardMode>,
-        mute_source: bool,
-    ) {
+    pub(super) fn export(&mut self, targets: Vec<ExportTarget>, choices: ExportChoices) {
         // **One negation, here at the boundary**: `mute` is the coach's word
         // and the checkbox's, and everything below this line is a volume or a
-        // `with_audio`.
+        // `with_audio`. The two output switches are negated nowhere — `true`
+        // is "write it" at every layer.
         let pickers = Pickers {
-            resolution,
-            quality,
-            scoreboard,
-            source_volume: match mute_source {
+            resolution: choices.resolution,
+            quality: choices.quality,
+            scoreboard: choices.scoreboard,
+            source_volume: match choices.mute_source {
                 true => 0.0,
                 false => 1.0,
             },
+            chapters: choices.chapters,
+            cues: choices.cues,
         };
         if let Err(e) = self.start_run(targets, pickers) {
             self.emit(Event::Error(e));
@@ -375,6 +371,8 @@ impl Bus {
                 prefs.last_export_quality = pickers.quality;
                 prefs.last_export_scoreboard = pickers.scoreboard;
                 prefs.export_source_volume = pickers.source_volume;
+                prefs.last_export_chapters = pickers.chapters;
+                prefs.last_export_cues = pickers.cues;
                 self.project_changed();
             }
         }
@@ -542,9 +540,50 @@ fn de_duplicate(labels: &mut [String]) {
     }
 }
 
-/// The export sheet's four pickers, which travel together: through the run
-/// into every job, and into the project's `Preferences` when it starts (spec
-/// E4, M2).
+/// Every control on the export sheet, as [`Command::Export`](super::Command::Export)
+/// carries it: three pickers and three switches.
+///
+/// **One struct rather than six positional arguments**, for two reasons.
+/// `Bus::export` would be eight parameters counting `self`, which is one past
+/// where clippy's `too_many_arguments` fires and `-D warnings` therefore
+/// fails. And `mute_source`, `chapters` and `cues` are three adjacent values
+/// of the same type at every site that passes them, where transposing two of
+/// them compiles and every test still passes — the mistake `InsetPlacement`
+/// exists to make unwritable (`main.rs`'s `inset_placement`).
+///
+/// **No `Default` impl, derived or written.** Both switches are `true` when
+/// nobody has said otherwise, and a derived `Default` is `false`, so
+/// `..Default::default()` would quietly build the opposite of the sheet's own
+/// state. A hand-written one would be a second copy of
+/// `Preferences::default()`'s `last_export_*` values, free to drift from it.
+/// Each test file writes its own rig's choices instead.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExportChoices {
+    pub resolution: Resolution,
+    pub quality: Quality,
+    /// How every ticked target carries the scoreboard, or `None` for the
+    /// sheet's "Default" — which is per target
+    /// ([`pundit_core::plan::default_scoreboard_mode`]).
+    pub scoreboard: Option<ScoreboardMode>,
+    /// "Mute source audio": the game video's track is dropped and the
+    /// commentary left alone (spec M1). The sheet's word is `mute`; below the
+    /// bus it is a volume or a `with_audio`, negated once.
+    pub mute_source: bool,
+    /// Write the chapters: the `chpl` box inside the file *and* the
+    /// `.chapters.txt` beside it (spec S1).
+    pub chapters: bool,
+    /// Write the scoreboard as subtitles: the `.srt` beside the file *and* the
+    /// `tx3g` track inside a copy (spec S1).
+    pub cues: bool,
+}
+
+/// The export sheet's three pickers and three switches, which travel together:
+/// through the run into every job, and into the project's `Preferences` when it
+/// starts (spec E4, M2, S1).
+///
+/// The same six values as [`ExportChoices`], with the one negation already
+/// applied: `mute_source` has become `source_volume`, which is what the
+/// project stores and what `job` reads.
 ///
 /// **`PartialEq` but not `Eq`**, which `source_volume`'s `f64` cannot be. The
 /// write-back's `!=` is all that is wanted, and the only values the sheet
@@ -559,6 +598,13 @@ struct Pickers {
     /// for unticked. **An `f64`, not a `bool`**, so a level (BACKLOG #126) is
     /// a change to the sheet and not to the format (spec M1).
     source_volume: f64,
+    /// [`ExportChoices::chapters`], read by [`job`] alone: it clears
+    /// `plan.chapters`, which is media's own "no chapters".
+    chapters: bool,
+    /// [`ExportChoices::cues`], read by [`board_cues`] — and by the Track arm
+    /// of [`carry_scoreboard`], because "Default" cannot answer "the best
+    /// available" without knowing what else the run carries (spec S4).
+    cues: bool,
 }
 
 impl Pickers {
@@ -570,17 +616,17 @@ impl Pickers {
             quality: prefs.last_export_quality,
             scoreboard: prefs.last_export_scoreboard,
             source_volume: prefs.export_source_volume,
+            chapters: prefs.last_export_chapters,
+            cues: prefs.last_export_cues,
         }
     }
 }
 
-/// What the sheet's Scoreboard picker means for one target (spec M3).
+/// What the sheet's Scoreboard picker means for one target (spec M3): how it
+/// carries the board **in the picture**, and nothing else.
 struct Carry {
     /// Copy the sources' packets rather than re-encode them.
     copy: bool,
-    /// The scoreboard beside the file: `None` for a target that carries no
-    /// sidecar at all, so nothing at that path is written **or removed**.
-    cues: Option<Vec<Cue>>,
     /// The board to burn into the picture, or `None`. Media reads this in one
     /// place, the per-frame overlay state, so `None` **is** "don't draw it" —
     /// there is no mode flag to carry into media at all.
@@ -588,12 +634,11 @@ struct Carry {
 }
 
 /// The whole of the mapping: the picker (or, for "Default", the target's own
-/// mode) into the renderer and the two job fields that carry the board.
+/// mode) into the renderer and the job field that burns the board in.
 ///
 /// `context` is the run's frozen [`ScoreboardContext`], `None` for a project
-/// with no scoreboard set up — which means no cues either, since there is
-/// nothing to derive them from (spec E5). `files` is what a copy would join,
-/// one per plan entry and in that order.
+/// with no scoreboard set up. `files` is what a copy would join, one per plan
+/// entry and in that order.
 ///
 /// **`with_audio` is here for one reason: it is part of the question
 /// [`pundit_media::can_copy`] is asked**, and this is that function's only
@@ -602,36 +647,35 @@ struct Carry {
 /// whole match it could have copied in seconds, over sound the coach just
 /// asked to drop, and says so only to stderr.
 ///
-/// **`Carry` still carries no flag for the mute.** The renderer needs one
-/// bool, which [`job`] already holds, and a copy of it on `Carry` would be a
-/// second truth the encode arm ignores.
+/// **`want_cues` is here for the same shape of reason**: "Default" means the
+/// best available, and it cannot answer that without knowing what else the run
+/// carries (spec S4). Neither bool becomes a field on [`Carry`] — the renderer
+/// needs one bool, which [`job`] already holds, and a copy of it here would be
+/// a second truth the encode arm ignores.
+///
+/// **The cue slot is not here**: that is [`board_cues`], which answers a
+/// different question — what goes *beside* the file — over the same picker.
 fn carry_scoreboard(
     target: &ExportTarget,
     picked: Option<ScoreboardMode>,
-    compilation: &Compilation,
     context: Option<ScoreboardContext>,
     files: &[PathBuf],
     with_audio: bool,
+    want_cues: bool,
 ) -> Carry {
     // The board burned into the picture, which is what every target but a
     // copied whole match does with it.
     let burned = |context| Carry {
         copy: false,
-        cues: Some(Vec::new()),
         scoreboard: context,
     };
     // **Only the whole match can carry the board beside the file** (spec T1):
     // a clip or a reel is drawn on, zoomed and captioned, so it re-encodes
     // either way, and a subtitle line repeating its own text bar would be
     // clutter. Asking for a separate track therefore burns it in rather than
-    // dropping it — the picker must never lose the board. And its cue slot is
-    // `None`: a `.srt` beside a clip is the coach's own file, and no export of
-    // ours put it there to remove.
+    // dropping it — the picker must never lose the board.
     if !matches!(target, ExportTarget::WholeMatch) {
-        return Carry {
-            cues: None,
-            ..burned(context)
-        };
+        return burned(context);
     }
     match picked.unwrap_or_else(|| default_scoreboard_mode(target)) {
         ScoreboardMode::Burned => burned(context),
@@ -645,6 +689,16 @@ fn carry_scoreboard(
         // the worst available answer.
         ScoreboardMode::Track => {
             if picked.is_none() {
+                // Same rule, one step earlier: with the subtitles off a copy
+                // would carry no board **anywhere** — not in the picture, not
+                // beside the file, not inside it — so "Default" burns it in
+                // instead of trading it away silently (spec S4). *Separate
+                // track* chosen by hand still gets no board, because there the
+                // coach asked. Before `can_copy`, which reads a header per
+                // file: a question already settled should not cost that I/O.
+                if !want_cues {
+                    return burned(context);
+                }
                 if let Err(why) = pundit_media::can_copy(files, with_audio) {
                     eprintln!(
                         "bus: the whole match can't be copied ({why}), \
@@ -655,14 +709,45 @@ fn carry_scoreboard(
             }
             Carry {
                 copy: true,
-                cues: Some(match &context {
-                    Some(context) => scoreboard_cues(compilation, context),
-                    None => Vec::new(),
-                }),
                 scoreboard: None,
             }
         }
     }
+}
+
+/// What goes **beside** the file, for [`ExportJob::cues`]: the board as a cue
+/// list, an empty list, or nothing at all.
+///
+/// The three states are media's own, and each is load-bearing (spec S2):
+/// `Some(cues)` writes the `.srt` and, on a copy, rides inside the file as a
+/// `tx3g` track; `Some(empty)` writes neither **and removes a stale `.srt`**;
+/// `None` is a target that carries no sidecar at all, so nothing at that path
+/// is written **or removed**.
+///
+/// `want` is the sheet's "Scoreboard subtitles" switch. It governs both forms
+/// at once, because `composite/copy`'s own header already states them as one
+/// decision — the `.srt` is what VLC loads without being asked, the embedded
+/// track what survives the file being sent on.
+fn board_cues(
+    target: &ExportTarget,
+    want: bool,
+    compilation: &Compilation,
+    context: Option<&ScoreboardContext>,
+) -> Option<Vec<Cue>> {
+    // A `.srt` beside a clip or a reel is the coach's own file, and no export
+    // of ours put it there to remove (spec T1).
+    if !matches!(target, ExportTarget::WholeMatch) {
+        return None;
+    }
+    if !want {
+        return Some(Vec::new());
+    }
+    // No scoreboard set up means no cues either: there is nothing to derive
+    // them from (spec E5).
+    Some(match context {
+        Some(context) => scoreboard_cues(compilation, context),
+        None => Vec::new(),
+    })
 }
 
 /// The day to tag an export with: the first game video's own modification
@@ -781,9 +866,18 @@ fn job(
     pickers: Pickers,
 ) -> Result<ExportJob, UserError> {
     let refused = |why: String| UserError::CantExport(why);
-    let compilation = compilation_schedule(&open.project, target);
+    let mut compilation = compilation_schedule(&open.project, target);
     if compilation.frames.is_empty() {
         return Err(refused(format!("{label} has nothing to export")));
+    }
+    // **"Chapters off" is this line, and no flag in media** (spec S2). Both
+    // readers already mean "no chapters" for an empty list, and both are in
+    // media's own `finish`: `chapters::splice` returns `Written(0)` without
+    // opening the file, and `chapter_list` returns `None`, which makes
+    // `write_chapter_list` **remove** a stale `.chapters.txt`. Nothing else
+    // reads `plan.chapters` — `total_frames`, every denominator, is untouched.
+    if !pickers.chapters {
+        compilation.plan.chapters.clear();
     }
 
     let sources: Vec<PathBuf> = open
@@ -810,15 +904,17 @@ fn job(
     // readers below get this same bool — the gate `carry_scoreboard` asks and
     // the copy it may choose have to be answering one question.
     let with_audio = pickers.source_volume != 0.0;
+    // Frozen with the project as it is now: the run's own copy of the events
+    // on the concat timeline (spec S2). Both readings of the picker take it.
+    let context = ScoreboardContext::for_project(&open.project);
+    let cues = board_cues(target, pickers.cues, &compilation, context.as_ref());
     let carry = carry_scoreboard(
         target,
         pickers.scoreboard,
-        &compilation,
-        // Frozen with the project as it is now: the run's own copy of the
-        // events on the concat timeline (spec S2).
-        ScoreboardContext::for_project(&open.project),
+        context,
         &files,
         with_audio,
+        pickers.cues,
     );
     // One record of the match for the whole run, shared by every entry of it.
     let match_media = Arc::new(MatchMedia {
@@ -859,7 +955,7 @@ fn job(
         tags: file_tags(&open.project, target, source_date(&sources)),
         compilation,
         path: exports.join(file_name(label, &open.project.name)),
-        cues: carry.cues,
+        cues,
     };
     Ok(job)
 }
@@ -920,6 +1016,40 @@ mod tests {
         assert_eq!(
             file_name(&label(1), "Game"),
             format!("{} - Game.mp4", label(1))
+        );
+    }
+
+    /// Every one of the six controls is read back from the project, and from
+    /// its own field (spec E4).
+    ///
+    /// **The sharp, free pin for the write-back.** A wrong `Pickers::of` shows
+    /// up only as a *missed* write-back, so pinning it through the harness
+    /// needs, per control, one run that stores "off" and a second differing
+    /// from what is stored in that control **alone** — three more renders for
+    /// what one `assert_eq!` on a private function says exactly. Every value
+    /// here is away from `Preferences::default()`, so a field read from the
+    /// wrong neighbour is visible.
+    #[test]
+    fn the_pickers_are_read_back_from_the_project() {
+        let prefs = Preferences {
+            last_export_resolution: Resolution::R720,
+            last_export_quality: Quality::High,
+            last_export_scoreboard: Some(ScoreboardMode::Burned),
+            export_source_volume: 0.0,
+            last_export_chapters: false,
+            last_export_cues: false,
+            ..Preferences::default()
+        };
+        assert_eq!(
+            Pickers::of(&prefs),
+            Pickers {
+                resolution: Resolution::R720,
+                quality: Quality::High,
+                scoreboard: Some(ScoreboardMode::Burned),
+                source_volume: 0.0,
+                chapters: false,
+                cues: false,
+            }
         );
     }
 

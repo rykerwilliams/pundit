@@ -98,6 +98,24 @@ they `slint!` only their own component, because one rule is simpler than one
 with an exception. Measured on the merge: eight test binaries to three,
 `rustup run 1.92 cargo clippy --workspace --all-targets -j 3` from 428.6 s to
 227.2 s and `cargo test -p pundit-app --no-run -j 3` from 667.7 s to 337.9 s.
+
+**`build.rs` compiles the UI with Slint's debug info, and that is what lets a
+test reach inside a component.** `i_slint_backend_testing`'s `ElementHandle`
+does nothing without it, and without `ElementHandle` a test can only poke a
+window property or dispatch a key — which is why a control wired to the window
+with `<=>` used to have no test at all: the leaf the wire feeds is a
+`CheckBox.checked` inside a sheet, with no id the window root can name, so a
+dead wire changed nothing any assertion could see. `tests/ui/export_sheet.rs`
+is the pattern: **find the control by the words on it**
+(`find_by_accessible_label` — every style's `CheckBox` binds
+`accessible-label`, `accessible-checked` and `accessible-enabled`, and a `Text`
+binds `accessible-label` by default, so an `if`-guarded line is findable or
+absent), read it back, and tick it with
+`invoke_accessible_default_action` rather than a synthesized click — a pointer
+event would have to land on a computed position inside a sheet behind a modal
+scrim, which is a layout measurement no wiring test wants to be. What a UI test
+still **cannot** reach is `main.rs`'s seeding: `open_export_sheet` reads the
+`UI` thread-local, so a missing `set_export_*` there passes everything.
 **Sharing the process is free**: Slint's platform lives in a `thread_local!`
 and libtest gives each `#[test]` a thread, so each fixture calls
 `init_no_event_loop()` for itself and none may assume it is first.
@@ -345,6 +363,12 @@ silently. If you need a media type in core, you need a different design.
   `Preferences` fields take **none**, because that container already carries one
   and fills from its hand-written `Default`, so a field-level one would be a
   second copy of the default. Both are additive, so the readable floor stays 7.
+- **v14 adds `Stroke.end`** (#117): `StrokeEnd::Plain` or `Arrow`. An **enum, not
+  an `arrow: bool`**, and it takes a **field-level** `#[serde(default)]` for the
+  `Clip` half of v13's reason — `Plain` is exactly what every v7–v13 stroke was,
+  the same grounds `Inset` defaults to `Camera`. An enum is also what says that
+  in the type, where a defaulted `bool` would be leaning on the letter of the
+  rule against its stated reason, and it leaves room for an end that is neither.
 - **v15 renames `Preferences::preview_source_volume` to `export_source_volume`**,
   with `#[serde(alias = "previewSourceVolume")]` — the export sheet's "Mute
   source audio" writes `0.0` or `1.0` into it. The old name was always wrong: a
@@ -359,6 +383,16 @@ silently. If you need a media type in core, you need a different design.
   "an older build falls back to 1.0" is only half the story.) It takes **no**
   field-level `#[serde(default)]`, for `Preferences`' usual reason, and so keeps
   its place in `preferences_defaults_are_not_zero`.
+- **v16 adds `Preferences::last_export_chapters` / `last_export_cues`** (#78) —
+  the export sheet's two output switches, both **`true`** in the hand-written
+  `Default`, both taking **no** field-level attribute for `Preferences`' usual
+  reason (the container carries one), and both keeping their place in
+  `preferences_defaults_are_not_zero`. Additive, so the readable floor stays 7.
+  **The bump's reason is the forward direction**, which is the one that bites:
+  serde ignores unknown keys, so an older build would read a v16 file, ignore
+  both switches and drop them on its next save — exporting the chapters and the
+  `.srt` a coach had turned off and saying nothing. The bump makes it refuse the
+  file instead, and `project.json.v15` is what it can still be gone back to.
 - **The first save after an upgrade keeps `project.json.v<old>`**, once, never
   overwritten, so the older build can still be gone back to. It is copied to a
   temporary name and renamed, like `project.json` itself, so a failed copy
@@ -621,10 +655,13 @@ fitted to. There is no keyboard path to them (#99).
 - **YouTube ignores the whole list silently if any rule is broken**, so `chapter_list` bends the app's chapters to them and says no when it can't: the first line is exactly `0:00` (a first chapter under 10 s in is **moved** there, keeping its own words; 10 s or more in gets a `0:00 Start` line above it), consecutive chapters are at least 10 s apart (a later one inside that is **dropped**, never merged — merging invents a title neither had), times are floored `m:ss` / `h:mm:ss` and ascending, and titles are flattened to one line (a newline would cost every chapter, not just its own). **Fewer than three survivors writes no file at all**: a two-line list is not a shorter list, it is one YouTube ignores, leaving loose timestamps in a description with no hint why.
 - **The same cues also ride *inside* the copy, as a `tx3g` track** — the sidecar is what VLC loads without being asked, the embedded track is what survives the file being sent on. It is a third `mp4mux` pad (`subtitle_%u`, `trak-timescale=1000`) fed from an `appsrc` of `text/x-raw,format=utf8`, **requested only when there are cues** and **written whole before the first source is opened**, then ended: a requested pad that runs dry stalls the muxer, so the track is never trickled. **`mp4mux` writes an empty sample between cues** (3,400 cues → 6,799 samples); that is the muxer's, not ours. Only the copy carries it — the encoded path is unchanged.
 
-**The export sheet's third picker is Scoreboard: Default / Burned into the picture / Separate track,** carried by `Command::Export`'s `scoreboard: Option<ScoreboardMode>` (`None` is Default) and remembered in `Preferences::last_export_scoreboard` (v11) by the same write-back as the other two. **There is a fourth control beside it, a checkbox: "Mute source audio"** (v15), remembered the same way and carried the same way, and the basket sheet has its own, in `basket.json` as a plain `bool` — a *label* there is the rule for an enum, which can gain variants a build cannot read, and a bool has none. (A downgrade therefore silently unmutes a **basket**, which is the right trade for machine state with no version; the code says so where the field is.) `Pickers` is the four of them and **loses its `Eq`** derive, `f64` having none; the write-back's `!=` is all it needed. **One negation, at the bus's boundary:** `mute` is the coach's word and the checkbox's, `export_source_volume` and `Render::Copy`'s `with_audio` are everything below it.
-- **"Default" means the best available, never a silent trade.** It copies the whole match when `can_copy` agrees and burns the board in otherwise — a project of Matroska or HEVC sources re-encodes as it always did rather than failing at a gate the coach never asked for. Choosing **Separate track** by hand refuses instead, naming the file: there the coach asked for the copy. The sheet's one explanatory line follows the *effective* mode, so Default says so too.
+**The export sheet's third picker is Scoreboard: Default / Burned into the picture / Separate track,** carried by `Command::Export`'s `scoreboard: Option<ScoreboardMode>` (`None` is Default) and remembered in `Preferences::last_export_scoreboard` (v11) by the same write-back as the other two. **There is a fourth control beside it, a checkbox: "Mute source audio"** (v15), remembered the same way and carried the same way, and the basket sheet has its own, in `basket.json` as a plain `bool` — a *label* there is the rule for an enum, which can gain variants a build cannot read, and a bool has none. (A downgrade therefore silently unmutes a **basket**, which is the right trade for machine state with no version; the code says so where the field is.) **Two more checkboxes under the picker say what the run leaves on disk: Chapters and Scoreboard subtitles** (v16, #78), remembered and carried the same way. `Pickers` is all six and **loses its `Eq`** derive, `f64` having none; the write-back's `!=` is all it needed. The command's payload is one struct, `ExportChoices`, because two more bools make `Bus::export` eight parameters counting `self` — one past where clippy's `too_many_arguments` fires — and because `mute_source`, `chapters` and `cues` are three adjacent same-typed values that would read as valid in any order. It has **no `Default`**, derived or written: both switches are `true` and a derived one is `false`. **One negation, at the bus's boundary:** `mute` is the coach's word and the checkbox's, `export_source_volume` and `Render::Copy`'s `with_audio` are everything below it. The two output switches are negated nowhere — `true` is "write it" at every layer.
+- **One switch per output, each governing every form that output takes.** Chapters is the `chpl` box inside the file *and* the `.chapters.txt` beside it; Scoreboard subtitles is the `.srt` beside the file *and* the `tx3g` track inside a copy. A coach who turns one off and still finds it in the file has been told a half-truth, and the in-file form is the half he cannot see. Splitting either pair would be a third and fourth checkbox for a combination nobody has named.
+- **Off reaches media by blanking the data media already reads, and `pundit-media` knows nothing about either switch.** Chapters off is one line in `job` — `compilation.plan.chapters.clear()` — and subtitles off is `job.cues` as `Some(Vec::new())`. Both are already media's one "no chapters" and one "no subtitles", so a `bool` on `ExportJob` would be the third state `carry_scoreboard`'s own rule exists to refuse. **If either switch ever needs a media change, the design has been abandoned.**
+- **"Default" means the best available, never a silent trade.** It copies the whole match when `can_copy` agrees and burns the board in otherwise — a project of Matroska or HEVC sources re-encodes as it always did rather than failing at a gate the coach never asked for. Choosing **Separate track** by hand refuses instead, naming the file: there the coach asked for the copy. **And Default never trades the board away either:** with the subtitles off a copy would carry no board *anywhere*, so Default burns it in — one condition in the `Track` arm, **before** `can_copy`, which reads a header per file. *Separate track* chosen by hand still gets no board, because there the coach asked, which is what makes the sheet's "no scoreboard at all" line deterministic. **The sheet carries two lines under the picker and one derived property feeding both** — `would-copy` on `ExportSheet`, the whole match ticked and the board going anywhere but into the picture, which under Default depends on the subtitles too. The first line follows the *effective* mode, so Default says so too; the second is the "no scoreboard anywhere" warning, and *Separate track* with the subtitles off shows **both**, because it does copy and it does carry no board. **One property rather than the same boolean in two `if`s**, and with the subtitles on it is the old `scoreboard != 1` exactly, so a coach who touches neither switch sees no change.
 - **Only the whole match carries the board beside the file.** A clip or a reel asked for on a separate track **burns it in** — it re-encodes either way, and the picker must never lose the board.
-- **The whole mapping is `carry_scoreboard` in `bus/export.rs`** — mode + target into the renderer and the two job fields that carry the board. **It takes `with_audio` for one reason — it is the only caller of `can_copy`** — and **`Carry` still has no field for it:** the renderer needs one bool, which `job` already holds, so a copy of it on `Carry` would be a second truth the encode arm ignores. `job` computes `with_audio` once and hands it to both readers, because the gate it asks and the copy it may choose have to be answering one question. **Track mode blanks `job.scoreboard`** rather than carrying a mode flag into media: `None` is already media's one "don't draw the board", so there is no third state to keep consistent and `overlay.rs` never learns a picker exists.
+- **Independence costs one accepted redundancy** (the coach, 2026-10-06): with the subtitles defaulting on, **every burned whole match now writes an `.srt`** — including a *Default* run that fell back to burning because `can_copy` refused. Shown the three options he chose to accept it: the switch does what it says, and defaulting it off would have stopped today's whole-match copy writing an `.srt` at all.
+- **The mapping is two functions over one picker, because they answer two questions.** `carry_scoreboard` in `bus/export.rs` is "how does this target carry the board **in the picture**" — mode + target into the renderer and the one job field that burns it in, with `Carry { copy, scoreboard }` and no cue slot. `board_cues` is "what goes **beside** the file", the three states `ExportJob::cues` has. **`carry_scoreboard` takes `with_audio` for one reason — it is the only caller of `can_copy`** — and `want_cues` for the same shape of reason, Default being unable to answer "the best available" without knowing what else the run carries; **`Carry` still has no field for either:** the renderer needs one bool, which `job` already holds, so a copy of it on `Carry` would be a second truth the encode arm ignores. `job` computes `with_audio` once and hands it to both readers, because the gate it asks and the copy it may choose have to be answering one question. **Track mode blanks `job.scoreboard`** rather than carrying a mode flag into media: `None` is already media's one "don't draw the board", so there is no third state to keep consistent and `overlay.rs` never learns a picker exists.
 - **The run's rate window is cleared when a target finishes** (`Active::finish_target`), along with the rate the event carries. A copy runs at thousands of output frames a wall second against an encode's tens, so the clips queued behind one would otherwise inherit its rate and be promised they finish at once.
 
 **The match clock is the displayed frame's source time** (Phase 9).

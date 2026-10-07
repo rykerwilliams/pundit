@@ -156,6 +156,26 @@ pub struct Preferences {
     /// Which way the export sheet last carried the scoreboard, or `None` for
     /// its per-target default ([`crate::plan::default_scoreboard_mode`]). v11.
     pub last_export_scoreboard: Option<ScoreboardMode>,
+    /// Whether an export writes its chapters. v16.
+    ///
+    /// **One switch, both forms**: the `chpl` box inside the file *and* the
+    /// `.chapters.txt` beside it. A coach who turns chapters off and still
+    /// finds them in the file has been told a half-truth, and the in-file box
+    /// is the half he cannot see. "Off" is expressed by clearing
+    /// `CompilationPlan::chapters`, which both readers already mean "no
+    /// chapters" for — there is no flag in media (spec S1, S2).
+    pub last_export_chapters: bool,
+    /// Whether an export writes the scoreboard as subtitles. v16.
+    ///
+    /// Both forms again: the `.srt` beside the file *and* the `tx3g` track
+    /// inside a copy, which `composite/copy`'s own header already states as one
+    /// decision. "Off" is `ExportJob::cues` as `Some(Vec::new())`, media's own
+    /// "no subtitles" — again no flag.
+    ///
+    /// **Named for `job.cues` and `crate::cues`**, the words the code already
+    /// uses for this pair of outputs: `last_export_scoreboard_subtitles` would
+    /// read as a qualifier on `last_export_scoreboard` right above it.
+    pub last_export_cues: bool,
     /// The inset size and corner the coach last set on a clip, seeding the next
     /// recording ([`Project::add_recorded_clip`]). v13.
     ///
@@ -187,6 +207,8 @@ impl Default for Preferences {
             last_export_resolution: Resolution::R1080,
             last_export_quality: Quality::Medium,
             last_export_scoreboard: None,
+            last_export_chapters: true,
+            last_export_cues: true,
             last_inset_size: InsetSize::Medium,
             last_inset_corner: InsetCorner::BottomRight,
             preferred_camera_id: None,

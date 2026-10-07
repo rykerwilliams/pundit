@@ -24,8 +24,8 @@ use uuid::Uuid;
 
 use pundit_app::bus::{
     self, export_targets, whisper, whisper_model_override, AppFiles, BasketView, Bus, BusHandle,
-    CaptureKind, Command, Event, ExportRun, ExportTargetRun, Finish, Folds, PanelWidths,
-    RecordingStatus, Snapshot, Stage, TargetState, TranscriptionState, WindowSize,
+    CaptureKind, Command, Event, ExportChoices, ExportRun, ExportTargetRun, Finish, Folds,
+    PanelWidths, RecordingStatus, Snapshot, Stage, TargetState, TranscriptionState, WindowSize,
 };
 use pundit_app::color_picker;
 use pundit_app::drawing::{arrow_commands, path_commands, InProgress, Pen, PenWidth};
@@ -918,15 +918,19 @@ fn wire_export(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             });
             bus.borrow().send(Command::Export {
                 targets,
-                resolution: resolution_at(w.get_export_resolution()),
-                quality: quality_at(w.get_export_quality()),
-                // 0 is "Default", which is the target's own (spec M1).
-                scoreboard: match w.get_export_scoreboard() {
-                    1 => Some(ScoreboardMode::Burned),
-                    2 => Some(ScoreboardMode::Track),
-                    _ => None,
+                choices: ExportChoices {
+                    resolution: resolution_at(w.get_export_resolution()),
+                    quality: quality_at(w.get_export_quality()),
+                    // 0 is "Default", which is the target's own (spec M1).
+                    scoreboard: match w.get_export_scoreboard() {
+                        1 => Some(ScoreboardMode::Burned),
+                        2 => Some(ScoreboardMode::Track),
+                        _ => None,
+                    },
+                    mute_source: w.get_export_mute_source(),
+                    chapters: w.get_export_chapters(),
+                    cues: w.get_export_cues(),
                 },
-                mute_source: w.get_export_mute_source(),
             });
         }
     });
@@ -1039,7 +1043,7 @@ fn inset_placement(size: InsetSize, corner: InsetCorner) -> InsetPlacement {
 /// row ticked or everything but it (spec E8), and the pickers at the
 /// project's last choice (spec E4).
 fn open_export_sheet(w: &AppWindow, clip: Option<Uuid>, only_clip: bool) {
-    let Some((resolution, quality, scoreboard, mute_source, rows)) = UI.with_borrow_mut(|ui| {
+    let Some((choices, rows)) = UI.with_borrow_mut(|ui| {
         let project = &ui.snapshot.as_ref()?.project;
         let targets = export_targets(project, clip);
         let rows: Vec<TargetRow> = targets
@@ -1069,30 +1073,41 @@ fn open_export_sheet(w: &AppWindow, clip: Option<Uuid>, only_clip: bool) {
             })
             .collect();
         let prefs = &project.preferences;
-        let picked = (
-            prefs.last_export_resolution,
-            prefs.last_export_quality,
-            prefs.last_export_scoreboard,
+        // **The same struct the sheet's Export sends**, rather than a tuple of
+        // six: three of its values are adjacent `bool`s, where the tuple read
+        // as positional and a transposition would have compiled. Being the
+        // command's own payload type — with no `Default` to spread — also
+        // means a seventh control cannot be *read* here by omission: the
+        // literal stops building until it is. Writing it on to the window is
+        // still a line of its own below, and nothing makes that one
+        // mandatory; `tests/ui/export_sheet.rs`'s header says so.
+        let picked = ExportChoices {
+            resolution: prefs.last_export_resolution,
+            quality: prefs.last_export_quality,
+            scoreboard: prefs.last_export_scoreboard,
             // Stored as a level so a slider later is pure UI (spec M1); the
             // checkbox is the one place that reads it as a switch.
-            prefs.export_source_volume == 0.0,
-            rows,
-        );
+            mute_source: prefs.export_source_volume == 0.0,
+            chapters: prefs.last_export_chapters,
+            cues: prefs.last_export_cues,
+        };
         // The rows the sheet shows and the targets a tick means, in the same
         // order: the sheet reads back only the ticks.
         ui.export_targets = targets.into_iter().map(|row| row.target).collect();
-        Some(picked)
+        Some((picked, rows))
     }) else {
         return;
     };
-    w.set_export_resolution(resolution_index(resolution));
-    w.set_export_quality(quality_index(quality));
-    w.set_export_scoreboard(match scoreboard {
+    w.set_export_resolution(resolution_index(choices.resolution));
+    w.set_export_quality(quality_index(choices.quality));
+    w.set_export_scoreboard(match choices.scoreboard {
         None => 0,
         Some(ScoreboardMode::Burned) => 1,
         Some(ScoreboardMode::Track) => 2,
     });
-    w.set_export_mute_source(mute_source);
+    w.set_export_mute_source(choices.mute_source);
+    w.set_export_chapters(choices.chapters);
+    w.set_export_cues(choices.cues);
     w.set_export_any_ticked(rows.iter().any(|row| row.ticked));
     w.set_export_whole_match_ticked(whole_match_ticked(rows.iter().cloned()));
     w.set_export_targets(ModelRc::new(VecModel::from(rows)));
