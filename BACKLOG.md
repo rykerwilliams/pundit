@@ -19,6 +19,10 @@ made things worse.
   2026-10-05, planned 2026-10-06**: two on the export sheet (Chapters,
   Scoreboard subtitles), and a settings sheet designed but not built
 - **96.** Every hot key should be reassignable. The coach (2026-09-25): "we need
+  to have all the hot keys reassignable", and (2026-10-07) *"i did ask for a
+  configuration system eh; use a library or known pattern/convention"*.
+  **Specced 2026-10-02, planned 2026-10-07**: one table in `keymap.rs`,
+  overrides in `state.json`, a Keys sheet, and rebinding from it
 - **77.** An export queue across projects. The coach (2026-09-24): "i open…
 - **84.** Music under a goals reel — Openverse search, then the mixer (wants the
   settings sheet #78 **designs**, for the music folder path; the API key was
@@ -367,7 +371,19 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **Why deferred:** Slint key events carry text, not scancodes, so A/D and the
   zoom digits follow the keyboard layout (on AZERTY the digits need Shift).
   Arrows are unaffected.
-- **When to revisit:** Only if a non-QWERTY user reports it.
+- **It cannot be fixed on our side, verified 2026-10-07.** `KeyEvent` has
+  exactly three fields — `text`, `modifiers`, `repeat`
+  (`i-slint-common-1.18.0/builtin_structs.rs:104`–`:111`) — and the winit
+  backend reads `event.logical_key` only
+  (`i-slint-backend-winit-1.18.0/winitwindowadapter.rs:1337`): `physical_key`
+  appears **zero** times in that crate, so the information is discarded at the
+  boundary and no plumbing of ours could recover it.
+- **#96 retires it**, which is the answer rather than a Slint that may never
+  expose scancodes: a non-QWERTY coach rebinds the zoom and A/D to the keys
+  where they are, once, and `state.json` remembers
+  (`2026-10-02-rebindable-keys-design.md` §K2).
+- **When to revisit:** close it when #96 ships; reopen only if a coach needs a
+  binding that follows the *physical* key across two layouts on one machine.
 
 ### 36. Decoding slows to ~0.1× when the display is off (vsync-blocked swap)
 - **Why deferred:** In Phase 2 Task 5, with the laptop's monitor DPMS-off,
@@ -2093,8 +2109,12 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   which is what would make the shape reachable by hand.
 
 96. **Every hot key should be reassignable.** The coach (2026-09-25): "we need
-  to have all the hot keys reassignable". Today there are **33 `event.text ==`
-  branches** in one `FocusScope` in `app.slint`, each naming its key inline:
+  to have all the hot keys reassignable". Today there are **61 `event.text ==`
+  comparisons** in one function in `app.slint` — this entry said 33 when it was
+  filed, and the count is re-derived at `2749e00`: `handle-key` is
+  `app.slint:4382`–`:4671` and holds 61 of them, 64 in the whole file. **The
+  number is not load-bearing; that it grew by itself in five weeks is.** Each
+  names its key inline:
   `R` records, `Z`/`X`/`V` tag match events, `,`/`.` step, `J`/`L` set the scan
   speed, `0`–`3` the zoom, `I`/`O` will mark slates (#92), and so on. Nothing
   is data, so nothing can be changed without a rebuild, and nothing can be
@@ -2179,11 +2199,21 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   with the arrow keys (F6/F8 to cycle); QSplitterHandle does not, so this matches
   Qt and not GTK. In an app where every other control has a key and the coach
   works by keyboard, a 6px pointer target is a real gap.
-- **Why deferred:** the obvious fix collides with the window's keyboard design.
-  `AppWindow` has `forward-focus: keys` and every letter is a global binding, so
-  a focusable grip would swallow `z` / `x` / `v` while it held focus. It needs a
-  decision about how a focused control coexists with the global letters — which
-  is #96's question (rebindable hot keys), not a splitter's.
+- **Why deferred — and the premise above is false, checked 2026-10-07 against
+  the source.** This entry said *"`AppWindow` has `forward-focus: keys` and
+  every letter is a global binding, so a focusable grip would swallow `z` / `x`
+  / `v` while it held focus."* It would not: the global letters are on
+  **`capture-key-pressed`** (`app.slint:4674`), dispatched window→focus-item
+  **before** the focused item
+  (`i-slint-core-1.18.0/window.rs:1324`–`:1326`), so `handle-key` accepts `z`
+  first and a focused grip never sees it.
+- **The real blocker is the opposite problem**, and #96 is what fixes it: the
+  grip needs the **arrow keys**, and `handle-key` accepts those too
+  (`:4609`, `:4615`) for the skips, so a grip can never be reached by arrow key
+  while a second dispatch path is the only way to give it one. With #96's table
+  `resizeSidebar` / `resizeInspector` are actions with a guard — "a grip has
+  focus" — resolved in the same lookup as everything else, with the precedence
+  visible. See `docs/superpowers/specs/2026-10-02-rebindable-keys-design.md` §N.
 - **When to revisit:** with #96, or if the coach asks to resize without the mouse.
 
 100. **`state.json` is read all-or-nothing, so one bad value still costs the
