@@ -22,7 +22,11 @@ the game video to where the clip begins, without playing the commentary.
 
 - <kbd>Delete</kbd>, or **Delete clip**, deletes the selected clip. Its
   recording goes to a trash folder inside the project, and
-  <kbd>Ctrl</kbd>+<kbd>Z</kbd> puts it back where it was.
+  <kbd>Ctrl</kbd>+<kbd>Z</kbd> puts it back where it was — **but only in the
+  same session, and only until you open another project.** Undo is held in
+  memory, so quitting pundit loses it, and opening a project empties the trash
+  of both the one you are leaving and the one you are opening. Once either
+  happens the recording is gone for good. If you are not sure, keep the clip.
 - <kbd>Ctrl</kbd>+<kbd>Z</kbd> and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>
   undo and redo every change to a clip.
 - Right-click a clip for its menu, which also has **Add to basket** — see
