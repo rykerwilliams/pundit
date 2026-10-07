@@ -40,7 +40,49 @@ settled position" — nine sightings, two of them on docs-only branches) and #10
     three moments ten seconds apart.
   - **`a_run_persists_the_resolution_quality_and_mute` is renamed**
     `…_and_switches`, since it now covers all three.
-- **2 — the sheet.** Not started.
+- **2 — the sheet.** **Done** (2026-10-07). Built as written: two `CheckBox`es
+  in §U2's order and wording, the subtitles tooltip, `would-copy` and the second
+  line, the send, and the seeding closure returning `ExportChoices` and the rows.
+  Two deviations, one of them the task's whole surprise:
+  - **"There is no UI test for this task" turned out to be wrong, and
+    `tests/ui/export_sheet.rs` is the five tests it said were unreachable.**
+    What the plan missed is that the window's own `export-sheet-open` opens the
+    sheet, so the sheet instantiates in a test — and
+    `i_slint_backend_testing`'s `ElementHandle` finds a `CheckBox` inside it by
+    the **words on it**, reads `accessible_checked` and ticks it with
+    `invoke_accessible_default_action`. So both halves of every `<=>` are
+    tested, for all three switches rather than only the two new ones, plus
+    `enabled: !root.exporting` and the whole of spec S4's line table. **Proved
+    by sabotage twice**, once per new wire. The plan's reasoning was right about
+    the *leaf having no id* and wrong that this made it unobservable: the
+    accessibility tree is a second way in, and the position-computing pointer
+    click it (correctly) ruled out was never needed.
+  - **`build.rs` compiles the UI with `with_debug_info(true)`**, which that API
+    refuses to work without. This is **the same change BACKLOG #127 makes on its
+    own branch** for the slate row's menu, written independently here because
+    #127 is unmerged; if both land they are one change and either comment will
+    do. It is the one cost this task did not plan for, and the reason it was
+    paid is in the plan's own "Sabotage proof" paragraph: a manual check was the
+    only thing standing between a dead wire and a release.
+  - **The 480px-card check became a measurement and found something**, which is
+    what the plan asked for ("an estimate in the spec, a measurement here"). The
+    width was never at risk — two rows cost height. At the window's declared
+    1100x700 minimum with the target list at its 210px cap: **614px** with one
+    explanatory line, **648px** with both, **733px** with a run list at its
+    140px cap *before* this task and **823px** after. So **a sheet reopened over
+    a running export already overflowed a 700px window by 33px**, and the two
+    switches deepen that by 56px with the second line adding 34px. Filed as
+    **BACKLOG #134** and deliberately not fixed here: `Sheet` is
+    `height: body.preferred-height` with no scroll, and the fix is to shared
+    chrome all six sheets inherit. The fit test pins the case the switches are
+    *configured* in — no run list, both lines, 648px, 52px of headroom — and its
+    doc comment says plainly that this is the honest boundary rather than a
+    softer case chosen to pass.
+  - **Still not covered, and the plan is right about this one:** `main.rs`'s
+    seeding. `open_export_sheet` reads the `UI` thread-local, so a missing
+    `set_export_cues` there passes the whole suite. Checked by reading, and by
+    the fact that the six controls are seeded in exactly one place and read in
+    exactly one other — there is no second site to forget.
 
 **They are sequential, and they ship together — one PR, one release.**
 
@@ -426,6 +468,16 @@ Four, each failing a different test:
      the bus says so on stderr, as today.
 
 ### Tests, and why there is no automated one
+
+> **This section was wrong, and the task went the other way** — see "Where this
+> stands". `tests/ui/export_sheet.rs` has five tests covering both halves of
+> every switch's wire, the greying and spec S4's line table, and each new wire
+> has a sabotage proof. What follows is the reasoning that said it could not be
+> done, kept because the part of it that was right is worth keeping: the leaf a
+> wire feeds really has no id, and the pointer click it rules out really is
+> unwanted. What it missed is that the accessibility tree is a second way in,
+> and that `export-sheet-open` lets a test open the sheet at all. The last
+> paragraph — `main.rs`'s seeding being unreachable — still holds.
 
 **There is no UI test for this task, and that is a decision rather than an
 omission.** `crates/pundit-app/tests/ui/` drives the real `AppWindow` on Slint's

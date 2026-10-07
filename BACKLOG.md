@@ -3773,3 +3773,30 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   copying the clip inspector's shape, and both bugs are a rule the inspector
   already had that the copy did not. **When the slates panel grows, diff it
   against the inspector rather than against itself.**
+
+134. **A sheet reopened over a running export does not fit the smallest window
+  the app opens.** Measured 2026-10-07 while adding #78's two checkboxes, by
+  `tests/ui/export_sheet.rs`'s own fit test — not seen in use, and **not caused
+  by #78**.
+- **The numbers**, all at the window's declared 1100x700 minimum with twelve
+  export targets (so the target `ListView` is at its own 210px cap): **614px**
+  with one explanatory line and no run, **648px** with both lines, **733px**
+  with a run list at its 140px cap *before* #78's task 2, and **823px** after.
+  The floor is `min-window-height`, **700px**. So the overflow predates the two
+  switches by 33px; they deepen it by 56px (18px a row plus the body's 10px
+  spacing) and the second explanatory line by a further 34px.
+- **What it costs:** `Sheet` is `height: body.preferred-height` and **does not
+  scroll**, so the bottom of the card — the Export and Cancel buttons — is
+  simply off the window. Reachable by reopening the sheet during a run on a
+  tag-heavy project at a small window size; the sheet a coach *configures* an
+  export in has no run list and fits with 52px to spare, which is what the fit
+  test pins.
+- **Why deferred:** the fix is a change to `Sheet`, which **all six** sheets
+  inherit — a `ScrollView` in the card, or a cap on the two lists that knows
+  the window's height. That is a shared-chrome design decision with its own
+  trade (a scrolling modal is a different thing from a card), and it is not
+  task 2's to make while shipping a checkbox. Deepening a 33px overflow to
+  123px is also not the same as introducing one.
+- **When to revisit:** with the next thing that adds a row to any sheet, or the
+  first time a coach reports losing the buttons. The fit test is the tripwire
+  and already names this entry.

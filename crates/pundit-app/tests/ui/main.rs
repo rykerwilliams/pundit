@@ -32,6 +32,7 @@
 
 slint::include_modules!();
 
+mod export_sheet;
 mod fit_window;
 mod panel_widths;
 mod scrubber;
