@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use pundit_app::bus::{Command, Event, TargetState, UserError};
+use pundit_app::bus::{Command, Event, ExportChoices, TargetState, UserError};
 use pundit_core::highlight::{HighlightEdit, NormRect};
 use pundit_core::plan::ExportTarget;
 use pundit_core::project::{Project, Quality, Resolution};
@@ -311,10 +311,14 @@ fn a_highlight_reaches_an_export() {
 
     h.send(Command::Export {
         targets: vec![ExportTarget::Clip(clip)],
-        resolution: Resolution::R720,
-        quality: Quality::Low,
-        scoreboard: None,
-        mute_source: false,
+        choices: ExportChoices {
+            resolution: Resolution::R720,
+            quality: Quality::Low,
+            scoreboard: None,
+            mute_source: false,
+            chapters: true,
+            cues: true,
+        },
     });
     let done = h.wait_map("the run's outcome", |e| match e {
         Event::Export(run) if !run.is_running() => Some(run.clone()),

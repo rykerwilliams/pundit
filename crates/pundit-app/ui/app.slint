@@ -1895,9 +1895,25 @@ component ExportSheet inherits Sheet {
     /// as a level, so a slider later is this property widening and no format
     /// change; here it is a switch.
     in-out property <bool> mute-source;
+    /// Write the chapters: the `chpl` box **inside** the file and the
+    /// `.chapters.txt` beside it, which ride one switch because the in-file
+    /// half is the one the coach can't see (spec S1).
+    in-out property <bool> chapters;
+    /// Write the scoreboard as subtitles: the `.srt` beside the file and the
+    /// `tx3g` track inside a copy, one switch for the same reason (spec S1).
+    in-out property <bool> cues;
     /// The whole match is ticked, and so the run may copy rather than
     /// re-encode. `src/main.rs` owns it, beside the ticks themselves.
     in property <bool> whole-match-ticked;
+    /// **This run would copy rather than re-encode**, which both lines under
+    /// the picker are about. Only the whole match is ever copied, so its tick
+    /// is the first term; the board then has to be going anywhere but into the
+    /// picture, which under "Default" depends on the subtitles too — with them
+    /// off a copy would carry no board anywhere, so Default burns it in
+    /// instead (spec S4). One property rather than the same boolean written
+    /// into two `if`s.
+    property <bool> would-copy: root.whole-match-ticked
+        && (root.scoreboard == 2 || (root.scoreboard == 0 && root.cues));
     callback tick(int, bool);
     callback start();
     callback cancel();
@@ -1957,13 +1973,49 @@ component ExportSheet inherits Sheet {
         // The only place the trade is spelled out, and it follows the
         // **effective** mode rather than the picked one: the whole match
         // is copied on Default too, and a coach told nothing has taken
-        // the trade without being asked (spec M1, N). Only the whole
-        // match is ever copied, so only its tick matters here.
-        if root.whole-match-ticked && root.scoreboard != 1: Text {
+        // the trade without being asked (spec M1, N). `would-copy` is
+        // the effective reading, subtitles included.
+        if root.would-copy: Text {
             text: "The whole match is copied, not re-encoded: player highlights and pen drawings can't ride a copy.";
             color: Palette.alternate-foreground;
             font-size: 11px;
             wrap: word-wrap;
+        }
+        // **The one combination where what you asked for and what you get
+        // look nothing alike** (spec S4), so it is said before the run
+        // rather than found in `exports/`. Deterministic, and that is why
+        // it can be stated flatly: *Separate track* chosen **by hand**
+        // refuses rather than falling back, where "Default" with the
+        // subtitles off burns the board in and so reaches neither line.
+        if root.whole-match-ticked && root.scoreboard == 2 && !root.cues: Text {
+            text: "This export carries no scoreboard at all: not in the picture, not beside the file, not inside it.";
+            color: Palette.alternate-foreground;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
+    }
+
+    // **What the run leaves on disk** (spec S1, #78). Their own rows for the
+    // picker's reason — a 480px card has no fourth column — and each label
+    // says **both** halves the switch governs, because the coach can only
+    // see one of them: "Chapters" alone reads as the file beside the video.
+    CheckBox {
+        text: "Chapters, in the file and as a list beside it";
+        enabled: !root.exporting;
+        checked <=> root.chapters;
+
+        Tooltip {
+            text: @markdown("The chapter marks inside the video and the pasteable `.chapters.txt` beside it. YouTube can't read the ones inside, so the list is how they reach a video anyone watches there.");
+        }
+    }
+
+    CheckBox {
+        text: "Scoreboard subtitles — an .srt beside the file, and a track inside a copy";
+        enabled: !root.exporting;
+        checked <=> root.cues;
+
+        Tooltip {
+            text: @markdown("The score and the match clock as subtitles. With this off the scoreboard appears only where it is burned into the picture.");
         }
     }
 
@@ -3842,8 +3894,12 @@ export component AppWindow inherits Window {
     in-out property <int> export-quality;
     in-out property <int> export-scoreboard;
     in-out property <bool> export-mute-source;
-    /// Whether the whole-match row is ticked, which is what decides whether
-    /// the Scoreboard picker's explanatory line applies.
+    /// The two output switches: what the run leaves on disk (spec S1, #78).
+    in-out property <bool> export-chapters;
+    in-out property <bool> export-cues;
+    /// Whether the whole-match row is ticked, which is the first term of both
+    /// explanatory lines under the Scoreboard picker — only the whole match is
+    /// ever copied, and both lines are about a copy.
     in property <bool> export-whole-match-ticked;
     /// The run in progress, and when it finishes; both from the bus's events,
     /// so a closed sheet reopens on the run it left.
@@ -6544,6 +6600,8 @@ export component AppWindow inherits Window {
                 quality <=> root.export-quality;
                 scoreboard <=> root.export-scoreboard;
                 mute-source <=> root.export-mute-source;
+                chapters <=> root.export-chapters;
+                cues <=> root.export-cues;
                 whole-match-ticked: root.export-whole-match-ticked;
                 tick(index, ticked) => { root.tick-target(index, ticked); }
                 start => { root.start-export(); }

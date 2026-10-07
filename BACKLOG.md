@@ -1450,6 +1450,32 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   remove; and one job's failure (footage moved, disk full) failing only itself.
   A first version keeps the queue in memory — closing the app loses it — and
   doesn't let a queued job be edited.
+- **Spec written: `docs/superpowers/specs/2026-10-07-export-queue-design.md`,
+  which corrects two of the three things this entry calls "the work"
+  (verified 2026-10-07 against `origin/claude/78-task-1`).** The run loop is
+  **already** untied from the open project — `export::Active` and
+  `Bus::export_message` read `self.open` nowhere, and export renders on
+  `Gl::shared()`'s surfaceless display rather than the UI's context — and one
+  job's failure **already** fails only itself
+  (`Active::finish_target` → `TargetState::Failed`, pinned by
+  `a_failed_target_does_not_stop_the_run`). What is left is splitting
+  `start_run`'s job building from its `begin`, moving the per-target refusals
+  from "the whole run, up front" to "the one job, at enqueue", and the panel.
+  Also: the scoreboard this entry lists is not a field of `ExportJob` — it
+  rides in `MatchMedia` behind the `Arc` on each `EntryMedia`, and a
+  `Render::Copy` job carries none at all.
+- **The coach added one thing to the shape (2026-10-07):** asked whether he
+  should be able to open another project while the queue runs, *"yes you should
+  be able to keep working"*. So `open_project`, `restore_last_project` and
+  `built_new_match` lose `refuse_if_busy`'s export clause and keep only its
+  preview one, and `a_project_open_is_refused_while_a_run_is_going` inverts.
+  The audit is in the spec's §Q7: **nothing in `commit` has to change** — a job
+  names `recordings/<file>` and never a path inside `recordings/.trash`, so
+  emptying the trash removes nothing it reads. What costs a job its recording
+  is the clip **delete**, whose rename moves the file, and that has been true
+  since Phase 8 with no queue; the spec answers it by dropping the queued jobs
+  that need the clip, as `trash_clip` already cancels that clip's transcription
+  and closes its preview.
 - **Why deferred:** only by the coach's own order (2026-09-24): the detection
   measurement comes first. It is not blocked on anything.
 - **When to revisit:** as soon as P3's measurement is done, or sooner if the
@@ -3984,3 +4010,30 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** with #115, which is the same mechanism from the other
   end — or straight after the whiteboard ships, since the coach asked for both
   in one breath.
+
+134. **A sheet reopened over a running export does not fit the smallest window
+  the app opens.** Measured 2026-10-07 while adding #78's two checkboxes, by
+  `tests/ui/export_sheet.rs`'s own fit test — not seen in use, and **not caused
+  by #78**.
+- **The numbers**, all at the window's declared 1100x700 minimum with twelve
+  export targets (so the target `ListView` is at its own 210px cap): **614px**
+  with one explanatory line and no run, **648px** with both lines, **733px**
+  with a run list at its 140px cap *before* #78's task 2, and **823px** after.
+  The floor is `min-window-height`, **700px**. So the overflow predates the two
+  switches by 33px; they deepen it by 56px (18px a row plus the body's 10px
+  spacing) and the second explanatory line by a further 34px.
+- **What it costs:** `Sheet` is `height: body.preferred-height` and **does not
+  scroll**, so the bottom of the card — the Export and Cancel buttons — is
+  simply off the window. Reachable by reopening the sheet during a run on a
+  tag-heavy project at a small window size; the sheet a coach *configures* an
+  export in has no run list and fits with 52px to spare, which is what the fit
+  test pins.
+- **Why deferred:** the fix is a change to `Sheet`, which **all six** sheets
+  inherit — a `ScrollView` in the card, or a cap on the two lists that knows
+  the window's height. That is a shared-chrome design decision with its own
+  trade (a scrolling modal is a different thing from a card), and it is not
+  task 2's to make while shipping a checkbox. Deepening a 33px overflow to
+  123px is also not the same as introducing one.
+- **When to revisit:** with the next thing that adds a row to any sheet, or the
+  first time a coach reports losing the buttons. The fit test is the tripwire
+  and already names this entry.

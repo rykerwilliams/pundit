@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use pundit_app::bus::{Command, Event, RecordingStatus, UserError};
+use pundit_app::bus::{Command, Event, ExportChoices, RecordingStatus, UserError};
 use pundit_core::plan::ExportTarget;
 use pundit_core::project::{Quality, Resolution};
 use pundit_core::store;
@@ -108,10 +108,14 @@ impl Rig {
     fn export(&self) {
         self.h.send(Command::Export {
             targets: vec![ExportTarget::Clip(self.clip)],
-            resolution: Resolution::R720,
-            quality: Quality::Low,
-            scoreboard: None,
-            mute_source: false,
+            choices: ExportChoices {
+                resolution: Resolution::R720,
+                quality: Quality::Low,
+                scoreboard: None,
+                mute_source: false,
+                chapters: true,
+                cues: true,
+            },
         });
     }
 }

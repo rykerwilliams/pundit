@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use pundit_app::bus::{export_targets, Command, Event, TargetState, UserError};
+use pundit_app::bus::{export_targets, Command, Event, ExportChoices, TargetState, UserError};
 use pundit_core::plan::{compilation_plan, ExportTarget};
 use pundit_core::project::{Project, Quality, Resolution};
 use pundit_core::reel::ReelSide;
@@ -98,6 +98,25 @@ fn no_project_changed(rest: &[Event]) {
     );
 }
 
+/// This file's standard export choices: the smallest and cheapest render —
+/// these go through llvmpipe — the target's own scoreboard mode, the sound
+/// carried, and both output switches on, which is what the sheet's defaults
+/// send.
+///
+/// **Written out rather than `..Default::default()`**, because
+/// [`ExportChoices`] deliberately has no `Default`: both switches' correct
+/// value is `true` and a derived one would be `false`.
+fn choices() -> ExportChoices {
+    ExportChoices {
+        resolution: Resolution::R720,
+        quality: Quality::Low,
+        scoreboard: None,
+        mute_source: false,
+        chapters: true,
+        cues: true,
+    }
+}
+
 /// The reel of a project with goals and no clips renders through the one
 /// export path: named "All goals", as long as its plan.
 #[test]
@@ -115,10 +134,7 @@ fn the_reel_exports_through_the_bus() {
 
     p.h.send(Command::Export {
         targets: vec![ExportTarget::Reel(ReelSide::All)],
-        resolution: Resolution::R720,
-        quality: Quality::Low,
-        scoreboard: None,
-        mute_source: false,
+        choices: choices(),
     });
     let done = p.h.wait_map("the run's outcome", |e| match e {
         Event::Export(run) if !run.is_running() => Some(run.clone()),
@@ -252,16 +268,13 @@ fn the_whole_match_exports_with_the_matchs_own_chapters() {
 
     p.h.send(Command::Export {
         targets: vec![ExportTarget::WholeMatch],
-        resolution: Resolution::R720,
-        quality: Quality::Low,
-        // **Default, on WebM sources.** The copy Default reaches for joins
-        // H.264 in MP4 alone (spec E2), so this is also where the fallback is
-        // pinned: the board is burned in and the match re-encoded, as it was
-        // before the copy existed, rather than the export failing at a gate
-        // the coach never asked for. The copy's own chapters are
-        // `media/tests/copy.rs`.
-        scoreboard: None,
-        mute_source: false,
+        // **Default, on WebM sources** — `choices()`'s own `scoreboard: None`.
+        // The copy Default reaches for joins H.264 in MP4 alone (spec E2), so
+        // this is also where the fallback is pinned: the board is burned in and
+        // the match re-encoded, as it was before the copy existed, rather than
+        // the export failing at a gate the coach never asked for. The copy's
+        // own chapters are `media/tests/copy.rs`.
+        choices: choices(),
     });
     let done = p.h.wait_map("the run's outcome", |e| match e {
         Event::Export(run) if !run.is_running() => Some(run.clone()),
@@ -378,10 +391,7 @@ fn a_missing_game_video_is_refused_naming_the_file() {
 
     p.h.send(Command::Export {
         targets: vec![ExportTarget::Reel(ReelSide::All)],
-        resolution: Resolution::R720,
-        quality: Quality::Low,
-        scoreboard: None,
-        mute_source: false,
+        choices: choices(),
     });
     assert_eq!(
         p.h.wait_for_error(),

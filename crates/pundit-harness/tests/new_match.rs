@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use pundit_app::bus::{
-    AppFiles, CaptureKind, Command, Event, RecordingStatus, TargetState, UserError,
+    AppFiles, CaptureKind, Command, Event, ExportChoices, RecordingStatus, TargetState, UserError,
 };
 use pundit_core::plan::ExportTarget;
 use pundit_core::project::{Project, Quality, Resolution};
@@ -593,10 +593,14 @@ fn new_match_during_an_export_is_refused_and_the_run_finishes() {
 
     rig.h.send(Command::Export {
         targets: vec![ExportTarget::AllClips],
-        resolution: Resolution::R720,
-        quality: Quality::Low,
-        scoreboard: None,
-        mute_source: false,
+        choices: ExportChoices {
+            resolution: Resolution::R720,
+            quality: Quality::Low,
+            scoreboard: None,
+            mute_source: false,
+            chapters: true,
+            cues: true,
+        },
     });
     assert!(rig.h.wait_export().is_running());
 
