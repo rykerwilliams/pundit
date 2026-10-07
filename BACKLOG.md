@@ -2370,6 +2370,24 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   points at. The one thing the copy path and the encode path share is
   `mp4mux`, the `.part` handling and the chapter splice. **That intersection is
   where to look first now**, and it is much smaller than "the export path".
+- **SEVENTH SIGHTING, 2026-10-07 — which fires the coach's rule below.** On
+  PR #59's CI run: `corrupted size vs. prev_size`, SIGABRT (signal 6), in
+  **`pundit-harness --test whole_match`** — the **same binary as the sixth**, and
+  again on a GitHub runner. The branch it failed on is a UI refactor touching
+  `app.slint`, one test module and two markdown files; it reaches no export path.
+- **Two sightings in `whole_match` narrows it the same way the sixth did, now
+  with a second data point.** That binary exercises the **stream-copy** renderer
+  (`composite/copy.rs`), not the encode path's `gltransformation` /
+  `glvideomixer` / llvmpipe graph that this entry's "where to look" still points
+  at. What the two paths share is `mp4mux`, the `.part` handling and the chapter
+  splice — and the copy path's own machinery: two `async=false` sinks, the
+  re-based segments, the header-reading caps gate, the `tx3g` appsrc.
+- **What #72's investigation teaches about reproducing this.** #72 looked
+  unreproducible for weeks — ~6000 local opens found nothing — because every
+  attempt ran on **eight** cores. Pinning four soaks to **two** CPUs
+  (`taskset -c 0,1`) reproduced it at 0.55%. CI runners are two-core, and this
+  entry has only ever been seen under load or on CI. **Try the two-core pin
+  first**, before concluding it is unreproducible.
 - **THE COACH'S RULE (2026-10-04), which is what to follow:** *"If it comes back
   up then move it up in the queue."* So a **seventh sighting promotes this entry**
   ahead of whatever feature work is in flight — no further discussion needed, and
