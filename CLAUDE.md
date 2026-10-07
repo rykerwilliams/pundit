@@ -487,6 +487,37 @@ Slint's Skia renderer's, shared with GStreamer.
 Verify on real hardware with `scripts/linux-gate-check.sh <file>`; see
 `docs/superpowers/spikes/2026-09-19-seek-latency.md`.
 
+**A load that stalls is issued again, because GStreamer's sometimes do.**
+`playbin3` occasionally never builds `playsink`'s chains, so a load's
+READY → PAUSED never completes — measured on 1.24.2 (Ubuntu 24.04's, and
+CI's) with four soaks pinned to **two** CPUs: `uridecodebin3` prerolls whole
+and posts its `StreamCollection`, while `playsink` sits at
+`Async/Ready/Paused` holding only its `audiotee` and `streamsynchronizer`.
+**Two cores is the ingredient**, not load: on eight, with eight busy loops,
+~6000 opens never showed it. **It is not our sink, our load sequence or our
+dropping of the bus's messages** — each was swapped out two-core and the stall
+stayed (BACKLOG #72's three controls); at a stall no sink is in the graph yet,
+ours or any. The load's `ASYNC_DONE` is then never
+posted, so `Flight::Loading` waits for a message nobody will send and nothing
+recovers it (16 stalls, not one by itself, five of them given a full 40 s):
+in the app a project that opens on a black frame with the scrubber stuck at
+0, for ever, and in the harness BACKLOG #72's "timed out waiting for a
+settled position".
+So the bus bounds a load — `sources::LOAD_BOUND`, armed and cleared by
+`watch_the_load` in the loop's tail — and `SourcePlayer::reload_stalled_load`
+issues it again, **once**; a second stall is reported as a pipeline error
+rather than retried for ever. The bound covers the load **alone** and never a
+load the GL gate is holding (`SourcePlayer::loading()` is where both
+exclusions live), and **the retry's bound is armed after the reload, never
+before** — the take-down inside it spends up to `LOAD_SETTLE`'s 5 s letting a
+preroll finish, so a bound armed first is already in the past and the retry is
+taken for a second stall. Recovery costs about 8 s, which is what sets the
+bound at 3 s: 3 + 5 + a load has to fit inside the harness's 15 s wait.
+`player::tests::every_open_settles` is the `#[ignore]`d soak that produces the
+stall (pin it with `taskset -c 0,1`, run several at once), and
+`PUNDIT_SOAK_SABOTAGE=1` leaves the retry out, which is the measurement the
+fix is argued from.
+
 **Capture records on the system clock, from time 0 = `base_time`.**
 - **Sources:** the camera is `v4l2src`, for kernel timestamps and the `exposure_dynamic_framerate=0` control that stops low-light drops to 7.5 fps. The mic is `pipewiresrc`.
 - **Clock:** the recorder always forces `SystemClock` (CLOCK_MONOTONIC). `pulsesrc`'s clock was measured days off.

@@ -11,6 +11,7 @@
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use gstreamer as gst;
 use pundit_core::project::{Project, SourceRef};
@@ -21,6 +22,19 @@ use super::{Bus, Event, UserError};
 /// How far before a source's end a load may land (spec D8's clamp), so a
 /// reload never starts at end of stream.
 pub(super) const END_MARGIN: f64 = 0.05;
+
+/// How long a source has to preroll before its load is taken as stalled and
+/// issued again. The stall is GStreamer's and the mechanism is written down
+/// on `SourcePlayer::reload_stalled_load` (BACKLOG #72).
+///
+/// **Generous, because the cost of being wrong is asymmetric.** A local load
+/// prerolls in under 350 ms measured, and a load that has stalled is stalled
+/// for ever, so all this number buys is the risk of re-issuing a load that
+/// was merely slow — which costs a reload and is not a failure. Against
+/// that, the recovery has to fit inside the harness's 15 s wait: this, plus
+/// the 5 s the take-down spends letting a preroll finish, plus a second
+/// load, is about 8 s.
+const LOAD_BOUND: Duration = Duration::from_secs(3);
 
 impl Bus {
     pub(super) fn add_source(&mut self, path: PathBuf) {
@@ -143,6 +157,38 @@ impl Bus {
         } else if !self.loaded() {
             self.load(self.current, secs, true, Origin::System);
         }
+    }
+
+    /// When the load in flight must have prerolled by, if one is
+    /// ([`LOAD_BOUND`]). Called from the bus loop's tail, so the bound is
+    /// armed the moment a load starts and dropped the moment it lands.
+    ///
+    /// **It bounds the load alone**, not everything the slot does: a skip
+    /// burst keeps the slot busy for as long as the coach holds the key, and
+    /// a seek has never been seen to stall.
+    pub(super) fn watch_the_load(&mut self) {
+        match self.player.loading() {
+            true => {
+                self.load_deadline
+                    .get_or_insert_with(|| Instant::now() + LOAD_BOUND);
+            }
+            false => self.load_deadline = None,
+        }
+    }
+
+    /// The load has not prerolled within [`LOAD_BOUND`]: issue it again, and
+    /// bound the retry the same way. Dispatched by the bus loop's deadlines.
+    ///
+    /// **The retry's bound is armed after it, not before.** The reload takes
+    /// the pipeline down, which spends up to five seconds letting a preroll
+    /// finish (`SourcePlayer::take_down`, BACKLOG #47) — longer than
+    /// [`LOAD_BOUND`] itself. Armed first, the bound would be in the past the
+    /// moment the retry was issued, and the next pass of the loop would take
+    /// the retry for a second stall and report it as a failure.
+    pub(super) fn load_stalled(&mut self) {
+        let events = self.player.reload_stalled_load();
+        self.load_deadline = Some(Instant::now() + LOAD_BOUND);
+        self.player_events(events);
     }
 
     /// Requests `secs` of source `index` (clamped inside it), loading it if
