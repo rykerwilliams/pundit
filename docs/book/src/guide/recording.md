@@ -31,16 +31,16 @@ scoreboard sits. The caption bar stops where the inset begins, so your words are
 never underneath you.
 
 The last size and corner you picked is what the next recording uses, so you can
-set it once before a session. **Show webcam in export** turns the inset off for
-one clip.
+set it once before a session. **Show webcam in export** (**Show avatar in
+export** when you record with a photo) turns the inset off for one clip.
 
 ## A photo instead of the webcam
 
 Choose a picture under **Inset** in **Devices…** and the project records your
 voice only: the camera is never opened. Your picture sits in the corner as a
 circle and swells as you talk — live while you record, and in the finished
-video. The picture is copied into the project folder as `avatar.png` (or
-`.jpg`), so your original is never touched; **Remove** deletes the project's copy
+video. The picture is copied into the project folder as `avatar.<ext>`, keeping
+its own extension, so your original is never touched; **Remove** deletes the project's copy
 and goes back to the webcam.
 
 The photo is a setting of the project, not of the machine: every take in that

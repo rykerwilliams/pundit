@@ -1,8 +1,8 @@
 # Exporting
 
 **Export…** opens the export sheet. Each thing you pick becomes one H.264 `.mp4`
-in the project's `exports/` folder. A file of the same name already there is
-never overwritten: the new one gets ` (2)` on the end.
+in the project's `exports/` folder, named `<target> - <project>.mp4`. Exporting
+the same target again replaces the earlier file.
 
 ## What to export
 
@@ -10,7 +10,7 @@ never overwritten: the new one gets ` (2)` on the end.
 |---|---|
 | **All clips** | Every clip, in the clip list's order, as one video. |
 | A **tag** | The clips carrying that tag. |
-| A **clip** | That clip alone. |
+| The **selected clip** | That clip alone. A clip's right-click menu has **Export video…** too. |
 | A **goals reel** | Each team that scored has one, and **All goals** appears when both did. |
 | **The whole match** | The game with the clock and score, and no commentary. |
 
@@ -54,8 +54,11 @@ usually records exactly that; Matroska or HEVC footage is encoded instead.
 | **Separate track** | Copy the whole match and carry the board as subtitles — and refuse, naming the file, if the footage cannot be copied. |
 
 Only the whole match can carry the board beside the picture. A clip or a reel
-asked for on a separate track has it burned in, so the board is never lost. The
-line under the picker says what will actually happen.
+asked for on a separate track has it burned in, so the board is never lost.
+With the whole match ticked, a line under the picker warns that a copy cannot
+carry highlights or drawings. On Default, whether the footage can be copied is
+only checked when you press **Export** — footage that cannot is encoded with the
+board burned in.
 
 ## Mute source audio
 
@@ -69,7 +72,8 @@ The sheet remembers your choices for the project.
 ## The files beside the video
 
 - **Chapters.** Every export with more than one piece has chapters, so a video
-  player can jump straight to a clip or a goal.
+  player can jump straight to a clip or a goal. The whole match's chapters are
+  its kick-off, periods and goals.
 - **`<name>.chapters.txt`**, the chapter list ready to paste into a YouTube
   description, which is the only way chapters reach a video on YouTube. It
   starts at `0:00`, leaves out any chapter within ten seconds of the one before
@@ -83,5 +87,5 @@ score and both team names.
 
 ## While it runs
 
-The sheet shows each target's progress and time left. **Cancel export** stops
+The sheet shows each target's progress and when the run will finish. **Cancel export** stops
 the run and keeps the files that already finished.

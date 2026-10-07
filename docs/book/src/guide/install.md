@@ -46,8 +46,9 @@ you carry a project to another computer:
 | `~/.cache/pundit/models/` | The speech model, downloaded the first time you [transcribe](transcripts.md). |
 | `~/Videos/pundit/` | Films made from the basket (your videos folder, in your language). |
 
-If one of those files is damaged, the app falls back to the default for whatever
-it cannot read and keeps the rest.
+If `state.json` is damaged, the app falls back to the default for whatever it
+cannot read and keeps the rest — though one bad entry in the recent projects
+costs the whole list. A damaged `basket.json` empties the basket.
 
 ## Building it yourself
 

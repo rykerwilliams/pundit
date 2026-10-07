@@ -20,7 +20,8 @@ them as one game, and playback carries straight on across the join.
 ## Scanning fast
 
 While playing, <kbd>L</kbd> speeds up through 2×, 4×, 8×, 16× and 32×, and
-<kbd>J</kbd> slows down again; the speed button beside Play does the same.
+<kbd>J</kbd> slows down again; the speed button beside Play steps through the
+same speeds and wraps back to 1× after 32×.
 Every frame is still decoded at 32×, so what you see is the game, not key frames
 flashing past. The sound is muted above 1×, and any pause puts you back to 1× on
 the frame you were looking at.
@@ -29,7 +30,8 @@ the frame you were looking at.
 
 - <kbd>3</kbd> zooms in and <kbd>2</kbd> zooms out, towards the pointer when it
   is over the picture. <kbd>1</kbd> goes back to the whole picture.
-- <kbd>Ctrl</kbd> + wheel (or a two-finger scroll) zooms about the pointer.
+- <kbd>Ctrl</kbd> + wheel (or <kbd>Ctrl</kbd> + two-finger scroll) zooms about the
+  pointer.
 - Once zoomed in, a click-drag pans.
 
 Zoom is part of what a recording captures, so zooming while you talk replays in

@@ -37,7 +37,7 @@ The message says what was missing. If it is the camera, check it is chosen in
 
 ## A project will not open
 
-- **"Too new"** — it was saved by a newer version of pundit. Install that
+- **"This project was made by a newer version of pundit"** — install that
   version again.
 - **A missing video** shows as **Missing** under Sources; **Relink…** points the
   project at where it is now.
