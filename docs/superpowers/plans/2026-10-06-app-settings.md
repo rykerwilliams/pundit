@@ -24,7 +24,22 @@ settled position" — nine sightings, two of them on docs-only branches) and #10
 
 ## Where this stands (update it as tasks land)
 
-- **1 — the switches reach the outputs.** Not started.
+- **1 — the switches reach the outputs.** **Done** (2026-10-07). The version
+  taken was **16**, read off `store.rs`, which was still 15: #115 had not landed
+  and nothing else had claimed it. Four deviations, each small:
+  - **`ExportChoices` carries `Debug, Clone, Copy, PartialEq`.** `Command`
+    derives `Debug`, so the struct needs it; `PartialEq` is what the new
+    `Pickers::of` unit test asserts with. No `Default`, as the plan requires.
+  - **Only three test files got a `choices()` helper** — `export.rs`,
+    `whole_match.rs` and `reel.rs`, which have several senders each.
+    `preview.rs`, `highlights.rs` and `new_match.rs` send once apiece, so a
+    one-use helper would not have earned its place; each writes the literal.
+  - **`whole_match.rs`'s rig takes its tags as a parameter** (`open_tagged`,
+    with `DEFAULT_TAGS` for the two every other test wants) rather than growing
+    a second constructor body. The chapters test is the only caller that needs
+    three moments ten seconds apart.
+  - **`a_run_persists_the_resolution_quality_and_mute` is renamed**
+    `…_and_switches`, since it now covers all three.
 - **2 — the sheet.** Not started.
 
 **They are sequential, and they ship together — one PR, one release.**

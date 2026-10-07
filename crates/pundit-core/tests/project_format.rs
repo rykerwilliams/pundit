@@ -149,6 +149,8 @@ fn preferences_defaults_are_not_zero() {
     assert_eq!(p.last_export_quality, Quality::Medium);
     assert_eq!(p.last_inset_size, InsetSize::Medium);
     assert_eq!(p.last_inset_corner, InsetCorner::BottomRight);
+    assert!(p.last_export_chapters);
+    assert!(p.last_export_cues);
     assert!(p.pip_for_new_recordings);
     assert_eq!(p.preferred_camera_id, None);
     assert_eq!(p.preferred_mic_id, None);
@@ -608,6 +610,55 @@ fn a_v14_file_loads_under_the_current_version() {
         None,
         "the old key was written again"
     );
+}
+
+/// F1, for v16. A v15 file has neither of the export sheet's two output
+/// switches: both fill from the **container** default, which is the only copy
+/// of them, and the next save stamps the current version and keeps the v15
+/// file beside it. Every bump owes this test.
+///
+/// **The literal `v15` is what pins the bump.** Every version assertion in
+/// this file reads `CURRENT_FORMAT_VERSION`, so none of them can tell 15 from
+/// 16; `store::write` only keeps a copy of a file *older* than what it writes.
+///
+/// **The bump is for the forward direction**, which is the one that bites
+/// (spec F): serde ignores unknown keys, so an older build would read a v16
+/// file, ignore both switches and drop them on its next save, exporting the
+/// chapters and the `.srt` a coach had turned off and saying nothing. The bump
+/// makes it refuse the file instead, and `project.json.v15` is what it can
+/// still be gone back to.
+#[test]
+fn a_v15_file_loads_under_the_current_version() {
+    let dir = TempDir::new().unwrap();
+    let mut p = sample_project();
+    // Written away from their defaults, then removed: a key that *was* read
+    // could not be mistaken for the container default filling it in.
+    p.preferences.last_export_chapters = false;
+    p.preferences.last_export_cues = false;
+    let mut raw = serde_json::to_value(&p).unwrap();
+    raw["formatVersion"] = json!(15);
+    let prefs = raw["preferences"].as_object_mut().unwrap();
+    for key in ["lastExportChapters", "lastExportCues"] {
+        prefs
+            .remove(key)
+            .unwrap_or_else(|| panic!("v16 writes the key {key} this test removes"));
+    }
+    write_raw(dir.path(), raw);
+
+    let mut p = store::read(dir.path()).expect("a v15 file loads");
+    assert!(p.preferences.last_export_chapters);
+    assert!(p.preferences.last_export_cues);
+
+    store::write(dir.path(), &mut p).unwrap();
+    assert_eq!(p.format_version, CURRENT_FORMAT_VERSION);
+    assert_eq!(store::read(dir.path()).unwrap(), p);
+    assert!(dir.path().join("project.json.v15").exists());
+
+    let text = std::fs::read_to_string(dir.path().join("project.json")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["formatVersion"], json!(CURRENT_FORMAT_VERSION));
+    assert_eq!(value["preferences"]["lastExportChapters"], json!(true));
+    assert_eq!(value["preferences"]["lastExportCues"], json!(true));
 }
 
 /// v13. The size and the corner are the clip's own fields and the sticky pair is

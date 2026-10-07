@@ -11,7 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
-use pundit_app::bus::{Command, Event, ExportRun, TargetState};
+use pundit_app::bus::{Command, Event, ExportChoices, ExportRun, TargetState};
 use pundit_core::cues::{cues_to_srt, scoreboard_cues};
 use pundit_core::export::compilation_schedule;
 use pundit_core::plan::{compilation_plan, ExportTarget, ScoreboardMode};
@@ -26,6 +26,32 @@ use uuid::Uuid;
 
 /// Every fixture's frame rate, which is also the output's.
 const FPS: u32 = 30;
+
+/// The tags most of this file's projects carry: a kick-off early in the first
+/// source and a home goal a second in, so the cue list has a score turning
+/// over and a clock running.
+const DEFAULT_TAGS: [(MatchEventKind, f64); 2] = [
+    (MatchEventKind::StartStop, 0.2),
+    (MatchEventKind::HomeGoal, 1.0),
+];
+
+/// This file's standard export choices, with the sheet's defaults for the
+/// three switches: the sound carried and both outputs written.
+///
+/// **Written out rather than `..Default::default()`**, because
+/// [`ExportChoices`] deliberately has no `Default`: both switches' correct
+/// value is `true` and a derived one would be `false`, which would make every
+/// test here assert the wrong baseline.
+fn choices() -> ExportChoices {
+    ExportChoices {
+        resolution: Resolution::R720,
+        quality: Quality::Low,
+        scoreboard: None,
+        mute_source: false,
+        chapters: true,
+        cues: true,
+    }
+}
 
 /// A project of H.264 + AAC MP4 sources, with a scoreboard, a kick-off and a
 /// home goal tagged, opened on a fresh bus.
@@ -50,6 +76,21 @@ impl Match {
     /// [`Match::open`], with a clip of `clip_seconds[i]` on source 0 for each
     /// entry — a target of its own beside the whole match.
     fn open_with(sources: &[(&str, u32, u32, u32)], clip_seconds: &[f64]) -> Self {
+        Self::open_tagged(sources, clip_seconds, &DEFAULT_TAGS)
+    }
+
+    /// [`Match::open_with`], with `tags` as the match events, each
+    /// `(kind, source_seconds)` on source 0.
+    ///
+    /// The tags are a parameter for one reason: the chapters are the match's
+    /// own moments, and a `.chapters.txt` needs three of them
+    /// [`MIN_GAP_SECONDS`](pundit_core::chapters::MIN_GAP_SECONDS) apart,
+    /// which [`DEFAULT_TAGS`] on a two-second fixture cannot give.
+    fn open_tagged(
+        sources: &[(&str, u32, u32, u32)],
+        clip_seconds: &[f64],
+        tags: &[(MatchEventKind, f64)],
+    ) -> Self {
         gstreamer::init().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let folder = tmp.path().join("project");
@@ -96,11 +137,7 @@ impl Match {
             auto_back_anchor_p1: false,
         }));
         h.wait_changed();
-        let tags = [
-            (MatchEventKind::StartStop, 0.2),
-            (MatchEventKind::HomeGoal, 1.0),
-        ];
-        for &(kind, source_seconds) in &tags {
+        for &(kind, source_seconds) in tags {
             h.send(Command::TagMatchEvent {
                 kind,
                 source_index: 0,
@@ -124,23 +161,18 @@ impl Match {
     }
 
     fn export(&self, targets: Vec<ExportTarget>, scoreboard: Option<ScoreboardMode>) {
-        self.export_with(targets, scoreboard, false);
+        self.export_with(
+            targets,
+            ExportChoices {
+                scoreboard,
+                ..choices()
+            },
+        );
     }
 
-    /// As [`Match::export`], with "Mute source audio" as given.
-    fn export_with(
-        &self,
-        targets: Vec<ExportTarget>,
-        scoreboard: Option<ScoreboardMode>,
-        mute_source: bool,
-    ) {
-        self.h.send(Command::Export {
-            targets,
-            resolution: Resolution::R720,
-            quality: Quality::Low,
-            scoreboard,
-            mute_source,
-        });
+    /// As [`Match::export`], with every one of the sheet's controls as given.
+    fn export_with(&self, targets: Vec<ExportTarget>, choices: ExportChoices) {
+        self.h.send(Command::Export { targets, choices });
     }
 
     /// The run's last word: the event with nothing left running.
@@ -202,6 +234,46 @@ fn streams(path: &Path, select: &str) -> usize {
         .len()
 }
 
+/// `path`'s video size, which is the copy/encode discriminator: the sources
+/// here are 640x360 and the sheet sends `R720`, so a copy reads back the
+/// source's own size and an encode 1280x720.
+///
+/// **The packet count cannot do this job.** An encode of a whole match runs at
+/// `OUTPUT_FPS` over 30 fps sources, so it writes the *same* number of video
+/// packets as the copy —
+/// [`the_whole_match_is_copied_with_a_sidecar`]'s assertion proves the packets
+/// came through whole, not that the renderer was the copy.
+fn video_size(path: &Path) -> (i64, i64) {
+    let probe = ffprobe(path, &["-select_streams", "v:0", "-show_streams"]);
+    let stream = &probe["streams"][0];
+    let side = |key| {
+        stream[key]
+            .as_i64()
+            .or_else(|| stream[key].as_str()?.parse().ok())
+            .unwrap_or_else(|| panic!("no {key} in {probe}"))
+    };
+    (side("width"), side("height"))
+}
+
+/// `path`'s chapters as `ffprobe` reads them: `(start in seconds, title)`.
+///
+/// The independent reader, because GStreamer's `qtdemux` doesn't read `chpl`
+/// and no released Rust MP4 crate parses it — the same helper `reel.rs` uses
+/// for the encoded path's chapters.
+fn ffprobe_chapters(path: &Path) -> Vec<(f64, String)> {
+    ffprobe(path, &["-show_chapters"])["chapters"]
+        .as_array()
+        .expect("a chapters array")
+        .iter()
+        .map(|c| {
+            (
+                c["start_time"].as_str().unwrap().parse().unwrap(),
+                c["tags"]["title"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect()
+}
+
 /// The whole match asked for on a separate track is copied, not re-encoded,
 /// and the scoreboard lands beside it as core formats it.
 #[test]
@@ -251,7 +323,14 @@ fn a_muted_whole_match_is_copied_without_its_sound() {
     let mut m = Match::open(&[("first half", 640, 360, 60), ("second half", 640, 360, 45)]);
     let target = ExportTarget::WholeMatch;
 
-    m.export_with(vec![target], Some(ScoreboardMode::Track), true);
+    m.export_with(
+        vec![target],
+        ExportChoices {
+            scoreboard: Some(ScoreboardMode::Track),
+            mute_source: true,
+            ..choices()
+        },
+    );
     let run = m.outcome();
     let TargetState::Done(path) = &run.targets[0].state else {
         panic!("{:?}", run.targets[0]);
@@ -337,9 +416,17 @@ fn a_clip_on_a_separate_track_burns_the_board_in() {
     m.h.shutdown();
 }
 
-/// Switching the picker back burns the board into the picture, and the
-/// sidecar the last run left goes with it — or the old score plays over the
-/// new film.
+/// Switching the picker back burns the board into the picture, and with the
+/// subtitles **off** the sidecar the last run left goes with it — or the old
+/// score plays over the new film.
+///
+/// **It is driven with the switch off, which is a rewrite rather than an
+/// extension.** The removal is `write_sidecar`'s `Some(empty)` branch, and
+/// with `last_export_cues` defaulting on it is no longer where a burned run
+/// lands: a burned whole match now writes an `.srt` of its own
+/// ([`a_burned_whole_match_writes_the_srt_beside_it`], the accepted cost of
+/// independent switches). The switch is the one thing that still asks for
+/// nothing beside the file, so it is what this test sends.
 #[test]
 fn a_burned_whole_match_removes_a_stale_sidecar() {
     let mut m = Match::open(&[("first half", 640, 360, 30)]);
@@ -348,7 +435,14 @@ fn a_burned_whole_match_removes_a_stale_sidecar() {
     let sidecar = m.exports().join("Whole match - Game.srt");
     assert!(sidecar.exists(), "{:?}", outputs(&m.exports()));
 
-    m.export(vec![ExportTarget::WholeMatch], Some(ScoreboardMode::Burned));
+    m.export_with(
+        vec![ExportTarget::WholeMatch],
+        ExportChoices {
+            scoreboard: Some(ScoreboardMode::Burned),
+            cues: false,
+            ..choices()
+        },
+    );
     let run = m.outcome();
     assert!(
         matches!(run.targets[0].state, TargetState::Done(_)),
@@ -356,5 +450,181 @@ fn a_burned_whole_match_removes_a_stale_sidecar() {
         run.targets[0]
     );
     assert_eq!(outputs(&m.exports()), ["Whole match - Game.mp4"]);
+    m.h.shutdown();
+}
+
+/// The board burned into the picture **and** an `.srt` beside the file: the
+/// combination independent switches exist for, unreachable until now (spec
+/// S4), and the cheapest proof that the subtitles switch is not the Scoreboard
+/// picker in disguise.
+///
+/// Only the `.srt`: a burned export re-encodes, and the `tx3g` track rides the
+/// copy alone, so there is no embedded track to disagree with the picture.
+#[test]
+fn a_burned_whole_match_writes_the_srt_beside_it() {
+    let mut m = Match::open(&[("first half", 640, 360, 30)]);
+    let target = ExportTarget::WholeMatch;
+    let srt = m.srt(&target);
+
+    m.export(vec![target], Some(ScoreboardMode::Burned));
+    let run = m.outcome();
+    let TargetState::Done(path) = &run.targets[0].state else {
+        panic!("{:?}", run.targets[0]);
+    };
+    assert_eq!(
+        outputs(&m.exports()),
+        ["Whole match - Game.mp4", "Whole match - Game.srt"]
+    );
+    assert_eq!(
+        std::fs::read_to_string(path.with_extension("srt")).unwrap(),
+        srt
+    );
+    assert_eq!(
+        streams(path, "s"),
+        0,
+        "an encode carried a subtitle track, which only the copy requests"
+    );
+    m.h.shutdown();
+}
+
+/// "Scoreboard subtitles" off on a copied whole match: no `.srt`, the stale
+/// one removed, and **no subtitle track inside the file** — the half that
+/// lives in `copy.rs`, and the one an implementation can get right beside the
+/// file and wrong inside it (spec S1).
+///
+/// Still a copy: *Separate track* chosen by hand is the coach asking for one,
+/// and the switch takes the board away rather than the renderer. That is §S4's
+/// "no board anywhere", which the sheet says out loud before the run.
+#[test]
+fn the_subtitles_switch_off_leaves_a_copy_with_no_board() {
+    let mut m = Match::open(&[("first half", 640, 360, 30)]);
+    // On first, so there is a stale sidecar for the second run to remove.
+    m.export(vec![ExportTarget::WholeMatch], Some(ScoreboardMode::Track));
+    m.outcome();
+    assert!(m.exports().join("Whole match - Game.srt").exists());
+
+    m.export_with(
+        vec![ExportTarget::WholeMatch],
+        ExportChoices {
+            scoreboard: Some(ScoreboardMode::Track),
+            cues: false,
+            ..choices()
+        },
+    );
+    let run = m.outcome();
+    let TargetState::Done(path) = &run.targets[0].state else {
+        panic!("{:?}", run.targets[0]);
+    };
+    assert_eq!(outputs(&m.exports()), ["Whole match - Game.mp4"]);
+    assert_eq!(
+        streams(path, "s"),
+        0,
+        "the switch took the .srt but left the track inside the file"
+    );
+    // The renderer is untouched: the switch is about the board, not the copy.
+    assert_eq!(video_size(path), (640, 360));
+    m.h.shutdown();
+}
+
+/// **"Default" never trades the board away** (spec S4). With the subtitles off
+/// a copy would carry no board anywhere, so Default burns it in instead —
+/// which is the one behavioural inference in the spec, so it is pinned.
+///
+/// The discriminator is the **frame size**: the sources are 640x360 and the
+/// sheet sends `R720`, so a copy reads back 640x360 and an encode 1280x720.
+#[test]
+fn default_with_the_subtitles_off_burns_the_board_in() {
+    let mut m = Match::open(&[("first half", 640, 360, 30)]);
+    m.export_with(
+        vec![ExportTarget::WholeMatch],
+        ExportChoices {
+            scoreboard: None,
+            cues: false,
+            ..choices()
+        },
+    );
+    let run = m.outcome();
+    let TargetState::Done(path) = &run.targets[0].state else {
+        panic!("{:?}", run.targets[0]);
+    };
+    assert_eq!(
+        video_size(path),
+        (1280, 720),
+        "Default copied a film with no board on it"
+    );
+    assert_eq!(outputs(&m.exports()), ["Whole match - Game.mp4"]);
+    m.h.shutdown();
+}
+
+/// The Chapters switch governs **both** forms, in one test, so the two halves
+/// cannot drift: the `chpl` box inside the file and the `.chapters.txt` beside
+/// it (spec S1).
+///
+/// **Thirty seconds of source and three tagged moments**, because no other rig
+/// in the tree can produce a `.chapters.txt` at all: `chapter_list` needs
+/// `MIN_CHAPTERS` (3) survivors `MIN_GAP_SECONDS` (10) apart. On the copy path
+/// that is a header read and a packet copy; on the encoded path it would be
+/// 900+ output frames through llvmpipe.
+///
+/// Run on and then off, because the pair is what proves the switch rather than
+/// an absence — and the off run inherits the first's file, so it also pins the
+/// stale `.chapters.txt` being removed.
+#[test]
+fn the_chapters_switch_governs_both_forms() {
+    let mut m = Match::open_tagged(
+        &[("first half", 640, 360, 900)],
+        &[],
+        &[
+            (MatchEventKind::StartStop, 0.2),
+            (MatchEventKind::HomeGoal, 12.0),
+            (MatchEventKind::StartStop, 25.0),
+        ],
+    );
+
+    m.export(vec![ExportTarget::WholeMatch], Some(ScoreboardMode::Track));
+    let run = m.outcome();
+    let TargetState::Done(path) = &run.targets[0].state else {
+        panic!("{:?}", run.targets[0]);
+    };
+    assert_eq!(
+        outputs(&m.exports()),
+        [
+            "Whole match - Game.chapters.txt",
+            "Whole match - Game.mp4",
+            "Whole match - Game.srt",
+        ]
+    );
+    assert_eq!(
+        std::fs::read_to_string(path.with_extension("chapters.txt")).unwrap(),
+        "0:00 Kick-off\n0:12 Rovers goal 1-0\n0:25 Half time\n"
+    );
+    let titles: Vec<String> = ffprobe_chapters(path)
+        .into_iter()
+        .map(|(_, title)| title)
+        .collect();
+    assert_eq!(titles, ["Kick-off", "Rovers goal 1-0", "Half time"]);
+
+    m.export_with(
+        vec![ExportTarget::WholeMatch],
+        ExportChoices {
+            scoreboard: Some(ScoreboardMode::Track),
+            chapters: false,
+            ..choices()
+        },
+    );
+    let run = m.outcome();
+    let TargetState::Done(path) = &run.targets[0].state else {
+        panic!("{:?}", run.targets[0]);
+    };
+    assert_eq!(
+        outputs(&m.exports()),
+        ["Whole match - Game.mp4", "Whole match - Game.srt"],
+        "the chapter list the last run wrote is still there"
+    );
+    let inside = ffprobe_chapters(path);
+    assert!(
+        inside.is_empty(),
+        "the chapters are still inside the file: {inside:?}"
+    );
     m.h.shutdown();
 }

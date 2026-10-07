@@ -37,7 +37,7 @@ use std::time::Instant;
 use gstreamer as gst;
 use gstreamer_gl as gst_gl;
 use pundit_core::highlight::{HighlightEdit, NormRect};
-use pundit_core::plan::{ExportTarget, ScoreboardMode};
+use pundit_core::plan::ExportTarget;
 use pundit_core::project::{
     AspectMismatch, Project, Quality, Resolution, SlateEdit, SourceReferenced,
 };
@@ -56,7 +56,9 @@ use uuid::Uuid;
 use crate::drawing::Pen;
 
 pub use basket::{BasketRow, BasketView};
-pub use export::{export_targets, ExportRun, ExportTargetRow, ExportTargetRun, TargetState};
+pub use export::{
+    export_targets, ExportChoices, ExportRun, ExportTargetRow, ExportTargetRun, TargetState,
+};
 pub use recording::{CaptureKind, RecordingStatus};
 pub use state::{adopt_old_name, AppFiles, Folds, PanelWidths, WindowSize};
 pub use transcribe::{whisper, whisper_model_override, Finish, Stage, TranscriptionState};
@@ -349,21 +351,12 @@ pub enum Command {
 
     // Export (Phase 5 spec X4, Phase 8 spec E1).
     /// Render each target into `<project>/exports/`, one after another, in
-    /// the background. `resolution`, `quality` and `scoreboard` are the
-    /// sheet's pickers, and become the project's (spec E4). Refused while
-    /// another run is going; dropped while recording.
+    /// the background. `choices` is every control on the export sheet, and
+    /// becomes the project's (spec E4). Refused while another run is going;
+    /// dropped while recording.
     Export {
         targets: Vec<ExportTarget>,
-        resolution: Resolution,
-        quality: Quality,
-        /// How every ticked target carries the scoreboard, or `None` for the
-        /// sheet's "Default" — which is per target
-        /// (`pundit_core::plan::default_scoreboard_mode`).
-        scoreboard: Option<ScoreboardMode>,
-        /// "Mute source audio": the game video's track is dropped and the
-        /// commentary left alone (spec M1). The sheet's word is `mute`; below
-        /// the bus it is a volume or a `with_audio`, negated once.
-        mute_source: bool,
+        choices: ExportChoices,
     },
     /// Stop the running export, if any. Its outcome still arrives as the
     /// run's own: a cancel too late to stop a target reports it done.
@@ -1090,13 +1083,7 @@ impl Bus {
             Command::SetMic(mic) => self.set_mic(mic),
             Command::SetAvatar(path) => self.set_avatar(path),
             Command::ClearAvatar => self.clear_avatar(),
-            Command::Export {
-                targets,
-                resolution,
-                quality,
-                scoreboard,
-                mute_source,
-            } => self.export(targets, resolution, quality, scoreboard, mute_source),
+            Command::Export { targets, choices } => self.export(targets, choices),
             Command::CancelExport => self.cancel_export(),
             Command::AddToBasket { clip_id } => self.add_to_basket(clip_id),
             Command::RemoveFromBasket { index } => self.remove_from_basket(index),

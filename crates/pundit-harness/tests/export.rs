@@ -13,7 +13,7 @@
 use std::path::{Path, PathBuf};
 
 use pundit_app::bus::{
-    AppFiles, Command, Event, ExportRun, RecordingStatus, TargetState, UserError,
+    AppFiles, Command, Event, ExportChoices, ExportRun, RecordingStatus, TargetState, UserError,
 };
 use pundit_core::layout::scoreboard_rects;
 use pundit_core::plan::ExportTarget;
@@ -108,22 +108,38 @@ impl Rig {
 
     /// Runs `targets`, smallest and cheapest: these render on llvmpipe.
     fn export(&self, targets: Vec<ExportTarget>) {
-        self.export_with(targets, false);
+        self.export_with(targets, choices());
     }
 
-    /// As [`Rig::export`], with "Mute source audio" as given.
-    fn export_with(&self, targets: Vec<ExportTarget>, mute_source: bool) {
-        self.h.send(Command::Export {
-            targets,
-            resolution: Resolution::R720,
-            quality: Quality::Low,
-            scoreboard: None,
-            mute_source,
-        });
+    /// As [`Rig::export`], with the sheet's controls as given. A test that
+    /// cares about one of them writes `ExportChoices { mute_source: true,
+    /// ..choices() }` and names that one.
+    fn export_with(&self, targets: Vec<ExportTarget>, choices: ExportChoices) {
+        self.h.send(Command::Export { targets, choices });
     }
 
     fn tag(&self, n: usize) -> ExportTarget {
         ExportTarget::Tag(format!("t{n}"))
+    }
+}
+
+/// This file's standard export choices: the smallest and cheapest render —
+/// these go through llvmpipe — the target's own scoreboard mode, the sound
+/// carried, and both output switches on, which is what the sheet's defaults
+/// send.
+///
+/// **Written out rather than `..Default::default()`**, because
+/// [`ExportChoices`] deliberately has no `Default`: both switches' correct
+/// value is `true` and a derived one would be `false`, so every test here
+/// would silently be exporting with both outputs off.
+fn choices() -> ExportChoices {
+    ExportChoices {
+        resolution: Resolution::R720,
+        quality: Quality::Low,
+        scoreboard: None,
+        mute_source: false,
+        chapters: true,
+        cues: true,
     }
 }
 
@@ -421,8 +437,8 @@ fn a_target_with_nothing_in_it_is_refused() {
     );
 }
 
-/// The pickers' values become the project's, so the next run uses them
-/// without being told (spec E4).
+/// The pickers' values and the three switches become the project's, so the
+/// next run uses them without being told (spec E4, S1).
 ///
 /// **The mute is run second, and unmuted, on purpose.** `Rig::export` sends
 /// 720p / Low, which already differ from a fresh project's 1080p / Medium, so
@@ -430,25 +446,46 @@ fn a_target_with_nothing_in_it_is_refused() {
 /// read — and an assertion on it would pass even if `of` never looked at the
 /// field. The second run below changes **nothing but the mute**, in the
 /// direction the stored value has to be read to notice: a muted project asked
-/// for an unmuted run. That is what pins `Pickers::of`.
+/// for an unmuted run. That is what pins `Pickers::of` for the mute; the two
+/// output switches are pinned in `bus/export.rs`'s own unit test, where it
+/// costs an `assert_eq!` rather than three more renders.
 #[test]
-fn a_run_persists_the_resolution_quality_and_mute() {
+fn a_run_persists_the_resolution_quality_and_switches() {
     let mut rig = Rig::open(&[1.0]);
-    rig.export_with(vec![ExportTarget::AllClips], true);
+    rig.export_with(
+        vec![ExportTarget::AllClips],
+        ExportChoices {
+            mute_source: true,
+            chapters: false,
+            cues: false,
+            ..choices()
+        },
+    );
     let snapshot = rig.h.wait_changed();
     let prefs = &snapshot.project.preferences;
     assert_eq!(prefs.last_export_resolution, Resolution::R720);
     assert_eq!(prefs.last_export_quality, Quality::Low);
     assert_eq!(prefs.export_source_volume, 0.0);
+    assert!(!prefs.last_export_chapters);
+    assert!(!prefs.last_export_cues);
 
     outcome(&mut rig.h);
     let folder = rig.tmp.path().join("project");
     let saved = store::read(&folder).unwrap();
     assert_eq!(saved.preferences.last_export_resolution, Resolution::R720);
     assert_eq!(saved.preferences.export_source_volume, 0.0);
+    assert!(!saved.preferences.last_export_chapters);
+    assert!(!saved.preferences.last_export_cues);
 
     // Everything the sheet sends now matches what is stored but the mute.
-    rig.export_with(vec![ExportTarget::AllClips], false);
+    rig.export_with(
+        vec![ExportTarget::AllClips],
+        ExportChoices {
+            chapters: false,
+            cues: false,
+            ..choices()
+        },
+    );
     let snapshot = rig.h.wait_changed();
     assert_eq!(snapshot.project.preferences.export_source_volume, 1.0);
     outcome(&mut rig.h);
@@ -574,10 +611,20 @@ fn a_refused_run_leaves_the_pickers_alone() {
     let mut rig = Rig::open_with(&[1.0], |_, media| {
         std::fs::remove_file(media.join("a.webm")).unwrap();
     });
-    // The sheet's pickers are 720p / Low and the mute is on; the project has
-    // never exported, so its own are the defaults. **The mute is sent**, or
-    // asserting the stored volume is still `1.0` says nothing.
-    rig.export_with(vec![ExportTarget::AllClips], true);
+    // The sheet's pickers are 720p / Low, the mute is on and both output
+    // switches are off; the project has never exported, so its own are the
+    // defaults. **Every one of the three is sent away from its stored value**,
+    // or asserting that the stored volume is still `1.0` and both switches
+    // still `true` says nothing.
+    rig.export_with(
+        vec![ExportTarget::AllClips],
+        ExportChoices {
+            mute_source: true,
+            chapters: false,
+            cues: false,
+            ..choices()
+        },
+    );
     rig.h.wait_for_error();
     let rest = rig.h.shutdown();
     assert!(
@@ -591,4 +638,6 @@ fn a_refused_run_leaves_the_pickers_alone() {
     );
     assert_eq!(saved.preferences.last_export_quality, Quality::default());
     assert_eq!(saved.preferences.export_source_volume, 1.0);
+    assert!(saved.preferences.last_export_chapters);
+    assert!(saved.preferences.last_export_cues);
 }

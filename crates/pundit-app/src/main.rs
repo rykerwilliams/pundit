@@ -24,8 +24,8 @@ use uuid::Uuid;
 
 use pundit_app::bus::{
     self, export_targets, whisper, whisper_model_override, AppFiles, BasketView, Bus, BusHandle,
-    CaptureKind, Command, Event, ExportRun, ExportTargetRun, Finish, Folds, PanelWidths,
-    RecordingStatus, Snapshot, Stage, TargetState, TranscriptionState, WindowSize,
+    CaptureKind, Command, Event, ExportChoices, ExportRun, ExportTargetRun, Finish, Folds,
+    PanelWidths, RecordingStatus, Snapshot, Stage, TargetState, TranscriptionState, WindowSize,
 };
 use pundit_app::color_picker;
 use pundit_app::drawing::{arrow_commands, path_commands, InProgress, Pen, PenWidth};
@@ -918,15 +918,23 @@ fn wire_export(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             });
             bus.borrow().send(Command::Export {
                 targets,
-                resolution: resolution_at(w.get_export_resolution()),
-                quality: quality_at(w.get_export_quality()),
-                // 0 is "Default", which is the target's own (spec M1).
-                scoreboard: match w.get_export_scoreboard() {
-                    1 => Some(ScoreboardMode::Burned),
-                    2 => Some(ScoreboardMode::Track),
-                    _ => None,
+                choices: ExportChoices {
+                    resolution: resolution_at(w.get_export_resolution()),
+                    quality: quality_at(w.get_export_quality()),
+                    // 0 is "Default", which is the target's own (spec M1).
+                    scoreboard: match w.get_export_scoreboard() {
+                        1 => Some(ScoreboardMode::Burned),
+                        2 => Some(ScoreboardMode::Track),
+                        _ => None,
+                    },
+                    mute_source: w.get_export_mute_source(),
+                    // Literals until the sheet has the two switches: the
+                    // defaults are both "write it", so this is what the sheet
+                    // sends today (#78 task 2 replaces them with the window's
+                    // own properties).
+                    chapters: true,
+                    cues: true,
                 },
-                mute_source: w.get_export_mute_source(),
             });
         }
     });
