@@ -1448,6 +1448,32 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   remove; and one job's failure (footage moved, disk full) failing only itself.
   A first version keeps the queue in memory — closing the app loses it — and
   doesn't let a queued job be edited.
+- **Spec written: `docs/superpowers/specs/2026-10-07-export-queue-design.md`,
+  which corrects two of the three things this entry calls "the work"
+  (verified 2026-10-07 against `origin/claude/78-task-1`).** The run loop is
+  **already** untied from the open project — `export::Active` and
+  `Bus::export_message` read `self.open` nowhere, and export renders on
+  `Gl::shared()`'s surfaceless display rather than the UI's context — and one
+  job's failure **already** fails only itself
+  (`Active::finish_target` → `TargetState::Failed`, pinned by
+  `a_failed_target_does_not_stop_the_run`). What is left is splitting
+  `start_run`'s job building from its `begin`, moving the per-target refusals
+  from "the whole run, up front" to "the one job, at enqueue", and the panel.
+  Also: the scoreboard this entry lists is not a field of `ExportJob` — it
+  rides in `MatchMedia` behind the `Arc` on each `EntryMedia`, and a
+  `Render::Copy` job carries none at all.
+- **The coach added one thing to the shape (2026-10-07):** asked whether he
+  should be able to open another project while the queue runs, *"yes you should
+  be able to keep working"*. So `open_project`, `restore_last_project` and
+  `built_new_match` lose `refuse_if_busy`'s export clause and keep only its
+  preview one, and `a_project_open_is_refused_while_a_run_is_going` inverts.
+  The audit is in the spec's §Q7: **nothing in `commit` has to change** — a job
+  names `recordings/<file>` and never a path inside `recordings/.trash`, so
+  emptying the trash removes nothing it reads. What costs a job its recording
+  is the clip **delete**, whose rename moves the file, and that has been true
+  since Phase 8 with no queue; the spec answers it by dropping the queued jobs
+  that need the clip, as `trash_clip` already cancels that clip's transcription
+  and closes its preview.
 - **Why deferred:** only by the coach's own order (2026-09-24): the detection
   measurement comes first. It is not blocked on anything.
 - **When to revisit:** as soon as P3's measurement is done, or sooner if the
