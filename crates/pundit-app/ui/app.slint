@@ -4977,17 +4977,111 @@ export component AppWindow inherits Window {
                                                 // work -- the clip row's rule.
                                                 keys.focus();
                                             }
+                                            // The click above has already
+                                            // selected this row, which is
+                                            // what keeps the arm and the
+                                            // span in step — see the
+                                            // menu's Preview item.
+                                            //
+                                            // The preview's gate is a guard
+                                            // here rather than on the
+                                            // `enabled` above, which also
+                                            // governs the click: selecting a
+                                            // range while a clip preview is
+                                            // open is harmless, and arming
+                                            // one is not — the arm would
+                                            // never be spent and `J`/`L`
+                                            // would stay refused until the
+                                            // next take.
                                             double-clicked => {
-                                                root.preview-slate(slate.id);
+                                                if (!root.previewing) {
+                                                    root.preview-slate(slate.id);
+                                                }
                                             }
                                         }
 
-                                        ContextMenuArea {
+                                        // The clip row's menu, over what a
+                                        // slate has (BACKLOG #127): *Add to
+                                        // basket* wants a recording and
+                                        // *Export video…* a clip, and *Jump
+                                        // to slate end* is dropped rather
+                                        // than deferred — the span on the
+                                        // scrubber (spec S6) and a preview
+                                        // that stops there are two ways to
+                                        // see where a range ends, where #104
+                                        // had none.
+                                        //
+                                        // Named so a test can find the row's
+                                        // own menu: a `LineEdit` carries a
+                                        // `ContextMenuArea` of its own, so
+                                        // the type name alone finds six of
+                                        // them in this window.
+                                        slate-menu := ContextMenuArea {
                                             enabled: !root.recording;
                                             Menu {
                                                 MenuItem {
                                                     title: "Jump to slate start";
                                                     activated => { root.jump-to-slate(slate.id); }
+                                                }
+                                                // **Both of these select the
+                                                // row first, and that is the
+                                                // rule rather than a
+                                                // convenience.** Each *arms*
+                                                // the range — Record through
+                                                // the take, Preview through
+                                                // the stop at the out point
+                                                // — and the span drawn on the
+                                                // scrubber is the *selected*
+                                                // slate's (spec S6), so a
+                                                // menu acting on a row that
+                                                // is not selected would leave
+                                                // the arm and the span naming
+                                                // different ranges: the
+                                                // footage would stop at a
+                                                // mark nothing on screen
+                                                // shows. It is also the
+                                                // cursor the themed pass
+                                                // advances from (#120), and
+                                                // moving it is right for the
+                                                // same reason — the range the
+                                                // coach just shot or watched
+                                                // is the one to carry on
+                                                // from. Every other way into
+                                                // either action already does
+                                                // this: the row's own click,
+                                                // the editor's Record button
+                                                // and `R` all read the
+                                                // selection.
+                                                MenuItem {
+                                                    title: "Preview slate";
+                                                    // A clip preview holds
+                                                    // the picture, and
+                                                    // `slate-out-reached`
+                                                    // refuses to fire while
+                                                    // one is open — an arm
+                                                    // set here would never be
+                                                    // spent, and `J`/`L` stay
+                                                    // refused while it is.
+                                                    enabled: !root.previewing;
+                                                    activated => {
+                                                        root.selected-slate = slate.id;
+                                                        root.preview-slate(slate.id);
+                                                    }
+                                                }
+                                                MenuItem {
+                                                    title: "Record";
+                                                    // The editor's own Record
+                                                    // button's gate: the bus
+                                                    // refuses a take with a
+                                                    // preview open
+                                                    // (`can-record`), so grey
+                                                    // it rather than earn the
+                                                    // notice.
+                                                    enabled: !root.previewing;
+                                                    activated => {
+                                                        root.selected-slate = slate.id;
+                                                        root.shoot-slate(slate.id);
+                                                    }
                                                 }
                                                 MenuItem {
                                                     title: "Delete slate";

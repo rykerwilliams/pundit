@@ -27,9 +27,7 @@ made things worse.
   "snap to events in the scrubber as an option" — which marks it covers is the
   open question (**an on/off setting**, the coach 2026-10-03; wants the settings
   sheet #78 **designs**; **#100's per-field read has landed**)
-- **127.** The rest of the slate row's right-click menu — Jump to slate end,
-  Record and Preview slate beside the "Jump to slate start" #104 shipped; two of
-  the three have to set the selection first, which is the bit to get right
+
 - **128.** The themed pass is silent at both of its ends — no keyboard way to
   start one, and nothing said when it runs out of ranges
 - **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
@@ -140,6 +138,10 @@ problem — which is the entry, not an excuse for it.
   2026-10-05 as one shared `TagField`, the inspector's own field lifted out of
   it; the layout hazard the entry warned about bit, and the answer is that the
   suggestion list is a second component the caller places (see the entry)
+
+- **127.** The rest of the slate row's right-click menu — Record and Preview
+  slate shipped 2026-10-06, each selecting the row first; Jump to slate end
+  dropped, and the menu is now driven by a real test (see the entry)
 
 - 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 92, 94
 
@@ -3595,30 +3597,65 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** once the coach has used the mute switch and knows whether
   he reaches for a level. That is the question deferring it is meant to answer.
 
-127. **The rest of the slate row's right-click menu.** The coach (2026-10-04):
-  "add 'slates' right click menu like the clips, e.g. jump to slate start".
-  #104 shipped the item they named — **Jump to slate start** — beside the
-  **Delete slate** that was already there. Three of the clip row's five remain,
-  and two of them carry one question.
+127. **The rest of the slate row's right-click menu — RESOLVED 2026-10-06.**
+  The coach (2026-10-04): "add 'slates' right click menu like the clips, e.g.
+  jump to slate start". #104 shipped the item they named — **Jump to slate
+  start** — beside the **Delete slate** that was already there; **Record** and
+  **Preview slate** now sit between them, each setting `root.selected-slate`
+  before its callback.
 - **Record** (`shoot-slate`) and **Preview slate** (`PreviewSlate`) both *arm* a
   range, and the span drawn on the scrubber is the **selected** slate's (spec
   S6) — so a menu item acting on a row that is not selected would leave the arm
   and the span naming different slates, which is the one invariant the span's
   task leaned on ("the armed slate is always the selected slate at every entry
   point"). `root.selected-slate = slate.id;` inside the item, before the
-  callback — exactly what the row's own click does — is the likely answer. It is
-  a rule about what a context menu may change, and task C did not want to take
-  it unreviewed.
+  callback — exactly what the row's own click does — was the suggested answer
+  and is what shipped. **Checked rather than taken:** the row's own
+  double-click already selects first (Slint delivers the click before the
+  double-click, which is why #104 made the click select instead of toggle), the
+  editor's Record button and `R` both *read* `selected-slate`, and the pass
+  selects the row it parks on — so these two items were the only senders that
+  could have named an unselected range, and the convention is now the rule at
+  every door.
+- **The selection is also #120's pass cursor, and moving it is right — that was
+  the open half of the question.** Each item is exactly what selecting the row
+  and pressing `R` (or double-clicking it) already does, and the pass advances
+  *from* the range last shot: a Record that left the cursor elsewhere would
+  shoot the row it was clicked on, mark that row shot, and then park the
+  footage at-or-after the row still highlighted — the one range the coach has
+  just dealt with. Preview is the same case a step earlier
+  (a range is watched to decide whether to shoot it, and `R` shoots the
+  selection). The surprising behaviour is the opposite one: an item that arms a
+  range while the highlight, the span and the editor fields name another.
+- **Both are greyed while a clip preview is open**, the editor Record button's
+  own gate: `can_record` refuses a take with one open, and `slate_out_reached`
+  refuses to fire while one is — so an arm set there would never be spent and
+  `J`/`L` would stay refused with it (`scan_speed`). The row's **double-click**
+  gained the same guard for the same reason, which is a hole #104 left: it is a
+  guard in the handler and not on the `TouchArea`'s `enabled`, because
+  *selecting* a range during a preview is harmless and arming one is not.
 - **Jump to slate end is dropped, not deferred.** #104 wanted it because "there
   is no other way to check where a range ends"; there are now two — the span on
   the scrubber (spec S6) and a preview that stops there.
 - **Not copied from the clip row:** *Add to basket* (a piece is a clip and a
   slate has no recording) and *Export video…* (#98's silent breakdown film).
-- **Why deferred:** task C's plan scoped #104 to the navigation, and #104's menu
-  bullet was written the day after that plan was reviewed.
-- **When to revisit:** any time — two menu items and a line of selection each.
-  Naturally with #105 (the slate tag field) or #120's pass, which are the same
-  rows.
+- **It cost one build-wide change, and that is the part to know about.** A
+  `MenuItem`'s `activated` is reachable from nowhere but the menu, so the only
+  test that is not a copy of the rule drives the real menu — and
+  `i_slint_backend_testing`'s `ElementHandle` refuses to find anything without
+  Slint's debug info. `crates/pundit-app/build.rs` now compiles the UI with
+  `with_debug_info(true)`: measured, +322 KB of generated Rust on 15.78 MB
+  (2%) — and **in the shipped binary +151 KB, 0.26%** (59,211,608 → 59,362,792),
+  which is the number the decision turns on and the one the implementing agent
+  left unmeasured. Element names beside the item tree rather than a code path,
+  in every profile on purpose.
+- **Why 0.26% was worth paying:** #130 — every letter typed into the slate tag
+  filter firing its shortcut — shipped partly because **no test in this repo
+  could type into a field and check it arrived**. This is what buys that, for
+  every future UI test in the crate, and the two bugs it would have caught
+  (#130 and #132) were both found by a human and by reading rather than by CI. Every future UI test in this crate can now right-click,
+  read a popup and click what is in it, which is what `tests/ui` could not do
+  before.
 
 128. **The themed pass is silent at both of its ends.** #120 shipped the pass
   and it works from the keyboard once it is going — `R`, space, talk, `R`, and

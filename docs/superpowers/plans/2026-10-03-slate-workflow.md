@@ -418,10 +418,14 @@ Recorded here because it is the last task, not because any of it blocks:
   out of "at or after" and is the one place the rule is presumptuous rather than
   obvious. Left alone: the row is in the list the coach is working, and the
   alternative is a case to remember.
-- **#127**, the rest of the slate row's right-click menu, is untouched and still
-  wants the review this plan got: *Record* and *Preview slate* from a row that
-  may not be selected is the span invariant that D now leans on harder, since
-  the selection is also the pass's cursor.
+- **#127**, the rest of the slate row's right-click menu, **landed 2026-10-06**
+  and the question it was held for came out the way this plan's task A assumed:
+  *Record* and *Preview slate* each set `selected-slate` before their callback,
+  so the arm, the span and D's cursor name one range at every door. That the
+  cursor moves with them is the point rather than a side effect — the pass
+  advances from the range just shot, and `R` shoots the one just watched.
+  *Jump to slate end* is dropped, since the span and the preview are the two
+  ways to see a range's end that #104 said did not exist.
 
 ---
 
