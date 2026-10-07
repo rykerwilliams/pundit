@@ -16,6 +16,12 @@
 //! be written against a stand-in is one `include_modules!()` away from being
 //! written against the real window.
 //!
+//! **A test here can drive the real tree, not only poke properties** — find an
+//! element, right-click it, read what a popup put on screen and click an item
+//! in it (`slate_menu`). That is `i_slint_backend_testing`'s `ElementHandle`,
+//! and it works only because `build.rs` compiles the UI with Slint's debug
+//! info, which is where the measurement and the reason live (BACKLOG #127).
+//!
 //! **Sharing a process is free here, and the reason is where Slint keeps its
 //! platform.** `init_no_event_loop()` ends in
 //! `.expect("platform already initialized")`, which reads like a once-per-process
@@ -38,5 +44,6 @@ mod panel_widths;
 mod scrubber;
 mod self_view_placement;
 mod slate_fields;
+mod slate_menu;
 mod splitter;
 mod tag_field;
