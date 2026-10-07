@@ -17,20 +17,22 @@ made things worse.
   "the srt file gen, the other chapter track" — and (2026-10-03) *"I think all of
   them should be settings?"*, with **fully independent** switches. **Specced
   2026-10-05, planned 2026-10-06**: two on the export sheet (Chapters,
-  Scoreboard subtitles), and a settings sheet designed but not built
+  Scoreboard subtitles), and a settings sheet designed but not built — **#84
+  builds it** (#102 declined it, 2026-10-07)
 - **96.** Every hot key should be reassignable. The coach (2026-09-25): "we need
   to have all the hot keys reassignable", and (2026-10-07) *"i did ask for a
   configuration system eh; use a library or known pattern/convention"*.
   **Specced 2026-10-02, planned 2026-10-07**: one table in `keymap.rs`,
   overrides in `state.json`, a Keys sheet, and rebinding from it
 - **77.** An export queue across projects. The coach (2026-09-24): "i open…
-- **84.** Music under a goals reel — Openverse search, then the mixer (wants the
-  settings sheet #78 **designs**, for the music folder path; the API key was
-  never the blocker)
+- **84.** Music under a goals reel — Openverse search, then the mixer (**builds**
+  the settings sheet #78 **designs**, for the music folder path, now that #102 has
+  found a cheaper home; the API key was never the blocker)
 - **102.** Snap the scrubber to events, as an option. The coach (2026-09-28):
-  "snap to events in the scrubber as an option" — which marks it covers is the
-  open question (**an on/off setting**, the coach 2026-10-03; wants the settings
-  sheet #78 **designs**; **#100's per-field read has landed**)
+  "snap to events in the scrubber as an option" (**an on/off setting**, the coach
+  2026-10-03). **Specced 2026-10-07**: match marks only, a 6px radius, one
+  `state.json` bool, and a checkable item on the **scrubber's own right-click
+  menu** — so it does **not** build #78's settings sheet, which #84 does
 
 - **128.** The themed pass is silent at both of its ends — no keyboard way to
   start one, and nothing said when it runs out of ranges
@@ -1505,8 +1507,16 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **It is cited by six entries and owes each of them less than they claim** —
   #84, #96, #102, #115, #88 and (wrongly) nothing at all to #116, which never
   cited it. What it owes is the **design** of a settings sheet (that spec's §U4),
-  built by whichever of #102 or #84 lands first; #78's own switches go on the
-  export sheet. Each of those entries has been corrected in place.
+  built by its first tenant; #78's own switches go on the export sheet. Each of
+  those entries has been corrected in place.
+- **The first tenant is #84, decided 2026-10-07** by #102's spec
+  (`docs/superpowers/specs/2026-10-07-scrubber-snapping-design.md`, §H), taking
+  the licence §D1 wrote into #78 itself. A snap toggle *does* have something to
+  sit beside — the scrubber, on a right-click menu, which `ContextMenuArea` and a
+  checkable `MenuItem` already make cheap — so §U4's "two options with nothing to
+  sit beside" was half wrong, and the half that stands is #84's music folder
+  **path**: a field and a file-chooser button need a surface, which a menu item
+  cannot be. §U4's design is unchanged and unspent.
 - **Seven, not six** (found while planning, 2026-10-06): **#131** was filed the
   same day the spec was written and waits on the settings sheet too. **#129 is
   deliberately not one** — its own words are "with *any* settings surface",
@@ -1732,6 +1742,10 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   anything, and needing a file-chooser button. The genre pick is **not** a
   settings field: it is an export choice and belongs on the export sheet with
   resolution and quality.
+- **Confirmed 2026-10-07 (#102's spec, §H):** this entry **is** the sheet's first
+  tenant, because #102 found a cheaper home (a checkable item on the scrubber's
+  own right-click menu) and a menu item cannot hold a path or a file-chooser
+  button. So building the sheet is #84's, and §U4's design is unspent.
 - **When to revisit:** any time. Nothing further is needed from the coach, and
   nothing is owed by #78 beyond the sheet's design, which is written down.
 
@@ -2333,9 +2347,14 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   match events only, with the rest behind the same option if asked for.
 - **The snap radius is in pixels, not seconds.** The scrubber's seconds-per-pixel
   changes with the window's width and the source's length, so a radius in seconds
-  would snap from half a screen away on a short clip and never on a long one. The
-  highlight-ring and slate work both key marks by the **displayed frame's** time,
-  which is what a snap should land on too.
+  would snap from half a screen away on a short clip and never on a long one.
+  **Half-corrected 2026-10-07:** this said *"the highlight-ring and slate work
+  both key marks by the displayed frame's time, which is what a snap should land
+  on too."* Only the **highlight** does (`main.rs::shown_source_position`); a
+  slate's `i` / `o` marks and a match tag both use `scan_source_position` — the
+  scan position, which prefers a pending skip target. It changes nothing: a snap
+  lands on the mark's **stored** instant whatever captured it, which is the value
+  `[` / `]` already seek to.
 - **"As an option" means it has to be reachable and remembered**, which is
   `state.json` (a property of the machine, not the project). **The #100 half of
   this is now unblocked** (2026-10-02): that file is read **per field**, so a new
@@ -2344,9 +2363,8 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   that key alone rather than the coach's last project. Read #100's resolution for
   the one case it does not cover: a malformed *element* still costs a whole list,
   so if this option ever stores a **set** of mark kinds rather than a bool, that
-  is the shape to know about. The settings sheet is where the control would live
-  — **designed** by #78's spec (§U4) and built by whichever of this entry and #84
-  lands first, since #78's own switches go on the export sheet instead.
+  is the shape to know about. **Where the control lives was the open question and
+  is now answered** (see the spec line below): not the settings sheet.
 - **It must not fight the frame-accurate paths.** `,` / `.` step exactly one
   frame and the arrows skip fixed amounts; both are promises about exact
   distances, so snapping belongs to the **drag** alone, not to any keyed
@@ -2354,11 +2372,26 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **Why deferred:** filed on the day it was asked for, with #88 closing out; it
   is a UX affordance with a real design question in it (which marks), not a bug.
 - **ANSWERED by the coach (2026-10-03): an on/off setting**, not the
-  snap-always-Shift-to-suppress shape the #78 spec recommended. So it needs a
-  home, and that is one of the three tenants that now justify the Settings sheet
-  (see #78). One `state.json` bool, one attribute under #100's per-field read.
-- **When to revisit:** with #78's sheet, which it is now a reason to build
-  rather than a reason to wait.
+  snap-always-Shift-to-suppress shape the #78 spec recommended. One `state.json`
+  bool, one attribute under #100's per-field read.
+- **SPECCED, 2026-10-07:**
+  `docs/superpowers/specs/2026-10-07-scrubber-snapping-design.md`. **It does not
+  build #78's settings sheet** (§H): the option is a checkable item on the
+  **scrubber's own right-click menu**, which is #78's §U1 rule applied to a
+  control rather than a row, and is the licence §D1 wrote for this entry. So #84
+  is the sheet's first tenant and #78's §U4 design is unspent. The rest: **match
+  marks only** — with "you can only snap to a mark you can see" as the rule, which
+  is why the *selected slate's span*, drawn since #127's week, is the one open
+  question and highlights and clip starts are not; a **6px** radius living in
+  `scrubber.slint` beside `thumb` (±16 s on a 45-minute half, ±31 s on a
+  two-half match, which is why half the thumb was rejected); `snap-seconds`, one
+  derived number, as the whole Slint→Rust contract, because **Slint has no loop**
+  and a model cannot be searched in a function; `match_panel::nearest_chapter`
+  beside `[` / `]`, which must **include** the mark under the playhead where
+  `next_chapter` excludes it; and `Option<bool>` in `state.json`, **defaulting
+  on**, because `lenient` would otherwise turn an unreadable value into "off".
+- **When to revisit:** next after #84 or whenever there is room — it is specced
+  and depends on nothing.
 
 103. **A possession tracker, as an analysis pass.** The coach (2026-09-28): "a
   possession tracker analysis pass." Which team has the ball, over the match — so
@@ -3807,9 +3840,12 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   colour setting for the band alone is odd; one for all four is a palette, which
   is a bigger feature than the request.
 - **When to revisit:** with the settings sheet #78 **designs** — #78 does not
-  build it (that spec's §U4: whichever of #102 or #84 lands first does), and
-  #78's own two switches go on the export sheet. Or sooner if the band turns out
-  to read badly on a particular venue's footage.
+  build it (that spec's §U4; **#84 does**, since #102 declined it on 2026-10-07),
+  and #78's own two switches go on the export sheet. Or sooner if the band turns
+  out to read badly on a particular venue's footage. **A second home exists as of
+  #102's spec**, and it is nearer: that spec adds a right-click menu to the
+  scrubber, which is where a coach would look for the band's colour. Whether a
+  picker is wanted at all is still this entry's own question.
 
 132. **Two clicks silently renamed the wrong slate — FIXED 2026-10-06.** Found
   by #127's agent while reading the slate row's click path, not by a failure.
