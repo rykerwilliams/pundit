@@ -20,8 +20,8 @@ well. It runs on Ubuntu 24.04 and Linux Mint 22, on x86-64.
 Builds are published on the
 [releases page](https://github.com/rykerwilliams/pundit/releases) as a
 `.deb`, which you install with `sudo apt install ./pundit_*_amd64.deb`.
-The first published release is 0.6.0; if the releases page is still empty, the
-only way to get the app is to
+[Installing](guide/install.md) says what your machine needs, and to run a build
+newer than the last release,
 [build it from source](https://github.com/rykerwilliams/pundit/blob/main/README.md#build-from-source).
 
 The [guide](guide/index.md) walks through the app task by task, the

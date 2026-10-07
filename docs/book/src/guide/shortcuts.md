@@ -10,7 +10,9 @@ anything on screen can, so a slider you have just dragged will not quietly steal
 your arrow keys — but a text field takes everything, including <kbd>Esc</kbd>,
 until you leave it.
 
-Nothing here needs a modifier except the four project keys at the bottom.
+Almost nothing here needs a modifier: the four <kbd>Ctrl</kbd> combinations are
+<kbd>Ctrl</kbd>+<kbd>0</kbd> under *Zooming in*, and the three under *The
+project* at the bottom.
 
 ## Watching the game
 
@@ -85,9 +87,11 @@ stop there — you will see a row with an open end, which you can finish or dele
 <kbd>O</kbd> closes the most recent open range **on the video you are watching**.
 Press <kbd>I</kbd> twice and you get two slates; delete the one you did not mean.
 
-To shoot one, select it in the Slates panel and press its **Record** button. The
-end mark is advisory: recording does not stop there, because you might still be
-talking.
+To shoot one, select it and press <kbd>R</kbd> — the transport button reads
+**Record range** while a slate is selected — or choose **Record** from the row's
+menu. At the end of the range the game **pauses on its last frame** while the
+recording keeps going, so you can finish your sentence. See
+[slates](slates.md).
 
 ## Ringing a player
 
@@ -124,7 +128,8 @@ Undo and redo are off while you are recording.
 <kbd>Esc</kbd> is the one key whose job depends on what is in front of you. It
 takes the innermost thing first, so you never lose more than you meant to:
 
-1. A message on screen — dismisses it.
+1. A message on screen — dismisses it. <kbd>Return</kbd> does this too, and
+   nothing else.
 2. A sheet that is open — closes it. If you are in one of its text boxes, the
    first <kbd>Esc</kbd> leaves the box and the next closes the sheet, so a
    half-typed paste does not vanish on one keystroke.

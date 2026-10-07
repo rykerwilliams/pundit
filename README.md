@@ -9,25 +9,56 @@ with your voice, your drawings and a picture-in-picture of you burned in.
 
 ## What it does
 
-- **Commentary clips.** Each clip is a recording of you talking over the game
-  video: the webcam and microphone, plus everything you did to the picture
-  while recording — play, pause, seek, zoom and pan, and freehand drawings. It
-  all replays in step, in the preview and in the export.
-- **Clips you can find again.** Name them, tag them, add notes, and filter the
-  clip list by tag. Undo and redo with Ctrl+Z and Ctrl+Shift+Z.
+- **A match is one timeline.** Add one video or several — both halves, say —
+  and play straight across the join. **New match…** makes the project from the
+  video files in one step: it reads the date and the opponent out of the folder
+  and file names, sets up the scoreboard from your last match, and names the
+  project `<Home> v <Away>`. Your footage is never copied, moved or renamed.
+- **Scanning that keeps up.** Skip, step a frame at a time, scan at up to 32×
+  with **J** and **L**, scrub with the mouse wheel, zoom and pan about the
+  pointer, and press **F** to close the window up around the picture.
+- **Commentary clips.** Press **R** and talk over the game. Each clip is a
+  recording of you — the webcam and microphone, plus everything you did to the
+  picture while recording: play, pause, seek, zoom and pan, and freehand
+  drawings. It all replays in step, in the preview and in the export.
+- **No webcam? Use a photo.** Pick an image under **Inset** in **Devices…** and
+  the camera is never opened; your picture sits in the corner as a circle that
+  swells as you talk. Each clip chooses how big its inset is and which corner it
+  sits in.
+- **Clips you can find again.** Name them, tag them, add notes, filter by tag,
+  and undo and redo with Ctrl+Z and Ctrl+Shift+Z.
+- **Mark now, talk later.** Press **I** and **O** to mark a range while you
+  watch; it goes into the **Slates** list, where you can name and tag it. Come
+  back later and record over each one — filtered by a tag, the list walks you
+  through them one take after another.
+- **Ring a player.** Press **H** and drag a box around a player; a labelled ring
+  follows them between the boxes you place, while you scan, in previews and in
+  exports.
 - **Scoreboard and match clock.** Set up the two teams, their colours and the
-  match format, then tag goals and the start and end of each period (Z, X and
-  V). The clock and score are drawn into previews and exports. If your video
+  match format, then tag goals and the start and end of each period (**Z**,
+  **X** and **V**), or type them in as lines. The clock and score are drawn on
+  the picture while you scan and burned into previews and exports. If your video
   starts after kick-off, the clock can still read correctly.
 - **Transcripts.** Transcribe a clip's commentary on your own computer, with
   [whisper.cpp](https://github.com/ggml-org/whisper.cpp).
-- **Export.** One H.264 `.mp4` per target — every clip, the clips with one tag,
-  or a single clip — at 720p or 1080p, into the project's `exports/` folder.
-  Each clip carries a caption bar with its number, name and tags, and the
-  webcam inset can be turned off per clip.
+- **Export.** An H.264 `.mp4` at 720p or 1080p for every clip, the clips with
+  one tag, a single clip, a goals reel (per team, or all goals), or the whole
+  match — into the project's `exports/` folder. Clips carry a caption bar with
+  their number, name and tags. Files with chapters get a `.chapters.txt` beside
+  them, ready to paste into a YouTube description.
+- **The whole match in a minute, not an hour.** Where the footage allows it, the
+  whole match is a straight copy of your video, with the scoreboard riding along
+  as a subtitle track and an `.srt` beside the file.
+- **The basket.** Gather clips from as many matches as you like and press
+  **Start** for one film of them all, each piece with its own match's
+  scoreboard.
 
 A project is a folder: `project.json`, your commentary in `recordings/`, and
 your exports in `exports/`. The game video stays where it is.
+
+The [user guide](docs/book/src/guide/index.md) walks through all of it task by
+task, and [every keyboard shortcut](docs/book/src/guide/shortcuts.md) is listed
+along with what stops it working.
 
 ## Install
 
@@ -113,6 +144,17 @@ developer conventions — the zero-copy decode path, the capture clock, the
 export graph, how to run CI's GPU-less path locally — are in
 [`CLAUDE.md`](CLAUDE.md), and the design is in
 [`docs/superpowers/specs/`](docs/superpowers/specs/).
+
+## Documentation
+
+| Where | What |
+|---|---|
+| [`docs/book/`](docs/book/) | The user guide, the keyboard shortcuts, the changelog and a page for developers, as an [mdBook](https://rust-lang.github.io/mdBook/). `mdbook build docs/book` builds it; CI checks it on every pull request and publishes it from `main`. |
+| [`CHANGELOG.md`](CHANGELOG.md) | What each release changed, written for the person using the app. |
+| [`CLAUDE.md`](CLAUDE.md) | The developer conventions, and the measurements behind them. |
+| [`docs/superpowers/`](docs/superpowers/) | The specs, plans and measurement spikes behind every feature, in date order. |
+| [`docs/hands-on-checklist.md`](docs/hands-on-checklist.md) | A try-everything pass on real hardware, in the order of a normal session. |
+| [`BACKLOG.md`](BACKLOG.md) | Deferred work, each item with why it waits and when to revisit it. |
 
 ## Where this came from
 
