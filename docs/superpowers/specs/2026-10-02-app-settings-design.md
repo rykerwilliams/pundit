@@ -451,6 +451,11 @@ Refused on three grounds, the third decisive:
 A switch here is a control with no symptom behind it. **The open question below
 puts it back to the coach anyway**, because it is the only place this spec reads
 *"all of them"* narrowly — and it is cheap to answer either way:
+
+**ANSWERED 2026-10-06: no.** The coach, shown that deciding now is nearly free
+and deciding later costs a format bump of its own, chose to leave the header tags
+on and unswitched. This section's refusal is the design now, not an open
+question.
 `FileTags::default()` is already an untagged file, so it would be the same
 blanking move as the other two.
 
