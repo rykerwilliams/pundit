@@ -21,20 +21,42 @@
 //! table of every action rather than a test per key.
 
 use pundit_app::keymap::{Action, Keymap};
+use slint::{ModelRc, VecModel};
 
-use crate::{AppWindow, KeyAction};
+use crate::{AppWindow, KeyAction, KeyRow};
 
-/// Answers `action-for` from `keymap`, which is read **once** — a key event is
-/// a lookup over a few dozen rows, never a file read.
+/// Answers `action-for` from `keymap`, and fills the Keys sheet's list from the
+/// same map. Read **once** — a key event is a lookup over a few dozen rows,
+/// never a file read.
+///
+/// **The list and the lookup are one map read twice**, which is the whole of
+/// why the sheet cannot go stale: there is no second table to keep in step,
+/// and a rebind (plan task 5) sets both again from one `Keymap`.
 ///
 /// The keymap is moved into the callback rather than shared: nothing else
-/// holds it, and nothing yet rewrites it. The Keys sheet's rebinding (plan
-/// task 5) is what needs it behind a handle, and that is one line when it
-/// arrives.
+/// holds it, and nothing yet rewrites it. The rebinding is what needs it
+/// behind a handle, and that is one line when it arrives.
 pub fn wire_keys(window: &AppWindow, keymap: Keymap) {
+    window.set_key_rows(key_rows(&keymap));
     window.on_action_for(move |text, ctrl, shift, alt| {
         key_action(keymap.action_for(&text, ctrl, shift, alt))
     });
+}
+
+/// `Keymap::listing` as the sheet's model, one row per `Action::ALL` entry in
+/// that order — which is the order the sheet shows and the order a collision is
+/// resolved in, so it is carried rather than sorted here.
+fn key_rows(keymap: &Keymap) -> ModelRc<KeyRow> {
+    let rows: Vec<KeyRow> = keymap
+        .listing()
+        .into_iter()
+        .map(|row| KeyRow {
+            what: row.what.into(),
+            keys: row.keys.as_str().into(),
+            fires: row.when.into(),
+        })
+        .collect();
+    ModelRc::new(VecModel::from(rows))
 }
 
 /// One member per [`Action`], and `none` for a key that is bound to nothing.

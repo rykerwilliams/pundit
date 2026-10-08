@@ -46,6 +46,11 @@ enum Fires {
     /// `h` has no callback: it flips a window property, because the tool is
     /// the window's own state. Checked by reading it back.
     HighlightTool,
+    /// `F1` has none either: it opens the Keys sheet, which is a window
+    /// property too (#96 task 4). What the sheet then *shows* is
+    /// `keys_sheet.rs`'s; this row's job is the census — that the key reaches
+    /// the action at all.
+    KeysSheet,
 }
 
 /// One default binding, and what pressing it must do.
@@ -92,10 +97,9 @@ fn shift(mut c: Case) -> Case {
     c
 }
 
-/// **Every default binding in the table, one row each** — 33 of the 34, and the
-/// two actions it leaves out are named rather than forgotten: `showKeys` (`F1`)
-/// has no branch in `handle-key` until the Keys sheet exists (plan task 4) and
-/// `showRecents` ships with no default at all.
+/// **Every default binding in the table, one row each** — all 34 of them, and
+/// the one action it leaves out is named rather than forgotten: `showRecents`
+/// ships with no default binding at all, so there is no key to press.
 ///
 /// **A new action belongs here.** Slint's `if` chain over `KeyAction` cannot be
 /// made exhaustive and nothing in either language will say a mapped action has
@@ -142,12 +146,14 @@ fn cases() -> Vec<Case> {
         ctrl(fires(Action::ZoomReset, "0", "zoom-reset")),
         fires(Action::ZoomOut, "2", "zoom -0.25"),
         fires(Action::ZoomIn, "3", "zoom 0.25"),
+        case(Action::ShowKeys, Key::F1, Fires::KeysSheet),
     ]
 }
 
-/// The two actions with no branch in `handle-key`, so `covers_every_action`
-/// names them rather than counting to 27.
-const UNWIRED: [Action; 2] = [Action::ShowKeys, Action::ShowRecents];
+/// The one action with no branch in `handle-key`, so `covers_every_action`
+/// names it rather than counting to 28. It has no default binding either, and
+/// the branch belongs with the task that can first bind it (#96 task 5).
+const UNWIRED: [Action; 1] = [Action::ShowRecents];
 
 /// Every window callback a key can reach, pushed onto one list in the order
 /// they fire. One list rather than a flag each: a key that fires the *wrong*
@@ -234,8 +240,10 @@ fn way(forward: bool) -> &'static str {
 ///
 /// Re-applied before each row, so one row's `prepare` cannot leak into the next
 /// — the clear-drawings row leaves a recording running, which would refuse
-/// undo, redo, delete and open.
+/// undo, redo, delete and open, and the `showKeys` row leaves a **modal sheet**
+/// up, which would swallow every key after it.
 fn base(w: &AppWindow) {
+    w.set_keys_sheet_open(false);
     w.set_can_play(true);
     w.set_playing(true);
     w.set_can_fit(true);
@@ -339,6 +347,15 @@ fn every_default_binding_still_does_what_it_did() {
                     w.get_highlight_tool(),
                     before,
                     "{:?} on {:?} did not toggle the tool",
+                    c.action,
+                    c.text
+                );
+            }
+            Fires::KeysSheet => {
+                assert!(fired.borrow().is_empty(), "{:?} fired a callback", c.action);
+                assert!(
+                    w.get_keys_sheet_open(),
+                    "{:?} on {:?} did not open the Keys sheet",
                     c.action,
                     c.text
                 );

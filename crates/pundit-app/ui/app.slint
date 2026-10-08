@@ -1874,11 +1874,17 @@ component Scrim inherits Rectangle {
 /// The card every modal in this app is drawn as: a fixed width, a height of
 /// whatever it holds, the house chrome and the heading.
 ///
-/// There are six of these -- export, the basket, New match, match setup, the
-/// match event editor and the error dialog -- and this is the one shape they
-/// are. A sheet sets its width and its title and lays its own body out as
+/// There are seven of these -- export, the basket, New match, match setup, the
+/// match event editor, Keys and the error dialog -- and this is the one shape
+/// they are. A sheet sets its width and its title and lays its own body out as
 /// children;
 /// everything else is here, once.
+///
+/// **It does not scroll, and `height: body.preferred-height` is why** (BACKLOG
+/// #134): a card taller than the window has its own buttons off the bottom of
+/// it. Each sheet with a list that grows therefore caps that list itself --
+/// the export sheet's targets and run, the Keys sheet's 29 rows -- and #134 is
+/// whether the cap belongs here instead, for all seven at once.
 component Sheet inherits Rectangle {
     /// The card's width. Wide enough for the widest thing in it, and no
     /// wider: the height follows the content.
@@ -3465,6 +3471,181 @@ component NewMatchSheet inherits Sheet {
     }
 }
 
+/// One row of the Keys sheet (#96, spec D2), built by `keymap::Keymap::listing`
+/// from the same table the matcher reads -- so a listed row is a row the
+/// matcher holds and the list cannot go stale.
+export struct KeyRow {
+    /// What the action does: "Play or pause".
+    what: string,
+    /// Every key it answers to, joined -- "shift+LeftArrow, shift+a" -- or an
+    /// em dash for an action bound to nothing, which `Keymap` decides and this
+    /// sheet only shows.
+    keys: string,
+    /// When it fires, in prose. **Not a machine-readable guard**: in this app a
+    /// bound key is swallowed whether or not its gate passes, so there is no
+    /// `when` clause to read it from -- `keymap.rs`'s header has the whole
+    /// reason.
+    fires: string,
+}
+
+/// One line of the Keys sheet's table -- an action's row, the column heading
+/// and a reserved key's row alike, so the three read as one table.
+///
+/// **Fixed column widths and one height, elided rather than wrapped.** A
+/// wrapped cell would make rows of different heights, and the scroll cap the
+/// sheet is sized by is `rows * this height`; eliding keeps that arithmetic
+/// true and the columns aligned. The first two columns are wide enough for the
+/// longest thing `keymap.rs` puts in them ("Go to the previous match event",
+/// "shift+LeftArrow, shift+a") and the third takes what is left.
+component KeyLine inherits HorizontalLayout {
+    in property <string> what;
+    in property <string> keys;
+    in property <string> fires;
+    /// The column heading, which is this same line so the columns cannot drift
+    /// apart.
+    in property <bool> heading;
+
+    spacing: 12px;
+    height: 22px;
+    // **The row read as one line**, which is both what a reader of a table
+    // wants and what `tests/ui/keys_sheet.rs` finds it by: the three cells in
+    // the order the columns are in, so a crossed wire reads back crossed.
+    accessible-role: text;
+    accessible-label: root.what + " — " + root.keys + " — " + root.fires;
+
+    Text {
+        text: root.what;
+        width: 200px;
+        color: root.heading ? Palette.alternate-foreground : Palette.foreground;
+        font-size: 12px;
+        font-weight: root.heading ? 600 : 400;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    Text {
+        text: root.keys;
+        width: 170px;
+        color: root.heading ? Palette.alternate-foreground : Palette.foreground;
+        font-size: 12px;
+        font-weight: root.heading ? 600 : 400;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    Text {
+        text: root.fires;
+        horizontal-stretch: 1;
+        color: Palette.alternate-foreground;
+        font-size: 11px;
+        font-weight: root.heading ? 600 : 400;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+/// The Keys sheet (#96): every key the app binds, in one list the coach can
+/// read. `F1` opens it, and so does the button beside `Fit`.
+///
+/// **It is a list and nothing more.** Rebinding is #96's task 5 and arrives as
+/// a control on each row; nothing here is built in anticipation of it, because
+/// a container built before its contents is the thing it would get wrong.
+///
+/// **The reserved keys' six rows are written here, not taken from the table**
+/// (spec G4). Escape, Tab, Shift+Tab, Return, Home and End are deliberately not
+/// `keymap::Action` variants -- Escape is a key with a position rather than a
+/// job, Tab and Return are the platform's, and Home and End do nothing -- so
+/// `listing()` has no row for them and `Binding`, `overrides()` and the rebind
+/// would each have to filter them back out again if it had. Their words belong
+/// where their behaviour is instead: the three this window handles are
+/// `handle-key`'s "three reserved keys, ahead of the table" block, in this file.
+component KeysSheet inherits Sheet {
+    in property <[KeyRow]> rows;
+    callback close();
+
+    card-width: 840px;
+    title: "Keys";
+
+    // Outside the scroll area, so it stays put. The first two columns are a
+    // fixed width in `KeyLine`, so the scroll bar's bite out of the rows below
+    // moves only the third column's far end, which has nothing in it.
+    KeyLine {
+        what: "What it does";
+        keys: "Keys";
+        fires: "When it fires";
+        heading: true;
+    }
+
+    // **The cap, derived from the window's own floor.** `Sheet` is
+    // `height: body.preferred-height` and does not scroll (#134), so what this
+    // child does not cap the sheet grows by: 29 rows at 22px is 638px, and a
+    // card of that is off the bottom of a 700px window with Close beneath it.
+    // 700 less the body's 40px of padding, the heading row, the title, the
+    // close row and three 10px gaps leaves ~555px, and 520 is inside that with
+    // air. A taller window shows the same 520 and scrolls, which is the simple
+    // bargain and what #134 would fix for every sheet at once.
+    ScrollView {
+        height: 520px;
+
+        VerticalLayout {
+            spacing: 2px;
+
+            for row in root.rows: KeyLine {
+                what: row.what;
+                keys: row.keys;
+                fires: row.fires;
+            }
+
+            // The six that are not actions, under their own heading so the
+            // em dash in the keys column above reads as "nothing bound yet"
+            // and these read as "nothing you can bind".
+            FieldLabel {
+                text: "Reserved — not rebindable";
+                height: 24px;
+                vertical-alignment: bottom;
+            }
+            KeyLine {
+                what: "Back out";
+                keys: "Escape";
+                fires: "Whatever is innermost: a sheet, the tool, a take, the selection";
+            }
+            KeyLine {
+                what: "Move the focus on";
+                keys: "Tab";
+                fires: "Any time";
+            }
+            KeyLine {
+                what: "Move the focus back";
+                keys: "Shift+Tab";
+                fires: "Any time";
+            }
+            KeyLine {
+                what: "Confirm the message";
+                keys: "Return";
+                fires: "While a message is on screen";
+            }
+            KeyLine {
+                what: "Nothing";
+                keys: "Home";
+                fires: "Swallowed, so a touched slider cannot take it";
+            }
+            KeyLine {
+                what: "Nothing";
+                keys: "End";
+                fires: "Swallowed, so a touched slider cannot take it";
+            }
+        }
+    }
+
+    HorizontalLayout {
+        alignment: end;
+
+        Button {
+            text: "Close";
+            primary: true;
+            clicked => { root.close(); }
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "pundit";
     // Every control fits at this size. The window opens at the size it last
@@ -4087,6 +4268,15 @@ export component AppWindow inherits Window {
     /// coach rebinds a key.
     callback action-for(string, bool, bool, bool) -> KeyAction;
 
+    /// **Every action and the keys it answers to**, in `Action::ALL`'s order:
+    /// `keymap::Keymap::listing`, set beside `action-for` in `key_action.rs`'s
+    /// `wire_keys` and from nowhere else, so the list and the lookup are the
+    /// same table read twice.
+    in property <[KeyRow]> key-rows;
+    /// The Keys sheet is up. UI state: `F1` and the Keys button open it, its
+    /// Close button and Esc close it.
+    in-out property <bool> keys-sheet-open;
+
     callback open-project();
     callback add-source();
     callback relink-source(int);
@@ -4427,6 +4617,22 @@ export component AppWindow inherits Window {
             // Modal: nothing reaches the window behind the dialog.
             if (pressed && (event.text == Key.Return || event.text == Key.Escape)) {
                 root.error-message = "";
+            }
+            return accept;
+        }
+        // The Keys sheet is modal too, and it is the export sheet's shape
+        // exactly: Esc closes it and every other key is swallowed -- `F1`
+        // included, so the key that opens it cannot also reopen it from
+        // underneath itself.
+        //
+        // **No `text-editing` term, because it has no field** (#96): it is a
+        // list, and the rebinding that gives it one is task 5, which is also
+        // where the term would have to arrive. Tested here, second, because
+        // that mirrors the sheet stack's z-order -- this sheet is drawn over
+        // every other and under the error dialog alone.
+        if (root.keys-sheet-open) {
+            if (pressed && event.text == Key.Escape) {
+                root.keys-sheet-open = false;
             }
             return accept;
         }
@@ -4775,13 +4981,25 @@ export component AppWindow inherits Window {
             }
             return accept;
         }
+        // The Keys sheet (#96): what every key does, including this one. No
+        // gate -- it reads a table the window always has -- and no
+        // `keys.focus()`, because the `text-editing` layer above has already
+        // rejected the key if a field had focus. The Keys button beside `Fit`
+        // is the same door for the coach who never presses F1.
+        if (act == KeyAction.show-keys) {
+            if (pressed) {
+                root.keys-sheet-open = true;
+            }
+            return accept;
+        }
         // **The fall-through is `reject`, and that is the Ctrl branch this
         // chain replaced.** Its only job once the table compares the three
         // modifiers exactly was to deliver every *other* Ctrl combo to
         // whatever has focus -- Ctrl+V into a field, Ctrl+A to select all --
-        // which is what landing here does. `show-keys` and `show-recents`
-        // land here too: they are rows in the table with no branch yet, which
-        // is plan Risk 1 shipped on purpose until the Keys sheet exists.
+        // which is what landing here does. `show-recents` lands here too: it
+        // is a row in the table with no default binding and no branch, and
+        // the branch belongs with the task that can first bind it (#96 task
+        // 5), not with this one.
         reject
     }
 
@@ -6514,6 +6732,38 @@ export component AppWindow inherits Window {
                                     : @markdown("Nothing to fit");
                             }
                         }
+                        // What every key does (#96). **This row, and for
+                        // `Fit`'s reason above:** the transport row has no
+                        // room. The spec and the plan both asked for this
+                        // button beside `Recent ▾` up there and both left
+                        // that row's budget unmeasured. Measured 2026-10-08
+                        // with an `ElementHandle` probe (not kept as a test:
+                        // it would pin the headless backend's font metrics):
+                        // at the window's own 1100px floor that row's buttons
+                        // run from x=8 to **x=1199**, so `Devices…` ends
+                        // 99px past the window's right edge before anything
+                        // is added. Here there is room to spare — `Fit` ends
+                        // at 268.
+                        //
+                        // Never disabled: it is a list the window always has,
+                        // and a coach who cannot find a key is exactly the
+                        // coach in the state that would grey it out.
+                        Button {
+                            text: "Keys";
+                            // Off any field first, as every button in this
+                            // window does: a click does not take focus from
+                            // one by itself, and this sheet's Esc layer is
+                            // ahead of the `text-editing` one, so a field
+                            // left focused would keep the first Esc.
+                            clicked => {
+                                keys.focus();
+                                root.keys-sheet-open = true;
+                            }
+
+                            Tooltip {
+                                text: @markdown("Every key this app binds, and what it does (F1)");
+                            }
+                        }
                         // The H tool is a mode, so it says so (spec H3): the
                         // pen swatches beside it are what a new ring is
                         // coloured with, and the panel below lists them.
@@ -6842,6 +7092,21 @@ export component AppWindow inherits Window {
                     root.create-match();
                 }
                 cancel => { root.close-new-match(); }
+            }
+        }
+
+        // --- Keys sheet: modal over the whole window (#96) ---
+        //
+        // After every other sheet and **before** the error dialog, which is
+        // the order `handle-key` tests them in: the dialog has to be drawn
+        // over whatever raised it (spec C4), and this sheet raises nothing.
+        if root.keys-sheet-open: Scrim {
+            KeysSheet {
+                rows: root.key-rows;
+                close => {
+                    root.keys-sheet-open = false;
+                    keys.focus();
+                }
             }
         }
 

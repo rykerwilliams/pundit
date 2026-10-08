@@ -50,6 +50,7 @@ mod key_action;
 mod export_sheet;
 mod fit_window;
 mod keys;
+mod keys_sheet;
 mod panel_widths;
 mod scrubber;
 mod self_view_placement;

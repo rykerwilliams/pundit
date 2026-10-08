@@ -4028,12 +4028,22 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   tag-heavy project at a small window size; the sheet a coach *configures* an
   export in has no run list and fits with 52px to spare, which is what the fit
   test pins.
-- **Why deferred:** the fix is a change to `Sheet`, which **all six** sheets
+- **Why deferred:** the fix is a change to `Sheet`, which **all seven** sheets
   inherit — a `ScrollView` in the card, or a cap on the two lists that knows
   the window's height. That is a shared-chrome design decision with its own
   trade (a scrolling modal is a different thing from a card), and it is not
   task 2's to make while shipping a checkbox. Deepening a 33px overflow to
   123px is also not the same as introducing one.
+- **One data point for that decision, from #96's Keys sheet** (2026-10-08): a
+  29-row table cannot fit a 700px card at all, so that sheet answers this
+  inside its own body — the row list is a `ScrollView` capped at **520px**,
+  derived from `min-window-height` less the card's own chrome, and the card
+  measures 666px of the 700 there are. It is the **second** sheet to cap a list
+  by hand — the export sheet's own two caps, 210px and 140px, were picked by
+  eye and are what still overflow — and that is the argument for the
+  arithmetic living in `Sheet`, where it can be done once against the window's
+  floor. It is **not** an argument for the whole card scrolling, which is the
+  trade above.
 - **When to revisit:** with the next thing that adds a row to any sheet, or the
   first time a coach reports losing the buttons. The fit test is the tripwire
   and already names this entry.
