@@ -757,10 +757,20 @@ field and in its paste box alike, both read by `core::match_entry`
   a `for` can only be bound one way — a rebuild would overwrite what is being
   typed. Every commit drops focus, because `for` reuses its items by index and
   a re-timed event moves.
-- **A sheet with fields folds its `editing` into the window's `text-editing`**
-  (`app.slint`), or Esc never leaves the field: the sheet's key guard tests
-  `!text-editing`, so without the fold the first Esc closes the sheet and
-  throws away a half-typed paste.
+- **A new text field joins nothing, and that is load-bearing** (#96 task 1).
+  The window's `text-editing` **is** Slint's own
+  `TextInputInterface.text-input-focused` (`app.slint`), which `TextInput` sets
+  on focus-in and clears on focus-out *and in its `deinit`* — so a field cannot
+  be left out of it and a field destroyed while focused cannot leave the
+  shortcuts switched off. It used to be a seven-term disjunction of every
+  field's focus, which is how **#130** happened: the slate tag filter shipped as
+  a bare `LineEdit` nobody added, so every letter typed into it fired its
+  shortcut and `corner` was untypeable. The *reason* the gate exists is
+  unchanged, and it is why a sheet must not test anything else: the sheet's key
+  guard is `!text-editing`, so the first Esc leaves the field and the second
+  closes the sheet, and without that the first Esc throws away a half-typed
+  paste. `tests/ui/text_editing.rs` types a letter into every field there is and
+  pins both halves.
 
 **The goals reel** (`pundit-core/src/reel.rs`, spec R).
 - **It is an `ExportTarget` (`Reel`), never a clip.** Its entries have

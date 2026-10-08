@@ -25,7 +25,49 @@ position" — the retry landed in `7310a54`, so a sighting now is news) and #101
 
 ## Where this stands (update it as tasks land)
 
-- **1 — the `text-editing` fold becomes the platform's own property.** Not started.
+- **1 — the `text-editing` fold becomes the platform's own property.** **Done**
+  (`claude/96-task-1`). `app.slint:4031` is
+  `property <bool> text-editing: TextInputInterface.text-input-focused;` and the
+  list is gone. Deleted, counted off the diff: **13 properties** — the window's
+  `basket-editing`, `match-editor-editing`, `new-match-editing`,
+  `slate-editing` and `slate-filter-focused`; the three sheets' own `editing`;
+  `MatchEditorSheet::paste-focused`; `HighlightsPanel::editing` and its
+  `label-focused`; `NewMatchSheet::any-focused`; and `SetupField::focused` —
+  **three `<=>` wires**, **three hand-clears** in the `close-*` functions, the
+  `refresh-editing` function and its three calls, and **five** `changed`
+  handlers that existed only to feed one of them. `app.slint` is +89 / −152,
+  and of that the **code** is +7 / −50; the rest is comment, most of it the
+  reasons the deleted flags carried. `tests/ui/text_editing.rs` is new: three
+  tests over sixteen fields — every one of the thirteen `TextInput` sites in
+  the file, the match setup sheet's shared `SetupField::edit` among them.
+  **Four corrections for tasks 2–5:**
+  - **Every line number in task 1's text was stale by ~+56**, the same drift §A
+    predicted; the ones task 3 needs are re-derived in the list below.
+  - **It was 13 properties, not the 10 step 1.2 names, and the three it misses
+    are each one that only fed a named one:** `MatchEditorSheet::paste-focused`
+    (into `refresh-editing`), `NewMatchSheet::any-focused` and
+    `SetupField::focused` (into that sheet's `editing`). Grep per *term* is not
+    enough — the sweep has to follow each term's own inputs. The three
+    survivors were read right, though: `Inspector::editing` kept its second
+    job, `HighlightsPanel::editing` had no other reader as the step guessed,
+    and `MatchEditorSheet::line-focused` stays because `src/main.rs`'s
+    `editor_rebuild` reads it.
+  - **#132 is not of this class and the plan says it is.** Step 1.2's *"#130
+    and #132 were both a field missing from the list this deletes"* is wrong:
+    #132 was `on_show_slate` overwriting a focused field's text, fixed in
+    `main.rs` by `show_clip`'s guard. **#123 is the second one** — the gate
+    `slate-editing` repeated drifting from its section's own `if`. The comment
+    that shipped cites #130 and #123.
+  - **An `ElementHandle` test needs the window made tall** (`set_size`):
+    `visit_descendants` skips any subtree whose geometry falls outside the
+    enclosing clip, so at the headless default size the inspector column's
+    fields are unfindable and unclickable. Tasks 4 and 5 will hit this.
+- **Task 3's line numbers after task 1**, re-derived at `claude/96-task-1`:
+  `handle-key` is `app.slint:4367`–`:4658` and **still holds 61 `event.text ==`
+  of the file's 64**, so §A7's two counts are unchanged by this task. The five
+  reads of `text-editing` task 3 must leave exactly as they are: `:4392`
+  (basket), `:4408` (New match), `:4453` (match editor), `:4462` (layer 7's
+  `reject`) and `:4670` (`keys.key-pressed`'s Esc).
 - **2 — `keymap.rs`: the table, the labels, the defaults, the overrides.** Not started.
 - **3 — `handle-key` is re-keyed onto the table.** Not started.
 - **4 — the Keys sheet.** Not started.

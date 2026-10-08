@@ -908,9 +908,13 @@ component Inspector inherits Rectangle {
     /// size (Phase 11 S3). The button is the prompt; pressing it is the
     /// consent.
     in property <string> transcribe-download;
-    /// A field has focus: the window's shortcuts yield to it. **Every** text
-    /// field belongs here: miss one and typing in it makes Space start
-    /// playback and `r` start a recording.
+    /// Some field of this inspector has focus. **Not the window's shortcut
+    /// gate** -- that is Slint's own `TextInputInterface.text-input-focused`
+    /// and needs telling about nothing. This answers the narrower question
+    /// `end-edit`'s reader asks: focus left *this* field, but is it still in
+    /// this inspector? If it is, the coach is tabbing between a clip's fields
+    /// and `editing-clip-id` must go on naming that clip. So every field of
+    /// this component belongs here, and only this component's.
     out property <bool> editing: name.has-focus || tags.has-focus || notes.has-focus
         || transcript.has-focus;
     /// Preview is possible at all (Phase 7 P6): something to play, and
@@ -1500,10 +1504,6 @@ component HighlightsPanel inherits VerticalLayout {
     /// The selected highlight's id, empty for none. A drag on a ring selects
     /// it, and so does a click on a row.
     in property <string> selected;
-    // Selecting another row removes the field under this one, and Slint does
-    // not promise a focus-change callback from an element it has destroyed:
-    // without this the window's shortcuts could stay switched off for good.
-    changed selected => { root.label-focused = false; }
     /// The H tool is on, which is what the panel tells the coach how to use.
     in property <bool> tool-on;
     /// Edits are possible: not while recording, and not with nothing loaded.
@@ -1514,13 +1514,6 @@ component HighlightsPanel inherits VerticalLayout {
     /// The selected highlight's label, two-way as the inspector's fields are:
     /// a `text:` binding breaks the first time it's typed in.
     in-out property <string> label-text;
-    /// The field has focus: the window's shortcuts yield to it. Read off a
-    /// property the field sets rather than off the field itself, which lives
-    /// inside the row loop and so has no name out here — and `and`ed with the
-    /// selection, so a highlight deleted while its label had focus can't
-    /// leave the shortcuts switched off.
-    out property <bool> editing: root.selected != "" && root.label-focused;
-    property <bool> label-focused;
 
     callback select(string);
     callback remove(string);
@@ -1605,13 +1598,16 @@ component HighlightsPanel inherits VerticalLayout {
         if row.id == root.selected: VerticalLayout {
             spacing: 4px;
 
-            LineEdit {
+            // Named for `tests/ui/text_editing.rs`: this one used to be folded
+            // in through a flag the panel kept (`editing`, `label-focused`),
+            // and it is the field that is hardest to reach, inside the `if`
+            // under the selected row.
+            label-edit := LineEdit {
                 enabled: root.can-edit;
                 placeholder-text: "Shirt number or name";
                 text <=> root.label-text;
                 accepted(text) => { root.commit(text); }
                 changed has-focus => {
-                    root.label-focused = self.has-focus;
                     if (self.has-focus) {
                         root.begin-edit();
                     } else {
@@ -2137,14 +2133,6 @@ component BasketSheet inherits Sheet {
     /// (spec M3). A basket is clips from several matches, so commentary-only
     /// is its natural film.
     in-out property <bool> mute-source;
-    /// The name field has focus, which the window folds into its own
-    /// `text-editing`: without the fold the first Esc closes the sheet from
-    /// inside the field and the window's "Esc leaves the field" cascade is
-    /// dead code. **In-out and set by hand** rather than bound -- this element
-    /// is destroyed when the sheet closes, and a binding that went with it
-    /// would leave the window's shortcuts switched off (the match editor
-    /// carries the same guard).
-    in-out property <bool> editing;
     /// A row moved: from this index to that one.
     callback reorder(int, int);
     callback remove(int);
@@ -2256,13 +2244,15 @@ component BasketSheet inherits Sheet {
     VerticalLayout {
         spacing: 4px;
         FieldLabel { text: "Name"; }
-        LineEdit {
+        // Named for `tests/ui/text_editing.rs`, which types into it and
+        // presses Esc in it: it is the field whose Esc cascade used to need a
+        // flag of its own.
+        basket-name-edit := LineEdit {
             // What an empty name becomes, so what the coach sees is what they
             // get (basket spec O1).
             placeholder-text: "Basket";
             enabled: !root.exporting;
             text <=> root.name;
-            changed has-focus => { root.editing = self.has-focus; }
         }
     }
 
@@ -2398,10 +2388,6 @@ component SetupField inherits VerticalLayout {
     in property <bool> has-swatch;
     in property <color> swatch;
     in-out property <string> text;
-    /// Whether the field has focus. The New match sheet folds these into the
-    /// window's `text-editing`, which is what makes its Esc cascade reachable;
-    /// the setup sheet ignores it, because its own Esc closes unconditionally.
-    out property <bool> focused: edit.has-focus;
     /// The swatch was clicked: open the picker over this field. It carries
     /// this field's bottom-left corner, in window coordinates, so the sheet
     /// hangs the popup where the click was rather than off a table of which
@@ -2961,13 +2947,12 @@ component MatchEditorSheet inherits Sheet {
     /// that goes takes the selection with it.
     in property <string> selected;
     // Selecting another row destroys the field under this one, and Slint does
-    // not promise a focus-change callback from an element it has destroyed:
-    // without this the window's shortcuts could stay switched off for good
-    // (HighlightsPanel carries the same guard).
-    changed selected => {
-        root.line-focused = false;
-        root.refresh-editing();
-    }
+    // not promise a focus-change callback from an element it has destroyed --
+    // so `line-focused` would stick true and `src/main.rs` would never rebuild
+    // the rows again. (The window's shortcuts need no such guard: they read
+    // Slint's own `TextInputInterface.text-input-focused`, which `TextInput`
+    // clears in its `deinit`.)
+    changed selected => { root.line-focused = false; }
     /// The selected row's line, two-way all the way out to the window as every
     /// field in this app is: a `text:` binding breaks the moment it's typed in.
     in-out property <string> line;
@@ -2980,18 +2965,12 @@ component MatchEditorSheet inherits Sheet {
     /// The last refusal (spec C5). The status bar's notice line renders
     /// *behind* the scrim, so a sheet with commands of its own needs a line.
     in property <string> message;
-    /// A field has focus, which the window folds into its own `text-editing`
-    /// (spec P3): without the fold the first Esc closes the sheet and the
-    /// window's "Esc leaves the field" cascade is dead code. **In-out and set
-    /// by hand** rather than bound: this element is destroyed when the sheet
-    /// closes, and a binding that goes with it would leave the window's
-    /// shortcuts switched off -- `close-match-editor()` clears it instead.
-    in-out property <bool> editing;
     /// The **row's** field has focus: the one state in which the rows above
     /// must not be rebuilt (spec T3, `src/main.rs`). Out and up, and cleared
-    /// by `close-match-editor()`, for the same reason `editing` is.
+    /// by `close-match-editor()`: this element is destroyed when the sheet
+    /// closes, and Slint promises no focus-change callback from an item it
+    /// has destroyed.
     in-out property <bool> line-focused;
-    property <bool> paste-focused;
 
     /// A row's line, as the bus will read it -- `bus::editor_line`, the very
     /// call the command makes, cap and all, so a line marked good is never
@@ -3015,10 +2994,6 @@ component MatchEditorSheet inherits Sheet {
     callback close();
 
     property <PasteEcho> echo: root.check-paste(root.paste, root.default-source, root.revision);
-
-    function refresh-editing() {
-        root.editing = (root.selected != "" && root.line-focused) || root.paste-focused;
-    }
 
     /// Enter and losing focus both commit, as the inspector's fields do. A
     /// line that doesn't parse is marked and goes nowhere (spec T5).
@@ -3125,13 +3100,12 @@ component MatchEditorSheet inherits Sheet {
                 padding-bottom: 8px;
                 spacing: 4px;
 
-                LineEdit {
+                line-edit := LineEdit {
                     horizontal-stretch: 1;
                     text <=> root.line;
                     accepted(text) => { root.commit-line(row.id, text); }
                     changed has-focus => {
                         root.line-focused = self.has-focus;
-                        root.refresh-editing();
                         if (!self.has-focus) {
                             root.commit-line(row.id, self.text);
                         }
@@ -3170,16 +3144,12 @@ component MatchEditorSheet inherits Sheet {
             current-index <=> root.default-source;
         }
     }
-    TextEdit {
+    paste-edit := TextEdit {
         // Six lines of a block that may well be twenty: it scrolls, as
         // the lists either side of it do.
         height: 120px;
         placeholder-text: "2 14:05 away goal";
         text <=> root.paste;
-        changed has-focus => {
-            root.paste-focused = self.has-focus;
-            root.refresh-editing();
-        }
     }
     Text {
         text: "One event per line: an optional video number, a time with a colon, then what happened — \"home\", \"away\", \"period\". # starts a comment.";
@@ -3301,13 +3271,6 @@ component NewMatchSheet inherits Sheet {
     /// it, because the alternative is a dead button after a refused Create and
     /// a coach who has to Cancel and re-pick every video.
     in property <bool> creating;
-    /// A field has focus, which the window folds into its own `text-editing`.
-    /// **In-out and written on change** rather than bound: this element is
-    /// destroyed when the sheet closes, and a binding that went with it would
-    /// leave the window's shortcuts switched off for good -- so
-    /// `close-new-match` clears it by hand, as the basket's and the editor's
-    /// closes do.
-    in-out property <bool> editing;
     /// Whether a team name is one the bus will accept. **Not `!= ""`**: the
     /// rule trims, and an untrimmed comparison here marked a field of one space
     /// good, enabled Create and then sent nothing — leaving the button dead
@@ -3337,8 +3300,6 @@ component NewMatchSheet inherits Sheet {
     property <bool> dir-ok: root.valid-projects-dir(root.projects-dir);
     property <bool> taken: root.dir-ok && root.folder-ok
         && root.target-taken(root.projects-dir, root.folder-name);
-    property <bool> any-focused: home.focused || away.focused || dir.focused || folder.focused;
-    changed any-focused => { root.editing = self.any-focused; }
 
     HorizontalLayout {
         spacing: 8px;
@@ -3685,36 +3646,6 @@ export component AppWindow inherits Window {
     /// what moves it when a mark is re-set under an unchanged selection.
     in property <float> slate-span-from;
     in property <float> slate-span-to;
-    /// A slate's name or tag field has focus, folded into `text-editing` —
-    /// without which typing a tag fires every letter shortcut, `i` and `o`
-    /// included, and the letters never reach the field.
-    ///
-    /// **Declarative, like the inspector's**, and never assigned. Two fields
-    /// writing one bool on `changed has-focus` gets this wrong: moving from
-    /// one to the other raises the new field's flag *before* lowering the old
-    /// one's, so the last write is `false` while a field still has focus.
-    ///
-    /// **The filter field is in this list, and it was left out once** (#130):
-    /// the tag filter shipped with #120 as a bare `LineEdit`, so every letter
-    /// typed into it fired its shortcut instead — `i` and `o` marking a slate
-    /// in and out, which is the exact failure the paragraph above describes.
-    /// The lesson is that this list is not "the fields that edit a slate" but
-    /// **every field in the slates panel**, and a new one joins it.
-    property <bool> slate-editing: slate-name-edit.has-focus || slate-tags-edit.has-focus
-        || (root.slate-filter-focused
-            && (root.slates.length > 0 || root.slate-tag-filter != ""));
-    /// The tag filter has focus. **Assigned, unlike the two above**, because it
-    /// lives inside the slates section's own `if` and its id is not reachable
-    /// from here.
-    ///
-    /// One field writing one bool, so the ordering hazard the paragraph above
-    /// describes does not apply — that one is about *two* fields sharing a flag.
-    /// What does apply is the hazard `close-basket` guards: an `if` cannot run
-    /// code when it is destroyed, so a field that had focus when its section
-    /// vanished would leave the window's shortcuts switched off for good. Hence
-    /// the gate is repeated in `slate-editing` above rather than trusted here:
-    /// if the section is gone the flag cannot matter, however stale it is.
-    property <bool> slate-filter-focused;
     /// The selected slate's name and tags, two-way as the inspector's fields
     /// are: a `text:` binding breaks the first time it is typed in.
     in-out property <string> slate-name;
@@ -3940,7 +3871,6 @@ export component AppWindow inherits Window {
     /// In-out because the `Event::Error` arms clear it: Create disables on
     /// the click and only an error or a close re-enables it (spec S5).
     in-out property <bool> new-match-creating;
-    property <bool> new-match-editing;
     changed new-match-home-name => { root.derive-new-match-folder(); }
     changed new-match-away-name => { root.derive-new-match-folder(); }
 
@@ -3976,9 +3906,6 @@ export component AppWindow inherits Window {
     /// finished run wrote. The status bar's notice can't stand in for it —
     /// that one renders behind the scrim.
     in-out property <string> basket-message;
-    /// The name field has focus. Set by the sheet and cleared when it closes,
-    /// since the binding goes with the element (see the sheet).
-    property <bool> basket-editing;
 
     // --- Preview (Phase 7 P6) ---
 
@@ -4066,11 +3993,9 @@ export component AppWindow inherits Window {
     /// stand in for: that one renders behind the scrim. Cleared when the
     /// sheet closes and when the next command goes out.
     in-out property <string> match-editor-message;
-    /// A field in the sheet has focus. Set by the sheet and cleared when it
-    /// closes, since the binding goes with the element (see the sheet).
-    property <bool> match-editor-editing;
-    /// The **row's** field has focus (see the sheet). Cleared with it, as
-    /// `match-editor-editing` is.
+    /// The **row's** field has focus (see the sheet): the one state in which
+    /// `src/main.rs` must not rebuild the rows. Set by the sheet and cleared
+    /// when it closes, since the binding goes with the element.
     in-out property <bool> match-editor-line-focused;
     /// Bumped by `src/main.rs` on every project change: the sheet's echoes
     /// are read from the project through `pure` callbacks, and this is what
@@ -4083,15 +4008,27 @@ export component AppWindow inherits Window {
 
     /// The error dialog's message; empty hides it.
     in-out property <string> error-message;
-    /// A text field has focus: every shortcut yields to it (C6).
     /// J, L and the speed button (spec S1, S2): only while scanning.
     property <bool> can-scan-fast: root.playing && !root.recording && !root.previewing && root.can-play;
-    // **Every** text field belongs here, the sheets' included: without the
-    // editor's, Esc inside its paste box closes the sheet on the first press
-    // and throws away a half-typed block (spec P3).
-    property <bool> text-editing: name-edit.has-focus || inspector.editing || highlights.editing
-        || root.match-editor-editing || root.basket-editing || root.slate-editing
-        || root.new-match-editing;
+    /// A text field has focus: every shortcut yields to it (C6), the sheets'
+    /// fields included -- without the editor's, Esc inside its paste box
+    /// closes the sheet on the first press and throws away a half-typed block
+    /// (spec P3).
+    ///
+    /// **Slint's own property, not a list of this window's fields.**
+    /// `TextInput` sets it on focus-in and clears it on focus-out *and on
+    /// deinit* (`i-slint-core-1.18.0/items/text.rs:1234`, `:1257`, `:839`), so
+    /// there is nothing a new field can be left out of and nothing a field
+    /// destroyed while focused can leave switched off. It replaces a
+    /// seven-term disjunction of every field's focus -- that, the **thirteen**
+    /// properties that existed only to feed it, three `<=>` wires and three
+    /// hand-clears in the `close-*` functions below all went with it -- and
+    /// with them the two bugs the list cost: #130 (the slate tag filter
+    /// shipped as a bare `LineEdit` nobody added, so every letter typed into
+    /// it fired its shortcut and `corner` was untypeable) and #123 (the gate
+    /// that list repeated drifted apart from the section's own `if`). One
+    /// expression has no list to join and nothing to drift from.
+    property <bool> text-editing: TextInputInterface.text-input-focused;
 
     callback open-project();
     callback add-source();
@@ -4350,35 +4287,29 @@ export component AppWindow inherits Window {
         keys.focus();
     }
 
-    /// Closes the editor, however it was closed. It clears `editing` by hand:
-    /// the sheet that sets it is about to be destroyed, and a field that had
-    /// focus would otherwise leave the window's shortcuts switched off for
-    /// good. The message goes with it (spec C5); the paste box's text stays.
+    /// Closes the editor, however it was closed. It clears `line-focused` by
+    /// hand: the sheet that sets it is about to be destroyed, and a row's
+    /// field that had focus would otherwise leave `src/main.rs` believing the
+    /// rows must not be rebuilt. (Nothing clears `text-editing` here: it is
+    /// Slint's own, and `keys.focus()` below takes the focus off the field.)
+    /// The message goes with it (spec C5); the paste box's text stays.
     function close-match-editor() {
-        root.match-editor-editing = false;
         root.match-editor-line-focused = false;
         root.match-editor-message = "";
         root.match-editor-open = false;
         keys.focus();
     }
 
-    /// Closes the basket sheet, however it was closed. It clears `editing` by
-    /// hand, as the editor's close does: the sheet that sets it is about to be
-    /// destroyed, and a field that had focus would otherwise leave the
-    /// window's shortcuts switched off for good. The message goes with it
-    /// (basket spec C6); the pieces are the bus's and stay.
+    /// Closes the basket sheet, however it was closed. The message goes with
+    /// it (basket spec C6); the pieces are the bus's and stay.
     function close-basket() {
-        root.basket-editing = false;
         root.basket-message = "";
         root.basket-sheet-open = false;
         keys.focus();
     }
 
     /// Closes the New match sheet, however it was closed -- Cancel, Esc or the
-    /// `ProjectOpened` that says the project exists (spec C5). It clears
-    /// `editing` by hand, as the basket's and the editor's closes do: the sheet
-    /// that sets it is about to be destroyed, and a field that had focus would
-    /// otherwise leave the window's shortcuts switched off for good.
+    /// `ProjectOpened` that says the project exists (spec C5).
     ///
     /// **`creating` and the dirty flag go with it**: without that, the next
     /// New match… would open with a dead Create button, and a folder name that
@@ -4390,7 +4321,6 @@ export component AppWindow inherits Window {
         if (!root.new-match-sheet-open) {
             return;
         }
-        root.new-match-editing = false;
         root.new-match-creating = false;
         root.new-match-folder-dirty = false;
         root.new-match-sheet-open = false;
@@ -4453,10 +4383,12 @@ export component AppWindow inherits Window {
         }
         // The basket sheet is modal too, and it has a field of its own. Esc
         // closes it from *outside* the name field; inside one it leaves the
-        // field first and the next Esc closes, which is the editor's shape and
-        // the reason the window's `text-editing` carries `basket-editing` --
-        // without that fold the test below is always true and the cascade is
-        // dead code. The `reject` is also what delivers Ctrl+V to the field.
+        // field first and the next Esc closes, which is the editor's shape.
+        // The cascade is live because `text-editing` is Slint's own
+        // `text-input-focused` and so covers the name field without being
+        // told about it; against a constant the test below would be always
+        // true (or always false) and the cascade dead code. The `reject` is
+        // also what delivers Ctrl+V to the field.
         if (root.basket-sheet-open) {
             if (pressed && event.text == Key.Escape && !root.text-editing) {
                 root.close-basket();
@@ -4469,10 +4401,10 @@ export component AppWindow inherits Window {
         // inside one it leaves the field first and the next Esc closes. That is
         // the more expensive sheet to reopen -- the setup sheet costs one click
         // on a shipped project, this one costs re-walking the file picker and
-        // re-picking every video (spec S6). The guard is only live because
-        // `new-match-editing` is folded into `text-editing` above; without the
-        // fold it is always true and the cascade is dead code. The `reject` is
-        // also what delivers Ctrl+V into the path field.
+        // re-picking every video (spec S6). The guard is live for the reason
+        // the basket's is: `text-editing` is Slint's own, so it covers these
+        // four fields without being told about them. The `reject` is also
+        // what delivers Ctrl+V into the path field.
         if (root.new-match-sheet-open) {
             if (pressed && event.text == Key.Escape && !root.text-editing) {
                 root.close-new-match();
@@ -4964,17 +4896,20 @@ export component AppWindow inherits Window {
                                 // that one is *written by the bus* on
                                 // `Event::Select` to un-hide a newly selected
                                 // clip, which would clear this one mid-pass.
-                                LineEdit {
+                                // **It joins nothing** (#130). This field
+                                // shipped as a bare `LineEdit` that was never
+                                // added to the window's list of focused
+                                // fields, so every letter typed into it fired
+                                // its shortcut instead -- `i` and `o` marking
+                                // a slate in and out, and `corner` untypeable.
+                                // `text-editing` is Slint's own
+                                // `TextInputInterface.text-input-focused`
+                                // now, so there is no list to be left out of.
+                                // Named for `tests/ui/text_editing.rs`.
+                                slate-filter-edit := LineEdit {
                                     placeholder-text: "Filter by tag";
                                     text <=> root.slate-tag-filter;
                                     horizontal-stretch: 1;
-                                    // Folded into the window's `text-editing`
-                                    // (#130), or every letter typed here fires
-                                    // its shortcut instead -- `i` and `o`
-                                    // marking a slate in and out.
-                                    changed has-focus => {
-                                        root.slate-filter-focused = self.has-focus;
-                                    }
                                 }
                                 // Clearing is one press, not a select-all: the
                                 // field is narrow in a 240 px column and the
@@ -5202,10 +5137,16 @@ export component AppWindow inherits Window {
                         // whenever the model is rebuilt -- every project
                         // change, including the save its own commit
                         // triggers -- and Slint fires no focus-lost
-                        // callback for an item it has destroyed: the
-                        // typing is dropped and `editing` sticks true,
-                        // which leaves every keyboard shortcut dead with
-                        // no way back but reselecting the row.
+                        // callback for an item it has destroyed, so the
+                        // typing is dropped on the floor: no
+                        // `edit-slate-field`, no save, and no way to tell
+                        // from the panel that the name was never taken.
+                        // (It used to leave every shortcut dead too,
+                        // because the window's gate was a list of these
+                        // fields' focus. It is Slint's own
+                        // `text-input-focused` now, which `TextInput`
+                        // clears in its `deinit`, so that half is gone;
+                        // the lost edit is reason enough on its own.)
                         VerticalLayout {
                             visible: root.selected-slate != "";
                             spacing: 4px;
@@ -6626,7 +6567,6 @@ export component AppWindow inherits Window {
                 resolution <=> root.basket-resolution;
                 quality <=> root.basket-quality;
                 mute-source <=> root.basket-mute-source;
-                editing <=> root.basket-editing;
                 // Off the name field first, as every other button in this app
                 // does -- a click doesn't take focus from a field by itself.
                 reorder(from, to) => {
@@ -6699,7 +6639,6 @@ export component AppWindow inherits Window {
                 default-source <=> root.match-editor-source;
                 message: root.match-editor-message;
                 revision: root.project-revision;
-                editing <=> root.match-editor-editing;
                 line-focused <=> root.match-editor-line-focused;
                 valid-line(id, text) => { return root.valid-match-line(id, text); }
                 check-paste(text, source, revision) => {
@@ -6754,7 +6693,6 @@ export component AppWindow inherits Window {
                 provenance: root.new-match-provenance;
                 videos: root.new-match-videos;
                 creating: root.new-match-creating;
-                editing <=> root.new-match-editing;
                 team-named(name) => { return root.team-named(name); }
                 valid-folder-name(name) => { return root.valid-folder-name(name); }
                 valid-projects-dir(path) => { return root.valid-projects-dir(path); }
