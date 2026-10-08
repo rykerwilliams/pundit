@@ -68,7 +68,56 @@ position" — the retry landed in `7310a54`, so a sighting now is news) and #101
   reads of `text-editing` task 3 must leave exactly as they are: `:4392`
   (basket), `:4408` (New match), `:4453` (match editor), `:4462` (layer 7's
   `reject`) and `:4670` (`keys.key-pressed`'s Esc).
-- **2 — `keymap.rs`: the table, the labels, the defaults, the overrides.** Not started.
+- **2 — `keymap.rs`: the table, the labels, the defaults, the overrides.**
+  **Done** (`claude/96-task-2`). 29 actions, 34 bindings, four per-action
+  methods (`name`, `what`, `when`, `default_keys`) and 16 tests in the module,
+  plus `reads_the_keymap_overrides` and three rows on
+  `one_unreadable_value_costs_that_field_alone` in `bus/state.rs`. Everything
+  the step asked for shipped; **five things the step left for the
+  implementation to decide**, each pinned by a test:
+  - **An override displaces a *default*; `ALL`'s order only breaks a tie
+    between two *stored* rows.** Step 5 reads "the stored map is applied in
+    `Action::ALL` order; a binding already taken is dropped for the later
+    action", which taken literally over defaults-and-overrides together makes
+    a hand-edited `{"tagHomeGoal":["o"]}` **lose to `markOut`'s own default** —
+    the coach's edit dropped in favour of the default they were editing away
+    from, which is the only rebind path there is until task 5. So the stored
+    rows are placed first and the defaults fill in around them: the key moves,
+    `markOut` is left unbound, and the drop is logged. Override-vs-override is
+    still `ALL`'s order, which is what step 5 and **G3** are actually about.
+    The result is a **fixpoint** — `with_overrides(k.overrides()) == k`,
+    displaced rows included — which is what makes task 5's whole-diff write
+    safe.
+  - **The default table is written as *labels*** (`Action::default_keys`),
+    parsed through `from_label`, so it reads as the sheet will show it and the
+    spec's **D1** table can be checked against it by eye. The cost is a typo
+    becoming a silently missing default; `every_default_label_parses` is the
+    answer, and it asserts per action rather than on the total.
+  - **`from_label` is order- and case-insensitive on the modifiers and rejects
+    a modifier named twice.** A hand-edited file is the use case; `label()`
+    stays canonical. It is a prefix-strip rather than a split on `+`, so a key
+    that *is* `+` has a spelling.
+  - **A character is folded to lower case at parse time**, not only in the
+    matcher: a stored `"R"` that kept its case would be a binding no key event
+    could ever match.
+  - **`Action::ALL` is indexed with `self as usize` nowhere** — the keymap is
+    `Vec<(Action, Vec<Binding>)>` in `ALL` order, so there is no parallel index
+    to drift. `the_list_holds_every_action_in_declaration_order` pins the
+    pairing anyway, because `ALL` is the sheet's order and the tie-break.
+
+  **Two corrections for tasks 3–5:**
+  - **`CURRENT_FORMAT_VERSION` is 16, not the 15 step 9 names** (`store.rs:21`,
+    read). Untouched either way, as both say.
+  - **`State` has gained `folds` since the plan was written** (#113), so the
+    struct is `bus/state.rs:64`–`:133` and `keys` is its ninth field. The
+    container `default` is at `:62`. Nothing else in step 9 moved: one
+    attribute, `keymap()` on `pen()`'s shape, and no setter.
+
+  **Not in this task, by the plan's own scope:** `Keymap::rebind`/`unbind` and
+  `AppFiles::set_keymap` (task 5), and the reserved rows — Escape, Tab, Home,
+  End — which are **not** `Action` variants, so task 4's sheet writes them as
+  its own static lines if it wants them (its row-count test is
+  `Action::ALL.len()`, which is the 29 rebindable ones).
 - **3 — `handle-key` is re-keyed onto the table.** Not started.
 - **4 — the Keys sheet.** Not started.
 - **5 — rebinding from the sheet.** Not started.

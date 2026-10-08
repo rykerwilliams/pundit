@@ -18,6 +18,12 @@ path = "src/main.rs"
 # tests without a display. Slint, the EGL wrapping and `rfd` are for the
 # binary (`src/main.rs`, `src/video.rs`, `src/pickers.rs`), which Cargo can't
 # give dependencies of its own.
+#
+# One exception, and it keeps the claim that matters: `src/keymap.rs` reads
+# `slint::platform::Key` for the character a named key delivers, rather than
+# copying a private-use code point into this repo. It is a plain enum and a
+# `From` impl — no windowing, no EGL, no file dialog, nothing that needs a
+# display — so `cargo test -p pundit-app` on a headless box is unaffected.
 [dependencies]
 pundit-core = { path = "../pundit-core" }
 pundit-media = { path = "../pundit-media" }

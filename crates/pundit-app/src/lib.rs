@@ -10,6 +10,7 @@ pub mod drawing;
 pub mod fit;
 pub mod format;
 pub mod highlight_view;
+pub mod keymap;
 pub mod match_panel;
 pub mod new_match;
 pub mod recents;
