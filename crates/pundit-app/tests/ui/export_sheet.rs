@@ -261,26 +261,40 @@ fn neither_line_shows_without_the_whole_match() {
     );
 }
 
-/// **The card still fits the smallest window the app allows**, which is the
-/// one thing two more rows could have cost and the plan asked to be a
-/// measurement rather than the spec's estimate. `Sheet` is
-/// `height: body.preferred-height` and **does not scroll**, so a card that
-/// outgrows the window is a card with its buttons off the bottom of it —
-/// Export and Cancel among them.
+/// **The sheet an export is set up in needs no scrolling**, at the smallest
+/// window the app allows — which is the one thing two more rows could have cost
+/// and the plan asked to be a measurement rather than the spec's estimate.
+///
+/// **This no longer reads the card's height, because that number stopped
+/// answering the question.** `Sheet` is capped at the window and scrolls its
+/// body (BACKLOG #134), so the card is 660px whether its content is 660px or
+/// 823px, and `height <= min_h` is now true by construction. What fitting
+/// *means* here is that nothing had to be scrolled to reach the buttons, so
+/// that is what is asked: is the button row on screen with the body untouched?
+/// The general rule — no sheet, of the six, is ever taller than its window —
+/// is `tests/ui/sheet_scroll.rs`, and this stays as the narrower claim about
+/// the one sheet two of #78's rows went into.
+///
+/// **Found by the word "Close"**, the one word in that row nothing else in this
+/// sheet says: "Export" is also its heading, and a test satisfied by the title
+/// would pass with no buttons at all. The count is asserted, so a second
+/// "Close" appearing somewhere would be a failure rather than a reading of
+/// whichever came first.
 ///
 /// **Loaded with the worst case the switches are actually set in:** the target
 /// list past its own 210px cap and **both** lines under the picker at once,
 /// which is *Separate track* with the subtitles off. There is deliberately no
 /// run list, and that is the honest boundary of this test rather than a softer
-/// case chosen to pass — **a sheet reopened over a running export does not fit
-/// a 700px window, and did not before these two rows either.** Measured at the
-/// minimum with twelve targets: 614px with one line and no run, 648px with
-/// both lines, **733px** with a run list at its 140px cap before this change
-/// and **823px** after. The pre-existing overflow is BACKLOG #134; the two
-/// switches deepen it by 56px (18px a row and the body's 10px spacing) and the
-/// second line by 34px, and neither is what put it over.
+/// case chosen to pass — **a sheet reopened over a running export is taller
+/// than a 700px window and does scroll**, which is #134's own test. Measured
+/// at the minimum with twelve targets, 2026-10-08: **589px** of content with
+/// one explanatory line and no run, **623px** with both, **798px** with a run
+/// list at its 140px cap and **823px** with the finish line as well, against
+/// the 700px window less the scrim's 20px either side. (The 614/648/733 series
+/// this doc carried before was right about every delta and 25px high at the
+/// base; #134 records the correction.)
 #[test]
-fn the_card_fits_the_smallest_window_it_is_configured_in() {
+fn the_sheet_an_export_is_set_up_in_needs_no_scrolling() {
     let w = sheet();
     // Past the list's cap, so the height is the cap and not the row count.
     w.set_export_targets(slint::ModelRc::new(slint::VecModel::from(
@@ -303,15 +317,11 @@ fn the_card_fits_the_smallest_window_it_is_configured_in() {
         shows(&w, COPY_LINE) && shows(&w, NO_BOARD_LINE),
         "the case this measures is supposed to show both lines"
     );
-    let height = ElementHandle::find_by_element_type_name(&w, "ExportSheet")
-        .next()
-        .expect("the open sheet's own element")
-        .size()
-        .height;
 
-    assert!(
-        height <= min_h,
-        "the export sheet is {height}px tall and the smallest window this app \
-         opens is {min_h}px: Export and Cancel are off the bottom of it"
+    let on_screen = ElementHandle::find_by_accessible_label(&w, "Close").count();
+    assert_eq!(
+        on_screen, 1,
+        "the export sheet's button row is not on screen in a {min_w}x{min_h} \
+         window without scrolling the body to it"
     );
 }

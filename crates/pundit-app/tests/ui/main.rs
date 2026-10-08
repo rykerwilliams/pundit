@@ -43,6 +43,7 @@ mod fit_window;
 mod panel_widths;
 mod scrubber;
 mod self_view_placement;
+mod sheet_scroll;
 mod slate_fields;
 mod slate_menu;
 mod splitter;
