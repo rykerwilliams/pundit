@@ -149,6 +149,10 @@ problem — which is the entry, not an excuse for it.
   slate shipped 2026-10-06, each selecting the row first; Jump to slate end
   dropped, and the menu is now driven by a real test (see the entry)
 
+- **134.** The sheets were taller than the window — fixed 2026-10-08; every
+  sheet is capped at the window and its body scrolls, buttons and title
+  included (see the entry)
+
 - 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 92, 94
 
 ### Archived
@@ -4374,10 +4378,70 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   end — or straight after the whiteboard ships, since the coach asked for both
   in one breath.
 
-134. **A sheet reopened over a running export does not fit the smallest window
-  the app opens.** Measured 2026-10-07 while adding #78's two checkboxes, by
-  `tests/ui/export_sheet.rs`'s own fit test — not seen in use, and **not caused
-  by #78**.
+134. **The sheets were taller than the window and their buttons went off the
+  bottom — FIXED 2026-10-08.** A sheet is now capped at the window and its body
+  scrolls, which is the whole of it: `Scrim` wraps its one child in a centred
+  `VerticalLayout`, so Slint's box layout hands the card `min(content, window)`
+  — a cell takes its preferred size while there is room and is shrunk past it
+  the moment there is not (`solve_box_layout`) — and the card states its
+  content height as `preferred-height`/`max-height` rather than as `height`,
+  which in a layout is fixed and so could not be capped. The body went inside a
+  `ScrollView`. Six sheets, one component, 31 lines of it to 36.
+- **Measured** at the declared 1100x700 minimum, before and after, by
+  `tests/ui/sheet_scroll.rs` (twelve export targets, so the target `ListView`
+  is at its own 210px cap and the run list at its 140px one):
+
+  | sheet | before | after |
+  |---|---|---|
+  | export, a run in progress | 823px | 660px |
+  | export, as an export is set up | 623px | 623px |
+  | basket, 30 pieces and a run | 657px | 657px |
+  | match setup | 523px | 523px |
+  | match editor, 40 events | 561px | 561px |
+  | New match, 20 videos | 704px | 660px |
+  | error dialog, a long message | 579px | 579px |
+
+  660px is the 700px window less the scrim's 20px either side. **Two of the six
+  were over the window, not one** — New match with twenty videos was 4px over
+  before anyone looked — and **every sheet that fits is unchanged to the
+  pixel**, which the same test pins.
+- **What was accepted: the buttons scroll with the body.** Every sheet puts its
+  own action row in `@children`, so Export can be one flick away rather than on
+  screen. A pinned footer would need a second child slot on `Sheet` and an edit
+  to all six sheets — more change than the bug warrants — and one flick away is
+  strictly better than off the window. The **title scrolls too**, for the same
+  kind of reason: holding it out of the scroll means a second layout here whose
+  preferred height has to be re-derived by hand, where this way the card's
+  natural height stays exactly the `body.preferred-height` it always was and
+  only the cap is new.
+- **One sheet needed a change of its own.** Match setup is a `Rectangle`
+  wrapping the `Sheet` — the colour picker's popup hangs off it — and its
+  `height: card.height` would have been fixed in `Scrim`'s layout and carried
+  the overflow straight back. It now asks for what the card asks for and
+  accepts less, and the card takes the layout's answer.
+- **The keyboard is untouched, and that was the likeliest regression.**
+  `handle-key` is `capture-key-pressed`, so every shortcut runs ahead of
+  whichever child has focus (spec D10) — and a `Flickable` reads the wheel and
+  a drag and no keys at all, so nothing in a card can take an arrow key either
+  way. Both halves are pinned (`a_scrolling_sheet_does_not_take_the_arrow_keys`:
+  a sheet open swallows the arrows, every sheet shut hands them back), as is the
+  Esc cascade over all six sheets.
+- **What the fix costs a test:** `ElementHandle` skips anything clipped away
+  (`ItemRc::is_visible`), so a row scrolled out of a card cannot be found at
+  all. A test that wants a button at the bottom of a tall sheet has to flick
+  the body there first — `flick_to_the_end`, which is also what makes
+  `a_sheet_taller_than_the_window_can_still_be_exported_from` a real test:
+  without the flick it fails to find Export. No existing test needed one, since
+  at 700px only the two sheets above scroll and nothing was reaching into them.
+- **One number below is wrong, and this is the correction.** The case #78's fit
+  test pins — twelve targets, both explanatory lines, no run — measures
+  **623px**, not 648px. The series was right about every *delta* (+34px for the
+  second explanatory line, +56px for the two switches) and 25px high at the
+  base; the overflow it reported was real either way.
+
+  The original report follows. Measured 2026-10-07 while adding #78's two
+  checkboxes, by `tests/ui/export_sheet.rs`'s own fit test — not seen in use,
+  and **not caused by #78**.
 - **The numbers**, all at the window's declared 1100x700 minimum with twelve
   export targets (so the target `ListView` is at its own 210px cap): **614px**
   with one explanatory line and no run, **648px** with both lines, **733px**
@@ -4399,4 +4463,6 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   123px is also not the same as introducing one.
 - **When to revisit:** with the next thing that adds a row to any sheet, or the
   first time a coach reports losing the buttons. The fit test is the tripwire
-  and already names this entry.
+  and already names this entry. **Revisited 2026-10-08**, with #96's 29-row keys
+  sheet next in line; the coach on the framing: *"pagination isn't a new
+  concept?"*
