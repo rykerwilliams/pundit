@@ -2521,6 +2521,144 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   that comes back clean because of the serialization, a second repro core or two
   to confirm the 88-byte-block signature and the offset, which would turn
   "several GStreamer types" into one.
+- **NAMED, 2026-10-07: the write is `keyframe_waiter_probe` in GStreamer's own
+  `decodebin3`, and it is an upstream bug fixed two months after the version
+  Ubuntu 24.04 is frozen on.** memcheck over the whole media export suite found
+  it, and the report is the whole mechanism:
+  - **the write** is `movq $0x0,0x50(%rbx)` at `libgstplayback.so + 0x1fa45`,
+    followed by `mov $0x2,%eax` — `GST_PAD_PROBE_REMOVE`. The function is
+    `keyframe_waiter_probe` in `../gst/playback/gstdecodebin3.c` (read off the
+    `gst_debug_log` call beside it: that file string, that function string, line
+    2851, `"Buffer is not a keyframe, dropping"`). The source line is
+    `output->drop_probe_id = 0;`
+  - **the object** is `DecodebinOutputStream`. `sizeof` is **88**;
+    `drop_probe_id` is the last field, at offset **80**. memcheck: *"Address
+    0x4485ccd0 is 80 bytes inside a block of size 88 free'd"* — the same size
+    and the same offset this entry had already measured off a core by hand. The
+    core's two stale values settle it: `1` at +64 is `src_exposed`,
+    `GST_CLOCK_TIME_NONE` at +72 is `decoder_latency`. "Several GStreamer types"
+    is now one, confirmed three independent ways;
+  - **the lifetime hole** is that 1.24.2 installs the probe as
+    `gst_pad_add_probe (slot->src_pad, …, keyframe_waiter_probe, output, NULL)`
+    — **no destroy notify** — so nothing ever invalidates the user data. The
+    probe is added only for a **video** output stream;
+  - **the free** is decodebin3's, inside `gst_pad_add_probe`, reached from
+    `gst_element_send_event` ← `composite::audio::Reader::start`
+    (`audio.rs:384`). The **write** is on the `multiqueue19:src` streaming
+    thread, through `g_hook_list_marshal` from `gst_pad_push`. Two threads, no
+    lock between them: `probe_hook_marshal` drops the pad's object lock around
+    the callback, so the other thread can remove the probe and free `output`
+    while the callback is mid-flight.
+- **The trigger is ours, and there is exactly one of it.**
+  `audio.rs:384`'s `decodebin.send_event(SelectStreams::new([audio]))` is the
+  only `SELECT_STREAMS` in the tree. It arrives *after* the stream collection,
+  which is after decodebin3 has already built a video output and hung a
+  keyframe-waiter probe off it; deselecting the video stream makes decodebin3
+  re-target its outputs and free that struct while the multiqueue is still
+  pushing the video buffers the probe is there to drop. Upstream's commit
+  message describes exactly this: *"when re-targetting outputs (to a different
+  slot)… we would end up having an invalid probe id, or not have a reference to
+  an existing one."*
+- **Upstream fixed it on 2024-06-20** — `6615af3f5fa1`, *"decodebin3: Fix
+  keyframe drop probe handling"*, MR !7074 — by moving `drop_probe_id` out of
+  `DecodebinOutputStream` and into `MultiQueueSlot`, which is the structure that
+  owns the pad, and by removing the probe in `mq_slot_free`. It is in 1.24.3 and
+  everything after. **Ubuntu 24.04 ships 1.24.2 and will never get it:** the
+  changelog through `1.24.2-1ubuntu0.5` (2026-09-16) is CVE patches and nothing
+  else. So the bug is live on the target platform, on the reference laptop, and
+  on CI's `ubuntu-latest` — which is why the sixth sighting was a GitHub runner.
+- **What that rules in, and it is the thing that matters: the app runs this
+  write.** `Reader::start` is the one audio reader behind **three** callers —
+  the export and preview audio mixer (`composite::audio::Mixer`), transcription
+  (`transcribe::read_all`) and match analysis (`analyze::audio::samples`) — so
+  every export, every transcript and every analysis pass sends that event, once
+  per distinct file. It needs the file to **have a video stream**, because the
+  probe is video-only: a game source always does, a camera take does, an avatar
+  take's audio-only recording does not. The abort is still the lucky case and
+  the quiet case is still eight wrong bytes in whatever reused the block.
+- **What it rules out.** Not the export's GL graph, not llvmpipe, not the
+  surfaceless display, not a buffer pool freed under a probe, not `mp4mux`, not
+  the `.part` handling, not the chapter splice, and nothing in
+  `composite/copy.rs` — the whole "where to look" list above is wrong, and so is
+  the intersection the sixth sighting was read as narrowing to. The VA driver was
+  already called a victim here and that stands. **The entry's own next-experiment
+  question is also answered and moot**: the bug needs one audio reader, not two
+  export pipelines in one address space, so the intra-process control that could
+  never be given enough runs is not worth running.
+- **The silent case was caught too, in three cores from 2026-09-27 that nobody
+  had looked at** — `coredumpctl` holds **six** from a single 22-minute window
+  (20:57–21:19) on `export-4a01dd59b1fea8da`, three `SIGABRT` and three
+  `SIGSEGV`, all under `LD_PRELOAD=libc_malloc_debug.so.0`. They predate this
+  entry's first logged sighting, and the SIGSEGVs are the informative ones:
+  - **core 66983 is the write landing on a live object.** The crashing thread is
+    `opusdec → audioconvert`, in `do_mix` (`audio-converter.c`), calling
+    `chain->alloc_func` — which is **0**, so it jumps to address 0. The
+    `AudioChain` is 112 bytes in a live, properly bracketed 128-byte chunk and
+    **every other field is right**: `make_func` is `do_mix` itself,
+    `make_func_data` and `alloc_data` are both the converter, `finfo` is a static
+    format-table entry, `stride` 8, `inc` 2, `blocks` 1. `setup_allocators` sets
+    `alloc_func` to `get_output_samples` or `get_temp_samples` for *every* chain
+    and never to NULL, so those eight zero bytes are not a GStreamer state. That
+    is this entry's predicted quiet case, caught: a stray zero into an object
+    that had reused the freed block's address;
+  - **core 10888 is consistent and weaker**: the same `do_mix`, two frames
+    deeper, crashing on `mov (%r14),%rax` with `out == NULL` — i.e.
+    `get_output_samples` returned a `convert->out_data` that was zero. Another
+    eight-byte pointer field reading zero, in the same converter, but a NULL
+    there has innocent readings and one core cannot exclude them;
+  - the audio converter being the victim both times is not a coincidence: the
+    freed `DecodebinOutputStream` is 88 bytes on the heap of the very pipeline
+    whose `audioconvert` is allocating 112-byte chains next to it.
+- **The run, so it can be repeated.** valgrind needs no root (the recipe above
+  works; 3.22.0). The suite was sharded four ways round-robin, each shard its own
+  memcheck process with `--test-threads=2` and its own `TMPDIR`, because memcheck
+  serialises threads inside a process but not across them — **one** test
+  calibrated at **382 s**, so thirty in one process is over three hours. Flags:
+  `--freelist-vol=300000000 --freelist-big-blocks=50000000
+  --keep-stacktraces=alloc-and-free --num-callers=40 --leak-check=no
+  --error-limit=no`, with the GPU path left intact (`vah264lpenc` / `vavp8dec` /
+  DMABuf / `egl`). The big freelist is the load-bearing flag: memcheck can only
+  see this write while the block is still quarantined, and the default 20 MB
+  recycles it. One suppression, for the Intel VA driver's uninitialised ioctl
+  padding (`Memcheck:Param ioctl(generic)` in `iHD_drv_video.so`), which is the
+  only other thing it reports — 154–283 suppressed per shard.
+  **All 30 tests ran to completion** in 22–30 minutes a shard; 29 passed and the
+  thirtieth failed on its own `GstDiscoverer` 10 s bound
+  (`export.rs:286`, `"the audio track carries no data"`), which is
+  instrumentation and not a result. **Total memcheck output across the suite: one
+  error, from one context** — the write above. Nothing else.
+- **The timeouts that had to be raised, as a scratch patch that is deliberately
+  not committed** (the last pass got 6 of 30 through because of them):
+  `tests/export.rs` `TIMEOUT` 120 s → 7200 s; `fixtures.rs` `TIMEOUT` 30 s →
+  1800 s; `composite/audio.rs` `START_TIMEOUT` 10 s → 600 s;
+  `composite/avatar.rs` `STILL_TIMEOUT` 10 s → 600 s; `composite/copy.rs`
+  `DECLARE` 20 s → 1200 s and `STALL` 60 s → 3600 s; and the error-path test's
+  own 60 s deadline in `composite/export.rs` → 3600 s. The one that was missed
+  is `tests/export.rs`'s `Discoverer::new(ClockTime::from_seconds(10))`, which is
+  a `ClockTime` and not a `Duration` and so does not turn up in a grep for the
+  others — raise it too next time.
+- **When to revisit: this is now a fix to design, not a bug to find.** The write
+  is in GStreamer and cannot be patched from here, so the fix has to stop
+  `decodebin3` from re-targeting a video output stream under a live multiqueue.
+  Two shapes, and **neither is written, because choosing between them needs a
+  measurement this pass does not have**:
+  - **send the event earlier** — from the synchronous `STREAM_COLLECTION`
+    handler rather than from `start`'s own thread after the slot is filled, so it
+    lands before `db_output_stream_setup_decoder` ever hangs the probe. Cheap,
+    keeps the decode saving, and is the pattern upstream documents — but it
+    narrows the window rather than closing it, and a window this entry has
+    watched for ten days is not something to re-open on a race;
+  - **never build a video output** — drop the `SELECT_STREAMS` and let the audio
+    reader decode the video it does not want, which closes the race outright
+    because nothing is freed under the probe. The cost is the one `audio.rs`
+    already measured, 2.2 s against 46 ms per 10 s of 1080p, and the reader opens
+    whole halves: that is minutes per export, which is not payable as written.
+    Something in between — a pipeline for the audio reader that has no video
+    output to free — is what would actually earn its place.
+  Until one lands, **record further sightings against this entry as before**;
+  they are now confirmations of a known write, not new evidence.
+- **No sighting of #72** in any of it: not in the memcheck run, not in the four
+  shards' output, not in the three cores read.
 
 102. **Snap the scrubber to events, as an option.** The coach (2026-09-28):
   "snap to events in the scrubber as an option." Dragging the scrubber lands on
