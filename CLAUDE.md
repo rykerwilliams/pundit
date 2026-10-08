@@ -611,9 +611,13 @@ fix is argued from.
 
 **The speakers are `autoaudiosink` with `pulsesink` demoted.** `keep_pulsesink_out()` drops `pulsesink`'s rank process-wide at `Bus::spawn`, so `autoaudiosink` picks `alsasink`, which reaches PipeWire through `pipewire-alsa`. Against Ubuntu 24.04's `pipewire-pulse` (PipeWire 1.0.5), `pulsesink` wedged the stream permanently after a quick burst of flushing seeks while playing — a dragged scrubber or a held skip key — and since it supplies the pipeline clock, picture and position froze with it (journal: `pipewire-pulse … [pundit]: stream … OVERFLOW`). Measured A/V offset is unchanged (~+1 ms, audio leading). **The test harness's `Harness::production()` runs the app's exact path** — the GL sink on a surfaceless display plus the real `autoaudiosink` — because the default harness (`fakesink` audio, silent WebM fixtures) can never reach the sound server, which is why this escaped. Real-footage checks are `#[ignore]`d: `PUNDIT_FOOTAGE=/path/to/game.mp4 cargo test -p pundit-harness --test real_footage -- --ignored --nocapture`.
 
-**Transport keys: the arrows skip, `,` and `.` step one frame while paused** (`Command::StepFrame`, refused while playing, recording or previewing). A step works from the shown frame's *end*, which a seek never clips: forward seeks to it, back to half a nominal frame before the frame's nominal start, or its own start where that is earlier (a frame held long). The readout shows tenths while paused, whole seconds while playing.
+**Every key the app binds is one row in one table** (`pundit-app/src/keymap.rs`, BACKLOG #96): 29 actions, 34 default bindings, overridden per machine by `state.json`'s `keys` — which holds the **diff and not a copy**, so deleting that key is the reset path and a default this build changes still reaches a coach who never touched that action. `handle-key` in `app.slint` asks `action-for` once per key event and acts on the `KeyAction` it answers with; `key_action.rs` is the `match` between the two, and it is a module of **both the binary and `tests/ui`** so `tests/ui/keys.rs` presses the shipped map rather than a copy of it. **A key is spelled in `keymap.rs` and nowhere else** — where a paragraph below names a letter it names today's *default*, to be read, not a binding to be edited. The far skip is its own pair of actions rather than a Shift read inside the near one, and the cost is named: a shifted **letter** now fires nothing of its own, so Shift+R no longer records and `Ctrl+Shift+Y` no longer redoes (`Ctrl+Y` still does).
 
-**`F` fits the window to the footage** (BACKLOG #95): it only ever **shrinks**,
+**Context stays in three layers and none of them is the table.** Whether the window sees a key at all is `text-editing` — Slint's own `TextInputInterface.text-input-focused`, tested ahead of every binding. Whether an action fires *now* is the gate **in its branch** (`can-tag`, `can-draw`, `can-play`, `!event.repeat`), which is why a row carries no `when` clause: a clause makes a binding *not match*, so a gated key would fall through to whichever child has focus and `←` would reach a touched volume slider in exactly the case `can-play` is false. Whether the bus will do it while recording is the **recording allow-list**, a `!matches!` over `Command` variants — and that is **not reachable from a rebinding**: a rebound key sends the command it always sent, and a command added later is still refused by default. Two more rules the rewrite rests on. **Escape, Tab, Return, Home and End are not actions**, and the three the window handles are tested *ahead* of the lookup, so a hand-edited `state.json` cannot claim one and leave a sheet unleavable. And a bound key is swallowed **on release as well as on press**: `handle-key` runs for both, because a slider fires `released` on an arrow key's release — so the lookup is ahead of every `pressed` test and every `accept` is outside its guard.
+
+**Stepping one frame is `Command::StepFrame`** (`,` and `.` by default, the arrows skip), and it is refused while playing, recording or previewing. A step works from the shown frame's *end*, which a seek never clips: forward seeks to it, back to half a nominal frame before the frame's nominal start, or its own start where that is earlier (a frame held long). The readout shows tenths while paused, whole seconds while playing.
+
+**Fitting the window to the footage** (BACKLOG #95; `F` by default): it only ever **shrinks**,
 so the picture is never re-fitted — the window closes up around the picture
 already on screen and the letterbox bars go, which is also why it can never put
 the window off a screen whose size Slint will not report. Every input is read
@@ -643,7 +647,7 @@ than accumulating `mouse-x − pressed-x`, which is what Slint's own
 grow but do not shrink**: 280px is the width the inspector's transcript row was
 fitted to. There is no keyboard path to them (#99).
 
-**`J`/`L` set the scan speed** (`Command::ScanSpeed(ScanStep)`: the bus steps 1×–32×, while scanning only; any pause returns to 1×, so a recording starts at 1×). The player owns the rate, and **every scan seek carries it** (`pipeline.seek(rate, …)`, never `seek_simple`, whose 1.0 would drop it on the next scrub or skip). `set_rate` issues no seek: the bus does, through `load`, unless a seek still to be issued will carry it; after a pause it seeks to the frame on screen, not the position the picture trails at speed. Opening a preview returns to 1× with no seek. Every frame is decoded even at 32× and the scan sink's QoS (`max-lateness` 20 ms) drops what's late: measured on 1080p30 H.264, that showed 88 fps at 32× against key frames only's 16, with a tenth of the lag.
+**The scan speed is `Command::ScanSpeed(ScanStep)`** (`J`/`L` by default: the bus steps 1×–32×, while scanning only; any pause returns to 1×, so a recording starts at 1×). The player owns the rate, and **every scan seek carries it** (`pipeline.seek(rate, …)`, never `seek_simple`, whose 1.0 would drop it on the next scrub or skip). `set_rate` issues no seek: the bus does, through `load`, unless a seek still to be issued will carry it; after a pause it seeks to the frame on screen, not the position the picture trails at speed. Opening a preview returns to 1× with no seek. Every frame is decoded even at 32× and the scan sink's QoS (`max-lateness` 20 ms) drops what's late: measured on 1080p30 H.264, that showed 88 fps at 32× against key frames only's 16, with a tenth of the lag.
 
 **Preview and export share one composite** (`pundit-media/src/composite/`).
 - **Common:** `decode.rs` (`Decoder::frame_at`: reuse, pull ≤0.5 s, else `KEY_UNIT|SNAP_BEFORE` and walk forward), the pump, `frame_time`/`stamp`, `install_zoom`'s PTS-keyed probe, and the mixer geometry.
@@ -763,8 +767,8 @@ whatever project is open, and resolved at Start.
   "walk away" button, so a name must not fail at `File::create` after twenty
   pieces have resolved; an existing film is suffixed ` (2)`, never overwritten.
 
-**Match events are tagged at the playhead or typed, in one grammar.** `z` /
-`x` / `v` tag where the game video is; the editor sheet ("Edit events…" in the
+**Match events are tagged at the playhead or typed, in one grammar.** The
+three tag keys (`z` / `x` / `v` by default) tag where the game video is; the editor sheet ("Edit events…" in the
 Match panel) takes the same events as lines — `2 14:05 home goal` — in a row's
 field and in its paste box alike, both read by `core::match_entry`
 (`parse_line`, `parse_batch`, `format_line`, `edit_from_line`).
@@ -816,11 +820,12 @@ v12; spec `docs/superpowers/specs/2026-09-25-slates-design.md`).
   Shooting a slate **produces** a clip, and the link runs from `Clip.slate_id`
   so nothing dangles: "has this been shot?" is a scan of the clips, which stays
   right across a delete, an undo and a re-record.
-- **`i` stores the slate on the first press**, with `out_seconds: None`. A
+- **The in mark stores the slate on the first press** (`i` by default), with
+  `out_seconds: None`. A
   half-marked range is then a row the coach can finish or delete rather than UI
   state that vanishes with the app — and marking needs no in-progress source
-  index to invalidate when the source list changes underneath it. `o` closes
-  the **most recently opened** range on that video, which is why the stored
+  index to invalidate when the source list changes underneath it. The out mark
+  (`o`) closes the **most recently opened** range on that video, which is why the stored
   order is the marked order and `slates_sorted` is for reading only.
 - **Both marks are on the recording allow-list**, beside a match tag and a
   highlight key, for the rule those two are there for: a record that belongs to

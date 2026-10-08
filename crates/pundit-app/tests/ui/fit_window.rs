@@ -30,11 +30,13 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use pundit_app::fit::{fit_window, Fit};
+use pundit_app::keymap::Keymap;
 use pundit_app::zoom_input::Viewport;
 use pundit_core::zoom::Zoom;
 use slint::platform::WindowEvent;
 use slint::{ComponentHandle, ModelRc, PhysicalSize, SharedString, VecModel};
 
+use crate::key_action;
 // The window itself, as `main.rs` builds it. A stand-in would have a stand-in's
 // chrome, and the chrome is the whole subject. The generated UI is compiled once
 // for this whole test binary, in its `main.rs` (BACKLOG #121).
@@ -45,6 +47,10 @@ use crate::{AppWindow, PictureRect, SlateRow};
 fn window() -> AppWindow {
     i_slint_backend_testing::init_no_event_loop();
     let w = AppWindow::new().unwrap();
+    // **The keys come from the table now** (BACKLOG #96): with `action-for`
+    // unwired every shortcut reads as `KeyAction.none` and this fixture would
+    // pass on nothing. `wire_keys` is the binary's own, shared as a module.
+    key_action::wire_keys(&w, Keymap::defaults());
     // `main.rs`'s handler verbatim. The content rect is what the chrome is
     // being checked against, so a simplified letterbox here would check the
     // simplification.

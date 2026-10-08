@@ -13,11 +13,13 @@ use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::key_action;
 // The window itself, as `main.rs` builds it: these two failures are about
 // where a field lives in the real tree, so a stand-in would not have them. The
 // generated UI is compiled once for this whole test binary, in its `main.rs`
 // (BACKLOG #121).
 use crate::{AppWindow, SlateRow};
+use pundit_app::keymap::Keymap;
 
 fn slate(id: &str, name: &str) -> SlateRow {
     SlateRow {
@@ -36,6 +38,10 @@ fn slate(id: &str, name: &str) -> SlateRow {
 fn window() -> (AppWindow, Rc<RefCell<Vec<&'static str>>>) {
     i_slint_backend_testing::init_no_event_loop();
     let w = AppWindow::new().unwrap();
+    // **The keys come from the table now** (BACKLOG #96): with `action-for`
+    // unwired every shortcut reads as `KeyAction.none` and this fixture would
+    // pass on nothing. `wire_keys` is the binary's own, shared as a module.
+    key_action::wire_keys(&w, Keymap::defaults());
     let fired: Rc<RefCell<Vec<&'static str>>> = Rc::default();
     w.on_mark_in({
         let fired = Rc::clone(&fired);
@@ -127,6 +133,10 @@ fn rebuilding_the_list_leaves_the_keyboard_alive() {
 fn record_window() -> (AppWindow, Rc<RefCell<Vec<String>>>) {
     i_slint_backend_testing::init_no_event_loop();
     let w = AppWindow::new().unwrap();
+    // **The keys come from the table now** (BACKLOG #96): with `action-for`
+    // unwired every shortcut reads as `KeyAction.none` and this fixture would
+    // pass on nothing. `wire_keys` is the binary's own, shared as a module.
+    key_action::wire_keys(&w, Keymap::defaults());
     let sent: Rc<RefCell<Vec<String>>> = Rc::default();
     w.on_toggle_recording({
         let sent = Rc::clone(&sent);

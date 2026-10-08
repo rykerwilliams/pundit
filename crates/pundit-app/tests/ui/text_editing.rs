@@ -29,8 +29,10 @@
 //! all in the state the window is in, and several of these live inside an `if`
 //! or behind a modal scrim.
 
+use crate::key_action;
 use crate::{AppWindow, HighlightRow, MatchEditorRow, SlateRow};
 use i_slint_backend_testing::ElementHandle;
+use pundit_app::keymap::Keymap;
 use slint::platform::{Key, PointerEventButton, WindowEvent};
 use slint::{ComponentHandle, ModelRc, PhysicalSize, SharedString, VecModel};
 use std::cell::RefCell;
@@ -123,6 +125,10 @@ fn slate(id: &str) -> SlateRow {
 fn window() -> (AppWindow, Rc<RefCell<Vec<&'static str>>>) {
     i_slint_backend_testing::init_no_event_loop();
     let w = AppWindow::new().unwrap();
+    // **The keys come from the table now** (BACKLOG #96): with `action-for`
+    // unwired every shortcut reads as `KeyAction.none` and this fixture would
+    // pass on nothing. `wire_keys` is the binary's own, shared as a module.
+    key_action::wire_keys(&w, Keymap::defaults());
     let fired: Rc<RefCell<Vec<&'static str>>> = Rc::default();
     let record = |what: &'static str| {
         let fired = Rc::clone(&fired);

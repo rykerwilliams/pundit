@@ -118,7 +118,91 @@ position" — the retry landed in `7310a54`, so a sighting now is news) and #101
   End — which are **not** `Action` variants, so task 4's sheet writes them as
   its own static lines if it wants them (its row-count test is
   `Action::ALL.len()`, which is the 29 rebindable ones).
-- **3 — `handle-key` is re-keyed onto the table.** Not started.
+- **3 — `handle-key` is re-keyed onto the table.** **Done**
+  (`claude/96-task-3`). `handle-key` is now `app.slint:4425`–`:4786` and holds
+  **10** `event.text ==` of the file's **13**, down from 61 of 64: what is left
+  inside it is the six modal layers' Esc tests, the Home/End pair and the Esc
+  cascade. Everything else is one `action-for` call and 27 `act == KeyAction.…`
+  branches, in `Action::ALL`'s order so the chain and the table read side by
+  side. The five reads of `text-editing` are **byte-identical** —
+  `git diff -U0 … | grep text-editing` is empty — and now at `:4450`, `:4466`,
+  `:4511`, `:4520` and `:4798`. The Ctrl branch is **gone, not kept**: once the
+  table compares the three modifiers exactly its only remaining job was
+  `return reject`, which is the function's own fall-through, so a separate
+  `if (event.modifiers.control) { return reject; }` would have been dead code
+  saying the same thing twice. **Five things the step left open or got wrong:**
+  - **The step's line numbers are one low throughout** (and task 1's
+    re-derivation with them): at `claude/96-task-2` the function was
+    `:4368`–`:4659`, not `:4367`–`:4658`, and the five `text-editing` reads
+    were `:4393`, `:4409`, `:4454`, `:4463`, `:4671`. The two **counts** —
+    61 inside, 64 in the file — were right, re-derived.
+  - **The `Action` -> `KeyAction` map cannot live in `main.rs`, because then
+    nothing could test it.** `KeyAction` is the Slint compiler's, so it is
+    nameable only from a root with `include_modules!()`, which rules out the
+    library; and a handler written again in a test fixture would pin the
+    fixture's copy, which is exactly the trap `fit_window.rs`'s header records
+    for `place-picture` — and it would make the step's own sabotage proof 4
+    unreachable. So the wiring is `crates/pundit-app/src/key_action.rs`, a
+    module of **both roots**: `mod key_action;` in `src/main.rs` and
+    `#[path = "../../src/key_action.rs"] mod key_action;` in
+    `tests/ui/main.rs`. `pickers`/`video` are the precedent for a `src/` module
+    that is the binary's rather than the library's.
+  - **No `Rc<RefCell<Keymap>>`, and no `AppFiles` in the signature.**
+    `wire_keys(&AppWindow, Keymap)` moves the map into the callback: nothing
+    else holds it and nothing yet rewrites it, so a handle would be a layer
+    with no second user until task 5 — which is one line when it arrives. The
+    `Keymap` rather than the file handle is also what lets the tests call the
+    production wiring with `Keymap::defaults()` and no temp directory.
+  - **The Esc cascade moved** — ahead of the lookup, beside Home/End, rather
+    than four branches into it. No default binds Escape, so nothing observable
+    changes; what it buys is that the three reserved keys the window handles
+    are tested *before* the table, so a hand-edited `state.json` binding
+    `Escape` to `tagHomeGoal` cannot leave a sheet unleavable. G4 says those
+    keys are reserved; this is what makes it true rather than aspirational.
+  - **The step's sabotage proof 2 is not observable as written.** Moving `f`'s
+    `accept` inside its guard with `can-fit` false changes nothing a test can
+    see: **nothing in this window answers `f`**, so there is no focused child
+    to watch it land on. The gate half is pinned
+    (`a_refused_gate_still_swallows_the_key`); the fall-through half is pinned
+    where it *is* observable, on the arrow, and sabotage **D** below is the
+    step's proof 2 applied to `skip-back` instead.
+
+  **The tests, and what they reach.** `tests/ui/keys.rs`, six tests:
+  `every_default_binding_still_does_what_it_did` is **33 of the table's 34
+  default bindings** — every binding but `showKeys`' `F1` — covering **27 of
+  the 29 actions**; `covers_every_action` makes a new action's missing row a
+  failure rather than a silence (Risk 1's mitigation, with `UNWIRED` naming
+  `ShowKeys` and `ShowRecents`); `binds_what_it_says` checks each row's key
+  against `Keymap::defaults()` so a moved default cannot leave a row green and
+  its action untested; `a_shifted_letter_fires_nothing` pins G2 at the window;
+  `an_arrow_never_reaches_a_touched_slider` pins D10 **and the release path**;
+  and `a_refused_gate_still_swallows_the_key` pins the gate.
+  - **The release path behaves exactly as the step describes.** The slider is
+    `SliderBase`, whose `key-released` fires `released(value)` for an arrow —
+    so with the lookup behind `if (pressed)` the release leaks and nothing
+    else does.
+  - **The four fixtures that press keys had to be given the wiring**
+    (`fit_window`, `slate_fields` ×2, `tag_field`, `text_editing`): with
+    `action-for` unwired every shortcut reads as `KeyAction.none`, which would
+    have left `the_f_key_is_gated_…` red and
+    `a_letter_typed_in_a_window_field_fires_no_shortcut` **green on nothing**.
+  - **The volume slider is found by `id`, not by type.**
+    `match_inherits("Slider")` answers **two** elements for the one `Slider` in
+    the file — the widget and the element the style builds it from — so it
+    gained `volume-slider :=`, on task 1's "two ids for the tests" precedent.
+
+  **Sabotage, four, each failing exactly one of the 47 tests in the binary:**
+  **A** the lookup behind `if (pressed)` → only
+  `an_arrow_never_reaches_a_touched_slider` (`the arrow reached the slider:
+  ["released 0.5"]`); **B** the far skip back to `-3` → only
+  `every_default_binding_…` (`SkipBackFar on "\u{f702}" left: ["skip -3"]
+  right: ["skip -10"]`); **C** `Action::ZoomOut => KeyAction::None` → only
+  `every_default_binding_…` (`ZoomOut on "2" left: [] right: ["zoom -0.25"]`);
+  **D** `skip-back`'s `accept` inside its guard → only the arrow test.
+
+  **Not in this task, by the plan's own scope:** `showKeys` is a listed `F1`
+  with no branch and `showRecents` has no default, so both fall through to
+  `reject` — Risk 1 shipped on purpose until task 4.
 - **4 — the Keys sheet.** Not started.
 - **5 — rebinding from the sheet.** Not started.
 

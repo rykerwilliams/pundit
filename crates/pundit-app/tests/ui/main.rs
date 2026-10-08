@@ -38,8 +38,18 @@
 
 slint::include_modules!();
 
+/// **The production key wiring, shared with the binary** (BACKLOG #96). The
+/// `Action` -> `KeyAction` map is 29 arms of boilerplate and the test is the
+/// only thing that can catch a crossed one, so `keys.rs` presses keys against
+/// *this* handler rather than a copy written in a fixture. `#[path]` because
+/// the type it answers with is the Slint compiler's, nameable only from a root
+/// with `include_modules!()`, so it cannot live in the library.
+#[path = "../../src/key_action.rs"]
+mod key_action;
+
 mod export_sheet;
 mod fit_window;
+mod keys;
 mod panel_widths;
 mod scrubber;
 mod self_view_placement;
