@@ -241,7 +241,8 @@ loaded …` on stderr); that line is the zero-copy diagnostic, and on the
 reference laptop it reads `vah265dec` / `memory:DMABuf` / `egl`.
 `scripts/linux-gate-check.sh` measures decode throughput. **The projects the
 coach has had open** (newest first, capped at 8), the chosen speech model, the
-pen, the window's size and **the two side columns' widths** live in
+pen, the window's size, **the two side columns' widths** and **the keys the
+coach rebound** live in
 `$XDG_CONFIG_HOME/pundit/state.json` — every one of them a property of this
 machine and none of the project's;
 point `XDG_CONFIG_HOME` elsewhere when testing so the real one isn't
@@ -258,6 +259,31 @@ and their hand-written `Default` impls are what stop a height of `0` reaching
 a whole list, which is the bargain `bus/basket.rs` strikes for its `pieces`; and
 a lost *update* between the bus's `AppFiles` handle and `main.rs`'s is untouched,
 since every setter still rewrites the whole document.
+
+**The keys live in one table, and `state.json` stores only the overrides**
+(`keymap.rs`, BACKLOG #96; spec
+`docs/superpowers/specs/2026-10-02-rebindable-keys-design.md`, plan
+`2026-10-07-rebindable-keys.md`). The convention is VS Code's
+`keybindings.json`: the defaults are in code (`Action::default_keys` — 29
+actions, 34 bindings), the `keys` object holds the **diff** keyed by the
+action's camelCase name, and an action it doesn't mention keeps its default —
+so deleting the key is the reset path, and a later version that retunes a
+default still reaches a coach who rebound something else. **Storing a copy of
+the table would pin all 29 rows for ever**, which is why `Keymap::overrides`
+emits nothing for an untouched map. A stored row **displaces the default** that
+held its key (the loser is left unbound, logged, and shown so); two *stored*
+rows claiming one key are resolved by `Action::ALL`'s order, which is why that
+order is fixed. A bad label costs that label, an unknown action name costs that
+row, and a JSON type error on `keys` costs the **whole keymap and nothing
+else** — `lenient`'s bargain, and a re-pick rather than a project.
+**Slint carries text, not scancodes** (`KeyEvent` is `text`/`modifiers`/
+`repeat`, and winit's backend reads `logical_key` only), so a
+layout-independent binding is not expressible and `NamedKey`'s characters come
+from `slint::platform::Key` rather than a copied code point; the matcher
+lowercases the text and compares the three modifiers **exactly**, which is what
+leaves Caps Lock free and makes `shift+a` its own binding. A keymap is a
+property of the coach's hands, so **nothing here is a `project.json` field and
+no format version moves.**
 
 **`last_project` is the derived head of `recent_projects`, never a second
 stored copy** (#85): `push_recent_project` is the only writer, `set_last_project`

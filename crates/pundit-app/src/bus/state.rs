@@ -22,6 +22,7 @@
 //! Losing this file only costs the user a re-open and a re-pick, so every
 //! failure here is logged and otherwise ignored.
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -30,6 +31,7 @@ use pundit_media::WhisperModel;
 use serde::{Deserialize, Serialize};
 
 use crate::drawing::{Pen, PenWidth};
+use crate::keymap::Keymap;
 
 /// The app's own directory under whichever XDG base directory is in play.
 pub(super) const APP_DIR: &str = "pundit";
@@ -112,6 +114,22 @@ struct State {
     /// already fills a file that doesn't mention them.
     #[serde(deserialize_with = "lenient")]
     folds: Folds,
+    /// The keys the coach rebound (BACKLOG #96): action name → spellings,
+    /// [`Keymap::overrides`].
+    ///
+    /// **The overrides, never a copy of the table** — an action this file does
+    /// not mention keeps its default, so a later version that retunes one
+    /// reaches a coach who rebound something else, and deleting this key is the
+    /// reset path. Keyed by **name**, on `pen`'s rule, so an action this build
+    /// doesn't have is ignored rather than read positionally as another one; and
+    /// a `BTreeMap` rather than a `HashMap` because every setter here rewrites
+    /// the whole document, and a hash order would shuffle the file on every pen
+    /// change.
+    ///
+    /// **A key is the coach's hands, not the match**, which is why this is here
+    /// and not in `project.json`: no `Preferences` field, no format bump.
+    #[serde(deserialize_with = "lenient")]
+    keys: BTreeMap<String, Vec<String>>,
 }
 
 /// Any value this build can't read falls back to the field's default, so one
@@ -406,6 +424,17 @@ impl AppFiles {
         let mut state = self.read();
         state.folds = folds;
         self.save(&state);
+    }
+
+    /// Which keys do what (BACKLOG #96): the defaults with whatever this file
+    /// overrides applied, through the load rule in [`Keymap::with_overrides`].
+    /// A file that doesn't say — or says something unreadable — reads as the
+    /// defaults.
+    ///
+    /// Read **once at startup**, not per key event: a lookup is a linear scan
+    /// over the returned map, and a file read per keypress would be absurd.
+    pub fn keymap(&self) -> Keymap {
+        Keymap::with_overrides(&self.read().keys)
     }
 
     /// How wide the side columns were. A file that doesn't say reads as
@@ -984,6 +1013,48 @@ mod tests {
         assert_eq!(state.pen(), Pen::Blue);
     }
 
+    /// The keys are the coach's, machine-wide, and what the file holds is the
+    /// **overrides**: an action it doesn't mention keeps its default, and a
+    /// `keys` key deleted by hand is the reset.
+    #[test]
+    fn reads_the_keymap_overrides() {
+        use crate::keymap::Action;
+
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppFiles::in_config_dir(dir.path());
+        assert_eq!(state.keymap(), Keymap::defaults());
+        assert!(state.keymap().overrides().is_empty(), "a diff, not a copy");
+
+        std::fs::create_dir_all(dir.path().join(APP_DIR)).unwrap();
+        std::fs::write(
+            dir.path().join(APP_DIR).join(FILE),
+            r#"{"pen":"blue","keys":{"fitWindow":["g"],"tagTheRef":["t"]}}"#,
+        )
+        .unwrap();
+        let keymap = state.keymap();
+        assert_eq!(
+            keymap.action_for("g", false, false, false),
+            Some(Action::FitWindow),
+            "the stored key moved"
+        );
+        assert_eq!(
+            keymap.action_for("f", false, false, false),
+            None,
+            "and the default it replaced is gone"
+        );
+        assert_eq!(
+            keymap.action_for("r", false, false, false),
+            Some(Action::ToggleRecording),
+            "every action the file doesn't mention keeps its default"
+        );
+        assert_eq!(
+            keymap.overrides().keys().collect::<Vec<_>>(),
+            ["fitWindow"],
+            "an action name this build doesn't have is ignored, not kept"
+        );
+        assert_eq!(state.pen(), Pen::Blue);
+    }
+
     /// The panels likewise, and today's widths until one is dragged.
     #[test]
     fn remembers_the_panel_widths() {
@@ -1085,12 +1156,21 @@ mod tests {
         // change that broke the other.
         let panels = |s: &AppFiles| s.panel_widths() != PanelWidths::default();
         let window = |s: &AppFiles| s.window_size() != WindowSize::default();
+        // The keymap's own three. A type error on `keys` costs **the whole
+        // keymap** — every binding reverts to its default — and nothing else:
+        // the finer grain, rescuing the good rows out of a bad map, is
+        // machinery for a hand-edit, and `reads_the_keymap_overrides` is what
+        // proves this predicate can be true at all.
+        let keys = |s: &AppFiles| !s.keymap().overrides().is_empty();
         for (bad, still_set) in [
             (r#""panels":"wide""#, &panels as &dyn Fn(&AppFiles) -> bool),
             (r#""panels":{"sidebar":-5}"#, &panels),
             (r#""panels":{"sidebar":1.5}"#, &panels),
             (r#""panels":null"#, &panels),
             (r#""window":{"height":-1}"#, &window),
+            (r#""keys":"x""#, &keys),
+            (r#""keys":{"toggleRecording":5}"#, &keys),
+            (r#""keys":null"#, &keys),
         ] {
             let text = format!("{{{rest},{bad}}}");
             std::fs::write(&file, &text).unwrap();
