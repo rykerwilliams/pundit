@@ -1861,18 +1861,37 @@ component TargetChoice inherits Rectangle {
 }
 
 /// What every modal in this app sits on: the window behind dimmed, and a
-/// `TouchArea` that swallows the clicks meant for it. Its one child is the
-/// sheet, which centres itself as any sized child of a `Rectangle` does.
+/// `TouchArea` that swallows the clicks meant for it.
+///
+/// **Its one child is the sheet, and this column is what caps the sheet's
+/// height** (BACKLOG #134). A `Sheet` states its content height as its
+/// *preferred* height rather than as `height`, so a layout is the thing that
+/// can say "no taller than this": Slint's box layout hands a cell its
+/// preferred size while there is room and shrinks it past that the moment
+/// there is not (`solve_box_layout`), and the sheet scrolls whatever is left
+/// over. A plain `@children` could not -- a sized child of a `Rectangle` takes
+/// the size it asks for, window or no window, which is how Export and Cancel
+/// came to sit off the bottom of a 700px window.
+///
+/// `center` on both axes is the centring that child used to get for free, and
+/// the padding is the card's own 20px, so a capped sheet still shows the scrim
+/// it sits on rather than running into the window's edges.
 component Scrim inherits Rectangle {
     background: #000000a0;
 
     TouchArea { }
 
-    @children
+    VerticalLayout {
+        alignment: center;
+        cross-axis-alignment: center;
+        padding: 20px;
+
+        @children
+    }
 }
 
 /// The card every modal in this app is drawn as: a fixed width, a height of
-/// whatever it holds, the house chrome and the heading.
+/// whatever it holds **up to the window's**, the house chrome and the heading.
 ///
 /// There are seven of these -- export, the basket, New match, match setup, the
 /// match event editor, Keys and the error dialog -- and this is the one shape
@@ -1880,11 +1899,24 @@ component Scrim inherits Rectangle {
 /// children;
 /// everything else is here, once.
 ///
-/// **It does not scroll, and `height: body.preferred-height` is why** (BACKLOG
-/// #134): a card taller than the window has its own buttons off the bottom of
-/// it. Each sheet with a list that grows therefore caps that list itself --
-/// the export sheet's targets and run, the Keys sheet's 29 rows -- and #134 is
-/// whether the cap belongs here instead, for all seven at once.
+/// **The body scrolls, and that is the whole of BACKLOG #134.** The card asks
+/// for its content's height and accepts less: [`Scrim`]'s column is what hands
+/// it `min(content, window)`, and what does not fit is scrolled rather than
+/// drawn off the bottom of the window. Measured at the declared 1100x700
+/// minimum, two of the six sheets did not fit -- the export sheet reopened over
+/// a run (823px) and New match with twenty videos (704px) -- and #96's keys
+/// sheet is 29 rows.
+///
+/// **A sheet's own action buttons scroll with it**, because each sheet puts
+/// its button row in `@children` like any other content. So Export can be one
+/// flick away rather than on screen, which is the trade this takes: a pinned
+/// footer would need a second child slot here and an edit to all six sheets,
+/// and "the buttons are one flick away" is strictly better than "the buttons
+/// are unreachable". The title scrolls with the body for the same kind of
+/// reason: keeping it out of the scroll means a second layout here whose
+/// preferred height has to be re-derived by hand, where this way the card's
+/// natural height stays exactly the `body.preferred-height` it always was and
+/// only the cap is new.
 component Sheet inherits Rectangle {
     /// The card's width. Wide enough for the widest thing in it, and no
     /// wider: the height follows the content.
@@ -1896,24 +1928,29 @@ component Sheet inherits Rectangle {
     in property <length> body-spacing: 10px;
 
     width: root.card-width;
-    height: body.preferred-height;
+    // What the card wants, and the most it may have. Never `height`: an
+    // explicit one is fixed in `Scrim`'s layout and could not be capped.
+    preferred-height: body.preferred-height;
+    max-height: body.preferred-height;
     background: Palette.background;
     border-radius: 8px;
     border-width: 1px;
     border-color: Palette.border;
 
-    body := VerticalLayout {
-        padding: 20px;
-        spacing: root.body-spacing;
+    ScrollView {
+        body := VerticalLayout {
+            padding: 20px;
+            spacing: root.body-spacing;
 
-        if root.title != "": Text {
-            text: root.title;
-            color: Palette.foreground;
-            font-size: 16px;
-            font-weight: 600;
+            if root.title != "": Text {
+                text: root.title;
+                color: Palette.foreground;
+                font-size: 16px;
+                font-weight: 600;
+            }
+
+            @children
         }
-
-        @children
     }
 }
 
@@ -2796,10 +2833,18 @@ component MatchSetupSheet inherits Rectangle {
         root.picker-field = field;
     }
 
+    // **This wrapper exists for the colour picker alone** -- the popup hangs
+    // off it, over the card -- so it has to be as transparent to [`Scrim`]'s
+    // cap as the other five sheets, which *are* the `Sheet`. It asks for what
+    // the card asks for and accepts less (#134), and the card takes whatever
+    // the layout then gives it; `height: card.height` here would be fixed in
+    // that layout and would carry the overflow straight back.
     width: card.width;
-    height: card.height;
+    preferred-height: card.preferred-height;
+    max-height: card.preferred-height;
 
     card := Sheet {
+        height: parent.height;
         card-width: 520px;
         title: "Match setup";
 

@@ -649,6 +649,23 @@ than accumulating `mouse-x − pressed-x`, which is what Slint's own
 grow but do not shrink**: 280px is the width the inspector's transcript row was
 fitted to. There is no keyboard path to them (#99).
 
+**Every sheet is capped at the window and scrolls its body** (BACKLOG #134):
+`Scrim` wraps its one child in a centred `VerticalLayout`, so Slint's box layout
+hands the card `min(content, window)`, and `Sheet` puts its body in a
+`ScrollView`. **A `Sheet` therefore states its height as
+`preferred-height`/`max-height` and never as `height`** — an explicit height is
+*fixed* in that layout and could not be capped, which is how the export sheet's
+Export and Cancel came to sit off the bottom of a 700px window. The same goes
+for `MatchSetupSheet`, the one sheet that *wraps* a `Sheet` rather than being
+one (the colour picker's popup hangs off that wrapper). **A sheet's buttons and
+its title scroll with the body**, which is the accepted trade: each sheet puts
+its own action row in `@children`, and a pinned footer would mean a second child
+slot on `Sheet` and an edit to all six. The keyboard is untouched, because
+`handle-key` is `capture-key-pressed` and a `Flickable` reads no keys at all.
+One thing it costs a test: `ElementHandle` skips anything clipped away, so a
+button at the bottom of a tall sheet has to be flicked into view before it can
+be found (`flick_to_the_end` in `tests/ui/sheet_scroll.rs`).
+
 **The scan speed is `Command::ScanSpeed(ScanStep)`** (`J`/`L` by default: the bus steps 1×–32×, while scanning only; any pause returns to 1×, so a recording starts at 1×). The player owns the rate, and **every scan seek carries it** (`pipeline.seek(rate, …)`, never `seek_simple`, whose 1.0 would drop it on the next scrub or skip). `set_rate` issues no seek: the bus does, through `load`, unless a seek still to be issued will carry it; after a pause it seeks to the frame on screen, not the position the picture trails at speed. Opening a preview returns to 1× with no seek. Every frame is decoded even at 32× and the scan sink's QoS (`max-lateness` 20 ms) drops what's late: measured on 1080p30 H.264, that showed 88 fps at 32× against key frames only's 16, with a tenth of the lag.
 
 **Preview and export share one composite** (`pundit-media/src/composite/`).
