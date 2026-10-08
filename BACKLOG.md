@@ -2286,7 +2286,11 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   what a basket's `pieces` is.
 
 101. **The export test binaries abort with `corrupted size vs. prev_size` under
-  heavy concurrent load.** glibc heap corruption, `SIGABRT`, always mid-suite and
+  heavy concurrent load — REPRODUCED ON DEMAND 2026-10-07, and it is a stray
+  write into memory that has already been freed.** The recipe, the mechanism and
+  what is still unknown are at the **end** of this entry; the sighting log is
+  kept whole above them, because the count is what scheduled the work.
+  glibc heap corruption, `SIGABRT`, always mid-suite and
   always at a different test, seen three times in `pundit-media --test export`
   and once in `pundit-harness --test export` — never in a run of that suite
   alone. Observed on 2026-09-28 during #88's gates with three other sessions
@@ -2346,6 +2350,177 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   no longer optional work on a rare flake: a memory-safety bug that reaches CI
   will eventually corrupt an export the coach keeps, and a wrong byte in a
   copied stream is exactly the failure that would not announce itself.
+- **REPRODUCED ON DEMAND, 2026-10-07, and the recipe is three copies of
+  `pundit-media --test export` on four pinned CPUs.** Not `whole_match`, and not
+  two cores:
+
+  ```bash
+  cargo test -p pundit-media --test export --no-run          # then, per worker:
+  taskset -c 0-3 nice -n 19 target/debug/deps/export-<hash> --test-threads=4
+  ```
+
+  Three of those at once, each with its own `TMPDIR`, against two busy loops on
+  the same four CPUs: **1 abort in 16 runs** (`corrupted size vs. prev_size
+  while consolidating`, SIGABRT, 10 of 30 tests passed and none named). That is
+  the whole reproduction — no new test code, no `GST_DEBUG`, nothing committed.
+  The ingredient the earlier attempts lacked is **twelve test threads on four
+  cores**: three *processes* oversubscribing a small core count, which is what a
+  loaded laptop and a CI runner have in common.
+  **Call the rate "a few percent" and nothing sharper.** The same
+  configuration, run again later the same evening with the machine carrying
+  more besides it, gave **0 in 12**. One in sixteen and nought in twelve are
+  the same rate as far as these numbers can tell, and #72's own entry is the
+  warning against reading a figure across sessions.
+- **"Never in a run of that suite alone" is retired.** It held for five
+  sightings and it misled: the reproduction runs **nothing but** that suite —
+  three copies of it and two busy loops — so what the rule was really reporting
+  is that one copy of it on a quiet eight-core laptop is not enough work. The
+  other suites in a `--workspace` run were never the ingredient; the cores and
+  the number of concurrent test threads were.
+- **Four CPUs, not two.** This entry's promotion brief said CI runners are
+  two-core; that is true of a *private* repository. `rykerwilliams/pundit` is
+  public and `rust.yml` runs on `ubuntu-latest`, which is **four** vCPUs — and
+  the sixth sighting's log is consistent with it: the suite had exactly four
+  tests and three of them reported within 2 ms of each other, so at least three
+  ran at once.
+- **`whole_match` would not reproduce it, in 86 runs.** Same shape — 3 × 4
+  threads on `taskset -c 0-3` with two busy loops — **60 runs, 0 aborts**; plus
+  **26 runs with `MALLOC_CHECK_=3`, 0 aborts**. The media suite is where it
+  lives on this machine, which is also where three of the first five sightings
+  were. Its thirty tests are simply more export runs per pass.
+- **And the "whole_match means the copy path" narrowing was wrong.** The sixth
+  sighting's own CI log (run 37235570591, attempt 1) shows which tests were in
+  flight at the abort: `the_whole_match_is_copied_with_a_sidecar`,
+  `a_clip_on_a_separate_track_burns_the_board_in` and
+  `the_default_mode_copies_the_whole_match_and_burns_a_clip` reported ok in the
+  two milliseconds before it, and the fourth — still running — was
+  `a_burned_whole_match_removes_a_stale_sidecar`. Three of those four are
+  **encode**-path tests. `whole_match` runs burned exports as well as copies, so
+  it never narrowed anything; the `tx3g` appsrc, the two `async=false` sinks and
+  the re-based segments are not implicated by it, and the entry's original
+  "where to look" stands.
+- **The cores of three earlier sightings were on this machine the whole time,
+  and nobody looked.** `systemd-coredump` keeps them:
+
+  ```bash
+  coredumpctl list | grep export          # 2026-09-30, 2026-10-02 ×2, all present
+  coredumpctl info <pid>                  # every thread, symbolized
+  coredumpctl dump <pid> --output=core    # then gdb with the test binary
+  ```
+
+  **Read them on the next sighting before running anything.** `coredumpctl
+  info` alone gives every thread's stack with the system libraries symbolized,
+  which is the "fuller dump" #72's resolution says to ask for.
+- **The detection site is different every time, and that is the point.** The
+  three stored cores abort in a `g_free` of a `GstMessage`'s structure on one of
+  our own threads; in `tcache_init` on a freshly spawned glib thread; and in a
+  `malloc` **inside `iHD_drv_video.so`'s `__vaDriverInit_1_20`**, reached from
+  `vaInitialize` ← `gst_va_display_drm_new_from_path` ← a VA element's state
+  change inside a `matroskademux` `pad-added`. The Intel VA driver there is a
+  **victim, not a suspect**: CI has no `/dev/dri`, registers no VA element at
+  all (checked: `bwrap --tmpfs /dev/dri gst-inspect-1.0 vah264lpenc` fails), and
+  CI aborts too.
+- **The mechanism: a stray zero is written into a block that has already been
+  freed, and it lands on glibc's free-chunk footer.** From the reproduced core,
+  with the test binary alongside it:
+  - the aborting thread is a **`Decoder` being torn down** on an export thread:
+    `g_signal_handlers_destroy` → `destroy_closure` for
+    `composite::decode::start`'s `pad-added` handler → the `Element` that
+    closure captured → `gst_bin_remove` → `gst_element_remove_pad` → `g_free`.
+    That is `close_unread`'s drop, or the run's last one — a teardown and not a
+    *write*, so this thread is the reporter and not the culprit;
+  - glibc is in `_int_free_merge_chunk (av=0x771e04000030, p=0x771e04009160,
+    size=272)` — the **backward**-consolidation check, which fires when
+    `chunksize(prev) != prev_size(p)`;
+  - the chunk before `p`, at `0x771e04009100`, is 96 bytes and is genuinely
+    **free and linked in its small bin**: its `fd` is another free 96-byte
+    chunk, its `bk` is the bin head, and that other chunk's `bk` points back at
+    it. So `p`'s `PREV_INUSE` being clear is correct and uncorrupted;
+  - a free small-bin chunk carries its size again in a **footer**, the eight
+    bytes at `p`. It reads **0** and must read `0x60`. The sibling free chunk in
+    the same bin has its footer intact (`0x60`), so the footer is written as
+    expected and this one was overwritten;
+  - that footer is **offset 80 of the freed block's 88-byte payload**. So eight
+    zero bytes were written *into the block*, after it was freed — a
+    **use-after-free write**, not a buffer overflow.
+- **The two diagnostics this entry recorded, and today's third, are all the same
+  check.** `corrupted size vs. prev_size` is `unlink_chunk`'s
+  `chunksize(p) != prev_size(next_chunk(p))`; `… while consolidating` is
+  `_int_free_merge_chunk`'s backward test; and
+  `malloc(): mismatching next->prev_size (unsorted)` is `_int_malloc`'s
+  unsorted-bin test. **Every one of them compares a chunk's size with its
+  footer**, so the three "different detection points" this entry wondered about
+  across five sightings are one symptom seen from three places, and the
+  mechanism above covers all of them — local and CI alike.
+- **It is also why the bug needs load — and load is the amplifier, not the
+  cause.** Where that stray zero lands is decided by allocation timing alone: on
+  a free chunk's footer it aborts, on a free block nothing will look at it does
+  nothing at all, and **on a live object that has already reused the block it
+  writes a wrong eight bytes and says nothing.** The abort is the lucky case. So
+  the app runs the same write; a single export with fewer allocations racing for
+  that block is merely less likely to be damaged by it. **This does not clear
+  the app**, and no amount of soaking will — the way to find out is to name the
+  write.
+- **What this does NOT establish, and the reason to say so is #72's wrong first
+  diagnosis.** Not *which* code writes the zero. Not the identity of the 88-byte
+  object: its stale payload carries `1` at +64 and `0xffffffffffffffff` —
+  `GST_CLOCK_TIME_NONE` — at +72, which fits several GStreamer types, and one
+  sample is not enough to name one. Not whether the write is an ordering bug on
+  one thread or a race between two. Nothing was ruled in or out inside
+  `composite/copy.rs`: the `tx3g` appsrc, the `async=false` sinks and the
+  re-based segments were read and look sound, but reading is not evidence and
+  the reproducing suite is the encode path's.
+- **The one control worth running could not be given enough runs, and it is the
+  next experiment.** *Does the bug need two export pipelines in one address
+  space?* The arm is **one test thread per process** — enough processes to match
+  the reproducing arm's concurrent-test count, `--test-threads=1` each, same
+  four pinned CPUs — run back to back against it. **Attempted and abandoned
+  with not one completed pass**: six single-threaded processes on four CPUs
+  carrying the other arm as well never finished a pass of thirty tests. At a 6%
+  base rate a null arm needs tens of runs to mean anything, and a pass at one
+  thread takes about four times as long, so an evening buys one arm or the
+  other, not both — and this one needs a quiet machine to itself. Do not read a
+  rate across sessions (#72's trap): only arms run back to back are comparable.
+- **The tooling, so the next pass starts where this one stopped.**
+  - **valgrind needs no root and does work here**, which this entry assumed it
+    could not have: `apt-get download valgrind && dpkg -x valgrind_*.deb root`,
+    then `VALGRIND_LIB=root/usr/libexec/valgrind root/usr/bin/valgrind`. Verified
+    against a deliberate eight-byte overflow. memcheck is the **one** tool that
+    names a use-after-free write directly, with both the allocation and the free
+    behind it.
+  - **It did not find this one, and that is weak evidence rather than a
+    clearance.** Six of the thirty media export tests ran under memcheck — about
+    two minutes a test, with the GPU path intact (`vah264lpenc` / `vavp8dec` /
+    DMABuf) and three tests failing on their own 15–30 s timeouts — and reported
+    **0 invalid reads or writes**. memcheck serializes threads, so a two-thread
+    window cannot occur under it at all.
+  - **ASan builds and runs, and a whole clean pass says nothing**:
+    `RUSTFLAGS=-Zsanitizer=address cargo +nightly test -p pundit-media --test export
+    --no-run --target x86_64-unknown-linux-gnu`, run with
+    `ASAN_OPTIONS=detect_leaks=0:detect_odr_violation=0:alloc_dealloc_mismatch=0`.
+    All thirty tests passed in 535 s with **0 ASan reports** — one process, two
+    test threads, not under the reproducing load. That was expected
+    and it is the reason not to spend an evening soaking under it: ASan's
+    redzones and quarantine mean a stray write into a freed block corrupts
+    nothing, and ASan only checks stores it **instrumented** (our Rust) or
+    **intercepted** (`memcpy` and friends) — not a plain store inside GStreamer
+    or Mesa. Under ASan this bug is invisible by construction.
+  - `MALLOC_CHECK_=3` is **untested as an amplifier** — it was only ever run on
+    `whole_match`, which does not reproduce either way — and the mechanism says
+    not to expect much of it: glibc aborts on these footer checks without it.
+  - **The llvmpipe arm is not usable at this concurrency.** `bwrap --dev-bind / /
+    --tmpfs /dev/dri` does reproduce CI's software path (no VA, llvmpipe), but
+    every burned export then misses the harness's 15 s wait and the suite fails
+    on "timed out waiting for the run's outcome" before it can abort. That is
+    **not** #72 — #72's message is "a settled position", and it was not seen once
+    today.
+- **When to revisit: next, with the reproduction in hand.** The next step is
+  **not** more soaking. It is to make the stray write visible at the write:
+  memcheck over the whole media suite with the fixture and harness timeouts
+  raised enough to survive it, which is the one tool that will name it; and, if
+  that comes back clean because of the serialization, a second repro core or two
+  to confirm the 88-byte-block signature and the offset, which would turn
+  "several GStreamer types" into one.
 
 102. **Snap the scrubber to events, as an option.** The coach (2026-09-28):
   "snap to events in the scrubber as an option." Dragging the scrubber lands on
