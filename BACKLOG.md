@@ -2286,6 +2286,38 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   what a basket's `pieces` is.
 
 101. **The export test binaries abort with `corrupted size vs. prev_size` under
+
+- **DECIDED 2026-10-07, by the coach: document and watch. No fix, no version
+  floor, for now.** Offered four routes — raise the GStreamer floor, work around
+  it in our code, both, or neither — he chose **neither yet**, on the grounds
+  that seven sightings have produced no known bad file and the fault is already
+  fixed upstream.
+- **Why that is defensible, and it is not "it probably never happens":** the
+  silent cases that have actually been caught were **crashes, not bad output**.
+  Core 66983 (2026-09-27) is the stray write landing on a *live* object — a
+  GStreamer `AudioChain` whose `alloc_func` reads **0**, so `do_mix` jumps to
+  address zero and the process dies. Every other field in that chain is correct.
+  So the write's observed behaviour is: clobber a free chunk's footer and abort,
+  or clobber a live pointer and segfault. **Neither produces a quietly wrong
+  file.** A wrong *sample* remains possible in principle — eight bytes is two
+  stereo frames — but nothing observed in ten cores shows it, and the eight
+  bytes are always zeros into a 64-bit field rather than into sample data.
+- **What would change the decision, in order of how likely it is to arrive
+  first:**
+  1. **The floor moves on its own.** GitHub's own run annotations say
+     `ubuntu-latest` migrates to **Ubuntu 26 from 2026-10-19**, which ships a
+     GStreamer past 1.24.3 — so the CI aborts stop without anyone doing anything.
+     When that happens, note it here rather than wondering why they stopped.
+  2. **A real export comes out wrong** — a film that will not play, a passage of
+     noise, a transcript with a hole. That is the trigger for the code
+     workaround, and the workaround's shape is recorded below.
+  3. **A crash the coach sees** rather than CI. The same write, the same entry.
+- **The honest risk, stated once so nobody re-derives it as reassurance:** this
+  fires on **every export, every transcript and every analysis pass** of a file
+  that has a video stream — `Reader::start` has three callers. It is not rare in
+  the sense of rarely *executed*; it is rare in the sense that the stray write
+  usually lands somewhere harmless. The decision is to accept a low-probability
+  bad outcome per run, not to accept a rarely-taken code path.
   heavy concurrent load — REPRODUCED ON DEMAND 2026-10-07, and it is a stray
   write into memory that has already been freed.** The recipe, the mechanism and
   what is still unknown are at the **end** of this entry; the sighting log is
