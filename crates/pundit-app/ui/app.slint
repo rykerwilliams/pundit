@@ -74,6 +74,22 @@ export struct TargetRow {
 }
 
 /// One row of the export sheet's run list: a target of the run in progress.
+/// One row of the export sheet's Queue list (#77 spec Q3): which match it came
+/// from, what the target is called, and how long the film runs.
+///
+/// **All three are read off the frozen job**, never re-resolved against the
+/// project — the deliberate inverse of a basket row, whose piece is a reference
+/// resolved at Start. A queued job's `path` and `tags` already carry these
+/// words, so a fresh label would misdescribe the file about to be written.
+export struct QueueLine {
+    /// "Rovers v Athletic", or the project's own name.
+    match_label: string,
+    /// The target's label, which is also what names its file.
+    label: string,
+    /// "4:12", formatted by Rust from the plan's own frame count.
+    length: string,
+}
+
 export struct RunRow {
     label: string,
     /// Whether this target is the one rendering: only then is there a bar.
@@ -1903,9 +1919,10 @@ component Scrim inherits Rectangle {
 /// for its content's height and accepts less: [`Scrim`]'s column is what hands
 /// it `min(content, window)`, and what does not fit is scrolled rather than
 /// drawn off the bottom of the window. Measured at the declared 1100x700
-/// minimum, two of the six sheets did not fit -- the export sheet reopened over
-/// a run (823px) and New match with twenty videos (704px) -- and #96's keys
-/// sheet is 29 rows.
+/// minimum, two of the **seven** sheets did not fit -- the export sheet
+/// reopened over a run (823px) and New match with twenty videos (704px) -- and
+/// #96's keys sheet is 29 rows. (It said six until #96 added Keys and this
+/// comment's own count above it was updated without this line.)
 ///
 /// **A sheet's own action buttons scroll with it**, because each sheet puts
 /// its button row in `@children` like any other content. So Export can be one
@@ -1968,8 +1985,22 @@ component ExportSheet inherits Sheet {
     in property <[RunRow]> run;
     /// "Finishes at 3:42 PM", empty until the rate is steady (spec E5).
     in property <string> finish;
-    /// A run is going: the targets and the pickers are settled for it.
+    /// A run is going. **It settles `Export` and `Start queue` and nothing
+    /// else** (#77 spec Q5): the six controls below used to be greyed with it,
+    /// on the stated grounds that *"the choices a job was built from must not
+    /// change under it"* — which the queue makes false. Each queued job froze
+    /// its own six at enqueue, so what the live controls describe is the
+    /// **next** enqueue and nothing that is rendering.
     in property <bool> exporting;
+    /// What is waiting for `Start queue` (#77). Empty hides the section
+    /// entirely, as the Run list's own does.
+    in property <[QueueLine]> queue;
+    /// Freeze the ticked targets and put them at the end of the queue.
+    callback enqueue();
+    /// Render everything waiting, as one run.
+    callback start-queue();
+    /// Take one row out, by its index.
+    callback remove-queued(int);
     /// 720p or 1080p, and Low / Medium / High: the pickers' indices.
     in-out property <int> resolution;
     in-out property <int> quality;
@@ -2016,7 +2047,6 @@ component ExportSheet inherits Sheet {
             label: row.label;
             detail: row.detail;
             ticked: row.ticked;
-            enabled: !root.exporting;
             clicked => { root.tick(index, !row.ticked); }
         }
     }
@@ -2030,7 +2060,6 @@ component ExportSheet inherits Sheet {
             ComboBox {
                 // 2160p is in the project format but not offered (E8).
                 model: ["720p", "1080p"];
-                enabled: !root.exporting;
                 current-index <=> root.resolution;
             }
         }
@@ -2039,7 +2068,6 @@ component ExportSheet inherits Sheet {
             FieldLabel { text: "Quality"; }
             ComboBox {
                 model: ["Low", "Medium", "High"];
-                enabled: !root.exporting;
                 current-index <=> root.quality;
             }
         }
@@ -2052,7 +2080,6 @@ component ExportSheet inherits Sheet {
         FieldLabel { text: "Scoreboard"; }
         ComboBox {
             model: ["Default", "Burned into the picture", "Separate track"];
-            enabled: !root.exporting;
             current-index <=> root.scoreboard;
         }
         // The only place the trade is spelled out, and it follows the
@@ -2086,7 +2113,6 @@ component ExportSheet inherits Sheet {
     // see one of them: "Chapters" alone reads as the file beside the video.
     CheckBox {
         text: "Chapters, in the file and as a list beside it";
-        enabled: !root.exporting;
         checked <=> root.chapters;
 
         Tooltip {
@@ -2096,7 +2122,6 @@ component ExportSheet inherits Sheet {
 
     CheckBox {
         text: "Scoreboard subtitles — an .srt beside the file, and a track inside a copy";
-        enabled: !root.exporting;
         checked <=> root.cues;
 
         Tooltip {
@@ -2108,11 +2133,78 @@ component ExportSheet inherits Sheet {
     // throughout, and the commentary is deliberately untouched (spec M1).
     CheckBox {
         text: "Mute source audio";
-        enabled: !root.exporting;
         checked <=> root.mute-source;
 
         Tooltip {
             text: @markdown("Drop the game video's sound. Your commentary is kept -- but a whole match or a goals reel has none, so it comes out silent.");
+        }
+    }
+
+    // **The queue, between the choices and the run** (#77 spec Q5): what is
+    // waiting, and the one button that starts it. Absent at zero rows, as the
+    // Run section is — which is why `Add to queue` is in the action row below
+    // and not up here: with an empty queue there would be nothing to click.
+    if root.queue.length > 0: HorizontalLayout {
+        spacing: 8px;
+
+        FieldLabel {
+            text: "Queue (" + root.queue.length + ")";
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        Button {
+            text: "Start queue";
+            primary: true;
+            // The only thing a run settles here, with `Export`.
+            enabled: !root.exporting;
+            clicked => { root.start-queue(); }
+
+            Tooltip {
+                text: @markdown("Render everything waiting, one after another. You can leave it going.");
+            }
+        }
+    }
+    // The Run list's own height and row shape: a queue row is the same thing
+    // one step earlier.
+    if root.queue.length > 0: ListView {
+        height: min(140px, root.queue.length * 28px);
+        for row[index] in root.queue: HorizontalLayout {
+            height: 28px;
+            padding-left: 6px;
+            padding-right: 6px;
+            spacing: 8px;
+
+            Text {
+                // **Already elided at 480px**, which is what the Run rows
+                // below do with the same string — so the card needs no extra
+                // width for this section.
+                text: row.label + " — " + row.match-label;
+                color: Palette.foreground;
+                overflow: elide;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: row.length;
+                color: Palette.alternate-foreground;
+                font-size: 11px;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                min-width: 48px;
+            }
+            VerticalLayout {
+                alignment: center;
+                Button {
+                    text: "✕";
+                    // Live during a run: the rows it takes from are the ones
+                    // *waiting*, which a run does not touch.
+                    clicked => { root.remove-queued(index); }
+
+                    Tooltip {
+                        text: @markdown("Take this out of the queue");
+                    }
+                }
+            }
         }
     }
 
@@ -2174,6 +2266,19 @@ component ExportSheet inherits Sheet {
             text: "Close";
             clicked => { root.close(); }
         }
+        // **Live during a run**, unlike `Export`: an enqueue renders nothing,
+        // so a coach can fill the queue while one goes and `Start queue` is
+        // what waits (#77 spec Q6 — the one documented divergence from the
+        // basket). Gated on `any-ticked` alone, exactly as `Export` is.
+        Button {
+            text: "Add to queue";
+            enabled: root.any-ticked;
+            clicked => { root.enqueue(); }
+
+            Tooltip {
+                text: @markdown("Freeze these choices as a job and run it later — in this project or another.");
+            }
+        }
         if !root.exporting: Button {
             text: "Export";
             primary: true;
@@ -2198,8 +2303,9 @@ component BasketSheet inherits Sheet {
     /// The run in progress, one row; empty before the first.
     in property <[RunRow]> run;
     /// The one run the app has is **this sheet's**. Without it an ordinary
-    /// export going on behind the sheet would be drawn here as though Start
-    /// had started it.
+    /// export or a queue run going on behind the sheet would be drawn here as
+    /// though Start had started it. Derived in Rust from
+    /// `export_outcome::RunKind`; see the window's own copy.
     in property <bool> basket-run;
     /// "Finishes at 3:42 PM", empty until the rate is steady.
     in property <string> finish;
@@ -4238,9 +4344,26 @@ export component AppWindow inherits Window {
     in-out property <int> basket-resolution;
     in-out property <int> basket-quality;
     in-out property <bool> basket-mute-source;
-    /// The run in progress is the basket's, not an ordinary export's, so the
-    /// sheet draws it as its own.
+    /// The run in progress is the basket's, not an ordinary export's or the
+    /// queue's, so the sheet draws it as its own.
+    ///
+    /// **Derived, not a source of truth** (#77 task 3). Which kind of run is
+    /// going is `export_outcome::RunKind` in Rust, where the decision it feeds
+    /// — notice or modal, and what either says — has tests; `clear_run` is its
+    /// one writer and sets this from it. So there is no second flag here to
+    /// disagree with it, and no `queue-run`: nothing in this file needs to know
+    /// about the queue's run, because the wording is all Rust's.
     in property <bool> basket-run;
+    /// What is waiting for `Start queue` (#77), straight through to the export
+    /// sheet. **Never cleared on a project open** — it is set from
+    /// `Event::Queue` alone, and spanning the switch is the whole feature.
+    in property <[QueueLine]> export-queue;
+    /// Freeze the export sheet's ticked targets as jobs and queue them.
+    callback add-to-queue();
+    /// Render the queue, as one run.
+    callback start-queue();
+    /// Take one row out of the queue, by index.
+    callback remove-from-queue(int);
     /// The sheet's own message line (basket spec C6): a refusal, or the file a
     /// finished run wrote. The status bar's notice can't stand in for it —
     /// that one renders behind the scrim.
@@ -7104,8 +7227,12 @@ export component AppWindow inherits Window {
                 chapters <=> root.export-chapters;
                 cues <=> root.export-cues;
                 whole-match-ticked: root.export-whole-match-ticked;
+                queue: root.export-queue;
                 tick(index, ticked) => { root.tick-target(index, ticked); }
                 start => { root.start-export(); }
+                enqueue => { root.add-to-queue(); }
+                start-queue => { root.start-queue(); }
+                remove-queued(index) => { root.remove-from-queue(index); }
                 cancel => { root.cancel-export(); }
                 close => {
                     root.export-sheet-open = false;

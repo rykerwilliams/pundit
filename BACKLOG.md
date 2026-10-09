@@ -19,11 +19,6 @@ made things worse.
   2026-10-05, planned 2026-10-06**: two on the export sheet (Chapters,
   Scoreboard subtitles), and a settings sheet designed but not built — **#84
   builds it** (#102 declined it, 2026-10-07)
-- **77.** An export queue across projects. The coach (2026-09-24): "i open…
-  **Specced 2026-10-07, planned 2026-10-09**: three tasks — the coach keeps
-  working while a run is going, the queue on `Bus`, the Queue section in the
-  export sheet. Two of the three things this entry calls "the work" were
-  **already done** (spec §R.1, §R.2)
 - **84.** Music under a goals reel — Openverse search, then the mixer (**builds**
   the settings sheet #78 **designs**, for the music folder path, now that #102 has
   found a cheaper home; the API key was never the blocker)
@@ -1451,7 +1446,38 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   touching that file — a smaller fixture (fewer frames, or 640×360) is the fix,
   not a wider bound.
 
-77. **An export queue across projects.** The coach (2026-09-24): "i open project
+77. **An export queue across projects — RESOLVED (2026-10-09, three tasks).**
+  Shipped: `Add to queue` freezes the export sheet's ticked targets and all six
+  controls as jobs; the queue lives on `Bus` and spans a project open; `Start
+  queue` renders everything waiting as one run and the coach can keep working
+  while it goes. CLAUDE.md's "The export queue is jobs frozen now and run
+  later" paragraph is the record of what is load-bearing.
+
+  **Two of the three things this entry called "the work" were already done**,
+  which the spec established rather than assumed (§R.1, §R.2): the run loop was
+  never tied to the open project, and one job's failure already failed only
+  itself. What was actually needed was the refusals moving from "the whole run,
+  up front" to "the one job, at enqueue", and the panel.
+
+  **Four things worth keeping in view:**
+  - **The refusal "already in the queue" is keyed on the target, never the
+    output path**, and seeding `de_duplicate` from what is queued is the other
+    half of that one rule. A path key falsely refuses a *different* target
+    whose label collides — a clip named after a tag — and the two halves are
+    pinned apart by sabotage.
+  - **`create_dir_all` lives in the job builder**, which Start never calls, so
+    "created at enqueue, never at Start" is structural rather than remembered.
+  - **The clip-delete drop sits below `remove_clip`**, because a delete that
+    does not happen must not destroy queue entries and the queue has no undo.
+  - **`export_outcome` is a lib module** because `main.rs` is unreachable from
+    both test harnesses; what a finished run says is six cases over three run
+    kinds, with tests.
+
+  **It left #136 and #137 behind**, and three existing tests inverted across
+  the three tasks — the third of which neither adversarial review found,
+  because both checked the tests the plan *named*.
+
+  The original entry, for the reasoning: the coach (2026-09-24): "i open project
   1, do stuff, enqueue. then project 2, do stuff, enqueue, then start the queue
   and walk away for a bit. other apps have this sort of thing, like mkvtoolnix's
   muxer." Today an export run belongs to the open project and starts at once

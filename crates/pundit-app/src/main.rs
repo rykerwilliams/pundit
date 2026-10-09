@@ -30,6 +30,7 @@ use pundit_app::bus::{
 };
 use pundit_app::color_picker;
 use pundit_app::drawing::{arrow_commands, path_commands, InProgress, Pen, PenWidth};
+use pundit_app::export_outcome::{self, RunKind};
 use pundit_app::fit::{fit_window, Fit};
 use pundit_app::format::{finish_at, format_hms, format_hms_tenths, sentence};
 use pundit_app::highlight_view::{self, LiveHighlight as Ring};
@@ -206,6 +207,11 @@ struct UiState {
     shown_stream_time: Option<f64>,
     /// The drag in the H tool, from its press.
     highlight_drag: Option<HighlightDrag>,
+    /// Which kind of run is going (#77 task 3): what its end means, and so
+    /// whether a failure is a modal or a notice. **Written only by
+    /// `clear_run`**, which every Start calls, and the window's `basket-run`
+    /// is derived from it — so there is no second flag to disagree.
+    run_kind: RunKind,
     /// When the notice line clears, if one is up.
     notice_until: Option<Instant>,
     /// A fit waiting for a maximised window to be restored (spec W6): the
@@ -317,6 +323,7 @@ impl Default for UiState {
             highlight_rings: Vec::new(),
             shown_stream_time: None,
             highlight_drag: None,
+            run_kind: RunKind::default(),
             notice_until: None,
             pending_fit: None,
             preview_duration: None,
@@ -912,38 +919,79 @@ fn wire_export(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
         let (weak, bus) = (window.as_weak(), bus.clone());
         move || {
             let Some(w) = weak.upgrade() else { return };
-            clear_run(&w, false);
-            let ticked = w.get_export_targets();
-            let targets = UI.with_borrow(|ui| {
-                ui.export_targets
-                    .iter()
-                    .zip(ticked.iter())
-                    .filter(|(_, row)| row.ticked)
-                    .map(|(target, _)| target.clone())
-                    .collect()
-            });
-            bus.borrow().send(Command::Export {
-                targets,
-                choices: ExportChoices {
-                    resolution: resolution_at(w.get_export_resolution()),
-                    quality: quality_at(w.get_export_quality()),
-                    // 0 is "Default", which is the target's own (spec M1).
-                    scoreboard: match w.get_export_scoreboard() {
-                        1 => Some(ScoreboardMode::Burned),
-                        2 => Some(ScoreboardMode::Track),
-                        _ => None,
-                    },
-                    mute_source: w.get_export_mute_source(),
-                    chapters: w.get_export_chapters(),
-                    cues: w.get_export_cues(),
-                },
-            });
+            clear_run(&w, RunKind::Export);
+            let (targets, choices) = sheet_asks(&w);
+            bus.borrow().send(Command::Export { targets, choices });
+        }
+    });
+    // **The same reader as Export, and no `clear_run`** (#77): an enqueue
+    // starts nothing, so there is no run to clear and nothing about the run in
+    // flight — if any — changes.
+    window.on_add_to_queue({
+        let (weak, bus) = (window.as_weak(), bus.clone());
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            let (targets, choices) = sheet_asks(&w);
+            bus.borrow()
+                .send(Command::EnqueueExport { targets, choices });
+        }
+    });
+    window.on_start_queue({
+        let (weak, bus) = (window.as_weak(), bus.clone());
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            // The third Start, and it clears the previous run's rows before
+            // the bus publishes its own, for the other two's stated reason.
+            clear_run(&w, RunKind::Queue);
+            bus.borrow().send(Command::StartQueue);
+        }
+    });
+    window.on_remove_from_queue({
+        let bus = bus.clone();
+        move |index| {
+            let Ok(index) = usize::try_from(index) else {
+                return;
+            };
+            bus.borrow().send(Command::RemoveFromQueue { index });
         }
     });
     window.on_cancel_export({
         let bus = bus.clone();
         move || bus.borrow().send(Command::CancelExport)
     });
+}
+
+/// What the export sheet is asking for: the ticked targets, and all six
+/// controls as the bus takes them.
+///
+/// **One reader for both buttons.** `Export` and `Add to queue` differ only in
+/// the command they send — a queued job freezes exactly what a run would have
+/// used — so a second copy of this would be six chances for the two to drift,
+/// and the drift would be silent: both compile and both export *something*.
+fn sheet_asks(w: &AppWindow) -> (Vec<ExportTarget>, ExportChoices) {
+    let ticked = w.get_export_targets();
+    let targets = UI.with_borrow(|ui| {
+        ui.export_targets
+            .iter()
+            .zip(ticked.iter())
+            .filter(|(_, row)| row.ticked)
+            .map(|(target, _)| target.clone())
+            .collect()
+    });
+    let choices = ExportChoices {
+        resolution: resolution_at(w.get_export_resolution()),
+        quality: quality_at(w.get_export_quality()),
+        // 0 is "Default", which is the target's own (spec M1).
+        scoreboard: match w.get_export_scoreboard() {
+            1 => Some(ScoreboardMode::Burned),
+            2 => Some(ScoreboardMode::Track),
+            _ => None,
+        },
+        mute_source: w.get_export_mute_source(),
+        chapters: w.get_export_chapters(),
+        cues: w.get_export_cues(),
+    };
+    (targets, choices)
 }
 
 /// The two pickers both sheets carry, between the index Slint holds and the
@@ -1174,7 +1222,7 @@ fn wire_basket(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
         move || {
             let Some(w) = weak.upgrade() else { return };
             w.set_basket_message(SharedString::new());
-            clear_run(&w, true);
+            clear_run(&w, RunKind::Basket);
             bus.borrow().send(Command::ExportBasket {
                 name: w.get_basket_name().to_string(),
                 resolution: resolution_at(w.get_basket_resolution()),
@@ -1192,10 +1240,15 @@ fn wire_basket(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
 /// standing in the sheet that just asked for one, labelled as though it had
 /// started them. A run in progress refuses a second, so what this drops is
 /// always a finished one.
-fn clear_run(w: &AppWindow, basket: bool) {
+fn clear_run(w: &AppWindow, kind: RunKind) {
     w.set_export_run(ModelRc::default());
     w.set_export_finish(SharedString::new());
-    w.set_basket_run(basket);
+    // **One writer, and the sheet's flag is a reading of the kind** (#77 task
+    // 3). A second independent bool for the queue would be a state the two
+    // could contradict; there is nothing in `app.slint` that needs to know
+    // about a queue run, because the wording is `export_outcome`'s.
+    w.set_basket_run(kind == RunKind::Basket);
+    UI.with_borrow_mut(|ui| ui.run_kind = kind);
 }
 
 /// Whether the whole-match row is among the ticked ones.
@@ -3206,13 +3259,20 @@ fn on_event(w: &AppWindow, event: Event) {
         // The transport runs over the clip while a preview is open, and the
         // window keys the indicator, the identity zoom and the hidden live
         // stroke layer off `previewing-clip` (P6).
-        // **Nothing renders this yet, and that is #77 task 3's job** — the
-        // Queue section in the export sheet. The event is published and
-        // covered by `harness/tests/export.rs` from task 2; what is missing is
-        // the list, `Add to queue` and `Start queue`. An empty arm rather than
-        // a `_` catch-all, so the compiler keeps naming it until the section
-        // exists.
-        Event::Queue(_) => {}
+        // **The whole of the Queue section's state** (#77). Set from here and
+        // from nowhere else — in particular **not** cleared on
+        // `Event::ProjectOpened`, where `export-run`'s clear sits: spanning the
+        // project switch is the feature, and a clear beside that one by
+        // analogy would delete it.
+        Event::Queue(rows) => w.set_export_queue(ModelRc::new(VecModel::from(
+            rows.iter()
+                .map(|row| QueueLine {
+                    match_label: row.match_label.as_str().into(),
+                    label: row.label.as_str().into(),
+                    length: format_hms(row.seconds).into(),
+                })
+                .collect::<Vec<_>>(),
+        ))),
         Event::Preview(previewing) => UI.with_borrow_mut(|ui| {
             let clip = previewing.and_then(|id| {
                 let project = &ui.snapshot.as_ref()?.project;
@@ -3334,57 +3394,22 @@ fn show_export(w: &AppWindow, run: &ExportRun) {
     if running {
         return;
     }
-    // Whether the run that just ended was the basket's. Its outcome is also
-    // reported on the sheet's own line, which is the only place either the
-    // failure or the file is readable while the scrim is up (basket spec C6).
-    let basket = w.get_basket_run();
-    // A run stops at nothing: the first failure is what to say, since a run
-    // of one target is still the common case.
-    if let Some(why) = run.targets.iter().find_map(|t| match &t.state {
-        TargetState::Failed(e) => Some(e.clone()),
-        _ => None,
-    }) {
-        let text = format!("export failed: {why}");
-        if basket {
-            w.set_basket_message(sentence(&text).into());
-        }
+    // **What a finished run says, and where, is `export_outcome::report`** —
+    // six cases over three kinds of run, in the library where they have tests,
+    // because nothing in this file can be reached by one (#77 task 3). The kind
+    // is the one `clear_run` recorded for this run.
+    let report = export_outcome::report(UI.with_borrow(|ui| ui.run_kind), run);
+    // The sheet's own line first, so a modal that returns has still set it:
+    // the status bar renders behind the scrim, and this is the only place a
+    // basket's failure or its file is readable (basket spec C6).
+    if let Some(line) = report.sheet {
+        w.set_basket_message(line.into());
+    }
+    if let Some(text) = report.modal {
         return show_error(w, &text);
     }
-    // A basket is one file, under a name that may have been suffixed rather
-    // than overwriting a film already there — so the line names the file that
-    // was written, not the name that was asked for (basket spec O1).
-    if basket {
-        if let Some(path) = run.targets.iter().find_map(|t| match &t.state {
-            TargetState::Done(path) => Some(path),
-            _ => None,
-        }) {
-            let file = path.file_name().unwrap_or_default().to_string_lossy();
-            let folder = path
-                .parent()
-                .and_then(Path::file_name)
-                .unwrap_or_default()
-                .to_string_lossy();
-            w.set_basket_message(format!("Wrote {}", path.display()).into());
-            show_notice(
-                w,
-                format!("Wrote {file} to the {folder} folder in your videos folder"),
-            );
-        }
-        return;
-    }
-    let written = run
-        .targets
-        .iter()
-        .filter(|t| matches!(t.state, TargetState::Done(_)))
-        .count();
-    if written > 0 {
-        let plural = if written == 1 { "" } else { "s" };
-        // **No folder clause** (#77 task 1). It read "to the project's exports
-        // folder" until a project could be opened mid-run, which made it name
-        // the wrong project's folder for any run the coach had walked away
-        // from — and for a queue run, several folders at once. "Exported N
-        // videos" is true everywhere, and the sheet's rows carry each file.
-        show_notice(w, format!("Exported {written} video{plural}"));
+    if let Some(text) = report.notice {
+        show_notice(w, text);
     }
 }
 
