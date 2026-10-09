@@ -11,6 +11,7 @@
 //! project and the player, takes [`Command`]s and answers with [`Event`]s,
 //! which are handed to the UI thread with `upgrade_in_event_loop`.
 
+mod key_action;
 mod pickers;
 mod video;
 
@@ -420,6 +421,9 @@ fn main() {
     wire_recents(&window, &bus, &machine_state);
     wire_pen_width(&window, &machine_state);
     wire_folds(&window, &machine_state);
+    // The keymap is read here, once: the window asks `action-for` per key
+    // event and that lookup is a scan over the returned table (#96).
+    key_action::wire_keys(&window, machine_state.keymap());
 
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, TICK, {

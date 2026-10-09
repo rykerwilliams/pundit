@@ -19,8 +19,10 @@
 //! scrolls before it presses Export; it does *not* assert the button is out of
 //! view first, which would stand in the way of ever pinning the row.
 
+use crate::key_action;
 use crate::{AppWindow, BasketPieceRow, MatchEditorRow, RunRow, TargetRow};
 use i_slint_backend_testing::{AccessibleRole, ElementHandle};
+use pundit_app::keymap::Keymap;
 use slint::platform::{Key, WindowEvent};
 use slint::{ComponentHandle, LogicalPosition, LogicalSize, ModelRc, SharedString, VecModel};
 use std::cell::Cell;
@@ -110,6 +112,13 @@ fn sheets() -> Vec<Sheet> {
 fn window() -> AppWindow {
     i_slint_backend_testing::init_no_event_loop();
     let w = AppWindow::new().unwrap();
+    // **The keys come from the table now** (BACKLOG #96): with `action-for`
+    // unwired every shortcut reads as `KeyAction.none`, so the arrow-key test
+    // below would assert "no skip reached the window" against a window that
+    // could not have skipped either way — passing on nothing. This file was
+    // written on a branch that predated the table, and the merge is what
+    // caught it.
+    key_action::wire_keys(&w, Keymap::defaults());
     w.show().unwrap();
     let (min_w, min_h) = (w.get_min_window_width(), w.get_min_window_height());
     w.window().set_size(LogicalSize::new(min_w, min_h));

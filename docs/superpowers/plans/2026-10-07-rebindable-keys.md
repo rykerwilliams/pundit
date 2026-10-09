@@ -118,8 +118,188 @@ position" — the retry landed in `7310a54`, so a sighting now is news) and #101
   End — which are **not** `Action` variants, so task 4's sheet writes them as
   its own static lines if it wants them (its row-count test is
   `Action::ALL.len()`, which is the 29 rebindable ones).
-- **3 — `handle-key` is re-keyed onto the table.** Not started.
-- **4 — the Keys sheet.** Not started.
+- **3 — `handle-key` is re-keyed onto the table.** **Done**
+  (`claude/96-task-3`). `handle-key` is now `app.slint:4425`–`:4786` and holds
+  **10** `event.text ==` of the file's **13**, down from 61 of 64: what is left
+  inside it is the six modal layers' Esc tests, the Home/End pair and the Esc
+  cascade. Everything else is one `action-for` call and 27 `act == KeyAction.…`
+  branches, in `Action::ALL`'s order so the chain and the table read side by
+  side. The five reads of `text-editing` are **byte-identical** —
+  `git diff -U0 … | grep text-editing` is empty — and now at `:4450`, `:4466`,
+  `:4511`, `:4520` and `:4798`. The Ctrl branch is **gone, not kept**: once the
+  table compares the three modifiers exactly its only remaining job was
+  `return reject`, which is the function's own fall-through, so a separate
+  `if (event.modifiers.control) { return reject; }` would have been dead code
+  saying the same thing twice. **Five things the step left open or got wrong:**
+  - **The step's line numbers are one low throughout** (and task 1's
+    re-derivation with them): at `claude/96-task-2` the function was
+    `:4368`–`:4659`, not `:4367`–`:4658`, and the five `text-editing` reads
+    were `:4393`, `:4409`, `:4454`, `:4463`, `:4671`. The two **counts** —
+    61 inside, 64 in the file — were right, re-derived.
+  - **The `Action` -> `KeyAction` map cannot live in `main.rs`, because then
+    nothing could test it.** `KeyAction` is the Slint compiler's, so it is
+    nameable only from a root with `include_modules!()`, which rules out the
+    library; and a handler written again in a test fixture would pin the
+    fixture's copy, which is exactly the trap `fit_window.rs`'s header records
+    for `place-picture` — and it would make the step's own sabotage proof 4
+    unreachable. So the wiring is `crates/pundit-app/src/key_action.rs`, a
+    module of **both roots**: `mod key_action;` in `src/main.rs` and
+    `#[path = "../../src/key_action.rs"] mod key_action;` in
+    `tests/ui/main.rs`. `pickers`/`video` are the precedent for a `src/` module
+    that is the binary's rather than the library's.
+  - **No `Rc<RefCell<Keymap>>`, and no `AppFiles` in the signature.**
+    `wire_keys(&AppWindow, Keymap)` moves the map into the callback: nothing
+    else holds it and nothing yet rewrites it, so a handle would be a layer
+    with no second user until task 5 — which is one line when it arrives. The
+    `Keymap` rather than the file handle is also what lets the tests call the
+    production wiring with `Keymap::defaults()` and no temp directory.
+  - **The Esc cascade moved** — ahead of the lookup, beside Home/End, rather
+    than four branches into it. No default binds Escape, so nothing observable
+    changes; what it buys is that the three reserved keys the window handles
+    are tested *before* the table, so a hand-edited `state.json` binding
+    `Escape` to `tagHomeGoal` cannot leave a sheet unleavable. G4 says those
+    keys are reserved; this is what makes it true rather than aspirational.
+  - **The step's sabotage proof 2 is not observable as written.** Moving `f`'s
+    `accept` inside its guard with `can-fit` false changes nothing a test can
+    see: **nothing in this window answers `f`**, so there is no focused child
+    to watch it land on. The gate half is pinned
+    (`a_refused_gate_still_swallows_the_key`); the fall-through half is pinned
+    where it *is* observable, on the arrow, and sabotage **D** below is the
+    step's proof 2 applied to `skip-back` instead.
+
+  **The tests, and what they reach.** `tests/ui/keys.rs`, six tests:
+  `every_default_binding_still_does_what_it_did` is **33 of the table's 34
+  default bindings** — every binding but `showKeys`' `F1` — covering **27 of
+  the 29 actions**; `covers_every_action` makes a new action's missing row a
+  failure rather than a silence (Risk 1's mitigation, with `UNWIRED` naming
+  `ShowKeys` and `ShowRecents`); `binds_what_it_says` checks each row's key
+  against `Keymap::defaults()` so a moved default cannot leave a row green and
+  its action untested; `a_shifted_letter_fires_nothing` pins G2 at the window;
+  `an_arrow_never_reaches_a_touched_slider` pins D10 **and the release path**;
+  and `a_refused_gate_still_swallows_the_key` pins the gate.
+  - **The release path behaves exactly as the step describes.** The slider is
+    `SliderBase`, whose `key-released` fires `released(value)` for an arrow —
+    so with the lookup behind `if (pressed)` the release leaks and nothing
+    else does.
+  - **The four fixtures that press keys had to be given the wiring**
+    (`fit_window`, `slate_fields` ×2, `tag_field`, `text_editing`): with
+    `action-for` unwired every shortcut reads as `KeyAction.none`, which would
+    have left `the_f_key_is_gated_…` red and
+    `a_letter_typed_in_a_window_field_fires_no_shortcut` **green on nothing**.
+  - **The volume slider is found by `id`, not by type.**
+    `match_inherits("Slider")` answers **two** elements for the one `Slider` in
+    the file — the widget and the element the style builds it from — so it
+    gained `volume-slider :=`, on task 1's "two ids for the tests" precedent.
+
+  **Sabotage, four, each failing exactly one of the 47 tests in the binary:**
+  **A** the lookup behind `if (pressed)` → only
+  `an_arrow_never_reaches_a_touched_slider` (`the arrow reached the slider:
+  ["released 0.5"]`); **B** the far skip back to `-3` → only
+  `every_default_binding_…` (`SkipBackFar on "\u{f702}" left: ["skip -3"]
+  right: ["skip -10"]`); **C** `Action::ZoomOut => KeyAction::None` → only
+  `every_default_binding_…` (`ZoomOut on "2" left: [] right: ["zoom -0.25"]`);
+  **D** `skip-back`'s `accept` inside its guard → only the arrow test.
+
+  **Not in this task, by the plan's own scope:** `showKeys` is a listed `F1`
+  with no branch and `showRecents` has no default, so both fall through to
+  `reject` — Risk 1 shipped on purpose until task 4.
+- **4 — the Keys sheet.** **Done** (`claude/96-task-4`). The seventh `Sheet`,
+  opened by `F1` and by a **Keys** button, 29 action rows from
+  `Keymap::listing()` plus six the sheet writes itself, Esc closes it, and the
+  rows are set on the window's `key-rows` **in `wire_keys`, beside
+  `action-for`** — so the list and the lookup are one map read twice and there
+  is no second table to go stale. **Six things the step left open or got
+  wrong:**
+  - **The button is in the *drawing* row, not beside `Recent ▾`.** Step 4.4 and
+    spec **D2** both put it in the transport row and both left that row's
+    budget "not measured". The row is **full**, and the file already said so:
+    the `Fit` button sits in the second row for exactly this reason, and its
+    comment is the record — *"at the window's 1100px minimum that one is
+    already exactly full, and the only give in it is the position readout,
+    which clips rather than elides."* Measured at 1100px: the transport row's
+    last button (`Devices…`) ends at x=1199 — 99px past the window's right edge. Keys therefore goes beside
+    `Fit`, which is also the company it keeps — neither changes what is played.
+  - **The reserved six are written in `app.slint`, which is the decision task 2
+    left open.** `listing()` has no row for Escape, Tab, Shift+Tab, Return,
+    Home or End, and putting them in `keymap.rs` would mean `Binding`,
+    `overrides()` and task 5's rebind each filtering six rows back out of a
+    table whose whole point is that every row in it is rebindable. Their words
+    go where their behaviour is instead — for the three the window handles,
+    `handle-key`'s own reserved block, in the same file. They sit **inside the
+    scroll area** under a "Reserved — not rebindable" heading, which is what
+    keeps them off the sheet's height.
+  - **The cap is the sheet's own, and `ListView` was the wrong reuse.** 29 rows
+    at 22px is 638px against a 700px window, so the rows go in a
+    `ScrollView { height: 520px; }` — step 4.3's arithmetic, confirmed: the
+    card measures **666px** at the 1100x700 floor, pinned by
+    `the_card_fits_the_smallest_window_it_opens_in`. A `ListView` is a `for`
+    and nothing else, and these rows are a `for` **plus** six static ones; a
+    `ScrollView` over a `VerticalLayout` takes both, and the Flickable's
+    `content-height` is `max(own height, the child layout's min-height)`, which
+    a row of fixed height gives honestly.
+  - **The card is 840px wide, not step 4.3's 640.** Three columns have to hold
+    "Go to the previous match event", "shift+LeftArrow, shift+a" and "While the
+    game video is on screen, until the periods are full"; at 640 the third
+    column would elide most of what it is for. The window's own floor is
+    1100px, so 840 costs nothing.
+  - **Step 4's own sabotage is reachable after all, and one line is why.**
+    `KeyLine` carries an `accessible-label` of its three cells joined in order,
+    so the rows read back off the accessibility tree:
+    `every_row_the_table_holds_is_on_screen` fails on a missing
+    `rows: root.key-rows` **and** on a crossed column. Nothing goes on the
+    manual list for it.
+  - **`keys.rs`'s census gained `showKeys`' row** and `UNWIRED` shrank to
+    `[ShowRecents]`, which closes task 3's "Risk 1 shipped on purpose until
+    task 4". `base()` now clears `keys-sheet-open` too: that row leaves a
+    **modal** sheet up, and every row after it would otherwise be swallowed.
+
+  **`showRecents` still has no branch, deliberately.** It has no default
+  binding, so nothing can reach it until task 5 can bind one, and the branch
+  belongs with that task — the fall-through comment in `handle-key` says so.
+  **Task 5 must add it**, or a coach who binds that row gets a key that does
+  nothing.
+
+  **The tests, `tests/ui/keys_sheet.rs`, five:**
+  `f1_opens_the_keys_sheet_and_esc_closes_it` (and that the layer swallows a
+  live shortcut behind it, and lets go after);
+  `the_keys_button_opens_the_sheet`, by the words on it, asserting it is the
+  **only** element reading them with the sheet shut — the title and the middle
+  column heading both read "Keys" with it open;
+  `the_listing_has_a_row_for_every_action`, the window property against
+  `Action::ALL.len()` and against `listing()` row by row, plus **five rows
+  spelled out in the test** as `export_sheet.rs` spells out its switches'
+  words, because a comparison deriving both sides from `keymap.rs` cannot see a
+  label change; `every_row_the_table_holds_is_on_screen`, off the
+  accessibility tree; and `the_reserved_keys_have_a_row_each`, which also
+  asserts none of their keys is in the rebindable table.
+  - **Reading the rows needs a scroll, and the test does what a coach does.**
+    `ElementHandle`'s walk skips a subtree the enclosing clip puts off screen,
+    so only the rows inside the 520px list are reachable at any one moment;
+    `row_labels` reads them in six passes with `ElementHandle::scroll` between,
+    dispatched on the **middle** visible row, since the top one's centre can be
+    above the list once it is half scrolled out. Measured: **23** of the
+    sheet's 36 rows (29 actions, the heading, six reserved) are reachable
+    before the first scroll and **all 36** after. The window is also set to
+    1920x1200: at the headless default the 840px card is clipped by the window
+    itself and every row unfindable — task 1's correction, met as it predicted.
+  - **Two stale counts in the spec, for the record.** **G4**'s "each of the
+    five sheets" and **D2**'s "five of them today" are six now. Neither
+    changes a decision.
+
+  **Sabotage, four, each failing exactly the tests named out of the binary's
+  53:** **A** `key_rows` emits 28 rows → **two**,
+  `the_listing_has_a_row_for_every_action` (`left: 28 right: 29`) and
+  `every_row_the_table_holds_is_on_screen` (`no row on screen reads "Open the
+  recent projects list — — — Any time"`); **B** `rows: root.key-rows` deleted
+  from the sheet's instantiation → **one**,
+  `every_row_the_table_holds_is_on_screen`, which found the heading and the six
+  reserved rows and no action row — the step's own sabotage, and it is not
+  unreachable; **C** `Action::TogglePlay`'s `what()` changed to `"Play, or
+  pause"` → **one**, `the_listing_has_a_row_for_every_action` (`no row reading
+  "Play or pause"`), which is the spelled-out contract earning its place;
+  **D** `keys` and `fires` crossed in the `for` → **one**,
+  `every_row_the_table_holds_is_on_screen` (`"Clear the drawings — While a
+  recording is running — c"`).
 - **5 — rebinding from the sheet.** Not started.
 
 **Shipping, and what is parallel.** Checked by opening every file named, not by
