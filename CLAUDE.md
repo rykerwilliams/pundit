@@ -798,6 +798,34 @@ is ever persisted it is `queue.json` beside `basket.json` and **never** a
   which `Event::Basket` has only because a basket carries a name and two
   pickers. It is published on every change to the queue and **nowhere else**: a
   project open does not emit it and must never clear the list.
+- **The sheet is the only export UI, and the queue is a section in it** — no
+  eighth `Sheet`. Enqueue has to be where the choices are (a queued job freezes
+  all six plus the ticks), the Run list is already here so a queue run's
+  progress costs no new UI, and the section needs no `editing` fold because it
+  has no text field. **`Add to queue` is in the action row, not in that
+  section**, because the section is absent at zero rows and a control inside it
+  could never be clicked with an empty queue. It is live **during** a run,
+  where `Export` is absent: an enqueue renders nothing.
+- **A run settles `Export` and `Start queue` and nothing else.** The seven
+  `enabled: !root.exporting` on `ExportSheet` came off: each queued job froze
+  its own six controls at enqueue, so what the live ones describe is the
+  **next** enqueue. `tests/ui/export_sheet.rs`'s `a_run_greys_out_every_switch`
+  **inverted** into `a_run_leaves_every_switch_live` — the third existing test
+  this feature turned over, and the reason to grep a refusal's or a rule's own
+  words rather than only the tests a plan names.
+- **What a finished run says lives in `export_outcome`, not in `main.rs`.**
+  Nothing in `main.rs` is reachable by a test — the harness has no window and a
+  UI test links the library — so the six cases over three `RunKind`s are a pure
+  function with its own tests, and `show_export` only sets what it answers. An
+  **export** run's failure is a modal (the coach is standing in front of it), a
+  **basket**'s is a modal *and* its sheet's line (the status bar is behind the
+  scrim), and a **queue**'s is a notice naming a count, because a modal over
+  whatever the coach moved on to is what `UserError::Slate` is a notice for.
+- **`RunKind` is Rust's and the sheet's `basket-run` is derived from it.**
+  `clear_run` is the one writer, so the two cannot disagree and there is no
+  `queue-run` property: nothing in `app.slint` needs to know about a queue run.
+  A second independent bool is what #77's plan review rejected, and a Slint
+  enum would have put the decision somewhere no test can reach.
 - **One negation, in `impl From<ExportChoices> for Pickers`.** It was a few
   lines inside `Bus::export` until the enqueue needed the same mapping; a second
   copy would be a second place for the one negation to be got wrong.
