@@ -302,9 +302,23 @@ fn cancel_leaves_the_targets_already_written_alone() {
 /// (*"`commit` empties that project's trash underneath it"*) was false: a job
 /// never names a path under `.trash`, and what costs it its recording is the
 /// clip **delete**, which is answered where the delete is.
+/// **One second of clip, not ten, and the reason is CI.** This is the only test
+/// in this file that waits for a whole run to *finish* with a project open in
+/// the middle of it — the `&[10.0]` tests around it either cancel or only check
+/// a refusal. Ten seconds is 300 frames, and on CI's four-core llvmpipe that
+/// plus `commit`'s own `ensure_loaded` (the decode contention §Q7's table
+/// calls a performance matter) overran the harness's 15 s. Thirty frames is
+/// still far longer than the microseconds the bus needs to handle the
+/// `OpenProject` queued behind `begin`'s event.
+///
+/// **The "mid-run" half is not vacuous and does not need its own assertion.**
+/// `wait_map` scans from its cursor, which `wait_opened` left just past
+/// `ProjectOpened` — so `outcome` can only match a terminal `Event::Export`
+/// that came *after* the open. A run that finished first would time out here
+/// rather than pass.
 #[test]
 fn a_project_opens_while_a_run_is_going() {
-    let mut rig = Rig::open(&[10.0]);
+    let mut rig = Rig::open(&[1.0]);
     let elsewhere = rig.tmp.path().join("elsewhere");
     std::fs::create_dir(&elsewhere).unwrap();
     // `Rig::open_full` opens `<tmp>/project`; `commit` stored it canonical.
