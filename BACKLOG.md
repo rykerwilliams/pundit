@@ -6,7 +6,10 @@ Each entry: what, why deferred, when to revisit.
 ## What is open
 
 Entry numbers are permanent and never reused: CLAUDE.md and code comments cite
-them. **Nothing here is deleted.** An entry that says *why not yet* is what stops
+them. **Nothing here is deleted.** **And a spec is not an entry**: anything
+specced and unbuilt gets a line under "Next, in order" the day its spec lands,
+or it is invisible here however finished the spec is — #138 is the entry that
+records that lesson, and the three days it cost. An entry that says *why not yet* is what stops
 the same ground being dug twice — see 57, which exists only to record that a
 spec's premise was measurably wrong and that fixing it the obvious way would have
 made things worse.
@@ -28,20 +31,48 @@ made things worse.
   `state.json` bool, and a checkable item on the **scrubber's own right-click
   menu** — so it does **not** build #78's settings sheet, which #84 does
 
+- **138.** The tactics whiteboard — draw over a soccer field layout instead of
+  the footage. The coach (2026-10-06): *"sometime i'd want to draw over top a
+  soccer field layout or similar"*, and he **chose this over the title maker**
+  when offered the two apart. **Specced 2026-10-06**
+  (`docs/superpowers/specs/2026-10-06-tactics-whiteboard-design.md`); no plan
+  yet. **It had no entry here until 2026-10-09** — see its own entry for why
+  that mattered
+- **133.** A title maker: words over the footage for a marked window — #138's
+  other half, which the coach scoped out of it deliberately: *"the follow on
+  feature … it would use a slate and a timing maybe"*
+- **131.** The slate band's colour should be a setting. The coach (2026-10-05):
+  *"i mean the band color should be in the settings"* — and *"the slider bar
+  colour clashes a bit"*
 - **128.** The themed pass is silent at both of its ends — no keyboard way to
   start one, and nothing said when it runs out of ranges (**its keyboard half
   is one `keymap.rs` row now that #96 has landed**)
-- **135.** A second key per action, from the Keys sheet — #96 ships *Set…* as a
-  **replace**, so the two-key defaults can be kept or narrowed but not rebuilt
-- **136.** A run's rows don't say which project they belong to — reachable once
-  #77's task 1 lets a project open mid-run
-- **137.** An avatar replaced or removed mid-run silently empties the inset —
-  pre-existing, and #77's queue is what widens the window
 - **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
   clip, sticky for the next recording, as #88's inset size and corner are (**v16
   — v15 went to the mute switch, v14 to #117's arrowhead; take the next free
   number from `store.rs` rather than this line**).
   **Three states, not two:** off, whole entry, or the first few seconds
+
+### Watch, rather than pick up
+
+Filed with a **trigger** instead of a place in the order: each says the one
+observation that should promote it, and none is worth doing before that.
+
+- **135.** A second key per action, from the Keys sheet — #96 ships *Set…* as a
+  **replace**. *Trigger:* a coach rebinds one of the four paired rows and asks
+  where the other key went
+- **136.** A run's rows don't say which project they belong to, now that a
+  project can be opened mid-run. *Trigger:* a row's project is actually
+  ambiguous in use. The outright lie — the notice naming the wrong folder — is
+  already fixed
+- **137.** An avatar replaced or removed mid-run silently empties the inset.
+  Pre-existing; #77's queue widens the window from seconds to minutes.
+  *Trigger:* a film comes back with a missing face, or the asymmetry with the
+  clip-delete rule is being argued anyway
+- **101.** glibc heap corruption in `decodebin3`'s keyframe-waiter probe —
+  **solved and deliberately unfixed**, waiting on a GStreamer newer than Ubuntu
+  24.04's 1.24.2. *Trigger:* the coach's own decision to take one of the three
+  routes
 
 ### Waiting on the coach
 
@@ -4625,3 +4656,27 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   about which way the asymmetry resolves rather than a patch.
 - **When to revisit:** with #77's queue, which is what makes the window long
   enough to hit by accident. Related: #77 §Q6, #88 (the inset), avatar spec B1.
+
+138. **The tactics whiteboard: draw over a field layout instead of the
+  footage.** The coach (2026-10-06), having asked whether an image could be a
+  source — *"can an image be a source"*, *"does it have to be an mp4"* — and
+  then said what for: *"yeah basically title card ability or simlar, but also,
+  sometime i'd want to draw over top a soccer field layout or similar"*. Offered
+  the two halves separately he **chose this one** (*"Just the whiteboard"*), and
+  #133 is the half he scoped out.
+- **Specced 2026-10-06**,
+  `docs/superpowers/specs/2026-10-06-tactics-whiteboard-design.md`. **No plan
+  yet**, and that spec is the next plan to write.
+- **It had no entry in this file until 2026-10-09, and that is the point of
+  this bullet.** It existed only as a spec file referenced in passing from
+  #133, so it appeared in no index and no "what is open" list — and on
+  2026-10-09 the coach read the backlog and asked *"ok but the backlog is
+  empty?"* with the largest specced feature in it sitting invisible. **A spec
+  is not a backlog entry.** Anything specced and unbuilt needs a line in
+  "Next, in order" the day its spec lands, or the plan stage is the only thing
+  holding it and nothing points at the plan.
+- **Why it was deferred:** by order only — #96 and #77 were already specced and
+  queued ahead of it, and both have now shipped.
+- **When to revisit:** now. It is the biggest thing left that the coach has
+  asked for by name. Related: #133 (the title maker, its other half), #116 (the
+  pen), #117 (arrowheads — a whiteboard wants them).
