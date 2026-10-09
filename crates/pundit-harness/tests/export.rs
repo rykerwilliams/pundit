@@ -13,7 +13,8 @@
 use std::path::{Path, PathBuf};
 
 use pundit_app::bus::{
-    AppFiles, Command, Event, ExportChoices, ExportRun, RecordingStatus, TargetState, UserError,
+    AppFiles, Command, Event, ExportChoices, ExportRun, QueueRow, RecordingStatus, TargetState,
+    UserError,
 };
 use pundit_core::layout::scoreboard_rects;
 use pundit_core::plan::ExportTarget;
@@ -120,6 +121,34 @@ impl Rig {
 
     fn tag(&self, n: usize) -> ExportTarget {
         ExportTarget::Tag(format!("t{n}"))
+    }
+
+    /// **A second project under the same `Harness`**, for the export queue
+    /// (BACKLOG #77): one clip, its own `media2/` and its own `exports/`.
+    /// Returns the folder and the clip's id.
+    ///
+    /// `Rig` is otherwise single-project — one folder, one `exports`, one
+    /// `clips` — and the queue's whole point is spanning that, so this is the
+    /// one piece of test scaffolding the feature needs. It uses
+    /// `pundit_harness`'s own `write_project` / `add_clips`, so nothing in the
+    /// library changes.
+    ///
+    /// **It does not open the project**; the test does, when it wants the
+    /// switch to be the thing under test.
+    fn second_project(&self, secs: f64) -> (PathBuf, Uuid) {
+        let folder = self.tmp.path().join("project2");
+        let media = self.tmp.path().join("media2");
+        for dir in [&folder, &media] {
+            std::fs::create_dir(dir).unwrap();
+        }
+        let mut project = write_project(&folder, &media, &[("b.webm", 2)]);
+        project.name = "Away Game".into();
+        let clips = add_clips(&folder, &mut project, &[0]);
+        project.clips[0].recording_duration = secs;
+        project.clips[0].name = "clip 0".into();
+        project.clips[0].tags = vec!["t0".into()];
+        store::write(&folder, &mut project).unwrap();
+        (folder, clips[0].id)
     }
 }
 
@@ -714,4 +743,319 @@ fn a_refused_run_leaves_the_pickers_alone() {
     assert_eq!(saved.preferences.export_source_volume, 1.0);
     assert!(saved.preferences.last_export_chapters);
     assert!(saved.preferences.last_export_cues);
+}
+
+/// What the queue holds, resolved: the next `Event::Queue`.
+///
+/// Local, like [`outcome`], rather than a `Harness` method — the queue is one
+/// feature's event and `pundit_harness`'s lib needs nothing for it.
+fn queue(h: &mut Harness) -> Vec<QueueRow> {
+    h.wait_map("the queue", |e| match e {
+        Event::Queue(rows) => Some(rows.clone()),
+        _ => None,
+    })
+}
+
+/// **The whole feature: two projects' exports, one run** (BACKLOG #77). Enqueue
+/// in project 1, open project 2, enqueue there, press Start once and walk away.
+///
+/// It also carries the two things the plan folded in here rather than paying
+/// for a render each:
+/// - **an enqueue during a run is allowed**, which is spec §Q8's one documented
+///   divergence from the basket and §Q11's stated behaviour, and was otherwise
+///   untested — `Start queue` is what waits, not the enqueue;
+/// - **a project opens while the queue renders**, the cross-project half of
+///   `a_project_opens_while_a_run_is_going`.
+///
+/// One second of clip per target, for that test's own reason: this waits for a
+/// whole run to finish and CI renders on llvmpipe.
+#[test]
+fn a_queue_runs_several_projects_jobs_as_one_run() {
+    let mut rig = Rig::open(&[1.0, 1.0]);
+    let first = rig.tmp.path().join("project").canonicalize().unwrap();
+    let (second, _) = rig.second_project(1.0);
+
+    // Two from the project that is open.
+    rig.h.send(Command::EnqueueExport {
+        targets: vec![rig.tag(0), rig.tag(1)],
+        choices: choices(),
+    });
+    let rows = queue(&mut rig.h);
+    assert_eq!(
+        rows.iter().map(|r| r.label.as_str()).collect::<Vec<_>>(),
+        ["t0", "t1"],
+        "the rows are not the two targets, in order"
+    );
+    assert!(
+        rows.iter().all(|r| r.match_label == "Game"),
+        "a row does not name its match: {rows:#?}"
+    );
+
+    // Then one from another project, which is the point.
+    rig.h.send(Command::OpenProject(second.clone()));
+    rig.h.wait_opened();
+    rig.h.send(Command::EnqueueExport {
+        targets: vec![ExportTarget::AllClips],
+        choices: choices(),
+    });
+    let rows = queue(&mut rig.h);
+    assert_eq!(rows.len(), 3, "the first project's rows did not survive");
+    assert_eq!(
+        rows[2].match_label, "Away Game",
+        "the third row names the wrong match"
+    );
+
+    rig.h.send(Command::StartQueue);
+    assert!(rig.h.wait_export().is_running());
+    assert!(
+        queue(&mut rig.h).is_empty(),
+        "Start left the rows in the queue"
+    );
+
+    // **An enqueue during a run is allowed**: it renders nothing, so it lands
+    // and waits for the next Start rather than being refused.
+    rig.h.send(Command::EnqueueExport {
+        targets: vec![ExportTarget::AllClips],
+        choices: choices(),
+    });
+    assert_eq!(
+        queue(&mut rig.h).len(),
+        1,
+        "an enqueue during a run was refused or lost"
+    );
+
+    // **And a project opens while it renders**, for #77 task 1's reason.
+    rig.h.send(Command::OpenProject(first.clone()));
+    rig.h.wait_opened();
+
+    let done = outcome(&mut rig.h);
+    assert_eq!(done.targets.len(), 3, "the run is not the three jobs");
+    assert!(
+        done.targets
+            .iter()
+            .all(|t| matches!(t.state, TargetState::Done(_))),
+        "a job did not finish: {:?}",
+        done.targets
+    );
+    // Each row says which match it came from, so three "All clips" from three
+    // projects would still read apart (spec §Q3).
+    assert_eq!(
+        done.targets
+            .iter()
+            .map(|t| t.label.as_str())
+            .collect::<Vec<_>>(),
+        ["t0 — Game", "t1 — Game", "All clips — Away Game"]
+    );
+
+    // **Three files, in two `exports/` folders** — which is the feature.
+    assert_eq!(outputs(&rig.exports), ["t0 - Game.mp4", "t1 - Game.mp4"]);
+    assert_eq!(
+        outputs(&second.join(EXPORTS_DIRNAME)),
+        ["All clips - Away Game.mp4"]
+    );
+    rig.h.shutdown();
+}
+
+/// **An enqueue makes every refusal a run makes from the open project, and
+/// starts nothing** (spec §Q6) — that is the whole reason the refusals moved to
+/// enqueue: the coach is standing in that project and can fix it, where
+/// refusing at Start would name a clip in a project he left hours ago.
+///
+/// **And the duplicate refusal is keyed on the target, not on the output
+/// path.** Two *different* targets of one project can share a name — a clip
+/// named after a tag, which `two_targets_with_the_same_name_write_two_files`
+/// exists for — and across two clicks they reach the same path. A path key
+/// would refuse the second as "already in the queue" when it is not in the
+/// queue at all, with no way out. Both enqueue here, and `jobs`' seeded
+/// `de_duplicate` is what keeps their files apart.
+#[test]
+fn enqueue_refuses_what_a_run_refuses_and_starts_nothing() {
+    let mut rig = Rig::open_with(&[1.0], |folder, _| {
+        // A clip named after the tag the other target is, so the two labels
+        // collide exactly as the suffix test's do.
+        let mut project = store::read(folder).unwrap();
+        project.clips[0].name = "t0".into();
+        store::write(folder, &mut project).unwrap();
+    });
+
+    // Nothing ticked.
+    rig.h.send(Command::EnqueueExport {
+        targets: vec![],
+        choices: choices(),
+    });
+    assert_eq!(
+        rig.h.wait_for_error(),
+        UserError::CantExport("nothing is ticked".into())
+    );
+
+    // A tag no clip carries.
+    rig.h.send(Command::EnqueueExport {
+        targets: vec![ExportTarget::Tag("nobody".into())],
+        choices: choices(),
+    });
+    assert_eq!(
+        rig.h.wait_for_error(),
+        UserError::CantExport("nobody has nothing to export".into())
+    );
+
+    // The same target twice: refused by identity, as a notice.
+    rig.h.send(Command::EnqueueExport {
+        targets: vec![rig.tag(0)],
+        choices: choices(),
+    });
+    assert_eq!(queue(&mut rig.h).len(), 1);
+    rig.h.send(Command::EnqueueExport {
+        targets: vec![rig.tag(0)],
+        choices: choices(),
+    });
+    let refusal = rig.h.wait_for_error();
+    assert!(
+        matches!(&refusal, UserError::Queue(why) if why.contains("already in the queue")),
+        "{refusal:?}"
+    );
+    assert!(refusal.is_notice(), "a duplicate should not be a modal");
+
+    // **A different target with the same name goes in**, and gets its own file
+    // name rather than the first one's.
+    rig.h.send(Command::EnqueueExport {
+        targets: vec![ExportTarget::Clip(rig.clips[0])],
+        choices: choices(),
+    });
+    let rows = queue(&mut rig.h);
+    assert_eq!(
+        rows.iter().map(|r| r.label.as_str()).collect::<Vec<_>>(),
+        ["t0", "t0 (2)"],
+        "the second target was refused, or would overwrite the first's file"
+    );
+
+    let rest = rig.h.shutdown();
+    no_export_events(&rest);
+}
+
+/// **A queued job whose game video went fails its own row, and the jobs behind
+/// it still write** (spec §Q6, §Q4): the one check that moves from a refusal to
+/// a failure, because nothing true at Start is still true when a job's turn
+/// comes.
+#[test]
+fn a_queued_job_whose_video_went_fails_its_own_row() {
+    let mut rig = Rig::open(&[1.0, 1.0]);
+    let (second, _) = rig.second_project(1.0);
+
+    rig.h.send(Command::EnqueueExport {
+        targets: vec![rig.tag(0)],
+        choices: choices(),
+    });
+    queue(&mut rig.h);
+    rig.h.send(Command::OpenProject(second.clone()));
+    rig.h.wait_opened();
+    rig.h.send(Command::EnqueueExport {
+        targets: vec![ExportTarget::AllClips],
+        choices: choices(),
+    });
+    assert_eq!(queue(&mut rig.h).len(), 2);
+
+    // Gone **after** the enqueue, which is why no refusal can catch it.
+    std::fs::remove_file(rig.tmp.path().join("media").join("a.webm")).unwrap();
+
+    rig.h.send(Command::StartQueue);
+    let done = outcome(&mut rig.h);
+    assert!(
+        matches!(done.targets[0].state, TargetState::Failed(_)),
+        "the job with no video did not fail: {:?}",
+        done.targets[0].state
+    );
+    assert!(
+        matches!(done.targets[1].state, TargetState::Done(_)),
+        "the job behind it did not write: {:?}",
+        done.targets[1].state
+    );
+    assert_eq!(
+        outputs(&second.join(EXPORTS_DIRNAME)),
+        ["All clips - Away Game.mp4"]
+    );
+    rig.h.shutdown();
+}
+
+/// **Deleting a clip drops the queued jobs that needed it** (spec §Q6), and
+/// leaves the ones that did not.
+///
+/// A job holds the clip's `recordings/<file>`, which the delete renames into
+/// `.trash` — so from that moment the inset cannot be read and the entry falls
+/// back to the GL filler. The job would still write a film, with the coach's
+/// commentary silently gone and its text bar and chapter still in place, and a
+/// silent quality loss is worse than a failure.
+///
+/// **Driven through real jobs rather than a hand-built `Render`**, which is a
+/// deviation from the plan and a deliberate one: what can actually break is
+/// `job()` ceasing to populate `ClipMedia`, and a fixture assembled in the test
+/// would pin the fixture (`fit_window.rs`'s header is this repo's record of
+/// that trap). The whole-match row is the "no clip" half — its plan entries
+/// carry none — and `Render::Copy`'s own arm needs no test, because a copy
+/// holds no `Encode` at all and so is not a holder of the file by construction.
+#[test]
+fn deleting_a_clip_drops_the_queued_jobs_that_needed_it() {
+    let mut rig = Rig::open(&[1.0, 1.0]);
+
+    rig.h.send(Command::EnqueueExport {
+        targets: vec![
+            ExportTarget::Clip(rig.clips[0]),
+            ExportTarget::Clip(rig.clips[1]),
+            ExportTarget::WholeMatch,
+        ],
+        choices: choices(),
+    });
+    assert_eq!(queue(&mut rig.h).len(), 3);
+
+    rig.h.send(Command::DeleteClip(rig.clips[0]));
+    // **The queue is published before the notice**, because the drop is what
+    // the notice is about. Read in that order: `wait_for_error` advances the
+    // cursor past everything before the error, so taking the notice first
+    // would leave the `Event::Queue` behind it.
+    let rows = queue(&mut rig.h);
+    assert_eq!(
+        rows.iter().map(|r| r.label.as_str()).collect::<Vec<_>>(),
+        ["clip 1", "Whole match"],
+        "the wrong jobs were dropped"
+    );
+    let notice = rig.h.wait_for_error();
+    assert!(
+        matches!(&notice, UserError::Queue(why) if why.contains("dropped 1 queued export")),
+        "{notice:?}"
+    );
+    assert!(
+        notice.is_notice(),
+        "it must not be a modal over his project"
+    );
+
+    // **A delete that does not happen drops nothing**, which is why the drop
+    // sits below `remove_clip` rather than beside the transcription and preview
+    // calls above it. `DeleteClip` is a public command with no gate — the same
+    // reason `restore_last_project` is guarded — so a clip id belonging to
+    // *another* project reaches here and `remove_clip` answers `None`. Above
+    // the delete that would destroy a queued job for a clip nobody deleted,
+    // and the queue has no undo where a cancelled transcription and a closed
+    // preview are both recoverable.
+    let (second, elsewhere_clip) = rig.second_project(1.0);
+    rig.h.send(Command::OpenProject(second.clone()));
+    rig.h.wait_opened();
+    rig.h.send(Command::EnqueueExport {
+        targets: vec![ExportTarget::Clip(elsewhere_clip)],
+        choices: choices(),
+    });
+    assert_eq!(queue(&mut rig.h).len(), 3, "the enqueue did not land");
+
+    rig.h.send(Command::OpenProject(
+        rig.tmp.path().join("project").canonicalize().unwrap(),
+    ));
+    rig.h.wait_opened();
+    rig.h.send(Command::DeleteClip(elsewhere_clip));
+    // Nothing to wait *for*, so the proof is the next queue event: a
+    // `publish_queue` from the bogus delete would be found here with two rows
+    // where the clear's is empty.
+    rig.h.send(Command::ClearQueue);
+    assert!(
+        queue(&mut rig.h).is_empty(),
+        "the bogus delete published a queue of its own"
+    );
+    rig.h.shutdown();
 }

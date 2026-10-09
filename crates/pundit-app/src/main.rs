@@ -3206,6 +3206,13 @@ fn on_event(w: &AppWindow, event: Event) {
         // The transport runs over the clip while a preview is open, and the
         // window keys the indicator, the identity zoom and the hidden live
         // stroke layer off `previewing-clip` (P6).
+        // **Nothing renders this yet, and that is #77 task 3's job** — the
+        // Queue section in the export sheet. The event is published and
+        // covered by `harness/tests/export.rs` from task 2; what is missing is
+        // the list, `Add to queue` and `Start queue`. An empty arm rather than
+        // a `_` catch-all, so the compiler keeps naming it until the section
+        // exists.
+        Event::Queue(_) => {}
         Event::Preview(previewing) => UI.with_borrow_mut(|ui| {
             let clip = previewing.and_then(|id| {
                 let project = &ui.snapshot.as_ref()?.project;
