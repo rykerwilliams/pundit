@@ -285,6 +285,38 @@ leaves Caps Lock free and makes `shift+a` its own binding. A keymap is a
 property of the coach's hands, so **nothing here is a `project.json` field and
 no format version moves.**
 
+**The Keys sheet is where they are rebound, and the capture is a window layer
+rather than a focused field.** `F1` opens the sheet; each action's row carries
+*Set…* and ✕. *Set…* arms `capturing-action` on the window and the **top of
+`handle-key`** harvests the next key — it has to be there, because shortcuts are
+dispatched window-to-focus-item *before* the focused element, so a `FocusScope`
+inside the sheet would never see a key the table binds. **`Set…` replaces the
+row's keys with the one captured** (the two-key defaults keep their pairs until
+touched; adding a second is BACKLOG #135), and `Keymap::rebind` is G3's
+last-wins: the key is taken off whatever held it, which keeps its *other* keys,
+and the displaced action is named on the sheet's own line. That line is the
+sheet's and not the status bar's, whose notice renders **behind the scrim**.
+- **`AppFiles::set_keymap` writes the whole diff**, never one row — last-wins
+  changes *two* rows, and a one-row write leaves the displaced binding in the
+  file for the next load to resurrect as a collision. The spec's
+  `set_binding(action, Vec<Binding>)` is wrong for that reason.
+- **`capturing-action` is cleared by Rust, not by `app.slint`** — except for
+  Escape, which cancels and needs no round trip. Only `keymap.rs` can say
+  whether a press is a key at all: a **bare modifier leaves the capture armed**
+  (Slint delivers a key event for Ctrl, and a capture that took the first press
+  would store Ctrl and never see the letter), and one of the five **reserved**
+  keys is refused with the capture still armed. `Binding::reserved` is Escape,
+  Tab, Return, Home and End with any modifiers, and it is the same five the sheet
+  lists as not rebindable — three of them because `handle-key` tests them *ahead*
+  of the lookup, Tab because a coach who bound it away would have no keyboard
+  path back to the sheet to undo it. **Delete is not one of them**, deliberately:
+  the plan had Backspace and Delete *unbind* during a capture, but Delete is
+  `deleteClip`'s own default, so that would have made a shipped binding
+  unreachable. Unbinding is the ✕ instead.
+- **Every one of the 29 actions now has a `handle-key` branch**, `showRecents`
+  included — it still has no default, so the branch is unreachable until a coach
+  binds it, which is the whole reason it exists.
+
 **`last_project` is the derived head of `recent_projects`, never a second
 stored copy** (#85): `push_recent_project` is the only writer, `set_last_project`
 is deleted, and `==` on the canonical path `commit` stores is the whole
@@ -664,7 +696,11 @@ slot on `Sheet` and an edit to all six. The keyboard is untouched, because
 `handle-key` is `capture-key-pressed` and a `Flickable` reads no keys at all.
 One thing it costs a test: `ElementHandle` skips anything clipped away, so a
 button at the bottom of a tall sheet has to be flicked into view before it can
-be found (`flick_to_the_end` in `tests/ui/sheet_scroll.rs`).
+be found (`flick_to_the_end` in `tests/ui/sheet_scroll.rs`). It also **retired a
+cap written hours earlier**: the Keys sheet's 29-row list had its own 520px
+`ScrollView` for exactly this problem, and leaving it would have shown a coach
+520px of rows in the middle of a 1200px card and scrolled in two places at
+once.
 
 **The scan speed is `Command::ScanSpeed(ScanStep)`** (`J`/`L` by default: the bus steps 1×–32×, while scanning only; any pause returns to 1×, so a recording starts at 1×). The player owns the rate, and **every scan seek carries it** (`pipeline.seek(rate, …)`, never `seek_simple`, whose 1.0 would drop it on the next scrub or skip). `set_rate` issues no seek: the bus does, through `load`, unless a seek still to be issued will carry it; after a pause it seeks to the frame on screen, not the position the picture trails at speed. Opening a preview returns to 1× with no seek. Every frame is decoded even at 32× and the scan sink's QoS (`max-lateness` 20 ms) drops what's late: measured on 1080p30 H.264, that showed 88 fps at 32× against key frames only's 16, with a tenth of the lag.
 

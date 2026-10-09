@@ -422,8 +422,10 @@ fn main() {
     wire_pen_width(&window, &machine_state);
     wire_folds(&window, &machine_state);
     // The keymap is read here, once: the window asks `action-for` per key
-    // event and that lookup is a scan over the returned table (#96).
-    key_action::wire_keys(&window, machine_state.keymap());
+    // event and that lookup is a scan over the returned table (#96). The file
+    // handle is for the other direction -- the Keys sheet's *Set...* and ✕,
+    // which rewrite the stored diff on this thread as the panel widths do.
+    key_action::wire_keys(&window, &machine_state, machine_state.keymap());
 
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, TICK, {

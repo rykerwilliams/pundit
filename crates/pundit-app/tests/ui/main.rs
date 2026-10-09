@@ -47,6 +47,26 @@ slint::include_modules!();
 #[path = "../../src/key_action.rs"]
 mod key_action;
 
+/// The app's state file under a temporary directory, for the six fixtures that
+/// wire the keys.
+///
+/// `wire_keys` writes a rebind through `AppFiles`, and the handle it is given
+/// in the app is `$XDG_CONFIG_HOME/pundit/state.json` — **the coach's own**.
+/// So no fixture may hand it that one, and this is what they hand it instead.
+///
+/// **One directory for the whole binary, and nothing reads it back.** The
+/// keymap each window uses is the one passed to `wire_keys`, not one loaded
+/// from here, so what a fixture writes is never read — by itself or by
+/// another. The round trip through a real file is `bus::state`'s own
+/// `a_rebind_survives_the_file`, with a directory of its own.
+pub fn scratch_state() -> pundit_app::bus::AppFiles {
+    static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    pundit_app::bus::AppFiles::in_config_dir(
+        DIR.get_or_init(|| tempfile::tempdir().expect("a scratch directory"))
+            .path(),
+    )
+}
+
 mod export_sheet;
 mod fit_window;
 mod keys;

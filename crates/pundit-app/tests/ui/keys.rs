@@ -150,10 +150,14 @@ fn cases() -> Vec<Case> {
     ]
 }
 
-/// The one action with no branch in `handle-key`, so `covers_every_action`
-/// names it rather than counting to 28. It has no default binding either, and
-/// the branch belongs with the task that can first bind it (#96 task 5).
-const UNWIRED: [Action; 1] = [Action::ShowRecents];
+/// The one action with no **default** binding, so the census below has no row
+/// to press for it and names it rather than counting to 28.
+///
+/// It is wired now — task 5 gave it its `handle-key` branch along with the
+/// rebinding that can first reach it — and
+/// `a_rebound_key_fires_the_action_it_was_given_to` is what presses it, by
+/// binding it the way a coach does.
+const NO_DEFAULT: [Action; 1] = [Action::ShowRecents];
 
 /// Every window callback a key can reach, pushed onto one list in the order
 /// they fire. One list rather than a flag each: a key that fires the *wrong*
@@ -161,7 +165,7 @@ const UNWIRED: [Action; 1] = [Action::ShowRecents];
 fn window() -> (AppWindow, Rc<RefCell<Vec<String>>>) {
     i_slint_backend_testing::init_no_event_loop();
     let w = AppWindow::new().unwrap();
-    key_action::wire_keys(&w, Keymap::defaults());
+    key_action::wire_keys(&w, &crate::scratch_state(), Keymap::defaults());
 
     let fired: Rc<RefCell<Vec<String>>> = Rc::default();
     let say = |what: &'static str| {
@@ -294,18 +298,24 @@ fn binds_what_it_says() {
     }
 }
 
-/// **Every action with a branch has a row.** The pairing Slint cannot check: an
-/// action mapped in `key_action.rs` with no branch in `handle-key` is a listed
-/// key that silently does nothing, and this is the one place that is caught.
+/// **Every action with a default binding has a row.** The pairing Slint cannot
+/// check: an action mapped in `key_action.rs` with no branch in `handle-key` is
+/// a listed key that silently does nothing, and this is the one place that is
+/// caught.
 #[test]
 fn covers_every_action() {
     let cases = cases();
     for action in Action::ALL {
         let tested = cases.iter().any(|c| c.action == action);
-        if UNWIRED.contains(&action) {
+        if NO_DEFAULT.contains(&action) {
             assert!(
                 !tested,
-                "{action:?} has a row, so it is wired now and does not belong in UNWIRED"
+                "{action:?} has a row, so it has a default now and does not belong \
+                 in NO_DEFAULT"
+            );
+            assert!(
+                Action::default_keys(action).is_empty(),
+                "{action:?} is in NO_DEFAULT and has a default key: give it a row"
             );
             continue;
         }
@@ -485,5 +495,201 @@ fn a_refused_gate_still_swallows_the_key() {
         fired.borrow().is_empty(),
         "f fitted a window with nothing to take off: {:?}",
         fired.borrow()
+    );
+}
+
+/// **A capture swallows exactly one key and that key becomes the action's**
+/// (#96 task 5): the press does not fire what it used to, the capture ends, the
+/// next press of it fires the action it was given to, and both the key it
+/// replaced and the key it was taken from fire nothing.
+///
+/// Driven through `capturing-action` rather than the sheet's *Set…* button,
+/// because the capture is a window layer and the button only arms it: the
+/// button is `keys_sheet.rs`'s half. What this pins is the half nothing else
+/// can — that the capture runs **ahead of the table**.
+///
+/// **The key captured is Space, and it is Space because Space is already
+/// bound.** `q` would read the same and prove far less: with the capture
+/// anywhere below the lookup an *unbound* key still falls through to it, so the
+/// test would pass with the layer in the wrong place. Space is `togglePlay`'s,
+/// and `base` leaves `can-play` true, so a capture that ran after the table
+/// would play the footage and leave the capture armed — which is the failure
+/// this exists to catch, and the plan's second sabotage in a form that is one
+/// line to try.
+#[test]
+fn capturing_swallows_one_key_and_rebinds_it() {
+    let (w, fired) = window();
+    base(&w);
+
+    w.set_capturing_action("toggleRecording".into());
+    press(&w, &" ".into(), false, false);
+    assert!(
+        fired.borrow().is_empty(),
+        "the captured key fired what it used to on its way in: {:?}",
+        fired.borrow()
+    );
+    assert_eq!(
+        w.get_capturing_action(),
+        "",
+        "the capture is still armed, so the window is swallowing every key"
+    );
+    // Last-wins, said out loud: the line names the action the key was taken
+    // from, which is the only way a coach learns they just cost themselves one.
+    let line = w.get_keys_message().to_string();
+    assert!(
+        line.contains("Space") && line.contains(Action::TogglePlay.what()),
+        "the line does not say what the key was taken from: {line:?}"
+    );
+
+    fired.borrow_mut().clear();
+    press(&w, &" ".into(), false, false);
+    assert_eq!(
+        *fired.borrow(),
+        ["record \"\"".to_owned()],
+        "Space is the recording key now and did not record"
+    );
+
+    // Replacing, not adding — which is what the one *Set…* promises.
+    fired.borrow_mut().clear();
+    press(&w, &"r".into(), false, false);
+    assert!(
+        fired.borrow().is_empty(),
+        "r still records after being replaced: {:?}",
+        fired.borrow()
+    );
+    // Nothing asserts separately that `togglePlay` lost Space, because the
+    // assertion above *is* that: one binding reaches one action, so a Space
+    // that records is a Space that no longer plays.
+}
+
+/// **Escape cancels, and the old binding stands.** The one key the capture
+/// layer decides for itself, so that a coach who pressed *Set…* by mistake is
+/// never stuck in a window that swallows everything.
+#[test]
+fn escape_cancels_a_capture() {
+    let (w, fired) = window();
+    base(&w);
+
+    w.set_capturing_action("toggleRecording".into());
+    press(&w, &Key::Escape.into(), false, false);
+    assert_eq!(
+        w.get_capturing_action(),
+        "",
+        "Escape did not end the capture"
+    );
+    assert_eq!(w.get_keys_message(), "", "the line was left up");
+    assert!(
+        fired.borrow().is_empty(),
+        "Escape reached the cascade behind the capture: {:?}",
+        fired.borrow()
+    );
+
+    press(&w, &"r".into(), false, false);
+    assert_eq!(
+        *fired.borrow(),
+        ["record \"\"".to_owned()],
+        "r stopped recording after a cancelled capture"
+    );
+}
+
+/// **A modifier on its own leaves the capture armed**, which is the one case
+/// that would otherwise make `Ctrl+`anything unbindable: Slint delivers a key
+/// event for Ctrl, and a capture that took the first press would store Ctrl and
+/// never see the letter.
+#[test]
+fn a_modifier_on_its_own_is_not_the_answer() {
+    let (w, fired) = window();
+    base(&w);
+
+    w.set_capturing_action("toggleRecording".into());
+    for modifier in [Key::Control, Key::Shift, Key::Alt] {
+        w.window().dispatch_event(WindowEvent::KeyPressed {
+            text: modifier.into(),
+        });
+        assert_eq!(
+            w.get_capturing_action(),
+            "toggleRecording",
+            "{modifier:?} on its own ended the capture"
+        );
+    }
+
+    // And the combination it was reaching for is what lands. `press` holds the
+    // modifier across the key exactly as a keyboard does, so this is the four
+    // events a coach's `Ctrl+Q` really is.
+    press(&w, &"q".into(), true, false);
+    assert_eq!(w.get_capturing_action(), "");
+    fired.borrow_mut().clear();
+    press(&w, &"q".into(), true, false);
+    assert_eq!(
+        *fired.borrow(),
+        ["record \"\"".to_owned()],
+        "ctrl+q is the recording key now and did nothing"
+    );
+    // And the plain key is not: the modifiers are compared exactly.
+    fired.borrow_mut().clear();
+    press(&w, &"q".into(), false, false);
+    assert!(
+        fired.borrow().is_empty(),
+        "q fires too, so the modifier was dropped: {:?}",
+        fired.borrow()
+    );
+}
+
+/// **A reserved key is refused and the capture stays armed** — a correction
+/// rather than a cancellation, so the next press is still taken.
+///
+/// Storing one would make a listed binding that can never fire: `handle-key`
+/// tests Escape, Home and End ahead of the lookup, and Tab bound away would
+/// leave no keyboard path back to the sheet to undo it.
+#[test]
+fn a_reserved_key_is_refused_and_the_capture_stays_armed() {
+    let (w, _) = window();
+    base(&w);
+
+    w.set_capturing_action("clearDrawings".into());
+    for reserved in [Key::Tab, Key::Home, Key::End, Key::Return] {
+        press(&w, &reserved.into(), false, false);
+        assert_eq!(
+            w.get_capturing_action(),
+            "clearDrawings",
+            "{reserved:?} ended the capture"
+        );
+        assert!(
+            w.get_keys_message().contains("the app's own"),
+            "{reserved:?} was refused without saying why: {:?}",
+            w.get_keys_message()
+        );
+    }
+    // Escape is reserved too, and it is the one the *layer* answers: it cancels
+    // rather than being refused, which is the only way out of a capture.
+    press(&w, &Key::Escape.into(), false, false);
+    assert_eq!(w.get_capturing_action(), "");
+}
+
+/// **The one action that ships bound to nothing fires once a key is bound to
+/// it** (#96 task 5) — the row task 4 shipped as a listed dead key on purpose.
+///
+/// This is `showRecents`' only test, and it is why `NO_DEFAULT` is about
+/// defaults rather than about wiring: there is no key to press for it until the
+/// rebind puts one there, which is exactly what a coach does.
+#[test]
+fn a_rebound_key_fires_the_action_it_was_given_to() {
+    let (w, _) = window();
+    base(&w);
+    let listed: Rc<RefCell<Vec<String>>> = Rc::default();
+    w.on_list_recents({
+        let listed = Rc::clone(&listed);
+        move || listed.borrow_mut().push("list-recents".to_owned())
+    });
+
+    w.set_capturing_action("showRecents".into());
+    press(&w, &"q".into(), false, false);
+    assert_eq!(w.get_capturing_action(), "");
+
+    press(&w, &"q".into(), false, false);
+    assert_eq!(
+        *listed.borrow(),
+        ["list-recents".to_owned()],
+        "the bound key did not reach the Recent popover"
     );
 }

@@ -128,7 +128,7 @@ fn window() -> (AppWindow, Rc<RefCell<Vec<&'static str>>>) {
     // **The keys come from the table now** (BACKLOG #96): with `action-for`
     // unwired every shortcut reads as `KeyAction.none` and this fixture would
     // pass on nothing. `wire_keys` is the binary's own, shared as a module.
-    key_action::wire_keys(&w, Keymap::defaults());
+    key_action::wire_keys(&w, &crate::scratch_state(), Keymap::defaults());
     let fired: Rc<RefCell<Vec<&'static str>>> = Rc::default();
     let record = |what: &'static str| {
         let fired = Rc::clone(&fired);

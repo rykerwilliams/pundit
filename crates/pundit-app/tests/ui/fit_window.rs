@@ -50,7 +50,7 @@ fn window() -> AppWindow {
     // **The keys come from the table now** (BACKLOG #96): with `action-for`
     // unwired every shortcut reads as `KeyAction.none` and this fixture would
     // pass on nothing. `wire_keys` is the binary's own, shared as a module.
-    key_action::wire_keys(&w, Keymap::defaults());
+    key_action::wire_keys(&w, &crate::scratch_state(), Keymap::defaults());
     // `main.rs`'s handler verbatim. The content rect is what the chrome is
     // being checked against, so a simplified letterbox here would check the
     // simplification.

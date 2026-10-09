@@ -561,6 +561,65 @@ impl Binding {
         self.key
     }
 
+    /// The binding a key event **is** — the reverse of [`Binding::matches`],
+    /// and what a capture in the Keys sheet turns a press into (plan task 5).
+    ///
+    /// `None` for anything that is not a key the table can hold: text that is
+    /// not one character, and a **modifier pressed on its own**. The second is
+    /// not an edge case — a coach reaching for `Ctrl+R` presses Ctrl first, and
+    /// Slint delivers a key event for it — so a capture that took the first
+    /// press would bind Ctrl and never see the `R`. The caller keeps waiting
+    /// instead.
+    ///
+    /// The named keys are matched by **character**, through [`NamedKey::ch`],
+    /// so a press of the left arrow comes back as `Key::Named(LeftArrow)` and
+    /// spells itself `"LeftArrow"` rather than as the private-use code point
+    /// Slint delivered. That is the same single mapping [`Key::from_label`]
+    /// refuses a second spelling of.
+    pub fn from_event(text: &str, ctrl: bool, shift: bool, alt: bool) -> Option<Binding> {
+        let ch = one_char(text)?;
+        if is_modifier(ch) {
+            return None;
+        }
+        let key = match NamedKey::ALL.into_iter().find(|named| named.ch() == ch) {
+            Some(named) => Key::Named(named),
+            None => Key::Char(ch),
+        };
+        Some(Binding {
+            key,
+            ctrl,
+            shift,
+            alt,
+        })
+    }
+
+    /// Whether this is one of the keys the app keeps for itself — the five the
+    /// Keys sheet lists as reserved (spec G4), with or without modifiers.
+    ///
+    /// **A capture that lands on one is refused rather than stored**, because
+    /// storing it would make a listed binding that can never fire: `handle-key`
+    /// tests Escape, Home and End *ahead* of the lookup, and Tab and Return are
+    /// the platform's — Tab especially, since a coach who bound it away could
+    /// not reach a control by keyboard to put it back. The modifiers are
+    /// ignored on purpose: the window's own tests of those three read
+    /// `event.text` alone, so `Ctrl+Home` is swallowed there too.
+    ///
+    /// It is only the **capture** this refuses. A hand-edited `state.json` may
+    /// still name one, and costs itself a row that does nothing — which is the
+    /// bargain every other unreadable thing in that file strikes.
+    pub fn reserved(self) -> bool {
+        matches!(
+            self.key,
+            Key::Named(
+                NamedKey::Escape
+                    | NamedKey::Tab
+                    | NamedKey::Return
+                    | NamedKey::Home
+                    | NamedKey::End
+            )
+        )
+    }
+
     /// Whether a key event is this binding: the character, lowercased by the
     /// caller, and the three modifiers **exactly**. Exactly is what makes
     /// `shift+a` a different binding from `a` and leaves Caps Lock free.
@@ -574,6 +633,29 @@ fn strip_modifier<'a>(label: &'a str, word: &str) -> Option<&'a str> {
     let tail = label.get(word.len() + 1..)?;
     let head = label.get(..word.len())?;
     (head.eq_ignore_ascii_case(word) && label.as_bytes()[word.len()] == b'+').then_some(tail)
+}
+
+/// Whether `ch` is a **modifier key pressed on its own** rather than a key.
+///
+/// From `slint::platform::Key` for [`NamedKey::ch`]'s reason: no code point in
+/// this file to copy wrongly. All nine of them, because the right-hand Ctrl and
+/// Shift are their own members and a coach has two hands; Caps Lock is here too,
+/// since it reports a press and binding it would be a key with no release.
+fn is_modifier(ch: char) -> bool {
+    use slint::platform::Key;
+    [
+        Key::Shift,
+        Key::ShiftR,
+        Key::Control,
+        Key::ControlR,
+        Key::Alt,
+        Key::AltGr,
+        Key::Meta,
+        Key::MetaR,
+        Key::CapsLock,
+    ]
+    .into_iter()
+    .any(|key| char::from(key) == ch)
 }
 
 /// A key event's text as one lowercased character, or `None` for anything that
@@ -605,6 +687,14 @@ pub struct KeyRow {
     pub what: &'static str,
     pub keys: String,
     pub when: &'static str,
+    /// The name the row is stored under — `"openProject"` — which is what the
+    /// sheet's *Set…* and *✕* carry back (plan task 5). The row's identity, so
+    /// nothing has to match on the words in `what`.
+    pub action: &'static str,
+    /// Whether it answers to any key at all. **The ✕ is enabled by this and
+    /// not by comparing the `keys` cell against an em dash**, which is this
+    /// file's spelling of "nothing" and no sheet's business.
+    pub bound: bool,
 }
 
 /// Which keys do what, right now: the defaults with the coach's overrides
@@ -766,8 +856,50 @@ impl Keymap {
                         .join(", ")
                 },
                 when: action.when(),
+                action: action.name(),
+                bound: !bindings.is_empty(),
             })
             .collect()
+    }
+
+    /// Puts `binding` on `action`, taking it from whatever action held it, and
+    /// answers which that was (spec G3's last-wins).
+    ///
+    /// **It replaces `action`'s bindings rather than adding to them**, which is
+    /// the rule the sheet's one *Set…* button can state and a coach can
+    /// predict. The two-key defaults (`LeftArrow`/`a`, `1`/`Ctrl+0`) keep their
+    /// pairs until a *Set…* touches the row; a second affordance for adding a
+    /// binding beside an existing one is deferred (BACKLOG #135).
+    ///
+    /// **The displaced action loses only that one key** and keeps whatever else
+    /// it had, so taking `a` off the short skip leaves `LeftArrow` on it. What
+    /// comes out is always consistent — one binding, one action — which is what
+    /// lets [`Keymap::overrides`] be written whole and read back unchanged, and
+    /// it is why the writer takes the map rather than a row: last-wins changes
+    /// **two** rows, and a one-row write would leave the displaced binding in
+    /// the file for the next load to resurrect as a collision.
+    pub fn rebind(&mut self, action: Action, binding: Binding) -> Option<Action> {
+        let displaced = self
+            .rows
+            .iter_mut()
+            .find(|(holder, bindings)| *holder != action && bindings.contains(&binding))
+            .map(|(holder, bindings)| {
+                bindings.retain(|held| *held != binding);
+                *holder
+            });
+        if let Some((_, bindings)) = self.rows.iter_mut().find(|(a, _)| *a == action) {
+            *bindings = vec![binding];
+        }
+        displaced
+    }
+
+    /// Leaves `action` answering to nothing — a real state rather than a
+    /// degenerate one, and how a coach frees a key without having to give it to
+    /// something else first.
+    pub fn unbind(&mut self, action: Action) {
+        if let Some((_, bindings)) = self.rows.iter_mut().find(|(a, _)| *a == action) {
+            bindings.clear();
+        }
     }
 }
 
@@ -798,6 +930,7 @@ fn claim(action: Action, binding: Binding, taken: &mut Vec<(Binding, Action)>) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use slint::SharedString;
 
     fn overrides(rows: &[(&str, &[&str])]) -> BTreeMap<String, Vec<String>> {
         rows.iter()
@@ -1119,5 +1252,155 @@ mod tests {
         };
         assert_eq!(listing[index(Action::SkipBack)].keys, "LeftArrow, a");
         assert_eq!(listing[index(Action::ShowRecents)].keys, UNBOUND);
+        // The two cells the sheet's controls read: the row's identity, and
+        // whether there is anything for the ✕ to take away.
+        assert_eq!(listing[index(Action::SkipBack)].action, "skipBack");
+        assert!(listing[index(Action::SkipBack)].bound);
+        assert!(!listing[index(Action::ShowRecents)].bound);
+    }
+
+    /// **A key event is a binding, and a bare modifier is not one.** The
+    /// capture's whole input, and the one case that would otherwise bind Ctrl
+    /// the instant a coach reached for `Ctrl+R`.
+    #[test]
+    fn a_key_event_reads_back_as_the_binding_it_is() {
+        let label = |text: &str, ctrl, shift| {
+            Binding::from_event(text, ctrl, shift, false).map(Binding::label)
+        };
+        assert_eq!(label("r", false, false).as_deref(), Some("r"));
+        // Shift reaches the matcher as an upper-case character *and* a flag,
+        // and `from_event` has to agree with `matches` about both halves.
+        assert_eq!(label("R", false, true).as_deref(), Some("shift+r"));
+        assert_eq!(label("z", true, false).as_deref(), Some("ctrl+z"));
+        // A named key comes back by name rather than as the private-use code
+        // point Slint delivered, which is the one spelling `from_label` reads.
+        let arrow = SharedString::from(slint::platform::Key::LeftArrow);
+        assert_eq!(
+            label(&arrow, false, true).as_deref(),
+            Some("shift+LeftArrow")
+        );
+        assert_eq!(
+            Binding::from_label("shift+LeftArrow"),
+            Binding::from_event(&arrow, false, true, false),
+            "the two ways in agree, or a stored row is not the key pressed"
+        );
+
+        for modifier in [
+            slint::platform::Key::Shift,
+            slint::platform::Key::ShiftR,
+            slint::platform::Key::Control,
+            slint::platform::Key::ControlR,
+            slint::platform::Key::Alt,
+            slint::platform::Key::AltGr,
+            slint::platform::Key::Meta,
+            slint::platform::Key::MetaR,
+            slint::platform::Key::CapsLock,
+        ] {
+            let text = SharedString::from(modifier);
+            assert_eq!(
+                Binding::from_event(&text, false, false, false),
+                None,
+                "{modifier:?} on its own is not a key to bind"
+            );
+        }
+        assert_eq!(label("", false, false), None);
+        assert_eq!(label("ab", false, false), None, "not one character");
+    }
+
+    /// **The five reserved keys are refused a capture**, modifiers or not: the
+    /// window tests three of them ahead of the lookup and the other two are the
+    /// platform's, so a stored row claiming one would be listed and dead.
+    #[test]
+    fn the_reserved_keys_refuse_a_capture() {
+        for name in ["Escape", "Tab", "Return", "Home", "End"] {
+            let bare = Binding::from_label(name).expect("a key");
+            assert!(bare.reserved(), "{name} is capturable");
+            let shifted = Binding::from_label(&format!("ctrl+shift+{name}")).expect("a key");
+            assert!(shifted.reserved(), "ctrl+shift+{name} is capturable");
+        }
+        // And `Delete` is **not** one of them, which is the reason a capture
+        // takes it rather than reading it as "unbind": it is `deleteClip`'s own
+        // default, so a coach who moved that row has to be able to move it
+        // back. Unbinding is the sheet's ✕ instead.
+        for name in ["Delete", "Backspace", "Space", "F1", "r", "1"] {
+            assert!(
+                !Binding::from_label(name).expect("a key").reserved(),
+                "{name} cannot be bound"
+            );
+        }
+    }
+
+    /// **A rebind is last-wins, and it answers who lost** (spec G3): the key
+    /// moves, the loser keeps its other keys, and the winner's row becomes the
+    /// one key the coach pressed.
+    #[test]
+    fn a_rebind_takes_the_key_and_says_where_from() {
+        let mut keymap = Keymap::defaults();
+        let a = Binding::from_label("a").expect("a key");
+
+        assert_eq!(
+            keymap.rebind(Action::ShowRecents, a),
+            Some(Action::SkipBack),
+            "the key was the short skip's and nothing said so"
+        );
+        assert_eq!(labels(&keymap, Action::ShowRecents), ["a"]);
+        assert_eq!(
+            labels(&keymap, Action::SkipBack),
+            ["LeftArrow"],
+            "the displaced action lost one key, not its row"
+        );
+        assert_eq!(
+            keymap.action_for("a", false, false, false),
+            Some(Action::ShowRecents),
+            "one binding, one action"
+        );
+
+        // Replacing, not adding: the row becomes the one key pressed, which is
+        // what the sheet's single *Set…* promises.
+        let q = Binding::from_label("q").expect("a key");
+        assert_eq!(
+            keymap.rebind(Action::SkipBack, q),
+            None,
+            "nothing held q, so nothing was displaced"
+        );
+        assert_eq!(labels(&keymap, Action::SkipBack), ["q"]);
+
+        // A key an action already holds displaces nobody and leaves the row as
+        // that one key.
+        assert_eq!(keymap.rebind(Action::SkipBack, q), None);
+        assert_eq!(labels(&keymap, Action::SkipBack), ["q"]);
+    }
+
+    /// **Unbinding empties the row and nothing else**, and the diff says so —
+    /// which is what makes it survive a reload rather than reverting.
+    #[test]
+    fn unbinding_leaves_the_row_empty_and_stored() {
+        let mut keymap = Keymap::defaults();
+        keymap.unbind(Action::ToggleRecording);
+        assert_eq!(labels(&keymap, Action::ToggleRecording), [] as [String; 0]);
+        assert_eq!(
+            keymap.action_for("r", false, false, false),
+            None,
+            "the freed key still fires something"
+        );
+        assert_eq!(
+            keymap.overrides().get("toggleRecording").map(Vec::as_slice),
+            Some(&[] as &[String]),
+            "an empty row has to be *in* the diff, or the next load restores r"
+        );
+        assert_eq!(
+            Keymap::with_overrides(&keymap.overrides()),
+            keymap,
+            "and the whole map round-trips"
+        );
+    }
+
+    /// Every key of one action, by label, for the rebind tests.
+    fn labels(keymap: &Keymap, action: Action) -> Vec<String> {
+        keymap
+            .bindings(action)
+            .iter()
+            .map(|b| b.label())
+            .collect::<Vec<_>>()
     }
 }

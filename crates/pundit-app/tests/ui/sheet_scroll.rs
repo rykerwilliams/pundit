@@ -118,7 +118,7 @@ fn window() -> AppWindow {
     // could not have skipped either way — passing on nothing. This file was
     // written on a branch that predated the table, and the merge is what
     // caught it.
-    key_action::wire_keys(&w, Keymap::defaults());
+    key_action::wire_keys(&w, &crate::scratch_state(), Keymap::defaults());
     w.show().unwrap();
     let (min_w, min_h) = (w.get_min_window_width(), w.get_min_window_height());
     w.window().set_size(LogicalSize::new(min_w, min_h));

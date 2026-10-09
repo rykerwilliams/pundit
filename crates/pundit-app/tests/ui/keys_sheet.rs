@@ -1,6 +1,6 @@
-//! **The Keys sheet, driven through the real sheet** (BACKLOG #96, plan task
-//! 4): `F1` and the button open it, Esc closes it, and the 29 rows on screen
-//! are the ones `keymap.rs` holds.
+//! **The Keys sheet, driven through the real sheet** (BACKLOG #96, plan tasks
+//! 4 and 5): `F1` and the button open it, Esc closes it, the 29 rows on screen
+//! are the ones `keymap.rs` holds, and each row's *Set…* and ✕ change them.
 //!
 //! **What this closes.** The sheet is a list of a Rust table, and the two ways
 //! a list of a table goes wrong are both invisible to a window property: the
@@ -10,12 +10,14 @@
 //! tree** — `KeyLine` carries one label for the whole row, three cells in
 //! order — and compared with `Keymap::listing()`.
 //!
-//! **Two passes and a scroll, because the sheet scrolls.** The row list is
-//! capped at 520px so the card fits the window's own 700px floor, and
-//! `ElementHandle`'s walk skips any subtree the enclosing clip puts off screen
-//! — so about two thirds of the rows are unreachable until the list is
-//! scrolled, which is what a coach does too. Every assertion over the rows
-//! therefore reads them in passes with `ElementHandle::scroll` between.
+//! **Passes and a scroll, because the sheet scrolls.** The card is capped at
+//! the window and scrolls its body (#134 — task 4's own 520px cap on the row
+//! list went with it), and `ElementHandle`'s walk skips any subtree the
+//! enclosing clip puts off screen — so a row below the fold is unreachable
+//! until the list is scrolled, which is what a coach does too. Every assertion
+//! over the rows therefore reads them in passes with `ElementHandle::scroll`
+//! between, and the number that fit is a layout measurement no assertion here
+//! depends on.
 //!
 //! **A handful of rows are spelled out here**, as `export_sheet.rs` spells out
 //! its switches' words: a comparison that derives both sides from
@@ -97,7 +99,7 @@ fn row_label(what: &str, keys: &str, when: &str) -> String {
 fn window() -> (AppWindow, Rc<RefCell<Vec<String>>>) {
     i_slint_backend_testing::init_no_event_loop();
     let w = AppWindow::new().unwrap();
-    key_action::wire_keys(&w, Keymap::defaults());
+    key_action::wire_keys(&w, &crate::scratch_state(), Keymap::defaults());
 
     let fired: Rc<RefCell<Vec<String>>> = Rc::default();
     w.on_toggle_play({
@@ -126,9 +128,9 @@ fn press(w: &AppWindow, text: impl Into<SharedString>) {
 }
 
 /// The window with the sheet open and **big enough to read**. The card is
-/// 840x666, and `ElementHandle` cannot reach a subtree the
-/// window's own edge clips — at the headless default every row would be
-/// unfindable and every assertion below vacuous.
+/// 840px wide and as tall as the window lets it be, and `ElementHandle` cannot
+/// reach a subtree the window's own edge clips — at the headless default every
+/// row would be unfindable and every assertion below vacuous.
 fn open_sheet() -> AppWindow {
     let (w, _) = window();
     w.window().set_size(LogicalSize::new(1920.0, 1200.0));
@@ -137,8 +139,8 @@ fn open_sheet() -> AppWindow {
 }
 
 /// Every row label the accessibility tree can reach right now, read in passes
-/// with a scroll between: the list is capped at 520px, so the rows below it are
-/// clipped out of the walk until it is scrolled.
+/// with a scroll between: the card is capped at the window (#134), so the rows
+/// below the fold are clipped out of the walk until it is scrolled.
 ///
 /// **The scroll is dispatched on a row**, which is where a coach's wheel is,
 /// and the handle is taken before the scroll so the event lands inside the
@@ -338,13 +340,14 @@ fn the_reserved_keys_have_a_row_each() {
 }
 
 /// **The card fits the smallest window the app opens** — the one thing a
-/// 29-row table could have cost. `Sheet` is `height: body.preferred-height`
-/// and **does not scroll** (BACKLOG #134), so a card taller than the window is
-/// a card with its Close button off the bottom of it; this sheet answers that
-/// by capping its row list, and this is the measurement of the cap.
+/// 29-row table of buttons could have cost.
 ///
-/// Measured at the 1100x700 floor: **666px** of the 700 there are, which is
-/// what the 520px cap on the row list buys.
+/// Task 4 answered this with a 520px cap on the row list, because `Sheet` was
+/// `height: body.preferred-height` and a card taller than the window had its
+/// Close button off the bottom. #134 landed hours later and capped every card
+/// at the window instead, so the cap here went: what this now measures is that
+/// the shared one does the job for the tallest sheet there is — which is the
+/// sheet #134's own note names as the reason it was worth doing.
 #[test]
 fn the_card_fits_the_smallest_window_it_opens_in() {
     let w = open_sheet();
@@ -362,4 +365,134 @@ fn the_card_fits_the_smallest_window_it_opens_in() {
         "the Keys sheet is {height}px tall and the smallest window this app \
          opens is {min_h}px: Close is off the bottom of it"
     );
+}
+
+/// A row's control, by the words on it: the Nth of them is the Nth action row,
+/// because the `for` emits them in `Action::ALL`'s order.
+///
+/// **Scoped to Buttons**, so the ✕ a `Text` elsewhere in the window draws — a
+/// refused match-setup field, an invalid editor line — cannot be picked up
+/// instead. Both of those are inside closed sheets, but neither is removed from
+/// the item tree by being behind a scrim, and a test that happened to work is
+/// not the same as one that says what it means.
+fn row_buttons(w: &AppWindow, words: &'static str) -> Vec<ElementHandle> {
+    ElementQuery::from_root(w)
+        .match_type_name("Button")
+        .match_predicate(move |e| e.accessible_label().as_deref() == Some(words))
+        .find_all()
+}
+
+/// **A row's *Set…* arms the capture for that row and nothing else** (#96 task
+/// 5), and the key the coach then presses becomes that action's — read back
+/// off the listing and off the production lookup.
+///
+/// This is the sheet's half of the rebind. The window's half — that the capture
+/// runs ahead of the whole keymap, which is the part that could not be built in
+/// the sheet at all — is `keys.rs`'s `capturing_swallows_one_key_and_rebinds_it`.
+#[test]
+fn set_arms_the_capture_and_the_next_key_lands_on_that_row() {
+    let w = open_sheet();
+    let first = Action::ALL[0];
+
+    let buttons = row_buttons(&w, "Set…");
+    assert_eq!(
+        buttons.len(),
+        Keymap::defaults().listing().len(),
+        "a Set… per action row is what the sheet promises"
+    );
+    buttons[0].invoke_accessible_default_action();
+    assert_eq!(
+        w.get_capturing_action().as_str(),
+        first.name(),
+        "the first row's Set… armed some other row"
+    );
+    assert!(
+        w.get_keys_message().contains(first.what()),
+        "the line does not say which row is waiting: {:?}",
+        w.get_keys_message()
+    );
+
+    press(&w, "q");
+    assert_eq!(w.get_capturing_action(), "", "the capture is still armed");
+    assert_eq!(
+        w.get_key_rows()
+            .row_data(0)
+            .expect("the first row")
+            .keys
+            .as_str(),
+        "q",
+        "the row does not read back as what it became"
+    );
+    assert_eq!(
+        w.invoke_action_for("q".into(), false, false, false),
+        crate::KeyAction::OpenProject,
+        "the lookup the window asks per key event did not change with the list"
+    );
+}
+
+/// **The ✕ leaves a row answering to nothing**, and it is the only way to free
+/// a key without giving it to something else.
+///
+/// It reads `bound` rather than the `keys` cell, so the row that ships with no
+/// key at all has its ✕ greyed out — which is what stops the one control in the
+/// sheet that can do nothing from looking like it might.
+#[test]
+fn the_unbind_empties_a_row_and_is_greyed_out_on_an_empty_one() {
+    let w = open_sheet();
+    let listing = Keymap::defaults().listing();
+    let unbound = listing
+        .iter()
+        .position(|row| !row.bound)
+        .expect("one action ships bound to nothing");
+
+    let buttons = row_buttons(&w, "✕");
+    assert_eq!(buttons.len(), listing.len(), "a ✕ per action row");
+    assert_eq!(
+        buttons[unbound].accessible_enabled(),
+        Some(false),
+        "the row with no key offers to take one away"
+    );
+    assert_eq!(
+        buttons[0].accessible_enabled(),
+        Some(true),
+        "the row with a key does not offer to free it"
+    );
+
+    buttons[0].invoke_accessible_default_action();
+    let row = w.get_key_rows().row_data(0).expect("the first row");
+    assert!(!row.bound, "the row still says it is bound");
+    assert_eq!(
+        row.keys.as_str(),
+        "—",
+        "an emptied row has to say so rather than show a blank cell"
+    );
+    assert_eq!(
+        w.invoke_action_for("o".into(), true, false, false),
+        crate::KeyAction::None,
+        "ctrl+o still opens a project after being unbound"
+    );
+    assert!(
+        w.get_keys_message().contains(Action::ALL[0].what()),
+        "the line does not name the row that changed: {:?}",
+        w.get_keys_message()
+    );
+}
+
+/// **While a capture is armed, nothing else in the sheet can be touched** — not
+/// another row's *Set…*, not a ✕, not Close. One capture at a time, so the key
+/// a coach presses can only mean the row they asked for.
+#[test]
+fn an_armed_capture_settles_the_rest_of_the_sheet() {
+    let w = open_sheet();
+    row_buttons(&w, "Set…")[0].invoke_accessible_default_action();
+
+    for words in ["Set…", "✕", "Close"] {
+        for button in row_buttons(&w, words) {
+            assert_eq!(
+                button.accessible_enabled(),
+                Some(false),
+                "{words:?} is still live while a capture is armed"
+            );
+        }
+    }
 }
