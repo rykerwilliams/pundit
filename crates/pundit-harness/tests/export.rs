@@ -283,19 +283,42 @@ fn cancel_leaves_the_targets_already_written_alone() {
     rig.h.shutdown();
 }
 
-/// **A project open is refused while a run is going** (spec O4), and nothing is
-/// pushed to the recents list.
+/// **A project opens while a run is going, and the run finishes** (#77 spec
+/// §Q7). The coach's own answer, asked as that spec's one open question
+/// (2026-10-07): *"yes you should be able to keep working"*.
 ///
-/// Before this guard there was none: a running export kept rendering from the
-/// project the coach had just left, while `commit` emptied that project's trash
-/// and cleared its history underneath it.
+/// **This replaces `a_project_open_is_refused_while_a_run_is_going` rather
+/// than amending it**: that test asserted the refusal itself, down to its
+/// `UserError::CantExport("an export is running")` text. The three things it
+/// was really guarding — the refused open published nothing, pushed no recent
+/// and wrote no `project.json` — now have to hold **of an open that
+/// succeeds**, which is the opposite assertion over the same three facts.
 ///
-/// It lives here rather than in `project_and_sources.rs` because the export
-/// scaffolding is here — that file has no `ExportTarget`, no `wait_export` and
-/// no clip with a real recording behind it.
+/// What makes it safe is not that a run is cheap to interrupt: it is that a run
+/// holds nothing of the open project. §Q7 audited every one of `commit`'s
+/// eleven steps against a job that is rendering, and the one that carries it is
+/// `entry_media`'s deliberate `stat` over `Bus::missing` — a job reads its own
+/// files off the disk and consults no bus state. The old guard's stated reason
+/// (*"`commit` empties that project's trash underneath it"*) was false: a job
+/// never names a path under `.trash`, and what costs it its recording is the
+/// clip **delete**, which is answered where the delete is.
+/// **One second of clip, not ten, and the reason is CI.** This is the only test
+/// in this file that waits for a whole run to *finish* with a project open in
+/// the middle of it — the `&[10.0]` tests around it either cancel or only check
+/// a refusal. Ten seconds is 300 frames, and on CI's four-core llvmpipe that
+/// plus `commit`'s own `ensure_loaded` (the decode contention §Q7's table
+/// calls a performance matter) overran the harness's 15 s. Thirty frames is
+/// still far longer than the microseconds the bus needs to handle the
+/// `OpenProject` queued behind `begin`'s event.
+///
+/// **The "mid-run" half is not vacuous and does not need its own assertion.**
+/// `wait_map` scans from its cursor, which `wait_opened` left just past
+/// `ProjectOpened` — so `outcome` can only match a terminal `Event::Export`
+/// that came *after* the open. A run that finished first would time out here
+/// rather than pass.
 #[test]
-fn a_project_open_is_refused_while_a_run_is_going() {
-    let mut rig = Rig::open(&[10.0]);
+fn a_project_opens_while_a_run_is_going() {
+    let mut rig = Rig::open(&[1.0]);
     let elsewhere = rig.tmp.path().join("elsewhere");
     std::fs::create_dir(&elsewhere).unwrap();
     // `Rig::open_full` opens `<tmp>/project`; `commit` stored it canonical.
@@ -305,25 +328,76 @@ fn a_project_open_is_refused_while_a_run_is_going() {
     assert!(rig.h.wait_export().is_running());
 
     rig.h.send(Command::OpenProject(elsewhere.clone()));
+    let snapshot = rig.h.wait_opened();
     assert_eq!(
-        rig.h.wait_for_error(),
-        UserError::CantExport("an export is running".into())
+        snapshot.folder.canonicalize().unwrap(),
+        elsewhere.canonicalize().unwrap(),
+        "the open landed somewhere else"
     );
 
-    rig.h.send(Command::CancelExport);
-    assert_eq!(outcome(&mut rig.h).targets[0].state, TargetState::Cancelled);
+    // And the run the coach walked away from still finishes, into the folder
+    // of the project he left rather than the one he is now in.
+    let done = outcome(&mut rig.h);
+    assert_eq!(done.targets.len(), 1);
+    assert!(
+        matches!(done.targets[0].state, TargetState::Done(_)),
+        "the run did not finish: {:?}",
+        done.targets[0].state
+    );
+    assert_eq!(outputs(&rig.exports), ["All clips - Game.mp4"]);
+
+    let config = rig.tmp.path().join("config");
+    rig.h.shutdown();
+    // The two halves of the old test, inverted: the open is a real open, so it
+    // heads the recents list and leaves a project behind it.
+    let recents = AppFiles::in_config_dir(&config).recent_projects();
+    assert_eq!(
+        recents,
+        [elsewhere.canonicalize().unwrap(), opened],
+        "the opened folder is not at the head of the recents"
+    );
+    assert!(
+        elsewhere.join("project.json").exists(),
+        "the open created no project"
+    );
+}
+
+/// **A preview still refuses it**, which is the clause that remains (#77 spec
+/// §Q7) and the one this file had no test for while `refuse_if_busy` answered
+/// both.
+///
+/// Phase 7 spec P5's exclusivity is the reason, and the message is its own:
+/// `UserError::CantOpen` rather than the `CantExport` a project open used to
+/// borrow from an export's refusal. Tested **apart** from the run above on
+/// purpose — a change that failed both would have broken the command rather
+/// than proven either rule.
+#[test]
+fn a_project_open_is_refused_while_a_preview_is_open() {
+    let mut rig = Rig::open(&[10.0]);
+    let elsewhere = rig.tmp.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+
+    rig.h.send(Command::OpenPreview(rig.clips[0]));
+    assert_eq!(rig.h.wait_preview(), Some(rig.clips[0]));
+
+    rig.h.send(Command::OpenProject(elsewhere.clone()));
+    assert_eq!(rig.h.wait_for_error(), UserError::CantOpen);
 
     let config = rig.tmp.path().join("config");
     let rest = rig.h.shutdown();
     assert!(
         !rest.iter().any(|e| matches!(e, Event::ProjectOpened(_))),
-        "the refused open published nothing: {rest:#?}"
+        "the refused open published something: {rest:#?}"
     );
     let recents = AppFiles::in_config_dir(&config).recent_projects();
-    assert_eq!(recents, [opened], "the refused folder was not pushed");
+    assert_eq!(
+        recents,
+        [rig.tmp.path().join("project").canonicalize().unwrap()],
+        "the refused folder was pushed"
+    );
     assert!(
         !elsewhere.join("project.json").exists(),
-        "nothing was written"
+        "the refused open wrote a project"
     );
 }
 

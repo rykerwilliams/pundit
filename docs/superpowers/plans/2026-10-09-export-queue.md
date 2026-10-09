@@ -14,7 +14,33 @@ everything" section. Read §B before §A: one of the things it removes is a task
 
 ## Where this stands (update it as tasks land)
 
-- **1 — the coach keeps working while a run is going.** Not started.
+- **1 — the coach keeps working while a run is going.** **Done**
+  (`claude/77-task-1`). `refuse_if_previewing` beside `refuse_if_busy`,
+  `UserError::CantOpen` as a unit variant, all five comment sites rewritten, the
+  `ProjectOpened` clear conditional, and the notice's folder clause gone.
+  `a_project_open_is_refused_while_a_run_is_going` **replaced** by
+  `a_project_opens_while_a_run_is_going`, plus
+  `a_project_open_is_refused_while_a_preview_is_open` which did not exist: 14
+  harness export tests to 15.
+  **A third test inverted, and neither review found it:**
+  `new_match.rs`'s `new_match_during_an_export_is_refused_and_the_run_finishes`
+  asserted the same `CantExport("an export is running")` from
+  `built_new_match`'s gate. It is now
+  `new_match_during_an_export_goes_through_and_the_run_finishes`: two of its
+  three assertions invert (the folder *is* created, the open project *does*
+  change) and the third stands unchanged and is the point — the run is not
+  disturbed. **Both reviews checked that every test the plan *named* exists;
+  neither searched for tests the plan did not name.** The grep that would have
+  found it is `"an export is running"` across `crates/`, and task 2 should run
+  the equivalent for `refuse_if_busy` before it moves anything.
+  **One correction found in execution:** the first draft of the change had
+  `refuse_if_busy` *call* `refuse_if_previewing`, which would have reported
+  *"can't open that project"* to a coach who pressed Export. One condition, two
+  refusals, each naming what it refused.
+  **Sabotage:** the export clause put back into `refuse_if_previewing` fails
+  `a_project_opens_while_a_run_is_going` alone, with
+  `a_project_open_is_refused_while_a_preview_is_open` still green — which is
+  what says the two clauses are pinned apart rather than together.
 - **2 — the queue on `Bus`: four commands, one view, and the clip-delete rule.**
   Not started.
 - **3 — the Queue section in the export sheet.** Not started.

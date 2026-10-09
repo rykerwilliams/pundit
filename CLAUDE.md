@@ -749,6 +749,61 @@ once.
 - **The mapping is two functions over one picker, because they answer two questions.** `carry_scoreboard` in `bus/export.rs` is "how does this target carry the board **in the picture**" — mode + target into the renderer and the one job field that burns it in, with `Carry { copy, scoreboard }` and no cue slot. `board_cues` is "what goes **beside** the file", the three states `ExportJob::cues` has. **`carry_scoreboard` takes `with_audio` for one reason — it is the only caller of `can_copy`** — and `want_cues` for the same shape of reason, Default being unable to answer "the best available" without knowing what else the run carries; **`Carry` still has no field for either:** the renderer needs one bool, which `job` already holds, so a copy of it on `Carry` would be a second truth the encode arm ignores. `job` computes `with_audio` once and hands it to both readers, because the gate it asks and the copy it may choose have to be answering one question. **Track mode blanks `job.scoreboard`** rather than carrying a mode flag into media: `None` is already media's one "don't draw the board", so there is no third state to keep consistent and `overlay.rs` never learns a picker exists.
 - **The run's rate window is cleared when a target finishes** (`Active::finish_target`), along with the rate the event carries. A copy runs at thousands of output frames a wall second against an encode's tens, so the clips queued behind one would otherwise inherit its rate and be promised they finish at once.
 
+**A run holds nothing of the open project, so the coach keeps working while one
+goes** (BACKLOG #77 task 1; spec `2026-10-07-export-queue-design.md` §Q7, the
+coach 2026-10-07: *"yes you should be able to keep working"*). `refuse_if_busy`
+is a refusal to **render** — `start_run`, `basket_job` and the export queue's
+Start take it whole — and opening a project is refused by
+`refuse_if_previewing` alone, which is the same preview test under its own name
+and its own message (`UserError::CantOpen`, modal: `new_match`'s doc argues its
+refusals on exactly that and names this one). An **enqueue** makes neither
+check, because it renders nothing.
+- **What makes it safe is that a job reads its own files and no bus state.**
+  `Active` reads `self.open` nowhere, export composites on `Gl::shared()`'s own
+  surfaceless display, and `entry_media` deliberately `stat`s rather than
+  consulting `Bus::missing` (basket spec V2) — so a project the bus no longer
+  has open is safe to render from. §Q7 audited all eleven of `commit`'s steps
+  against a rendering job; **nothing in `commit` changed**, and
+  `opening_empties_the_trash_and_the_history` keeps its behaviour exactly.
+- **The old guard's stated reason was false, both halves of it.** It read *"an
+  export or an open preview is composing from the project the coach is leaving,
+  and `commit` below empties that project's trash and clears the history"*. A
+  job's `ClipMedia::recording` is `recordings/<file>` and **never** a path under
+  `.trash`, so emptying it removes nothing a job reads; and `history.clear()`
+  destroys only the *undo* of a clip delete, which no job reads either. What
+  costs a job its recording is the **delete**, whose rename moves the file out
+  from under it — true since Phase 8, in one project, with no queue and no
+  switch. The hazard was real and attached to the wrong operation.
+- **`refuse_if_busy`'s GL comment was false too** and is corrected: export runs
+  on the surfaceless display, not the UI's context (`Gl::shared`'s doc says
+  *"Export always runs here"*). The refusal stands on Phase 7 spec P5's
+  exclusivity and on decode contention.
+- **Two things this costs, both recorded rather than papered over.** A
+  **preview** is still refused while a run goes (`preview.rs`), so "keep
+  working" is narrower than it sounds — that follows from P5. And the sheet's
+  run rows carry the bare target label for an ordinary run, so rows belonging to
+  the project the coach left say nothing about which project that was
+  (BACKLOG #136). The notice no longer lies about it — it reads *"Exported N
+  videos"* with **no folder clause**, which is true of a run spanning any number
+  of projects — but the rows stay ambiguous by decision.
+- **Three harness tests asserted the refusal and therefore inverted**, not
+  one: `export.rs`'s `a_project_open_is_refused_while_a_run_is_going` (which
+  the spec named), `new_match.rs`'s
+  `new_match_during_an_export_is_refused_and_the_run_finishes` (which it did
+  not), and a new `a_project_open_is_refused_while_a_preview_is_open` for the
+  clause that remains. **The way to find the second kind is to grep the
+  message, not the function** — `"an export is running"` across `crates/` — and
+  it is how a refusal's text being asserted verbatim in a test file nobody
+  listed gets caught.
+- **`main.rs` clears `export-run` on `ProjectOpened` only when nothing is
+  running**, because those rows are the coach's one report of work he walked
+  away from. The condition is sound rather than racy: `exporting` is written
+  only in `show_export` from `Event::Export`, and `begin` publishes that before
+  an `OpenProject` can be handled, over a channel that preserves order.
+  **It is not testable here** — the harness has no window and a UI test cannot
+  reach `main.rs`'s event arms — which is stated in the plan's Risk 1 rather
+  than proved.
+
 **The match clock is the displayed frame's source time** (Phase 9).
 - **Never a per-clip constant.** `ScoreboardContext::state_at(entry.source_index,
   frame.source_time)` is called per frame, with `source_time` coming from

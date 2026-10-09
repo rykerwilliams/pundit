@@ -3069,11 +3069,25 @@ fn on_event(w: &AppWindow, event: Event) {
             set_zoom(w, Zoom::IDENTITY);
             w.set_selected_clip(SharedString::new());
             w.set_tag_filter(SharedString::new());
-            // Another project's run doesn't belong in this one's sheet, and
-            // no more does another project's block of match events, whose
-            // video numbers mean other videos (spec F2).
-            w.set_export_run(ModelRc::default());
-            w.set_export_finish(SharedString::new());
+            // A **finished** run doesn't belong in this one's sheet. That was
+            // the whole of this comment when a project could only be opened
+            // *after* a run ended; since #77 one can be opened while a run is
+            // going, and those rows are the coach's only report of work he
+            // walked away from — so the clear is conditional and the reason
+            // above survives for the case it was written about.
+            //
+            // **`exporting` is already true when this arm runs**, which is what
+            // makes the condition right rather than racy: it is written only in
+            // `show_export`, from `Event::Export`, and `Bus::begin` publishes
+            // that before an `OpenProject` can be handled, over a channel that
+            // preserves order.
+            if !w.get_exporting() {
+                w.set_export_run(ModelRc::default());
+                w.set_export_finish(SharedString::new());
+            }
+            // Unconditional, and for its own reason rather than the run's:
+            // another project's block of match events has video numbers that
+            // mean other videos (spec F2).
             w.set_match_editor_paste(SharedString::new());
             w.set_volume(snapshot.project.preferences.scan_volume as f32);
             w.set_project_name(snapshot.project.name.as_str().into());
@@ -3358,10 +3372,12 @@ fn show_export(w: &AppWindow, run: &ExportRun) {
         .count();
     if written > 0 {
         let plural = if written == 1 { "" } else { "s" };
-        show_notice(
-            w,
-            format!("Exported {written} video{plural} to the project's exports folder"),
-        );
+        // **No folder clause** (#77 task 1). It read "to the project's exports
+        // folder" until a project could be opened mid-run, which made it name
+        // the wrong project's folder for any run the coach had walked away
+        // from — and for a queue run, several folders at once. "Exported N
+        // videos" is true everywhere, and the sheet's rows carry each file.
+        show_notice(w, format!("Exported {written} video{plural}"));
     }
 }
 
