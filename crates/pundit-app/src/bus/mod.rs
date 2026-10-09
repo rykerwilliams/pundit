@@ -56,6 +56,7 @@ use uuid::Uuid;
 use crate::drawing::Pen;
 
 pub use basket::{BasketRow, BasketView};
+pub use export::QueueRow;
 pub use export::{
     export_targets, ExportChoices, ExportRun, ExportTargetRow, ExportTargetRun, TargetState,
 };
@@ -362,6 +363,27 @@ pub enum Command {
     /// run's own: a cancel too late to stop a target reports it done.
     CancelExport,
 
+    // The export queue (BACKLOG #77, spec `2026-10-07-export-queue-design.md`):
+    // build the jobs now, run them later. None of these is on the recording
+    // allow-list, so all four are refused while recording exactly as
+    // [`Command::Export`] is.
+    /// Freeze `targets` as jobs and put them at the end of the queue. Every
+    /// refusal an export makes from the open project is made **here**, where
+    /// the coach is standing in that project and can fix it — but **not**
+    /// `refuse_if_busy`'s, because this renders nothing (spec §Q2, §Q6).
+    EnqueueExport {
+        targets: Vec<ExportTarget>,
+        choices: ExportChoices,
+    },
+    RemoveFromQueue {
+        index: usize,
+    },
+    ClearQueue,
+    /// Render everything waiting, as one run. Refused by `refuse_if_busy` and
+    /// by an empty queue, and nothing else: the jobs were checked at enqueue
+    /// and anything that has gone wrong since fails its own row (spec §Q4).
+    StartQueue,
+
     // The basket (basket spec C1): one film whose pieces come from several
     // matches. None of these touches a project, and none is on the recording
     // allow-list — a clip only exists once its recording has stopped, and
@@ -477,6 +499,19 @@ pub enum Event {
     /// Sent as each target's whole percent moves, and last with nothing left
     /// running.
     Export(ExportRun),
+    /// What is waiting for `Start queue`, resolved (BACKLOG #77): published on
+    /// every change to the queue and nowhere else.
+    ///
+    /// **Not a `QueueView` struct wrapping it**, which `Event::Basket` has
+    /// because a basket carries a name and two pickers of its own; a queue
+    /// carries rows and nothing else, so the rows *are* the view.
+    ///
+    /// **Not republished on [`Event::ProjectChanged`] or an open.** Each row is
+    /// read off its frozen job, so nothing a project edit can do changes one —
+    /// which is #77 §Q8's deliberate inversion of the basket's rule, and the
+    /// reason nothing clears this list when a project opens. Spanning the
+    /// switch is the feature.
+    Queue(Vec<export::QueueRow>),
     /// The clip being previewed, or `None` once the preview closed.
     Preview(Option<Uuid>),
     /// The basket, whole (basket spec C4): at startup, on every change to it
@@ -589,6 +624,14 @@ pub enum UserError {
     /// which is a modal.
     #[error("{0}")]
     Basket(String),
+    /// A notice: an enqueue refused one click with nothing to answer — a target
+    /// that is in the queue already — or a clip delete dropped queued jobs that
+    /// needed it (#77 spec §Q6). `Basket`'s precedent exactly.
+    ///
+    /// **`Start queue`'s own refusals are `CantExport`, which is a modal**, as
+    /// the basket's are: Start is a button the coach is standing in front of.
+    #[error("{0}")]
+    Queue(String),
     /// Preview is refused, or the one running gave up.
     #[error("can't preview: {0}")]
     CantPreview(String),
@@ -620,6 +663,7 @@ impl UserError {
                 | UserError::Scoreboard(_)
                 | UserError::Slate(_)
                 | UserError::Basket(_)
+                | UserError::Queue(_)
         )
     }
 }
@@ -703,6 +747,15 @@ pub struct Bus {
     /// remembered in. **Not on `Open`**, which is replaced on every project
     /// open: the basket is what has to survive that (basket spec H3).
     basket: basket::Basket,
+    /// The export jobs waiting for `Start queue`, in the order they were
+    /// enqueued (BACKLOG #77). **Not on `Open`** for the basket's own reason —
+    /// `Open` is replaced on every project open, and spanning that is the whole
+    /// feature. **In memory only** (#77 spec §Q11): closing the app loses it,
+    /// by the coach's own call, and what is lost is snapshots that are re-made
+    /// by ticking and clicking again. If it is ever persisted it is
+    /// `queue.json` beside `basket.json` and **never** a `state.json` key
+    /// (basket spec H1).
+    queue: Vec<export::Queued>,
     open: Option<Open>,
     /// Index of the latest request's source: the one the player holds, or is
     /// heading to. Whether it actually holds it, and where it's heading, are
@@ -831,6 +884,7 @@ impl Bus {
             gl: None,
             files,
             basket,
+            queue: Vec::new(),
             open: None,
             current: 0,
             last_position: (0, None),
@@ -1097,6 +1151,10 @@ impl Bus {
             Command::ClearAvatar => self.clear_avatar(),
             Command::Export { targets, choices } => self.export(targets, choices),
             Command::CancelExport => self.cancel_export(),
+            Command::EnqueueExport { targets, choices } => self.enqueue_export(&targets, choices),
+            Command::RemoveFromQueue { index } => self.remove_from_queue(index),
+            Command::ClearQueue => self.clear_queue(),
+            Command::StartQueue => self.start_queue(),
             Command::AddToBasket { clip_id } => self.add_to_basket(clip_id),
             Command::RemoveFromBasket { index } => self.remove_from_basket(index),
             Command::MoveBasketEntry { from, to } => self.move_basket_entry(from, to),

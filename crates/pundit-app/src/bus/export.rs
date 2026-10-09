@@ -36,7 +36,8 @@ use pundit_core::audio::audio_regions;
 use pundit_core::cues::{scoreboard_cues, Cue};
 use pundit_core::export::{compilation_schedule, Compilation, RateWindow, OUTPUT_FPS};
 use pundit_core::metadata::{
-    clip_label, file_tags, reel_label, CalendarDate, ALL_CLIPS_LABEL, WHOLE_MATCH_LABEL,
+    clip_label, file_tags, match_label, reel_label, CalendarDate, ALL_CLIPS_LABEL,
+    WHOLE_MATCH_LABEL,
 };
 use pundit_core::naming;
 use pundit_core::plan::{
@@ -308,31 +309,60 @@ impl Active {
 impl Bus {
     /// Starts a run over `targets`, or says why it can't.
     pub(super) fn export(&mut self, targets: Vec<ExportTarget>, choices: ExportChoices) {
-        // **One negation, here at the boundary**: `mute` is the coach's word
-        // and the checkbox's, and everything below this line is a volume or a
-        // `with_audio`. The two output switches are negated nowhere — `true`
-        // is "write it" at every layer.
-        let pickers = Pickers {
-            resolution: choices.resolution,
-            quality: choices.quality,
-            scoreboard: choices.scoreboard,
-            source_volume: match choices.mute_source {
-                true => 0.0,
-                false => 1.0,
-            },
-            chapters: choices.chapters,
-            cues: choices.cues,
-        };
-        if let Err(e) = self.start_run(targets, pickers) {
+        if let Err(e) = self.start_run(&targets, choices) {
             self.emit(Event::Error(e));
         }
     }
 
-    fn start_run(&mut self, targets: Vec<ExportTarget>, pickers: Pickers) -> Result<(), UserError> {
-        let refused = |why: &str| UserError::CantExport(why.into());
+    fn start_run(
+        &mut self,
+        targets: &[ExportTarget],
+        choices: ExportChoices,
+    ) -> Result<(), UserError> {
         // Before any I/O: resolving the targets stats a file per entry, and
         // there is no reason to do that to hit a field check (basket spec C3).
         self.refuse_if_busy()?;
+        let jobs = self.jobs(targets, choices, &[])?;
+        self.begin(jobs);
+        // After the run began, so nothing above this can have dirtied the
+        // project on its way to a refusal (basket spec C3).
+        self.settle_pickers(choices);
+        Ok(())
+    }
+
+    /// The jobs `targets` would render, each with the label the sheet lists it
+    /// under, and their `exports/` directory made — **every refusal that can be
+    /// made from the open project, and none about whether anything may run
+    /// now**.
+    ///
+    /// **Split out of `start_run` for the export queue** (BACKLOG #77 spec §Q2):
+    /// an enqueue makes exactly these refusals and not
+    /// [`Bus::refuse_if_busy`]'s, because it renders nothing and `Start queue`
+    /// is what waits.
+    ///
+    /// **`create_dir_all` is this function's last step rather than its
+    /// caller's, and that is what makes §R.5's rule structural.** The folder is
+    /// made where the coach is standing in the project; Start drains jobs and
+    /// never calls this, so it *cannot* re-create a project folder the coach
+    /// has since deleted and write a film into an otherwise-empty directory.
+    /// On demand either way, so a project that has never been exported has no
+    /// empty folder (spec E6), and after the refusals, so a run that can't
+    /// start leaves none behind.
+    ///
+    /// **`queued_labels` seeds the de-duplication**, which is the enqueue's
+    /// half of a rule the duplicate refusal cannot carry alone: `de_duplicate`
+    /// is per call, so two targets of one project that share a name — a clip
+    /// named after a tag, which is what
+    /// `two_targets_with_the_same_name_write_two_files` exists for — would
+    /// otherwise both be called `t0` across two clicks and the second would
+    /// overwrite the first's output. An export passes `&[]`.
+    fn jobs(
+        &self,
+        targets: &[ExportTarget],
+        choices: ExportChoices,
+        queued_labels: &[String],
+    ) -> Result<Vec<(String, ExportJob)>, UserError> {
+        let refused = |why: &str| UserError::CantExport(why.into());
         let Some(open) = &self.open else {
             return Err(refused("no project is open"));
         };
@@ -343,27 +373,201 @@ impl Bus {
         // Every target is checked before any of them runs, so a missing file
         // can't stop a run half-way through (spec E5).
         let exports = open.folder.join(EXPORTS_DIRNAME);
-        let mut labels = Vec::with_capacity(targets.len());
-        for target in &targets {
+        // The seed goes in front and comes back off: `de_duplicate` suffixes
+        // the *later* of two equal labels, so what is already queued has to be
+        // seen first and must not be re-emitted.
+        let mut labels = queued_labels.to_vec();
+        for target in targets {
             labels.push(label(open, target)?);
         }
         de_duplicate(&mut labels);
+        let labels = labels.split_off(queued_labels.len());
+        let pickers = Pickers::from(choices);
         let mut jobs = Vec::with_capacity(targets.len());
         for (target, label) in targets.iter().zip(labels) {
             let job = job(open, &exports, target, &label, pickers)?;
             jobs.push((label, job));
         }
-        // On demand, so a project that has never been exported has no empty
-        // folder (spec E6). After the refusals: a run that can't start
-        // shouldn't leave one behind either.
         std::fs::create_dir_all(&exports).map_err(|e| {
             UserError::CantExport(format!("could not create {}: {e}", exports.display()))
         })?;
-        self.begin(jobs);
+        Ok(jobs)
+    }
 
-        // The sheet's pickers are the project's from here on (spec E4). After
-        // the run began, so nothing above this can have dirtied the project on
-        // its way to a refusal (basket spec C3).
+    /// Freezes `targets` as jobs and puts them at the end of the queue
+    /// (BACKLOG #77).
+    pub(super) fn enqueue_export(&mut self, targets: &[ExportTarget], choices: ExportChoices) {
+        match self.enqueued(targets, choices) {
+            Ok(()) => self.publish_queue(),
+            Err(e) => self.emit(Event::Error(e)),
+        }
+    }
+
+    /// [`Bus::enqueue_export`]'s steps, so that every refusal is one `?`.
+    ///
+    /// **No [`Bus::refuse_if_busy`]**: an enqueue renders nothing, so a coach
+    /// can fill the queue while a run is going and `Start queue` is what waits
+    /// (spec §Q2, §Q6 — the one documented divergence from the basket).
+    fn enqueued(
+        &mut self,
+        targets: &[ExportTarget],
+        choices: ExportChoices,
+    ) -> Result<(), UserError> {
+        let Some(open) = &self.open else {
+            return Err(UserError::CantExport("no project is open".into()));
+        };
+        let folder = open.folder.clone();
+        let match_label = match_label(&open.project);
+
+        // **Keyed on the target, not on the output path.** A path key looks
+        // equivalent and is not: `de_duplicate` is per call, so two *different*
+        // targets of one project that share a name — a clip named after a tag —
+        // reach the same path across two clicks, and keying on it would refuse
+        // the second as "already in the queue" when it is not in the queue at
+        // all, with no way out (there is no edit, spec §Q11). Target identity
+        // is what "already in the queue" actually means; the shared name is
+        // `jobs`' seeded `de_duplicate`'s problem, not this check's.
+        if let Some(already) = targets
+            .iter()
+            .find(|target| self.queued_already(&folder, target))
+        {
+            let what = label(self.open.as_ref().expect("checked above"), already)
+                .unwrap_or_else(|_| "that export".to_owned());
+            return Err(UserError::Queue(format!("{what} is already in the queue")));
+        }
+
+        let queued_labels: Vec<String> = self
+            .queue
+            .iter()
+            .filter(|q| q.folder == folder)
+            .map(|q| q.label.clone())
+            .collect();
+        let jobs = self.jobs(targets, choices, &queued_labels)?;
+        for (target, (label, job)) in targets.iter().zip(jobs) {
+            self.queue.push(Queued {
+                folder: folder.clone(),
+                target: target.clone(),
+                match_label: match_label.clone(),
+                label,
+                job,
+            });
+        }
+        // After the push, so nothing on the way to a refusal has dirtied the
+        // project — `a_refused_run_leaves_the_pickers_alone`'s rule, which an
+        // enqueue is under for the same reason a run is.
+        self.settle_pickers(choices);
+        Ok(())
+    }
+
+    /// Whether this project's `target` is in the queue already.
+    fn queued_already(&self, folder: &Path, target: &ExportTarget) -> bool {
+        self.queue
+            .iter()
+            .any(|q| q.folder == folder && &q.target == target)
+    }
+
+    pub(super) fn remove_from_queue(&mut self, index: usize) {
+        if index < self.queue.len() {
+            self.queue.remove(index);
+            self.publish_queue();
+        }
+    }
+
+    /// Empties it. **No undo**, as the basket's clear has none — and weaker:
+    /// what is lost is snapshots, re-made by ticking and clicking again.
+    pub(super) fn clear_queue(&mut self) {
+        if !self.queue.is_empty() {
+            self.queue.clear();
+            self.publish_queue();
+        }
+    }
+
+    /// Renders everything waiting, as one run.
+    pub(super) fn start_queue(&mut self) {
+        if let Err(e) = self.started_queue() {
+            return self.emit(Event::Error(e));
+        }
+        self.publish_queue();
+    }
+
+    /// [`Bus::start_queue`]'s steps. The **third** caller of
+    /// [`Bus::refuse_if_busy`], and it takes it whole: one `Active`, one
+    /// `Exporter`, one FIFO of `Input::Export`.
+    ///
+    /// **It calls `jobs` for nothing** — the jobs were built at enqueue, which
+    /// is what keeps the run loop independent of the open project and is why
+    /// `exports/` cannot be re-created here (spec §R.5).
+    fn started_queue(&mut self) -> Result<(), UserError> {
+        self.refuse_if_busy()?;
+        if self.queue.is_empty() {
+            // `CantExport`, a modal, matching the basket's "the basket is
+            // empty": Start is a button the coach is standing in front of.
+            return Err(UserError::CantExport("the queue is empty".into()));
+        }
+        // `"{target} — {match_label}"`, so one run of three projects' "All
+        // clips" reads as three distinguishable rows with no change to
+        // `ExportTargetRun` (spec §Q3).
+        let jobs = std::mem::take(&mut self.queue)
+            .into_iter()
+            .map(|q| (format!("{} — {}", q.label, q.match_label), q.job))
+            .collect();
+        self.begin(jobs);
+        Ok(())
+    }
+
+    /// The queue as the sheet lists it, **read off each frozen job** and never
+    /// re-resolved against its project (spec §Q8): the job's `path` and `tags`
+    /// already carry these words, so a fresh label would misdescribe the file
+    /// about to be written. The basket's rule is the opposite because its
+    /// pieces are references resolved at Start.
+    fn publish_queue(&mut self) {
+        let rows: Vec<QueueRow> = self
+            .queue
+            .iter()
+            .map(|q| QueueRow {
+                match_label: q.match_label.clone(),
+                label: q.label.clone(),
+                seconds: q.job.compilation.plan.total_frames() as f64 / f64::from(OUTPUT_FPS),
+            })
+            .collect();
+        self.emit(Event::Queue(rows));
+    }
+
+    /// Drops every queued job that would have drawn `id`'s commentary, and
+    /// answers how many — [`Bus::trash_clip`]'s third holder of the clip's
+    /// recording, after the transcription and the preview.
+    ///
+    /// **The scan is `ClipMedia`, not `PlanEntry::clip_id`**, because
+    /// `ClipMedia::recording` is the field that actually names
+    /// `recordings/<file>`. A `Render::Copy` job holds no `Encode` at all, so
+    /// "a copy is never affected" is true **by construction** here rather than
+    /// by the data coincidence that a whole match's entries carry no clip.
+    pub(super) fn drop_queued_for_clip(&mut self, id: Uuid) -> usize {
+        let before = self.queue.len();
+        self.queue.retain(|q| match &q.job.render {
+            Render::Encode(encode) => !encode
+                .entries
+                .iter()
+                .any(|entry| entry.clip.as_ref().is_some_and(|clip| clip.clip.id == id)),
+            Render::Copy { .. } => true,
+        });
+        let dropped = before - self.queue.len();
+        if dropped > 0 {
+            self.publish_queue();
+        }
+        dropped
+    }
+
+    /// The sheet's six controls become the project's (spec E4), once there is
+    /// nothing left that could refuse.
+    ///
+    /// **Shared by the run and the enqueue**, which is why it is a function:
+    /// both settle the same six fields, and a second copy of the mapping would
+    /// be six chances to pair a field with its neighbour. Called **after** the
+    /// work in both, for the reason `a_refused_run_leaves_the_pickers_alone`
+    /// pins — nothing on the way to a refusal may dirty the project.
+    fn settle_pickers(&mut self, choices: ExportChoices) {
+        let pickers = Pickers::from(choices);
         if let Some(open) = &mut self.open {
             let prefs = &mut open.project.preferences;
             if Pickers::of(prefs) != pickers {
@@ -376,7 +580,6 @@ impl Bus {
                 self.project_changed();
             }
         }
-        Ok(())
     }
 
     /// The two refusals that cost nothing to check, so **every job builder that
@@ -617,6 +820,46 @@ pub struct ExportChoices {
     pub cues: bool,
 }
 
+/// One export waiting for `Start queue` (BACKLOG #77): a **frozen job**, not a
+/// reference.
+///
+/// **The inverse of a basket piece, on purpose** (spec §Q8). A piece is
+/// `(project folder, clip id)` resolved at Start, so a clip fixed after adding
+/// is exported as it now stands; a queued job is a snapshot, which is what lets
+/// the run loop be independent of the open project — a reference would have to
+/// re-read `project.json` at Start and could then refuse a job built hours ago.
+/// The two labels are cached here for the same inverted reason: the job's own
+/// `path` and `tags` already carry them, so a label re-read at display time
+/// could disagree with the file about to be written.
+#[derive(Debug, Clone)]
+pub(super) struct Queued {
+    /// The project it was built from. With `target`, the key the duplicate
+    /// refusal is on — and the filter that scopes `jobs`' de-duplication seed
+    /// to one project's `exports/`.
+    folder: PathBuf,
+    /// What was ticked. `ExportTarget: Eq`, so this is the whole of "the same
+    /// export twice".
+    target: ExportTarget,
+    /// `metadata::match_label` at enqueue: the teams, else the project's name,
+    /// else `UNTITLED` — the basket's own row label, and explicitly not the
+    /// folder name.
+    match_label: String,
+    /// The target's label, which is also what names its file.
+    label: String,
+    job: ExportJob,
+}
+
+/// One row of the Queue list (spec §Q3).
+#[derive(Debug, Clone, PartialEq)]
+pub struct QueueRow {
+    pub match_label: String,
+    pub label: String,
+    /// How long the film runs. **`plan.total_frames()`**, never a duration sum
+    /// — per-entry quantization can add a frame per entry — which is the same
+    /// expression `export_targets` builds a target row's length from.
+    pub seconds: f64,
+}
+
 /// The export sheet's three pickers and three switches, which travel together:
 /// through the run into every job, and into the project's `Preferences` when it
 /// starts (spec E4, M2, S1).
@@ -658,6 +901,31 @@ impl Pickers {
             source_volume: prefs.export_source_volume,
             chapters: prefs.last_export_chapters,
             cues: prefs.last_export_cues,
+        }
+    }
+}
+
+/// **One negation, here at the boundary and nowhere else**: `mute` is the
+/// coach's word and the checkbox's, and everything below this line is a volume
+/// or a `with_audio`. The two output switches are negated nowhere — `true` is
+/// "write it" at every layer.
+///
+/// **A `From` impl rather than a few lines in `Bus::export`**, which is where
+/// it lived until the queue needed it too (#77): an enqueue is handed
+/// `ExportChoices` and must reach the same `Pickers`, and a second copy of the
+/// mapping would be a second place for the one negation to be got wrong.
+impl From<ExportChoices> for Pickers {
+    fn from(choices: ExportChoices) -> Pickers {
+        Pickers {
+            resolution: choices.resolution,
+            quality: choices.quality,
+            scoreboard: choices.scoreboard,
+            source_volume: match choices.mute_source {
+                true => 0.0,
+                false => 1.0,
+            },
+            chapters: choices.chapters,
+            cues: choices.cues,
         }
     }
 }

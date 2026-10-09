@@ -260,6 +260,32 @@ impl Bus {
         self.close_preview_of(id);
         let open = self.open.as_mut()?;
         let clip = open.project.remove_clip(id)?;
+        // **The third holder of this recording, and dropped only once the
+        // delete has actually happened** (BACKLOG #77 spec §Q6). A queued
+        // export job's `ClipMedia::recording` is `recordings/<file>`, so from
+        // the rename below `Pip::open` cannot read it and that entry falls back
+        // to the 1x1 GL filler — the job would still write a film, with the
+        // coach's commentary silently gone and its text bar and chapter still
+        // in place. A silent quality loss is worse than a failure.
+        //
+        // **Below `remove_clip`, unlike the two calls above it**, and that is
+        // deliberate rather than tidy: both `?`s above can make this function a
+        // no-op, and a cancelled transcription and a closed preview are both
+        // recoverable where **the queue has no undo**. A delete that does not
+        // happen must not destroy queue entries.
+        //
+        // Not a refusal: `source_is_referenced` is the precedent for one, but
+        // that exists because a removed source leaves stored indices pointing
+        // at the wrong file. Deleting a clip corrupts nothing and is undoable,
+        // and the coach's work on his project must not be held up by a queue he
+        // may have forgotten. Undo restores the clip, not the job.
+        let dropped = self.drop_queued_for_clip(id);
+        if dropped > 0 {
+            let plural = if dropped == 1 { "" } else { "s" };
+            self.emit(Event::Error(UserError::Queue(format!(
+                "dropped {dropped} queued export{plural} that needed this clip"
+            ))));
+        }
         if self.save() {
             let recordings = self.open.as_ref()?.folder.join(RECORDINGS_DIRNAME);
             let trash = recordings.join(TRASH_DIRNAME);

@@ -749,6 +749,62 @@ once.
 - **The mapping is two functions over one picker, because they answer two questions.** `carry_scoreboard` in `bus/export.rs` is "how does this target carry the board **in the picture**" — mode + target into the renderer and the one job field that burns it in, with `Carry { copy, scoreboard }` and no cue slot. `board_cues` is "what goes **beside** the file", the three states `ExportJob::cues` has. **`carry_scoreboard` takes `with_audio` for one reason — it is the only caller of `can_copy`** — and `want_cues` for the same shape of reason, Default being unable to answer "the best available" without knowing what else the run carries; **`Carry` still has no field for either:** the renderer needs one bool, which `job` already holds, so a copy of it on `Carry` would be a second truth the encode arm ignores. `job` computes `with_audio` once and hands it to both readers, because the gate it asks and the copy it may choose have to be answering one question. **Track mode blanks `job.scoreboard`** rather than carrying a mode flag into media: `None` is already media's one "don't draw the board", so there is no third state to keep consistent and `overlay.rs` never learns a picker exists.
 - **The run's rate window is cleared when a target finishes** (`Active::finish_target`), along with the rate the event carries. A copy runs at thousands of output frames a wall second against an encode's tens, so the clips queued behind one would otherwise inherit its rate and be promised they finish at once.
 
+**The export queue is jobs frozen now and run later** (BACKLOG #77; spec
+`2026-10-07-export-queue-design.md`, plan `2026-10-09-export-queue.md`). An
+`ExportJob` is already self-contained, so enqueue is *"build the jobs now, run
+them later"* and the queue is a `Vec<Queued>` **on `Bus`, not on `Open`** —
+`Open` is replaced on every project open and spanning that is the whole
+feature. **In memory only**, by the coach's call: closing the app loses it, and
+what is lost is snapshots that are re-made by ticking and clicking again. If it
+is ever persisted it is `queue.json` beside `basket.json` and **never** a
+`state.json` key.
+- **`jobs` is `start_run`'s middle, split out** — every refusal that can be made
+  from the open project and none about whether anything may run now. An enqueue
+  makes exactly those; **Start** makes `refuse_if_busy`'s and *"the queue is
+  empty"* (a `CantExport` modal, as the basket's is: Start is a button the coach
+  is standing in front of). **`create_dir_all` is `jobs`' last step**, which is
+  what makes "created at enqueue, never at Start" structural rather than a rule
+  to remember: Start drains jobs and never calls `jobs`, so it *cannot*
+  re-create a project folder the coach has deleted and write a film into an
+  otherwise-empty directory.
+- **A queued row is a snapshot, which is the deliberate inverse of a basket
+  piece.** A piece is `(folder, clip id)` resolved at Start, so a clip fixed
+  after adding exports as it now stands; a job is frozen, so re-reading its
+  label at display time could misdescribe the file about to be written. That is
+  why `Queued` caches `match_label` and `label` where the basket's rule is
+  *"never cached beside the reference"* — the reasons invert together.
+- **"Already in the queue" is keyed on `(folder, target)`, never on the output
+  path**, and the two halves of that rule are one rule. `ExportTarget: Eq`, so
+  target identity is what the phrase means. A path key looks equivalent and is
+  not: `de_duplicate` is per call, so two **different** targets of one project
+  that share a name — a clip named after a tag — reach the same path across two
+  clicks, and a path key would refuse the second as already queued when it is
+  not queued at all, with no way out (there is no edit). The shared name is
+  instead handled by **seeding `de_duplicate` with the labels already queued for
+  that folder**, so they come out `t0` and `t0 (2)` exactly as they do inside
+  one run. Pinned apart: keying on the label refuses the second target, dropping
+  the seed makes both write `t0`.
+- **Deleting a clip drops the queued jobs that needed it**, as `trash_clip`
+  already does to the other two holders of `recordings/<file>` — but **below
+  `remove_clip`, not beside them**. Both `?`s above can make that function a
+  no-op, and a cancelled transcription and a closed preview are recoverable
+  where **the queue has no undo**; `DeleteClip` is a public command with no
+  gate, so an id from a project that is not open reaches it and must destroy
+  nothing. The scan is **`ClipMedia`, not `PlanEntry::clip_id`**: that is the
+  field which actually names the recording, and a `Render::Copy` job holds no
+  `Encode` at all, so "a copy is never affected" is true by construction rather
+  than by the data coincidence that a whole match's entries carry no clip.
+- **`Event::Queue(Vec<QueueRow>)` is the whole view** — no wrapping struct,
+  which `Event::Basket` has only because a basket carries a name and two
+  pickers. It is published on every change to the queue and **nowhere else**: a
+  project open does not emit it and must never clear the list.
+- **One negation, in `impl From<ExportChoices> for Pickers`.** It was a few
+  lines inside `Bus::export` until the enqueue needed the same mapping; a second
+  copy would be a second place for the one negation to be got wrong.
+  `settle_pickers` is the write-back, shared by the run and the enqueue, and
+  called **after** the work in both for `a_refused_run_leaves_the_pickers_alone`'s
+  reason.
+
 **A run holds nothing of the open project, so the coach keeps working while one
 goes** (BACKLOG #77 task 1; spec `2026-10-07-export-queue-design.md` §Q7, the
 coach 2026-10-07: *"yes you should be able to keep working"*). `refuse_if_busy`

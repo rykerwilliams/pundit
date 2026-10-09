@@ -42,7 +42,41 @@ everything" section. Read §B before §A: one of the things it removes is a task
   `a_project_open_is_refused_while_a_preview_is_open` still green — which is
   what says the two clauses are pinned apart rather than together.
 - **2 — the queue on `Bus`: four commands, one view, and the clip-delete rule.**
-  Not started.
+  **Done** (`claude/77-task-2`). `jobs` split out with `create_dir_all` as its
+  last step, `impl From<ExportChoices> for Pickers` and `settle_pickers` shared
+  by the run and the enqueue, `queue: Vec<Queued>` on `Bus`, four commands,
+  `Event::Queue(Vec<QueueRow>)`, and the clip-delete drop. **Harness export
+  tests 15 → 19.** The split is behaviour-neutral and was confirmed so before
+  anything was built on it.
+  **Two deviations from the plan, both recorded here rather than silently:**
+  - **The clip scan is tested through real jobs, not a unit predicate over
+    `Render`.** Building a `Render::Encode` fixture needs an `EntryMedia`, a
+    `ClipMedia`, a `Clip` and an `Arc<MatchMedia>` — and what can actually break
+    is `job()` ceasing to populate `ClipMedia`, which a fixture assembled in the
+    test cannot catch (`fit_window.rs`'s header is this repo's record of that
+    trap). `deleting_a_clip_drops_the_queued_jobs_that_needed_it` enqueues two
+    clip targets and a whole match and deletes one clip. The whole-match row is
+    the "no clip" half; `Render::Copy`'s arm needs no test because a copy holds
+    no `Encode` at all.
+  - **`main.rs` gains an empty `Event::Queue(_) => {}` arm**, which the plan did
+    not mention: the match is exhaustive, so task 2 cannot compile without it.
+    An empty arm rather than a `_` catch-all, so the compiler keeps naming it
+    until task 3's section exists.
+  **Sabotage, four, each failing exactly one test:** keying the duplicate
+  refusal on the label → `enqueue_refuses_what_a_run_refuses_and_starts_nothing`
+  (the second target refused); dropping the `de_duplicate` seed → the same test
+  the other way (`left: ["t0", "t0"]`), so the two halves of that rule are
+  pinned apart; `trash_clip` leaving the job → `deleting_a_clip_…` times out;
+  and **the fourth, which the plan expected to be untestable, is pinned** — the
+  drop moved above `remove_clip` fails on *"the bogus delete published a queue
+  of its own"*. The reachable case is a `DeleteClip` carrying a clip id from a
+  project that is not open: `remove_clip` answers `None` and the drop must
+  destroy nothing. `DeleteClip` is a public command with no gate, which is
+  `restore_last_project`'s own reason for being guarded.
+  **And one mistake in my own test:** it read the notice before the rows, but
+  the queue is published *before* the notice (the drop is what the notice is
+  about), and `wait_for_error` advances the cursor past everything before the
+  error — so the `Event::Queue` was behind it and the wait timed out.
 - **3 — the Queue section in the export sheet.** Not started.
 
 **Shipping: three PRs, in order, none parallel.** 1 and 2 both edit
