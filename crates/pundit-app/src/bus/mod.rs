@@ -525,6 +525,18 @@ pub enum UserError {
     /// disk since. Play reloads it.
     #[error("playback failed: {0}")]
     Playback(String),
+    /// Opening a project is refused: a preview is composing from the one the
+    /// coach is leaving (Phase 7 spec P5). **A run is not a reason** — the
+    /// coach asked to keep working while the queue renders and #77 spec §Q7
+    /// audited `commit` against a rendering job to establish that nothing in it
+    /// reaches one.
+    ///
+    /// **A unit variant with the whole sentence**: there is one producer
+    /// ([`Bus::refuse_if_previewing`]) and one message, and a `String` here
+    /// would invite a second. **Modal, not a notice** — `new_match`'s doc
+    /// argues its own refusals on exactly that, and it names this one.
+    #[error("can't open that project: a preview is open; close it first")]
+    CantOpen,
     #[error("the project file is unreadable: {0}")]
     UnreadableProject(String),
     #[error(

@@ -379,19 +379,59 @@ impl Bus {
         Ok(())
     }
 
-    /// The two refusals that cost nothing to check, so both job builders make
-    /// them **first**, before they read a project (basket spec C3). They are
-    /// also the whole of what [`Bus::begin`] would have to refuse, which is why
-    /// it refuses nothing.
+    /// The two refusals that cost nothing to check, so **every job builder that
+    /// renders** makes them first, before it reads a project (basket spec C3).
+    /// They are also the whole of what [`Bus::begin`] would have to refuse,
+    /// which is why it refuses nothing.
+    ///
+    /// **It is a refusal to *render*, which is three of its callers and not
+    /// five** (#77 spec §Q2). `start_run`, `basket_job` and the queue's Start
+    /// take it whole. An **enqueue** makes neither check, because it renders
+    /// nothing and `Start queue` is what waits. A **project open** makes only
+    /// the preview one ([`Bus::refuse_if_previewing`]), because a run holds
+    /// nothing of the open project — which §Q7 established by reading `commit`
+    /// line by line rather than assuming it.
     pub(super) fn refuse_if_busy(&self) -> Result<(), UserError> {
-        let refused = |why: &str| UserError::CantExport(why.into());
         if self.export.is_some() {
-            return Err(refused("an export is running"));
+            return Err(UserError::CantExport("an export is running".into()));
         }
-        // Both composite on the UI's GL context, and an export would take the
-        // frames the preview is pacing itself on (spec P5).
+        // One `Exporter`, one FIFO of `Input::Export`, and Phase 7 spec P5's
+        // exclusivity: a preview paces itself on frames a run would take.
+        //
+        // **Not a shared GL context**, which this comment claimed until #77's
+        // spec went looking (§R.3): export runs on `Gl::shared()`'s own
+        // surfaceless display — that function's doc says *"Export always runs
+        // here"* — and only a preview takes `Gl::wrapped`. The refusal was
+        // right and its stated reason was not.
+        //
+        // **Its own message rather than `refuse_if_previewing`'s**, although
+        // the condition is the one test: a refusal says what was refused, and
+        // here that is the render. Sharing the check would report *"can't open
+        // that project"* to a coach who pressed Export.
         if self.preview.is_some() {
-            return Err(refused("a preview is open; close it first"));
+            return Err(UserError::CantExport(
+                "a preview is open; close it first".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// A **project open** is refused by an open preview and never by a run
+    /// (#77 spec §Q7). The coach asked to keep working while the queue renders
+    /// (2026-10-07, *"yes you should be able to keep working"*), and a run holds
+    /// nothing of the project he is leaving: `Active` reads `self.open` nowhere,
+    /// export composites on its own surfaceless display, and `entry_media`
+    /// `stat`s its files rather than consulting [`Bus::missing`] — which is
+    /// what makes a project it no longer has open safe to render from.
+    ///
+    /// The clause that remains is for the coach who opens a preview and then
+    /// clicks Open, which is unchanged behaviour.
+    /// **The same condition as [`Bus::refuse_if_busy`]'s second clause, under
+    /// its own name and message.** One test, two refusals, because a refusal
+    /// names what it refused.
+    pub(super) fn refuse_if_previewing(&self) -> Result<(), UserError> {
+        if self.preview.is_some() {
+            return Err(UserError::CantOpen);
         }
         Ok(())
     }

@@ -33,11 +33,22 @@ impl Bus {
     /// the open project. A folder that doesn't exist is an error: saving
     /// never creates one.
     pub(super) fn open_project(&mut self, folder: PathBuf) {
-        // An export or an open preview is composing from the project the coach
-        // is leaving, and `commit` below empties that project's trash and
-        // clears the history (spec O4). The reason this matters is written down
-        // at `built_new_match`'s gate.
-        if let Err(e) = self.refuse_if_busy() {
+        // An open **preview** is composing from the project the coach is
+        // leaving. The reason this matters is written down at
+        // `built_new_match`'s gate.
+        //
+        // **A run is no longer a reason** (#77 spec §Q7, the coach 2026-10-07:
+        // *"yes you should be able to keep working"*). This comment used to say
+        // *"an export or an open preview … and `commit` below empties that
+        // project's trash and clears the history"*, and **both halves were
+        // false**: a job's `ClipMedia::recording` is `recordings/<file>` and
+        // never a path under `.trash`, so emptying it removes nothing a job
+        // reads, and `history.clear()` destroys only the *undo* of a clip
+        // delete, which no job reads either. What costs a job its recording is
+        // the **delete**, which moves the file out from under it — true since
+        // Phase 8, in one project, with no queue and no switch. The hazard was
+        // real and attached to the wrong operation.
+        if let Err(e) = self.refuse_if_previewing() {
             return self.emit(Event::Error(e));
         }
         let folder = match std::path::absolute(&folder) {
@@ -85,15 +96,16 @@ impl Bus {
     /// editable projects-folder field with its provenance line is the answer,
     /// and the spec's Risk 3 says so.
     pub(super) fn restore_last_project(&mut self) {
-        // **Guarded for `open_project`'s reason, not for a reason of its own.**
-        // An earlier version left this alone, on the stated grounds that it
-        // "runs at launch with nothing running" — which is false twice over:
-        // it is a public `Command` with no gate, and `clips.rs`'s
+        // **Guarded for `open_project`'s reason, not for a reason of its own**
+        // — which since #77 is the preview alone. An earlier version left this
+        // alone, on the stated grounds that it "runs at launch with nothing
+        // running" — which is false twice over: it is a public `Command` with
+        // no gate, and `clips.rs`'s
         // `opening_empties_the_trash_and_the_history` already sends it
         // mid-session. It is not reachable from the UI today, so this costs
         // nothing behaviourally; it is here so the next caller does not inherit
         // the one door of two that was left open.
-        if let Err(e) = self.refuse_if_busy() {
+        if let Err(e) = self.refuse_if_previewing() {
             return self.emit(Event::Error(e));
         }
         let Some(folder) = self.files.last_project() else {
@@ -171,7 +183,8 @@ impl Bus {
     /// "the project's other videos" is not even true here, there being no
     /// project yet. Those two stay what `add_source` and relink raise, where
     /// both are true. The two refusals this borrows are not `Io`:
-    /// [`Bus::refuse_if_busy`]'s `CantExport` and `store::write`'s own error.
+    /// [`Bus::refuse_if_previewing`]'s `CantOpen` and `store::write`'s own
+    /// error.
     /// Both are modal, which is what the reasoning above needs, and the second
     /// is wrapped here so that it names its folder too.
     pub(super) fn new_match(
@@ -197,10 +210,21 @@ impl Bus {
     ) -> Result<(PathBuf, Project), UserError> {
         let io = |e: std::io::Error, path: &Path| UserError::Io(format!("{}: {e}", path.display()));
 
-        // 1. An export or a preview must not have the project swapped
-        // underneath it — and the export sheet is meant to be closed while a
-        // run continues, so `New match…` is clickable mid-export.
-        self.refuse_if_busy()?;
+        // 1. A **preview** must not have the project swapped underneath it.
+        //
+        // **This is the gate `open_project` and `restore_last_project` point
+        // at, so it carries the reason for all three** — and since #77 the
+        // reason is one clause rather than two. A **run** is not a reason: the
+        // coach asked to keep working while the queue renders, and #77 spec §Q7
+        // audited every one of `commit`'s eleven steps against a job that is
+        // rendering. Nine of them were answerable from rules already written
+        // down, `entry_media`'s deliberate `stat` over `Bus::missing` (basket
+        // spec V2) being the one that carries it: a job reads its own files off
+        // the disk and consults no bus state, so a project it no longer has
+        // open is safe to render from. The export sheet was always meant to be
+        // closed while a run continues, so `New match…` was already clickable
+        // mid-export; now the project it creates opens too.
+        self.refuse_if_previewing()?;
 
         if !project_dir.is_absolute() {
             return Err(UserError::Io(format!(

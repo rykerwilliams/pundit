@@ -21,7 +21,7 @@ use pundit_app::bus::{
 use pundit_core::plan::ExportTarget;
 use pundit_core::project::{Project, Quality, Resolution};
 use pundit_core::scoreboard::{MatchFormat, ScoreboardConfig, TeamConfig};
-use pundit_core::store::{self, PROJECT_FILENAME, RECORDINGS_DIRNAME};
+use pundit_core::store::{self, EXPORTS_DIRNAME, PROJECT_FILENAME, RECORDINGS_DIRNAME};
 use pundit_core::stroke::Rgba;
 use pundit_core::zoom::Zoom;
 use pundit_harness::{add_clips, write_project, Harness, ReadOnly};
@@ -570,11 +570,25 @@ fn the_open_project_survives_every_refusal() {
     );
 }
 
-/// `refuse_if_busy` first (spec C2 step 1): an export must not have the
-/// project swapped underneath it — and because the export sheet is meant to be
-/// closed while a run continues, `New match…` is clickable mid-export.
+/// **New match during an export goes through, and the run finishes** (#77 spec
+/// §Q7, the coach 2026-10-07: *"yes you should be able to keep working"*).
+///
+/// **This inverts rather than being amended**, as its sibling in `export.rs`
+/// did: it used to assert `refuse_if_busy`'s *"an export is running"* here, on
+/// the stated grounds that *"an export must not have the project swapped
+/// underneath it"* — and the swap reaches no job. `Active` reads `self.open`
+/// nowhere, export composites on its own surfaceless display, and
+/// `entry_media` `stat`s its files rather than consulting `Bus::missing`
+/// (basket spec V2), so a project the bus has closed is still safe to render
+/// from. §Q7 audited all eleven of `commit`'s steps against a rendering job.
+///
+/// Two of the three things it was guarding are kept and **inverted** — the
+/// folder *is* created and the open project *does* change — and the third
+/// stands unchanged and is the point: **the run is not disturbed**. `New
+/// match…` was already clickable mid-export because the sheet is meant to be
+/// closed while a run continues; now the project it creates opens too.
 #[test]
-fn new_match_during_an_export_is_refused_and_the_run_finishes() {
+fn new_match_during_an_export_goes_through_and_the_run_finishes() {
     let mut rig = Rig::new();
     let folder = rig.tmp.path().join("existing");
     std::fs::create_dir(&folder).unwrap();
@@ -605,13 +619,24 @@ fn new_match_during_an_export_is_refused_and_the_run_finishes() {
     assert!(rig.h.wait_export().is_running());
 
     rig.create(&new, ("City", "Rovers"), videos);
+    let opened = rig.h.wait_opened();
     assert_eq!(
-        rig.h.wait_for_error(),
-        UserError::CantExport("an export is running".into())
+        opened.project.name, "City v Rovers",
+        "the match the coach asked for is not the one that opened"
     );
-    assert_nothing_created(&rig.projects());
+    // **The folder is the path the command carried; the name is the
+    // scoreboard's** — `Command::NewMatch` has no name field and the bus
+    // builds one from the two teams it has to validate anyway, so these are
+    // deliberately two different strings and both are asserted.
+    assert_eq!(
+        entries(&rig.projects()),
+        ["mid-export"],
+        "one folder, the one asked for, and nothing else created"
+    );
 
-    // The run was not disturbed by the refusal.
+    // **The one assertion that did not invert, and it is the point**: the run
+    // the coach walked away from finishes, into the folder of the project he
+    // left rather than the one he is now in.
     let done = rig.h.wait_map("the run's outcome", |e| match e {
         Event::Export(run) if !run.is_running() => Some(run.clone()),
         _ => None,
@@ -621,6 +646,15 @@ fn new_match_during_an_export_is_refused_and_the_run_finishes() {
         "{:?}",
         done.targets[0]
     );
+    assert!(
+        folder
+            .join(EXPORTS_DIRNAME)
+            .join("All clips - Game.mp4")
+            .is_file(),
+        "the run wrote into the project it was started in"
+    );
+    // The project it was started in is untouched by the Create, which went to a
+    // folder of its own.
     assert_eq!(store::read(&folder).unwrap().name, project.name);
     rig.h.shutdown();
 }
