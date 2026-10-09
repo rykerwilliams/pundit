@@ -541,9 +541,21 @@ resemblance.
    take. The highlight one matters most, because its failure mode is silent and
    remote — a ring appearing over the game video somewhere else.
 
-## W12. The one open question for the coach
+## W12. The question the coach answered, and when
 
-**One diagram at a time, or a small set kept with the project?**
+**One diagram at a time, or a small set kept with the project? — ANSWERED,
+and it is the default below.** The coach, asked during this spec's own
+drafting: *"Eventually yeah I would want a library of diagrams but for now I
+guess you just choose one"*. So: **one at a time**, armed in `state.json`, and
+the single-field format change.
+
+**It was never written into this section, and that cost something.** The answer
+arrived while the spec was being drafted and the section kept its "if he does
+not answer" wording, so the plan stage opened 2026-10-09 with a question the
+coach had already settled — the same shape of bookkeeping miss as the whiteboard
+having no BACKLOG entry (#138). Recorded here 2026-10-09.
+
+The reasoning, which stands either way:
 
 What this spec assumes is **one at a time**: a path armed in `state.json`, a
 popover to change it, and `W` to record over it. A coach with a pitch, a
