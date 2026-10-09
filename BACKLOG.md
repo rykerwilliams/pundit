@@ -20,6 +20,10 @@ made things worse.
   Scoreboard subtitles), and a settings sheet designed but not built — **#84
   builds it** (#102 declined it, 2026-10-07)
 - **77.** An export queue across projects. The coach (2026-09-24): "i open…
+  **Specced 2026-10-07, planned 2026-10-09**: three tasks — the coach keeps
+  working while a run is going, the queue on `Bus`, the Queue section in the
+  export sheet. Two of the three things this entry calls "the work" were
+  **already done** (spec §R.1, §R.2)
 - **84.** Music under a goals reel — Openverse search, then the mixer (**builds**
   the settings sheet #78 **designs**, for the music folder path, now that #102 has
   found a cheaper home; the API key was never the blocker)
@@ -34,6 +38,10 @@ made things worse.
   is one `keymap.rs` row now that #96 has landed**)
 - **135.** A second key per action, from the Keys sheet — #96 ships *Set…* as a
   **replace**, so the two-key defaults can be kept or narrowed but not rebuilt
+- **136.** A run's rows don't say which project they belong to — reachable once
+  #77's task 1 lets a project open mid-run
+- **137.** An avatar replaced or removed mid-run silently empties the inset —
+  pre-existing, and #77's queue is what widens the window
 - **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
   clip, sticky for the next recording, as #88's inset size and corner are (**v16
   — v15 went to the mute switch, v14 to #117's arrowhead; take the next free
@@ -4539,3 +4547,55 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** if a coach rebinds one of the four paired rows and asks
   where the other key went. That is the one way this is discovered, and it is
   worth watching for rather than pre-empting.
+
+136. **A run's rows don't say which project they belong to.** Surfaced by the
+  #77 plan's adversarial review (2026-10-09), and it becomes reachable the
+  moment that plan's task 1 lands: once a project open mid-run is allowed, the
+  export sheet in project 4 shows rows reading `All clips` and `Whole match`
+  that belong to project 1, with nothing saying so. A **queued** job's rows are
+  fine — #77 §Q3 labels them `"{target} — {match_label}"`, captured at enqueue —
+  so this is a permanent two-rule split rather than a stage the feature passes
+  through.
+- **The outright lie is already fixed.** The end-of-run notice used to read
+  *"Exported N videos to the project's exports folder"* and would have named the
+  wrong project's folder; #77 task 1 drops that clause unconditionally, because
+  *"Exported N videos"* is true everywhere and costs one string.
+- **What is left is ambiguity, not falsehood**, and the fix has a real cost:
+  labelling an ordinary run's rows `"{target} — {match_label}"` too would put a
+  project name on every single-project export, in the sheet the coach is
+  standing in front of, to disambiguate a case that only arises after he
+  navigates away from his own run.
+- **One more thing in the same place.** §Q7 justifies a queue run's failures
+  going to the **notice line** rather than the error dialog on the grounds that
+  a modal would land over project 4's work — but an ordinary `Export` run keeps
+  its modal, justified by *"the coach is standing in front of that one"*, which
+  stops being necessarily true for the same reason. Both halves of this entry
+  are the same question.
+- **Why deferred:** the coach was shown it with the plan and the cheap path was
+  taken deliberately; nobody has been confused by a row yet, and the feature
+  that creates the exposure has not shipped.
+- **When to revisit:** the first time a row's project is actually ambiguous in
+  use — which is also when it will be obvious which of the two labels reads
+  better. Related: #77.
+
+137. **An avatar replaced or removed mid-run silently empties the inset.**
+  Found while auditing #77's clip-delete rule (2026-10-09) and **pre-existing**:
+  it has nothing to do with the queue. `MatchMedia::avatar` is a **path**
+  snapshot taken when the job is built, and `set_avatar` / `remove_avatar_file`
+  delete exactly the file `Project.avatar` names — so a pick or a removal
+  between the job being built and the entry being drawn leaves the path valid
+  and the bytes gone, and the inset is silently absent from the film.
+- **The comment there overstates its safety.** `export.rs`'s
+  *"a pick or a removal while this run is going does not reach it"* is true of
+  the **path** and false of the **file**, which is the whole of the exposure.
+  Correct that line whether or not the rest is fixed.
+- **It is the exact shape #77 §Q6 refuses to accept for a clip delete** — a
+  silent quality loss being worse than a failure or a refusal — so the
+  asymmetry wants arguing rather than leaving: either the avatar paths get the
+  same treatment (drop or fail the job), or §Q6's list of "edits left to fail
+  themselves" should name this one and say why it is different.
+- **Why deferred:** the window is seconds wide in one project today and only
+  widens to minutes once #77's queue exists, and the honest fix is a decision
+  about which way the asymmetry resolves rather than a patch.
+- **When to revisit:** with #77's queue, which is what makes the window long
+  enough to hit by accident. Related: #77 §Q6, #88 (the inset), avatar spec B1.
