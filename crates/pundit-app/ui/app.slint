@@ -3531,17 +3531,32 @@ export struct KeyRow {
     /// `when` clause to read it from -- `keymap.rs`'s header has the whole
     /// reason.
     fires: string,
+    /// The name the row is stored under -- "openProject" -- which is what
+    /// *Set...* and the unbind carry back to Rust (#96 task 5). The row's
+    /// identity, so nothing matches on the words in `what`.
+    action: string,
+    /// Whether it answers to any key at all, which is what the ✕ is enabled by.
+    /// **Not `keys != "—"`**: the em dash is `keymap.rs`'s spelling of nothing
+    /// and no sheet's business.
+    bound: bool,
 }
 
 /// One line of the Keys sheet's table -- an action's row, the column heading
 /// and a reserved key's row alike, so the three read as one table.
 ///
-/// **Fixed column widths and one height, elided rather than wrapped.** A
-/// wrapped cell would make rows of different heights, and the scroll cap the
-/// sheet is sized by is `rows * this height`; eliding keeps that arithmetic
-/// true and the columns aligned. The first two columns are wide enough for the
-/// longest thing `keymap.rs` puts in them ("Go to the previous match event",
-/// "shift+LeftArrow, shift+a") and the third takes what is left.
+/// **Fixed column widths, elided rather than wrapped.** The first two are wide
+/// enough for the longest thing `keymap.rs` puts in them ("Go to the previous
+/// match event", "shift+LeftArrow, shift+a") and the third takes what is left;
+/// eliding is what keeps them aligned. The height is a **floor** rather than a
+/// fixed value, because an action's row carries buttons and a fixed height
+/// would squeeze them: it used to be fixed so that the row list's own scroll
+/// cap could be `rows * height`, and #134 took that cap away.
+///
+/// **A row's controls are its children, not properties of this component**
+/// (#96 task 5), which is the whole of what keeps them off the column heading
+/// and the six reserved rows: those instantiate the same component and pass
+/// nothing. The columns still line up, because all three are left-aligned and
+/// what the buttons move is only the prose column's far end.
 component KeyLine inherits HorizontalLayout {
     in property <string> what;
     in property <string> keys;
@@ -3551,7 +3566,7 @@ component KeyLine inherits HorizontalLayout {
     in property <bool> heading;
 
     spacing: 12px;
-    height: 22px;
+    min-height: 22px;
     // **The row read as one line**, which is both what a reader of a table
     // wants and what `tests/ui/keys_sheet.rs` finds it by: the three cells in
     // the order the columns are in, so a crossed wire reads back crossed.
@@ -3585,14 +3600,20 @@ component KeyLine inherits HorizontalLayout {
         vertical-alignment: center;
         overflow: elide;
     }
+
+    @children
 }
 
 /// The Keys sheet (#96): every key the app binds, in one list the coach can
-/// read. `F1` opens it, and so does the button beside `Fit`.
+/// read and change. `F1` opens it, and so does the button beside `Fit`.
 ///
-/// **It is a list and nothing more.** Rebinding is #96's task 5 and arrives as
-/// a control on each row; nothing here is built in anticipation of it, because
-/// a container built before its contents is the thing it would get wrong.
+/// **Each action's row carries *Set...* and ✕** (task 5). *Set...* arms the
+/// capture -- the next key the coach presses becomes that action's, taken off
+/// whatever held it -- and ✕ leaves the row answering to nothing. The capture
+/// itself is not here and cannot be: the window's shortcuts run in the capture
+/// phase, *ahead* of whatever has focus, so a `FocusScope` in this sheet would
+/// never see a key the keymap binds. It is a layer at the top of
+/// `handle-key` instead, armed by the property this sets.
 ///
 /// **The reserved keys' six rows are written here, not taken from the table**
 /// (spec G4). Escape, Tab, Shift+Tab, Return, Home and End are deliberately not
@@ -3602,8 +3623,22 @@ component KeyLine inherits HorizontalLayout {
 /// would each have to filter them back out again if it had. Their words belong
 /// where their behaviour is instead: the three this window handles are
 /// `handle-key`'s "three reserved keys, ahead of the table" block, in this file.
+/// `Binding::reserved` is the same five, and it is what refuses a capture that
+/// lands on one.
 component KeysSheet inherits Sheet {
     in property <[KeyRow]> rows;
+    /// The action a capture is armed for, by its stored name, two-way out to
+    /// the window -- which is where the capture happens. Empty when none is.
+    in-out property <string> capturing;
+    /// What the capture is waiting for, and what a rebind took from where.
+    ///
+    /// **Its own line rather than the status bar's**, which renders *behind*
+    /// the scrim: the basket sheet's own note says why it has one, and this is
+    /// the same reason. Written from both sides -- this sheet says what it is
+    /// waiting for, Rust says what happened.
+    in-out property <string> message;
+    /// Take every key off an action, by its stored name.
+    callback unbind(string);
     callback close();
 
     card-width: 840px;
@@ -3619,65 +3654,96 @@ component KeysSheet inherits Sheet {
         heading: true;
     }
 
-    // **The cap, derived from the window's own floor.** `Sheet` is
-    // `height: body.preferred-height` and does not scroll (#134), so what this
-    // child does not cap the sheet grows by: 29 rows at 22px is 638px, and a
-    // card of that is off the bottom of a 700px window with Close beneath it.
-    // 700 less the body's 40px of padding, the heading row, the title, the
-    // close row and three 10px gaps leaves ~555px, and 520 is inside that with
-    // air. A taller window shows the same 520 and scrolls, which is the simple
-    // bargain and what #134 would fix for every sheet at once.
-    ScrollView {
-        height: 520px;
+    // **No scroll view of its own, and no cap** (#134). Task 4 put the rows in
+    // a 520px `ScrollView` because `Sheet` was `height: body.preferred-height`
+    // and could not be capped, so a 29-row card hung off the bottom of a 700px
+    // window. `Sheet` now states `preferred-height`/`max-height` and scrolls
+    // its own body, which caps this card at the window for free -- and a
+    // second scroll view inside that one would show the coach 520px of rows in
+    // the middle of a 1200px card and scroll in two places at once.
+    VerticalLayout {
+        spacing: 2px;
 
-        VerticalLayout {
-            spacing: 2px;
+        for row in root.rows: KeyLine {
+            what: row.what;
+            keys: row.keys;
+            fires: row.fires;
 
-            for row in root.rows: KeyLine {
-                what: row.what;
-                keys: row.keys;
-                fires: row.fires;
-            }
+            // **Set... arms the capture; the window harvests the key.** The
+            // message is set here rather than in Rust because this is where
+            // the words for the row are -- Rust is handed the name, not the
+            // prose.
+            Button {
+                text: "Set…";
+                enabled: root.capturing == "";
+                clicked => {
+                    root.capturing = row.action;
+                    root.message = "Press the key for “" + row.what
+                        + "” — or Escape to leave it alone.";
+                }
 
-            // The six that are not actions, under their own heading so the
-            // em dash in the keys column above reads as "nothing bound yet"
-            // and these read as "nothing you can bind".
-            FieldLabel {
-                text: "Reserved — not rebindable";
-                height: 24px;
-                vertical-alignment: bottom;
+                Tooltip {
+                    text: @markdown("Press a new key for this");
+                }
             }
-            KeyLine {
-                what: "Back out";
-                keys: "Escape";
-                fires: "Whatever is innermost: a sheet, the tool, a take, the selection";
-            }
-            KeyLine {
-                what: "Move the focus on";
-                keys: "Tab";
-                fires: "Any time";
-            }
-            KeyLine {
-                what: "Move the focus back";
-                keys: "Shift+Tab";
-                fires: "Any time";
-            }
-            KeyLine {
-                what: "Confirm the message";
-                keys: "Return";
-                fires: "While a message is on screen";
-            }
-            KeyLine {
-                what: "Nothing";
-                keys: "Home";
-                fires: "Swallowed, so a touched slider cannot take it";
-            }
-            KeyLine {
-                what: "Nothing";
-                keys: "End";
-                fires: "Swallowed, so a touched slider cannot take it";
+            Button {
+                text: "✕";
+                // Nothing to take away, and the coach is told which rows those
+                // are by the em dash in the column beside it.
+                enabled: row.bound && root.capturing == "";
+                clicked => { root.unbind(row.action); }
+
+                Tooltip {
+                    text: @markdown("Leave this with no key at all");
+                }
             }
         }
+
+        // The six that are not actions, under their own heading so the
+        // em dash in the keys column above reads as "nothing bound yet"
+        // and these read as "nothing you can bind".
+        FieldLabel {
+            text: "Reserved — not rebindable";
+            height: 24px;
+            vertical-alignment: bottom;
+        }
+        KeyLine {
+            what: "Back out";
+            keys: "Escape";
+            fires: "Whatever is innermost: a sheet, the tool, a take, the selection";
+        }
+        KeyLine {
+            what: "Move the focus on";
+            keys: "Tab";
+            fires: "Any time";
+        }
+        KeyLine {
+            what: "Move the focus back";
+            keys: "Shift+Tab";
+            fires: "Any time";
+        }
+        KeyLine {
+            what: "Confirm the message";
+            keys: "Return";
+            fires: "While a message is on screen";
+        }
+        KeyLine {
+            what: "Nothing";
+            keys: "Home";
+            fires: "Swallowed, so a touched slider cannot take it";
+        }
+        KeyLine {
+            what: "Nothing";
+            keys: "End";
+            fires: "Swallowed, so a touched slider cannot take it";
+        }
+    }
+
+    if root.message != "": Text {
+        text: root.message;
+        color: Palette.alternate-foreground;
+        font-size: 11px;
+        wrap: word-wrap;
     }
 
     HorizontalLayout {
@@ -3686,6 +3752,7 @@ component KeysSheet inherits Sheet {
         Button {
             text: "Close";
             primary: true;
+            enabled: root.capturing == "";
             clicked => { root.close(); }
         }
     }
@@ -4321,6 +4388,29 @@ export component AppWindow inherits Window {
     /// The Keys sheet is up. UI state: `F1` and the Keys button open it, its
     /// Close button and Esc close it.
     in-out property <bool> keys-sheet-open;
+    /// **A capture is armed for this action**, by the name `keymap.rs` stores
+    /// it under; empty when none is (#96 task 5). While it is set the whole
+    /// keymap is inactive and the next key the coach presses is the answer.
+    ///
+    /// **It lives on the window rather than in the sheet because the capture
+    /// has to.** Shortcuts are dispatched window-to-focus-item *before* the
+    /// focused element, so a `FocusScope` inside the sheet would never see a
+    /// key the table binds -- the window would have swallowed it first.
+    ///
+    /// Escape is the only outcome this file decides; every other key goes to
+    /// `bind-key` and **Rust clears this**, because whether what was pressed is
+    /// a key at all is `keymap.rs`'s to answer and a bare modifier has to leave
+    /// the capture armed.
+    in-out property <string> capturing-action;
+    /// The Keys sheet's own line: what a capture is waiting for, and what a
+    /// rebind took from where. The status bar's notice renders *behind* the
+    /// scrim, so a sheet with commands of its own needs one.
+    in-out property <string> keys-message;
+    /// A captured key, for the action named: its text and the three modifiers,
+    /// which Rust reads as a `Binding`, stores and hands back as a new table.
+    callback bind-key(string, string, bool, bool, bool);
+    /// Take every key off the action named.
+    callback unbind-key(string);
 
     callback open-project();
     callback add-source();
@@ -4665,16 +4755,45 @@ export component AppWindow inherits Window {
             }
             return accept;
         }
+        // **A capture is the innermost modal there is** (#96 task 5): armed
+        // from a row's *Set...*, it makes the whole keymap inactive and the
+        // next key the coach presses that row's. Ahead of the Keys sheet it is
+        // run from, because the sheet below swallows every key and would
+        // swallow the answer.
+        //
+        // **Escape is the only key decided here.** It cancels, and needs no
+        // round trip. Everything else -- a letter, a named key, a modifier
+        // pressed on the way to one -- goes to Rust, which owns
+        // `capturing-action` from then on: only `keymap.rs` can say whether a
+        // press is a key to bind, and a bare Ctrl has to leave the capture
+        // armed for the key the coach is reaching for.
+        //
+        // Releases are swallowed and harvest nothing: the press is the answer,
+        // and its release would otherwise fall through to the table and fire
+        // whatever the new key used to do.
+        if (root.capturing-action != "") {
+            if (pressed && !event.repeat) {
+                if (event.text == Key.Escape) {
+                    root.capturing-action = "";
+                    root.keys-message = "";
+                } else {
+                    root.bind-key(root.capturing-action, event.text,
+                        event.modifiers.control, event.modifiers.shift,
+                        event.modifiers.alt);
+                }
+            }
+            return accept;
+        }
         // The Keys sheet is modal too, and it is the export sheet's shape
         // exactly: Esc closes it and every other key is swallowed -- `F1`
         // included, so the key that opens it cannot also reopen it from
         // underneath itself.
         //
-        // **No `text-editing` term, because it has no field** (#96): it is a
-        // list, and the rebinding that gives it one is task 5, which is also
-        // where the term would have to arrive. Tested here, second, because
-        // that mirrors the sheet stack's z-order -- this sheet is drawn over
-        // every other and under the error dialog alone.
+        // **No `text-editing` term, because it has no field** (#96): its rows
+        // carry buttons rather than fields, and a capture is the layer above
+        // rather than a focused input. Tested here, third, because that mirrors
+        // the sheet stack's z-order -- this sheet is drawn over every other and
+        // under the error dialog alone, and the capture is over all of them.
         if (root.keys-sheet-open) {
             if (pressed && event.text == Key.Escape) {
                 root.keys-sheet-open = false;
@@ -5037,14 +5156,30 @@ export component AppWindow inherits Window {
             }
             return accept;
         }
+        // The Recent popover from the keyboard (#96 task 5). **The one row in
+        // the table that ships bound to nothing** -- no letter was worth
+        // taking for it when `Recent ▾` is a click away -- so this branch is
+        // unreachable until a coach binds it, and it exists so that binding it
+        // gets the popover rather than a dead key.
+        //
+        // `keys.focus()` before `show()`, for the button's own reason:
+        // `show_popup` takes the window's focus item, so a half-typed clip
+        // name or editor row would commit as a side effect of opening this.
+        // Gated as the button is: the bus refuses a project switch mid-take.
+        if (act == KeyAction.show-recents) {
+            if (pressed && !event.repeat && !root.recording && !root.previewing) {
+                keys.focus();
+                root.list-recents();
+                recent-popup.show();
+            }
+            return accept;
+        }
         // **The fall-through is `reject`, and that is the Ctrl branch this
         // chain replaced.** Its only job once the table compares the three
         // modifiers exactly was to deliver every *other* Ctrl combo to
         // whatever has focus -- Ctrl+V into a field, Ctrl+A to select all --
-        // which is what landing here does. `show-recents` lands here too: it
-        // is a row in the table with no default binding and no branch, and
-        // the branch belongs with the task that can first bind it (#96 task
-        // 5), not with this one.
+        // which is what landing here does. Every one of the 29 actions now has
+        // a branch above it.
         reject
     }
 
@@ -7148,8 +7283,15 @@ export component AppWindow inherits Window {
         if root.keys-sheet-open: Scrim {
             KeysSheet {
                 rows: root.key-rows;
+                capturing <=> root.capturing-action;
+                message <=> root.keys-message;
+                unbind(action) => { root.unbind-key(action); }
                 close => {
                     root.keys-sheet-open = false;
+                    // The line goes with the sheet: what a rebind took from
+                    // where is an answer to something the coach just did, not
+                    // something to find still sitting there next time.
+                    root.keys-message = "";
                     keys.focus();
                 }
             }

@@ -300,7 +300,64 @@ position" — the retry landed in `7310a54`, so a sighting now is news) and #101
   **D** `keys` and `fires` crossed in the `for` → **one**,
   `every_row_the_table_holds_is_on_screen` (`"Clear the drawings — While a
   recording is running — c"`).
-- **5 — rebinding from the sheet.** Not started.
+- **5 — rebinding from the sheet.** **Done** (`claude/96-task-5`), and **#96
+  is closed**. Each action's row carries *Set…* and ✕; `capturing-action` on the
+  window is harvested at the **top** of `handle-key`; `Keymap::rebind` /
+  `unbind` are the two pure operations and `AppFiles::set_keymap` writes the
+  whole diff. **Eight new tests, 57 → 65 in `tests/ui`**, plus five in
+  `keymap.rs` and one in `bus::state`.
+
+  **Four things this task changed about the plan, three of them because the
+  plan was wrong:**
+  - **Item 5 is wrong: the notice cannot be the status bar's.** It says *"the
+    sheet is not modal over the status bar"* — it is. `Scrim` is a full-window
+    rectangle, and the basket sheet's own `message` property exists with a
+    comment saying exactly this (*"the status bar's notice renders behind the
+    scrim, so a sheet with commands of its own needs a line"*). So `KeysSheet`
+    has its own line, on the basket sheet's pattern, and `keys-message` on the
+    window is what Rust writes to.
+  - **Backspace and Delete do not unbind**, as item 1 had them. `Delete` is
+    `deleteClip`'s own default, so reading it as "unbind" would have made a
+    shipped binding unreachable for ever — a coach who moved that row could
+    never move it back. Item 2 already gives ✕ the unbinding job, so the two
+    were redundant and one of them cost a key. What a capture *does* refuse is
+    `Binding::reserved` — Escape, Tab, Return, Home, End — **with the capture
+    still armed**, so the refusal is a correction rather than a cancellation.
+  - **A bare modifier leaves the capture armed, and nothing in the plan said
+    so.** Slint delivers a key event for Ctrl itself, so a capture that took
+    the first press would store Ctrl and never see the letter a coach was
+    reaching for — `Ctrl+`anything would have been unbindable. That is why
+    `capturing-action` is cleared by **Rust** and not by `app.slint`: only
+    `keymap.rs` can say whether a press is a key at all. Escape is the one
+    exception, and it is a cancel with no round trip.
+  - **Task 4's `ScrollView { height: 520px }` is gone**, as the plan's own
+    §5 note anticipated: #134 landed hours after task 4 and caps every card at
+    the window, and keeping both would have shown 520px of rows in the middle
+    of a 1200px card and scrolled in two places at once. `keys_sheet.rs`'s
+    header and its card-fits test were rewritten to say what they now measure.
+
+  **Sabotage, four, each failing exactly the tests named out of the binary's
+  65:** **A** `rebind` skips the removal from the displaced action → **two**,
+  `keymap::a_rebind_takes_the_key_and_says_where_from` and
+  `state::a_rebind_survives_the_file` (the next load resolves the collision by
+  `ALL` order and gives the key back to `markOut`), with 185 lib siblings
+  green — the plan's own sabotage 1; **B** the capture branch moved below the
+  table lookup → **four**, headed by `capturing_swallows_one_key_and_rebinds_it`
+  reading `the captured key fired what it used to on its way in:
+  ["toggle-play"]` — the plan's sabotage 2 in a form that is one line to try;
+  **C** the `show-recents` branch deleted → **one**,
+  `a_rebound_key_fires_the_action_it_was_given_to`; **D** `store` stops setting
+  `key-rows` → **two**, both of `keys_sheet.rs`'s edit tests (*"the row does not
+  read back as what it became"*), which is the "the list and the lookup are one
+  map read twice" claim earning its place.
+
+  **One thing sabotage B caught in the test rather than the code.** The capture
+  test first pressed `q`, which is **unbound** — and an unbound key falls
+  through to a capture branch wherever it sits, so the test passed with the
+  layer in the wrong place. It presses **Space** now, which is `togglePlay`'s,
+  and that is what makes the assertion mean what its name says. The same trap as
+  the merged `sheet_scroll` fixture that never called `wire_keys`: a test over a
+  mechanism has to be run against the mechanism broken.
 
 **Shipping, and what is parallel.** Checked by opening every file named, not by
 assertion:
@@ -909,14 +966,26 @@ spec wrote it, which is why nothing here has to be designed.
    so a `FocusScope` inside the sheet would never see a key `handle-key` binds.
    So: `in-out property <string> capturing-action` on the window, tested at the
    **top** of the keys-sheet layer. While it is non-empty the whole keymap is
-   inactive and the next key is harvested: Escape cancels, Backspace and Delete
-   unbind, anything else is offered to `bind-key`. One mechanism — the modal
+   inactive and the next key is harvested. One mechanism — the modal
    layers — gains one more member.
+   **Corrected in execution**, two ways. Escape cancels, but ~~Backspace and
+   Delete unbind~~: `Delete` is `deleteClip`'s own default, and reading it as
+   "unbind" would have made a shipped binding unreachable for ever, so ✕ does
+   the unbinding and a capture takes Delete like any other key. And a **bare
+   modifier leaves the capture armed** — Slint delivers a key event for Ctrl
+   itself, so a capture that took the first press would store Ctrl and never
+   see the letter — which is why **Rust** and not this file clears
+   `capturing-action`: only `keymap.rs` can say whether a press is a key at all.
+   A **reserved** key is refused with the capture still armed.
 2. **Each row gains two controls**: *Set…* (writes `capturing-action`) and *✕*
    (unbinds). **Set… replaces the action's bindings with the one key captured**,
    and the row then shows what it became. Replacing is the rule a coach can
-   predict; an *Add* affordance for a second binding per action is deferred, and
-   the two-key defaults (`←`/`a`, `1`/`Ctrl+0`) keep their pairs until touched.
+   predict; an *Add* affordance for a second binding per action is deferred
+   (**BACKLOG #135**), and the two-key defaults (`←`/`a`, `1`/`Ctrl+0`) keep
+   their pairs until touched. **The controls are the row component's
+   `@children` rather than properties on it**: `KeyLine` is shared with the
+   column heading and the six reserved rows, which pass nothing and so get
+   nothing.
 3. **`Keymap::rebind(action, binding) -> Option<Action>`** — **G3**'s last-wins:
    the binding is removed from whatever action holds it, added to this one, and
    the displaced action is returned so the UI can say which key it just took.
@@ -926,9 +995,13 @@ spec wrote it, which is why nothing here has to be designed.
    last-wins changes *two* actions' rows, so a one-row writer would leave the
    displaced action's binding in the file and the next load would resurrect it
    as a collision.
-5. **The notice is the status bar's**, naming the action the key was taken from
-   — the sheet is not modal over the status bar, and `UserError`-style modals are
-   for refusals. Nothing here refuses.
+5. **The notice names the action the key was taken from**, and
+   `UserError`-style modals are for refusals. ~~It is the status bar's — the
+   sheet is not modal over the status bar.~~ **Corrected in execution: it is.**
+   `Scrim` is a full-window rectangle and the status bar renders *behind* it,
+   which the basket sheet's own `message` property already says in a comment.
+   So `KeysSheet` carries its own line, on that sheet's pattern. (And something
+   here does refuse: a capture that lands on a reserved key.)
 6. **`BACKLOG.md`:** #96 closes; **#35 closes as retired** (**0c**); **#94's
    remaining half closes** (`2`/`3`/`0` are now written down in the app); **#99
    is re-premised** — its stated blocker (*"a focusable grip would swallow

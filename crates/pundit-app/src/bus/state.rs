@@ -437,6 +437,22 @@ impl AppFiles {
         Keymap::with_overrides(&self.read().keys)
     }
 
+    /// Remembers the keys the coach rebound (BACKLOG #96) — **the whole diff,
+    /// never one row**.
+    ///
+    /// The spec asked for `set_binding(action, Vec<Binding>)` and that shape is
+    /// wrong: last-wins changes *two* rows, the action that gains a key and the
+    /// one it was taken from, so a one-row writer would leave the displaced
+    /// binding in the file and the next load would read a collision and resolve
+    /// it the other way. [`Keymap::overrides`] is a fixpoint over
+    /// [`Keymap::with_overrides`], so what is written here is the keymap the
+    /// coach is already using.
+    pub fn set_keymap(&self, keymap: &Keymap) {
+        let mut state = self.read();
+        state.keys = keymap.overrides();
+        self.save(&state);
+    }
+
     /// How wide the side columns were. A file that doesn't say reads as
     /// today's widths.
     pub fn panel_widths(&self) -> PanelWidths {
@@ -1053,6 +1069,44 @@ mod tests {
             "an action name this build doesn't have is ignored, not kept"
         );
         assert_eq!(state.pen(), Pen::Blue);
+    }
+
+    /// **What the sheet writes, the next launch reads**: a rebind through
+    /// `set_keymap` round-trips through a real file, *including* the row the
+    /// key was taken from.
+    ///
+    /// That last clause is the whole reason this writes the map rather than one
+    /// action's spellings. Leave the displaced row out and the file says `o` is
+    /// `tagHomeGoal`'s while still saying nothing about `markOut`, so the next
+    /// load gives `markOut` its default `o` back, finds it taken, and the coach
+    /// has lost the rebind they just made.
+    #[test]
+    fn a_rebind_survives_the_file() {
+        use crate::keymap::{Action, Binding};
+
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppFiles::in_config_dir(dir.path());
+
+        let mut keymap = state.keymap();
+        let o = Binding::from_label("o").expect("a key");
+        assert_eq!(keymap.rebind(Action::TagHomeGoal, o), Some(Action::MarkOut));
+        state.set_keymap(&keymap);
+
+        assert_eq!(state.keymap(), keymap, "the file is not what was written");
+        assert_eq!(
+            state.keymap().action_for("o", false, false, false),
+            Some(Action::TagHomeGoal)
+        );
+        assert!(
+            state.read().keys.contains_key("markOut"),
+            "the displaced row is missing, so the next load resurrects its key"
+        );
+
+        // And the reset path is the whole diff going away, which is what a
+        // coach deleting the `keys` key by hand does too.
+        state.set_keymap(&crate::keymap::Keymap::defaults());
+        assert_eq!(state.keymap(), crate::keymap::Keymap::defaults());
+        assert!(state.read().keys.is_empty(), "the diff did not clear");
     }
 
     /// The panels likewise, and today's widths until one is dragged.

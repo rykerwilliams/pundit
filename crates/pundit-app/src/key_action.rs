@@ -20,27 +20,116 @@
 //! will say so, which is the plan's Risk 1 and why `tests/ui/keys.rs` is a
 //! table of every action rather than a test per key.
 
-use pundit_app::keymap::{Action, Keymap};
-use slint::{ModelRc, VecModel};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use pundit_app::bus::AppFiles;
+use pundit_app::keymap::{Action, Binding, Keymap};
+use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 use crate::{AppWindow, KeyAction, KeyRow};
 
-/// Answers `action-for` from `keymap`, and fills the Keys sheet's list from the
-/// same map. Read **once** — a key event is a lookup over a few dozen rows,
-/// never a file read.
+/// Answers `action-for` from `keymap`, fills the Keys sheet's list from the
+/// same map, and takes the sheet's two edits back into it and into `state`.
+/// Read **once** — a key event is a lookup over a few dozen rows, never a file
+/// read.
 ///
 /// **The list and the lookup are one map read twice**, which is the whole of
-/// why the sheet cannot go stale: there is no second table to keep in step,
-/// and a rebind (plan task 5) sets both again from one `Keymap`.
+/// why the sheet cannot go stale: there is no second table to keep in step, and
+/// an edit sets both again from the one `Keymap` behind the handle.
 ///
-/// The keymap is moved into the callback rather than shared: nothing else
-/// holds it, and nothing yet rewrites it. The rebinding is what needs it
-/// behind a handle, and that is one line when it arrives.
-pub fn wire_keys(window: &AppWindow, keymap: Keymap) {
-    window.set_key_rows(key_rows(&keymap));
-    window.on_action_for(move |text, ctrl, shift, alt| {
-        key_action(keymap.action_for(&text, ctrl, shift, alt))
+/// **It writes through `AppFiles` and not the bus**, the same reason the panel
+/// widths and the pen width do: a keymap reaches a key event on this thread, so
+/// the bus has nothing to hold and no command to carry. What is stored is the
+/// **diff** (`Keymap::overrides`), written whole on every edit.
+pub fn wire_keys(window: &AppWindow, state: &AppFiles, keymap: Keymap) {
+    let keymap = Rc::new(RefCell::new(keymap));
+    window.set_key_rows(key_rows(&keymap.borrow()));
+    window.on_action_for({
+        let keymap = Rc::clone(&keymap);
+        move |text, ctrl, shift, alt| {
+            key_action(keymap.borrow().action_for(&text, ctrl, shift, alt))
+        }
     });
+    window.on_bind_key({
+        let (weak, state, keymap) = (window.as_weak(), state.clone(), Rc::clone(&keymap));
+        move |name, text, ctrl, shift, alt| {
+            let Some(w) = weak.upgrade() else {
+                return;
+            };
+            let Some(action) = Action::from_name(&name) else {
+                // The sheet's own rows carry the names, so this is
+                // unreachable; clearing rather than ignoring is what stops an
+                // unreachable case from being a window stuck swallowing keys.
+                return done(&w, "");
+            };
+            let Some(binding) = Binding::from_event(&text, ctrl, shift, alt) else {
+                // A modifier on its own: the coach is still reaching for the
+                // key, so the capture stays armed and the line stays up.
+                return;
+            };
+            if binding.reserved() {
+                // Still armed, so the next press is taken instead: the refusal
+                // is a correction, not a cancellation.
+                w.set_keys_message(
+                    format!(
+                        "{} is the app's own — press another key, or Escape to                          leave {} alone.",
+                        binding.label(),
+                        quoted(action)
+                    )
+                    .into(),
+                );
+                return;
+            }
+            let displaced = keymap.borrow_mut().rebind(action, binding);
+            store(&w, &state, &keymap.borrow());
+            done(
+                &w,
+                &match displaced {
+                    Some(from) => format!(
+                        "{} is now {}, taken from {}.",
+                        quoted(action),
+                        binding.label(),
+                        quoted(from)
+                    ),
+                    None => format!("{} is now {}.", quoted(action), binding.label()),
+                },
+            );
+        }
+    });
+    window.on_unbind_key({
+        let (weak, state, keymap) = (window.as_weak(), state.clone(), Rc::clone(&keymap));
+        move |name| {
+            let (Some(w), Some(action)) = (weak.upgrade(), Action::from_name(&name)) else {
+                return;
+            };
+            keymap.borrow_mut().unbind(action);
+            store(&w, &state, &keymap.borrow());
+            done(&w, &format!("{} has no key now.", quoted(action)));
+        }
+    });
+}
+
+/// An action by its words, in quotes — how the sheet's line names a row, which
+/// is the only thing a coach ever saw it called.
+fn quoted(action: Action) -> String {
+    format!("“{}”", action.what())
+}
+
+/// Remembers the map and shows it: the file, then the sheet's rows, which are
+/// rebuilt from the same map so the row the coach just changed reads back as
+/// what it became.
+fn store(window: &AppWindow, state: &AppFiles, keymap: &Keymap) {
+    state.set_keymap(keymap);
+    window.set_key_rows(key_rows(keymap));
+}
+
+/// Ends the capture and says what came of it. **The clear is here and not in
+/// `app.slint`** — see `capturing-action`'s own note: a press that is not a key
+/// has to leave the capture armed, and only this side can tell.
+fn done(window: &AppWindow, message: &str) {
+    window.set_capturing_action(SharedString::new());
+    window.set_keys_message(message.into());
 }
 
 /// `Keymap::listing` as the sheet's model, one row per `Action::ALL` entry in
@@ -54,6 +143,8 @@ fn key_rows(keymap: &Keymap) -> ModelRc<KeyRow> {
             what: row.what.into(),
             keys: row.keys.as_str().into(),
             fires: row.when.into(),
+            action: row.action.into(),
+            bound: row.bound,
         })
         .collect();
     ModelRc::new(VecModel::from(rows))

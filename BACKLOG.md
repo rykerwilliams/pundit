@@ -19,11 +19,6 @@ made things worse.
   2026-10-05, planned 2026-10-06**: two on the export sheet (Chapters,
   Scoreboard subtitles), and a settings sheet designed but not built — **#84
   builds it** (#102 declined it, 2026-10-07)
-- **96.** Every hot key should be reassignable. The coach (2026-09-25): "we need
-  to have all the hot keys reassignable", and (2026-10-07) *"i did ask for a
-  configuration system eh; use a library or known pattern/convention"*.
-  **Specced 2026-10-02, planned 2026-10-07**: one table in `keymap.rs`,
-  overrides in `state.json`, a Keys sheet, and rebinding from it
 - **77.** An export queue across projects. The coach (2026-09-24): "i open…
 - **84.** Music under a goals reel — Openverse search, then the mixer (**builds**
   the settings sheet #78 **designs**, for the music folder path, now that #102 has
@@ -35,7 +30,10 @@ made things worse.
   menu** — so it does **not** build #78's settings sheet, which #84 does
 
 - **128.** The themed pass is silent at both of its ends — no keyboard way to
-  start one, and nothing said when it runs out of ranges
+  start one, and nothing said when it runs out of ranges (**its keyboard half
+  is one `keymap.rs` row now that #96 has landed**)
+- **135.** A second key per action, from the Keys sheet — #96 ships *Set…* as a
+  **replace**, so the two-key defaults can be kept or narrowed but not rebuilt
 - **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
   clip, sticky for the next recording, as #88's inset size and corner are (**v16
   — v15 went to the mute switch, v14 to #117's arrowhead; take the next free
@@ -373,8 +371,15 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   coordinates would need to follow.
 - **When to revisit:** The first time a user needs portrait phone footage.
 
-### 35. Physical-key bindings for A/D and digits
-- **Why deferred:** Slint key events carry text, not scancodes, so A/D and the
+### 35. Physical-key bindings for A/D and digits — RETIRED (2026-10-09)
+- **Closed as #96 said it would be, not fixed.** #96 shipped whole: a
+  non-QWERTY coach opens the Keys sheet with `F1`, presses *Set…* on the zoom
+  rows and on the short skips, and `state.json` remembers the keys where their
+  keyboard actually has them. The information Slint discards at the boundary is
+  still discarded — nothing below changed — but nobody needs it any more.
+  Reopen only for the one case a rebind cannot answer: a binding that has to
+  follow the *physical* key across two layouts on one machine.
+- **Why it was deferred:** Slint key events carry text, not scancodes, so A/D and the
   zoom digits follow the keyboard layout (on AZERTY the digits need Shift).
   Arrows are unaffected.
 - **It cannot be fixed on our side, verified 2026-10-07.** `KeyEvent` has
@@ -388,8 +393,6 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   expose scancodes: a non-QWERTY coach rebinds the zoom and A/D to the keys
   where they are, once, and `state.json` remembers
   (`2026-10-02-rebindable-keys-design.md` §K2).
-- **When to revisit:** close it when #96 ships; reopen only if a coach needs a
-  binding that follows the *physical* key across two layouts on one machine.
 
 ### 36. Decoding slows to ~0.1× when the display is off (vsync-blocked swap)
 - **Why deferred:** In Phase 2 Task 5, with the laptop's monitor DPMS-off,
@@ -2071,12 +2074,16 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   machine they use has run 0.8.0. The whole removal is one commit and should
   leave no `coach-cuts` string in `crates/` at all.
 
-94. **Zoom and pan are undiscoverable — PARTLY RESOLVED (2026-09-25).** The
-  drag that does nothing is now the moment the app says how: `DRAWING_HINT`
-  reads "Ctrl+scroll to zoom, then drag to pan — or press R to draw", because
-  that gesture has two readings and the app cannot tell which was meant. What
-  is still true: `2`/`3`/`0` are written down nowhere, and a coach who never
-  drags never sees the hint. The rest of this entry stands.
+94. **Zoom and pan are undiscoverable — RESOLVED (2026-10-09).** Two halves,
+  closed six weeks apart. The drag that does nothing became the moment the app
+  says how (2026-09-25): `DRAWING_HINT` reads "Ctrl+scroll to zoom, then drag
+  to pan — or press R to draw", because that gesture has two readings and the
+  app cannot tell which was meant. The other half was *"`2`/`3`/`0` are written
+  down nowhere"*, and #96 task 4 wrote them down: `F1` opens the Keys sheet,
+  which lists all 29 actions with their keys and when each fires, and the Keys
+  button beside `Fit` is the door for a coach who does not know `F1`. The hint
+  stays where it is — it is the answer at the moment the question is asked,
+  which a sheet behind a key never is.
 
   The coach, using 0.8.0 for the first
   time (2026-09-25): "the panning doesn't work or i don't know how to do it".
@@ -2152,7 +2159,32 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** if the panels ever gain a minimum below today's widths,
   which is what would make the shape reachable by hand.
 
-96. **Every hot key should be reassignable.** The coach (2026-09-25): "we need
+96. **Every hot key should be reassignable — RESOLVED (2026-10-09, five
+  tasks).** Shipped: the keys are a table (`keymap.rs`, 29 actions and 34
+  default bindings), `state.json`'s `keys` object holds the **diff** keyed by
+  the action's camelCase name, `handle-key` asks one lookup instead of 61
+  inline comparisons, `F1` opens a sheet listing every row, and each row's
+  *Set…* captures the next key the coach presses while ✕ frees one. The
+  convention is VS Code's `keybindings.json`, and CLAUDE.md's "The keys live in
+  one table" paragraph is the record of what is load-bearing. **Three things
+  that were decided against the spec and are worth keeping in view:**
+  - **A rebind writes the whole diff**, never one row (`AppFiles::set_keymap`),
+    because last-wins changes *two* rows. The spec's
+    `set_binding(action, Vec<Binding>)` would have left the displaced binding
+    in the file for the next load to resurrect as a collision.
+  - **The capture is a window layer, not a focused field**, and it had to be:
+    shortcuts run in the capture phase, ahead of the focused element, so a
+    `FocusScope` in the sheet would never see a key the table binds.
+  - **Backspace and Delete do *not* unbind** during a capture, as the plan had
+    them: `Delete` is `deleteClip`'s own default, so that would have made a
+    shipped binding unreachable for ever. The ✕ does the unbinding.
+
+  **What it leaves behind:** #135 (a second binding per action), #99
+  re-premised below, and the one deviation from the spec's ordering recorded
+  in the plan — the spec deferred rebinding and the coach asked for it
+  (2026-10-07, *"i did ask for a configuration system eh"*).
+
+  The original entry, for the reasoning: the coach (2026-09-25): "we need
   to have all the hot keys reassignable". Today there are **61 `event.text ==`
   comparisons** in one function in `app.slint` — this entry said 33 when it was
   filed, and the count is re-derived at `2749e00`: `handle-key` is
@@ -2258,7 +2290,11 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   `resizeSidebar` / `resizeInspector` are actions with a guard — "a grip has
   focus" — resolved in the same lookup as everything else, with the precedence
   visible. See `docs/superpowers/specs/2026-10-02-rebindable-keys-design.md` §N.
-- **When to revisit:** with #96, or if the coach asks to resize without the mouse.
+- **When to revisit:** now, or when the coach asks to resize without the mouse.
+  #96 landed whole on 2026-10-09, so the `resizeSidebar` / `resizeInspector`
+  rows are a `keymap.rs` entry, a `handle-key` branch guarded on "a grip has
+  focus", and a default each — the table and the lookup this was waiting for
+  are both there.
 
 100. **`state.json` is read all-or-nothing, so one bad value still costs the
   whole file — RESOLVED** (2026-10-02, PR #11, as T1 of #85). All five measured
@@ -4135,8 +4171,11 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   after a real session is better evidence than either guess. The end-of-pass
   notice in particular wants to know whether they count ranges.
 - **When to revisit:** after the coach has run a themed pass over a real match.
-  The keyboard half is naturally part of #96; the notice is its own small
-  change.
+  The notice is its own small change. **The keyboard half has its home now**
+  (2026-10-09): #96 shipped the table, so "select the first candidate" is one
+  more `keymap::Action` with a `handle-key` branch and a default — the same
+  three edits every row is, and the reason the sheet lists it the moment it
+  exists.
 
 129. **`pip_for_new_recordings` has no control at all.** Surfaced 2026-10-05 by
   #78's spec rewrite, which **removed the line that had parked it on #78** — so
@@ -4462,17 +4501,41 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   task 2's to make while shipping a checkbox. Deepening a 33px overflow to
   123px is also not the same as introducing one.
 - **One data point for that decision, from #96's Keys sheet** (2026-10-08): a
-  29-row table cannot fit a 700px card at all, so that sheet answers this
-  inside its own body — the row list is a `ScrollView` capped at **520px**,
+  29-row table cannot fit a 700px card at all, so that sheet answered this
+  inside its own body — the row list was a `ScrollView` capped at **520px**,
   derived from `min-window-height` less the card's own chrome, and the card
-  measures 666px of the 700 there are. It is the **second** sheet to cap a list
-  by hand — the export sheet's own two caps, 210px and 140px, were picked by
-  eye and are what still overflow — and that is the argument for the
-  arithmetic living in `Sheet`, where it can be done once against the window's
-  floor. It is **not** an argument for the whole card scrolling, which is the
-  trade above.
+  measured 666px of the 700 there are. It was the **second** sheet to cap a
+  list by hand (the export sheet's own two caps, 210px and 140px, were picked
+  by eye and are what overflowed), and that was the argument for the arithmetic
+  living in `Sheet`, where it could be done once against the window's floor.
+  **That cap is gone** (2026-10-09, #96 task 5): the shared one landed hours
+  after it and does the job, and keeping both would have shown a coach 520px of
+  rows in the middle of a 1200px card and scrolled in two places at once. It
+  was never an argument for the whole card scrolling, which is the trade this
+  entry took anyway and the coach accepted.
 - **When to revisit:** with the next thing that adds a row to any sheet, or the
   first time a coach reports losing the buttons. The fit test is the tripwire
   and already names this entry. **Revisited 2026-10-08**, with #96's 29-row keys
   sheet next in line; the coach on the framing: *"pagination isn't a new
   concept?"*
+
+135. **A second key per action, from the Keys sheet.** #96's *Set…* **replaces**
+  a row's keys with the one captured, which is the rule one button can state and
+  a coach can predict. Four of the 34 defaults are pairs — `LeftArrow`/`a`,
+  `RightArrow`/`d` and their shifted twins, plus `1`/`Ctrl+0` on the zoom reset
+  — and they keep their pairs until a *Set…* touches the row, after which that
+  row is one key and there is no way back to two but deleting `keys` from
+  `state.json` by hand.
+- **What it would take:** `Keymap::add_binding(action, binding)` beside `rebind`
+  (the same last-wins removal, pushing rather than replacing), a `+` on each row
+  arming the same capture with a flag, and a per-binding ✕ instead of the row's
+  one — which is a row whose controls depend on how many keys it has, where
+  today every row is the same shape.
+- **Why deferred:** nobody has asked for two keys on one action, the four
+  defaults that have them are the app's own choices rather than a coach's, and
+  `keybindings.json` — the convention #96 follows — does this by letting a coach
+  write a list, which a hand-edit of `state.json` already allows. The capture UI
+  for it is three controls per row where there is now one.
+- **When to revisit:** if a coach rebinds one of the four paired rows and asks
+  where the other key went. That is the one way this is discovered, and it is
+  worth watching for rather than pre-empting.
