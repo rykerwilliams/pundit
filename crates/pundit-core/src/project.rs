@@ -335,6 +335,33 @@ pub struct Clip {
     /// three places and would still outlive a trashed clip.
     #[serde(default)]
     pub slate_id: Option<Uuid>,
+
+    /// v17. The backdrop image this take was recorded **over** instead of the
+    /// game video — the tactics whiteboard (BACKLOG #138): a file name under
+    /// the project's `backdrops/` directory, as
+    /// [`Clip::recording_filename`] is one under `recordings/`.
+    ///
+    /// **`Some` *is* whiteboard mode for this clip**, which is
+    /// [`Project::avatar`]'s rule for the same reason: a `bool` beside a file
+    /// name is two values free to disagree, and this project's format rules
+    /// forbid a field-level default on a `bool` anyway — leaving `Option<bool>`
+    /// to express what one `Option<String>` already says. There is no second
+    /// flag.
+    ///
+    /// **`source_index` and `start_source_seconds` keep their meaning**, and
+    /// that is not a vestige: a whiteboard take is started while watching a
+    /// moment of a match and is *about* that moment, so the anchor is this
+    /// clip's place in the match. It is also what keeps
+    /// [`Project::source_is_referenced`], [`Project::remove_source`]'s remap
+    /// and `UndoStack::purge_for_source_change` correct with no new arms —
+    /// nothing new holds a source index.
+    ///
+    /// **Immutable once recorded.** The commentary was recorded against this
+    /// image; swapping it would leave the coach pointing at things that are no
+    /// longer there, the same reason a clip cannot be re-anchored to other
+    /// footage.
+    #[serde(default)]
+    pub backdrop: Option<String>,
 }
 
 impl Clip {
@@ -761,6 +788,11 @@ impl Project {
             start_source_seconds: pending.start_source_seconds,
             recording_duration: duration,
             recording_filename: format!("{}.mkv", pending.id),
+            // **`None` here and assigned by the bus**, as `slate_id` below is
+            // (#138): `PendingClip` is `Copy` over three scalars and a `String`
+            // would cost it that, so the backdrop's file name rides on the
+            // recording's `Active` and is written once the take finishes.
+            backdrop: None,
             events,
             show_pip: self.preferences.pip_for_new_recordings,
             inset: if self.avatar.is_some() {

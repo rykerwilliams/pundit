@@ -188,6 +188,37 @@ impl Walk {
 pub fn playback_segments(clip: &Clip, source_duration: f64) -> Vec<PlaybackSegment> {
     crate::event::debug_assert_sorted(&clip.events);
 
+    // **A whiteboard take is one `Freeze` for its whole length** (BACKLOG
+    // #138): its picture is a still image, so there is no game video to walk
+    // and `Play`/`Pause` carry nothing a reader could use.
+    //
+    // **This is where the rule lives, and the alternative is what makes it
+    // worth saying.** The spec put it in `core::audio`, as a third guard beside
+    // `audio_regions`' two — and that function sees only a `Compilation`, whose
+    // `PlanEntry` carries no clip and no backdrop, so there was nothing for a
+    // third guard to read. Here the clip is already in hand and one line does
+    // it, with three things falling out for free:
+    //
+    // - **no game region at all**, because `audio::game_regions` emits only for
+    //   `SegmentKind::Play` — so nothing ever opens an audio pipeline on a PNG,
+    //   which is what the spec's guard was for;
+    // - **the same entry length**, because `frame_count` sums `out_duration`
+    //   whichever kind the segments are;
+    // - **`source_time` constant across the entry**, which the design asserts
+    //   anyway and this makes true by construction rather than by assertion.
+    //
+    // A real take always opens with a `Pause`, so a whiteboard clip would
+    // usually have no `Play` segment regardless; **an empty event list is all
+    // `Play`** (`rate` starts at 1.0), and that is what every test fixture
+    // writes — which is exactly where a silent wrong value survives.
+    if clip.backdrop.is_some() {
+        return vec![PlaybackSegment {
+            kind: SegmentKind::Freeze,
+            source_start: clamp_source(clip.start_source_seconds, source_duration),
+            out_duration: clip.recording_duration,
+        }];
+    }
+
     let mut w = Walk {
         segments: Vec::new(),
         source_cursor: clamp_source(clip.start_source_seconds, source_duration),

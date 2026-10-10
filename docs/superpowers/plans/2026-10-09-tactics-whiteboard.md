@@ -18,7 +18,23 @@ tasks.
 
 ## Where this stands (update it as tasks land)
 
-- **1 — core: the field, the bump, and the freeze.** Not started.
+- **1 — core: the field, the bump, and the freeze.** **Done**
+  (`claude/138-task-1`). `Clip::backdrop`, `CURRENT_FORMAT_VERSION` 16 → **17**,
+  and `playback_segments` returning one `Freeze`. Core suites 30, all green;
+  `project_format` 45 → 47 and `timeline` 18 → 19.
+  **§B.5 was right and cost more than five files:** a new `Clip` field broke
+  **nineteen** exhaustive literals, not five — the review found the five outside
+  core (`media/tests/preview.rs`, `media/tests/export.rs`, `media/src/overlay.rs`,
+  `media/src/composite/export.rs`, `harness/src/lib.rs`) and there are
+  **thirteen more in `pundit-core`'s own tests** plus `project.rs`'s
+  `add_recorded_clip`. So "pure core, ships alone" was wrong in both directions,
+  and the honest statement is that this task touches every crate's test
+  fixtures and no crate's logic but core's.
+  **Sabotage, two, each confirming a corrected claim:** the version left at 16
+  fails `a_v16_…` **on the `project.json.v16` backup assertion** — not "on its
+  own name", which the first draft said and §B corrected, and the panic names
+  that line exactly; and `Play` in place of `Freeze` fails the timeline test
+  with `left: [Play…] right: [Freeze…]`.
 - **2 — media: the picture is a decoder *or* a still.** Not started.
 - **3 — the bus: arm it, record over it, preview it, refuse the rest.** Not
   started.

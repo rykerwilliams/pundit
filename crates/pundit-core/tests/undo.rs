@@ -33,6 +33,7 @@ fn clip(id: Uuid) -> Clip {
         created_at: String::new(),
         transcript: String::new(),
         slate_id: None,
+        backdrop: None,
     }
 }
 

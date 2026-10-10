@@ -451,6 +451,39 @@ silently. If you need a media type in core, you need a different design.
   both switches and drop them on its next save — exporting the chapters and the
   `.srt` a coach had turned off and saying nothing. The bump makes it refuse the
   file instead, and `project.json.v15` is what it can still be gone back to.
+- **v17 adds `Clip::backdrop`** (#138, the tactics whiteboard) — the file name,
+  under the project's `backdrops/`, of the still image this take was recorded
+  **over** instead of the game video. An `Option<String>` with a **field-level**
+  `#[serde(default)]`, `Clip::slate_id`'s shape, and `None` is exactly what
+  every v7–v16 clip means. **`Some` *is* whiteboard mode for that clip**, which
+  is `Project::avatar`'s rule for its reason: a `bool` beside a file name is two
+  values free to disagree, and a field-level default on a `bool` is forbidden
+  anyway — leaving `Option<bool>` to say what one `Option<String>` already does.
+  **No accessor**: there is nothing to fold, and `recording_filename` — the
+  directly comparable field — has none either. Additive, so the floor stays 7.
+  **The bump's reason is the forward direction:** an older build would ignore
+  `backdrop` and drop it on its next save, turning a whiteboard clip into a
+  footage clip over an anchor it never showed, silently.
+  - **`source_index` and `start_source_seconds` keep their meaning on a
+    whiteboard clip**, and that is load-bearing rather than vestigial: a
+    whiteboard take is *about* the moment of the match it was started from, so
+    the anchor is the clip's place in that match — and it is what keeps
+    `source_is_referenced`, `remove_source`'s remap and
+    `purge_for_source_change`'s exhaustive match correct with **no new arms**,
+    because nothing new holds a source index. The accepted cost is that
+    removing a half is refused by a clip that shows none of it (BACKLOG #138).
+  - **A whiteboard clip's `playback_segments` is one `Freeze` for the take's
+    length**, and that is where the rule lives rather than in `core::audio`.
+    `audio_regions` sees only a `Compilation`, whose `PlanEntry` carries no clip
+    and no backdrop, so the guard the design first wanted had nothing to read;
+    `playback_segments` already has the `Clip`. Three things fall out: **no game
+    region at all**, because `game_regions` emits only for `SegmentKind::Play`,
+    so nothing ever opens an audio pipeline on a PNG; the same entry length,
+    since `frame_count` sums `out_duration` either way; and `source_time`
+    constant across the entry, by construction rather than by assertion.
+    **An empty event list is all `Play`** (the walk starts at `rate: 1.0`),
+    which is what every test fixture writes — the one shape where a missing
+    guard would have survived unnoticed, since a real take opens with a `Pause`.
 - **The first save after an upgrade keeps `project.json.v<old>`**, once, never
   overwritten, so the older build can still be gone back to. It is copied to a
   temporary name and renamed, like `project.json` itself, so a failed copy
