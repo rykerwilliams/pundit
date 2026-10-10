@@ -25,6 +25,7 @@ fn clip(n: u128, source_index: usize, start: f64) -> Clip {
         created_at: String::new(),
         transcript: String::new(),
         slate_id: None,
+        backdrop: None,
     }
 }
 
