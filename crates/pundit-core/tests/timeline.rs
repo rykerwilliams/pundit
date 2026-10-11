@@ -27,6 +27,7 @@ fn clip(start: f64, duration: f64, events: Vec<CommentaryEvent>) -> Clip {
         created_at: "2026-09-19T00:00:00Z".into(),
         transcript: String::new(),
         slate_id: None,
+        backdrop: None,
     }
 }
 
@@ -351,4 +352,52 @@ fn the_eof_gap_between_the_two_functions_is_deliberate() {
         1000.0,
         "the clock reads the true end"
     );
+}
+
+/// **A whiteboard take is one `Freeze` for its whole length** (BACKLOG #138),
+/// whatever its events say — its picture is a still image, so there is no game
+/// video to walk.
+///
+/// **What this actually pins is that nothing opens an audio pipeline on a
+/// PNG.** `audio::game_regions` emits only for `SegmentKind::Play`, so one
+/// `Freeze` means no game region at all — which is what the design wanted and
+/// what it first tried to get with a guard in `audio_regions`, where there was
+/// nothing to read it from: that function sees a `Compilation`, whose
+/// `PlanEntry` carries no clip and no backdrop.
+///
+/// **The event list is empty on purpose.** `playback_segments` starts its walk
+/// at `rate: 1.0`, so an empty list is all `Play` — which is what every test
+/// fixture in this repo writes, and so the one shape where a missing guard
+/// would have survived unnoticed. A real take opens with a `Pause`.
+#[test]
+fn a_whiteboard_clip_is_one_freeze_whatever_its_events_say() {
+    let plain = clip(12.0, 8.0, Vec::new());
+    let mut board = plain.clone();
+    board.backdrop = Some("pitch.png".into());
+
+    let segs = playback_segments(&board, 1000.0);
+    assert_eq!(
+        segs,
+        vec![PlaybackSegment {
+            kind: SegmentKind::Freeze,
+            source_start: 12.0,
+            out_duration: 8.0,
+        }],
+        "a whiteboard take is one freeze of its recording's length"
+    );
+
+    // The same clip without a backdrop walks as it always did, which is what
+    // says the guard is the backdrop's and not a change to the walk.
+    assert!(
+        playback_segments(&plain, 1000.0)
+            .iter()
+            .all(|s| s.kind == SegmentKind::Play),
+        "an empty event list is all Play, and still is"
+    );
+
+    // And events that would have moved the picture are ignored rather than
+    // producing a Play the audio mixer would follow to a PNG.
+    let mut noisy = board.clone();
+    noisy.events = vec![skip(1.0, 100.0)];
+    assert_eq!(playback_segments(&noisy, 1000.0), segs);
 }

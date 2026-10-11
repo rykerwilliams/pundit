@@ -626,6 +626,7 @@ pub fn clip(source_index: usize) -> Clip {
         created_at: "2026-09-19T00:00:00Z".into(),
         transcript: String::new(),
         slate_id: None,
+        backdrop: None,
     }
 }
 

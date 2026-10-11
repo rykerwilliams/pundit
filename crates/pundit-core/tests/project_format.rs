@@ -39,6 +39,7 @@ fn sample_clip() -> Clip {
         created_at: "2026-09-19T12:00:00Z".into(),
         transcript: String::new(),
         slate_id: None,
+        backdrop: None,
     }
 }
 
@@ -659,6 +660,67 @@ fn a_v15_file_loads_under_the_current_version() {
     assert_eq!(value["formatVersion"], json!(CURRENT_FORMAT_VERSION));
     assert_eq!(value["preferences"]["lastExportChapters"], json!(true));
     assert_eq!(value["preferences"]["lastExportCues"], json!(true));
+}
+
+/// **The literal `v16` is what pins the bump.** Every version assertion in this
+/// file reads `CURRENT_FORMAT_VERSION`, so none of them can tell 16 from 17;
+/// `store::write` only keeps a copy of a file *older* than what it writes, so
+/// the `project.json.v16` assertion below is the whole of it.
+///
+/// **The bump is for the forward direction** (#138): serde ignores unknown
+/// keys, so an older build would read a v17 file, ignore `backdrop` and drop it
+/// on its next save — turning a whiteboard clip into a footage clip over an
+/// anchor it never showed, silently, which is precisely the damage the version
+/// guard exists to prevent. `project.json.v16` is what it can still be gone
+/// back to.
+#[test]
+fn a_v16_file_loads_under_the_current_version() {
+    let dir = TempDir::new().unwrap();
+    let mut p = sample_project();
+    // Written away from its default, then removed: a key that *was* read could
+    // not be mistaken for the field default filling it in.
+    p.clips[0].backdrop = Some("pitch.png".into());
+    let mut raw = serde_json::to_value(&p).unwrap();
+    raw["formatVersion"] = json!(16);
+    let clip = raw["clips"][0].as_object_mut().unwrap();
+    clip.remove("backdrop")
+        .expect("v17 writes the key this test removes");
+    write_raw(dir.path(), raw);
+
+    let mut p = store::read(dir.path()).expect("a v16 file loads");
+    assert_eq!(p.clips[0].backdrop, None, "an absent key is a footage clip");
+
+    store::write(dir.path(), &mut p).unwrap();
+    assert_eq!(p.format_version, CURRENT_FORMAT_VERSION);
+    assert_eq!(store::read(dir.path()).unwrap(), p);
+    assert!(dir.path().join("project.json.v16").exists());
+
+    let text = std::fs::read_to_string(dir.path().join("project.json")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["formatVersion"], json!(CURRENT_FORMAT_VERSION));
+}
+
+/// v17. **A backdrop survives a write and a read at the wire spelling a v17
+/// file holds**, which is the half `a_v16_…` above does not own: that test
+/// strips the key and watches the default fill it in, and this one watches a
+/// real value round-trip. A rename of the field would make every v17
+/// whiteboard clip read as footage and say nothing.
+#[test]
+fn a_backdrop_round_trips() {
+    let dir = TempDir::new().unwrap();
+    let mut p = sample_project();
+    p.clips[0].backdrop = Some("half-pitch.png".into());
+    store::write(dir.path(), &mut p).unwrap();
+
+    assert_eq!(
+        store::read(dir.path()).unwrap().clips[0]
+            .backdrop
+            .as_deref(),
+        Some("half-pitch.png")
+    );
+    let text = std::fs::read_to_string(dir.path().join("project.json")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["clips"][0]["backdrop"], json!("half-pitch.png"));
 }
 
 /// v13. The size and the corner are the clip's own fields and the sticky pair is
