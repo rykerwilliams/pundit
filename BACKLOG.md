@@ -22,15 +22,17 @@ made things worse.
   2026-10-05, planned 2026-10-06**: two on the export sheet (Chapters,
   Scoreboard subtitles), and a settings sheet designed but not built — **#84
   builds it** (#102 declined it, 2026-10-07)
-- **84.** Music under a goals reel — **phase 1 specced and planned 2026-10-12**: a
-  Music row on the export sheet (a genre picker and a Folder… button), a stable
-  song per match, ducked and faded; **no Settings sheet** (spec §M6). Phase 2 is
-  the Openverse search and the credits
+- **84.** Music under a goals reel — **phase 1 shipped 2026-10-12** (#80, #82,
+  #83): a Music row on the export sheet (a genre picker and a Folder… button), a
+  stable song per match, ducked and faded; **no Settings sheet** (spec §M6).
+  **Phase 2 is next to spec**: the Openverse search and the credits
 - **102.** Snap the scrubber to events, as an option. The coach (2026-09-28):
   "snap to events in the scrubber as an option" (**an on/off setting**, the coach
   2026-10-03). **Specced 2026-10-07**: match marks only, a 6px radius, one
   `state.json` bool, and a checkable item on the **scrubber's own right-click
-  menu** — so it does **not** build #78's settings sheet, which #84 does
+  menu**. **Planned 2026-10-12** (`2026-10-12-scrubber-snapping.md`): two PRs,
+  the Rust half first; it also fixes a right-click mid-drag leaving the scrub
+  stuck
 
 - **83.** `a_pause_while_a_flushing_seek_recovers_playing_sticks` — its "fails
   twice, or once on CI" trigger fired 2026-10-12; first step is printing the
