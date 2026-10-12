@@ -683,7 +683,10 @@ fn new_match_while_recording_is_dropped() {
         zoom: Zoom::IDENTITY,
         take: Take::Footage,
     });
-    assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        rig.h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: false }
+    );
     let live = rig.h.wait_recording();
     assert!(
         matches!(live, RecordingStatus::Recording { .. }),

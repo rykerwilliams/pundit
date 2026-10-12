@@ -466,7 +466,10 @@ fn a_second_toggle_stops_the_range_take_rather_than_starting_another() {
         zoom: Zoom::IDENTITY,
         take: Take::Slate(id),
     });
-    assert_eq!(h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: false }
+    );
     assert!(matches!(
         h.wait_recording(),
         RecordingStatus::Recording { .. }
@@ -497,7 +500,10 @@ fn shoot(h: &mut Harness, id: Uuid) {
         id,
         zoom: Zoom::IDENTITY,
     });
-    assert_eq!(h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: false }
+    );
     assert!(matches!(
         h.wait_recording(),
         RecordingStatus::Recording { .. }
@@ -696,7 +702,10 @@ fn a_plain_take_is_not_stopped_by_a_timed_slate_on_another_video() {
         zoom: Zoom::IDENTITY,
         take: Take::Footage,
     });
-    assert_eq!(h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: false }
+    );
     assert!(matches!(
         h.wait_recording(),
         RecordingStatus::Recording { .. }
@@ -911,7 +920,10 @@ fn a_plain_take_does_not_inherit_a_previews_arm() {
         zoom: Zoom::IDENTITY,
         take: Take::Footage,
     });
-    assert_eq!(h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: false }
+    );
     assert!(matches!(
         h.wait_recording(),
         RecordingStatus::Recording { .. }

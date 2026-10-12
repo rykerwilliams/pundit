@@ -49,7 +49,8 @@ use pundit_core::undo::{ClipEdit, UndoController};
 use pundit_core::zoom::Zoom;
 use pundit_media::{
     ExportMessage, FrameMailbox, Gl, PositionHandle, PreviewMessage, PreviewPosition, ProbeError,
-    RecorderMessage, SinkKind, SourcePlayer, TranscribeKind, TranscribeMessage, WhisperModel,
+    RecorderMessage, SinkKind, SourcePlayer, Still, TranscribeKind, TranscribeMessage,
+    WhisperModel,
 };
 use uuid::Uuid;
 
@@ -91,6 +92,21 @@ pub enum Take {
     /// W: over the armed diagram ([`Command::ArmBackdrop`]), anchored where
     /// the player is.
     Whiteboard,
+}
+
+/// The diagram W records over (BACKLOG #138): the coach's file, and its
+/// pixels as the bus decoded them.
+///
+/// **The bus is the one decoder**, and this is why: the window draws `still`
+/// and the take copies `path`, so they are the same file read once. Decoded
+/// twice — once here to validate, once in the window to draw — the two could
+/// disagree about a file replaced in between, and the window's decode would
+/// sit on the UI thread. An `Arc` because a phone photo is tens of megabytes
+/// of RGBA and an `Event` is cloned.
+#[derive(Debug, Clone)]
+pub struct Armed {
+    pub path: PathBuf,
+    pub still: Arc<Still>,
 }
 
 /// What the UI asks the bus to do.
@@ -542,10 +558,10 @@ pub enum Event {
     Queue(Vec<export::QueueRow>),
     /// The clip being previewed, or `None` once the preview closed.
     Preview(Option<Uuid>),
-    /// The armed diagram changed (BACKLOG #138): the coach's own file, or
-    /// `None` once disarmed. Sent on [`Command::ArmBackdrop`] and
-    /// [`Command::DisarmBackdrop`] only, not at startup.
-    Backdrop(Option<PathBuf>),
+    /// The armed diagram (BACKLOG #138), decoded, or `None`: once as the bus
+    /// starts and on every [`Command::ArmBackdrop`] and
+    /// [`Command::DisarmBackdrop`].
+    Backdrop(Option<Armed>),
     /// The basket, whole (basket spec C4): at startup, on every change to it
     /// and on [`Command::ShowBasket`]. **Not** on [`Event::ProjectChanged`],
     /// which fires on every clip edit — re-reading three projects per keystroke
@@ -869,6 +885,10 @@ pub struct Bus {
     /// as macOS kept its failure: one slot, in memory, cleared on that clip's
     /// next try, its next success and on project open.
     transcribe_finished: Option<(Uuid, Finish)>,
+    /// The armed diagram, decoded ([`Armed`]): loaded from `state.json` as the
+    /// thread starts, replaced by every arm and disarm, and what a W take
+    /// copies.
+    backdrop: Option<Armed>,
 }
 
 impl Bus {
@@ -949,6 +969,7 @@ impl Bus {
             transcribing: None,
             transcribe_generation: 0,
             transcribe_finished: None,
+            backdrop: None,
         };
         let thread = std::thread::Builder::new()
             .name("bus".into())
@@ -968,6 +989,7 @@ impl Bus {
         // The basket is machine-wide and survives a restart, so the badge's
         // count is right before anything is opened (basket spec C4).
         self.publish_basket();
+        self.load_backdrop();
         loop {
             let deadline = self
                 .skip_deadline

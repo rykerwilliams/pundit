@@ -2321,9 +2321,11 @@ fn update_zoom(
     change: impl FnOnce(Zoom, &Viewport) -> Zoom,
 ) {
     let host_ns = now_ns();
+    // The picture's shape, not the footage's: during a whiteboard take the
+    // zoom works on the diagram.
     let Some(vp) = Viewport::new(
-        w.get_frame_width().into(),
-        w.get_frame_height().into(),
+        w.get_picture_width().into(),
+        w.get_picture_height().into(),
         w.get_player_width().into(),
         w.get_player_height().into(),
     ) else {
@@ -3124,6 +3126,15 @@ fn on_event(w: &AppWindow, event: Event) {
             // under whatever is mid-stroke. Nothing is logged: the recording
             // this would belong to is over.
             let _ = clear_drawings(w);
+            // The diagram stands in for the footage, in its shape, from the
+            // take's `Starting` to its `Idle` (#138). Read first, for the
+            // themed pass below.
+            let was_whiteboard = w.get_whiteboard_take();
+            match status {
+                RecordingStatus::Starting { whiteboard } => w.set_whiteboard_take(whiteboard),
+                RecordingStatus::Idle => w.set_whiteboard_take(false),
+                RecordingStatus::Recording { .. } => {}
+            }
             UI.with_borrow_mut(|ui| {
                 ui.recording_t0 = match status {
                     RecordingStatus::Recording { t0_ns } => Some(t0_ns),
@@ -3140,7 +3151,7 @@ fn on_event(w: &AppWindow, event: Event) {
             });
             w.set_recording_phase(match status {
                 RecordingStatus::Idle => RecordingPhase::Idle,
-                RecordingStatus::Starting => RecordingPhase::Starting,
+                RecordingStatus::Starting { .. } => RecordingPhase::Starting,
                 RecordingStatus::Recording { .. } => RecordingPhase::Recording,
             });
             // The themed pass advances here (BACKLOG #120) — **on `Idle`, not
@@ -3152,10 +3163,14 @@ fn on_event(w: &AppWindow, event: Event) {
             // mid-pass. `finish_recording` publishes the project *before* this
             // event, so the rows `advance_pass` reads already know the clip
             // exists and the range it was shot from is `shot`.
-            if status == RecordingStatus::Idle {
+            //
+            // **Not after a whiteboard take** (#138): it was no range's, so
+            // the selected range is still unshot and the pass would park the
+            // footage on it for a take the coach didn't ask for.
+            if status == RecordingStatus::Idle && !was_whiteboard {
                 advance_pass(w);
             }
-            if status == RecordingStatus::Starting {
+            if matches!(status, RecordingStatus::Starting { .. }) {
                 w.set_level_seen(false);
                 w.set_level(0.0);
                 w.set_recording_elapsed(format_hms(0.0).into());
@@ -3212,10 +3227,7 @@ fn on_event(w: &AppWindow, event: Event) {
         // a `_` catch-all, so the compiler keeps naming it until the section
         // exists.
         Event::Queue(_) => {}
-        // **Nothing shows the armed diagram yet** (BACKLOG #138): the popover
-        // is task 5's and the picture during a take task 4's. An empty arm, as
-        // `Queue`'s, so the compiler keeps naming it until they exist.
-        Event::Backdrop(_) => {}
+        Event::Backdrop(armed) => show_backdrop(w, armed.as_ref()),
         Event::Preview(previewing) => UI.with_borrow_mut(|ui| {
             let clip = previewing.and_then(|id| {
                 let project = &ui.snapshot.as_ref()?.project;
@@ -3599,6 +3611,21 @@ fn show_avatar(w: &AppWindow, snapshot: &Snapshot) {
     }
 }
 
+/// The armed diagram (BACKLOG #138) into the window's `backdrop`, from the
+/// pixels the bus decoded — the window never decodes it, so what it draws is
+/// what the take copies. Straight-alpha RGBA, which is what `from_rgba8`
+/// takes; unlike the avatar's, nothing here has been through tiny-skia.
+fn show_backdrop(w: &AppWindow, armed: Option<&bus::Armed>) {
+    w.set_backdrop(armed.map_or_else(slint::Image::default, |armed| {
+        let still = &armed.still;
+        slint::Image::from_rgba8(slint::SharedPixelBuffer::clone_from_slice(
+            &still.rgba,
+            still.w,
+            still.h,
+        ))
+    }));
+}
+
 /// The avatar as drawn, as a Slint image. **Premultiplied**, which is what
 /// `media::avatar_drawn` hands over and what the circle's soft edge needs: read
 /// as straight alpha it would ring dark.
@@ -3710,8 +3737,9 @@ fn show_slate_span(w: &AppWindow, project: Option<&Project>) {
 /// Every take started while a range is selected is *that range's* — `R` and
 /// both Record buttons shoot the selection — so a plain take has no range
 /// selected, `next_slate` finds no cursor in the list, and nothing moves. That
-/// is why there is no pass mode to turn on, and no flag saying whether the
-/// take that just ended was a slate's.
+/// is why there is no pass mode to turn on. **The one exception is a
+/// whiteboard take** (#138), which is no range's whatever is selected, so its
+/// caller doesn't call this after one.
 ///
 /// **The park is `Command::JumpToSlate` through the window's own callback**,
 /// which is where the bus handle lives — so the pass lands a range exactly as

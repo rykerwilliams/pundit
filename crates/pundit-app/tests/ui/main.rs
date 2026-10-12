@@ -80,3 +80,4 @@ mod slate_menu;
 mod splitter;
 mod tag_field;
 mod text_editing;
+mod whiteboard;
