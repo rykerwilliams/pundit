@@ -15,10 +15,10 @@ use crate::AppWindow;
 
 /// What a picker looks for.
 pub enum Pick {
-    /// A project folder; `title` names what it's for, because this flow opens
-    /// it twice for two different reasons — the project to open, and where
-    /// projects go (new match spec W3).
-    ProjectFolder { title: &'static str },
+    /// A folder; `title` names what it's for, because it is opened for
+    /// different reasons — the project to open, where projects go (new match
+    /// spec W3), and a goals reel's music folder (#84).
+    Folder { title: &'static str },
     /// A video file; `title` names what it's for.
     Video { title: &'static str },
     /// One or more video files at once: a game is often several camera files.
@@ -104,7 +104,7 @@ impl Pickers {
         };
         let spawned = slint::spawn_local(async move {
             let chosen: Vec<_> = match pick {
-                Pick::ProjectFolder { title } => dialog
+                Pick::Folder { title } => dialog
                     .set_title(title)
                     .pick_folder()
                     .await

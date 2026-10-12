@@ -55,7 +55,27 @@ Spec: `docs/superpowers/specs/2026-10-12-reel-music-design.md`. Read it and
   `music_index` has a golden value (comparing it with itself could not catch a
   hasher change), `reel_music`'s insertion had stolen `job`'s doc comment, and
   the duplicate `../x` harness test went (the unit test is the proof).
-- **3 — the window: the Music row.** Not started.
+- **3 — the window: the Music row.** **Done** (`claude/84-task-3`). The row
+  (`reel-ticked`, `music-genres`, `music-index`, `music-picked`,
+  `choose-music-folder`), `main.rs`'s `reel_ticked` / `show_music` /
+  `wire_music` with the window's `AppFiles` threaded into `wire_export`,
+  `Pick::ProjectFolder` → `Pick::Folder`, the mute tooltip and the user guide.
+  A remembered genre the folder no longer lists is **cleared** in `show_music`.
+  UI export-sheet tests 11 → 14. **Sabotage, three, one build, each failing its
+  own test:** the row's `if` dropped, Folder… unwired, `music-index`'s `<=>` cut.
+  **Two things not done, said rather than claimed:**
+  - **A genre pick reaching `music-picked` is untested**: the fluent
+    `ComboBox`'s popup items are `accessible-role: none`, so no item can be
+    chosen through the accessible API (checked in the 1.18 widget source).
+  - **The card was not measured at 1100×700.** The sheet's body scrolls (#134),
+    so the row cannot push the buttons off screen; it can only add a flick.
+  - **Code review moved two things.** The row is read **when a reel is
+    ticked**, not when the sheet opens — opened with the music folder's drive
+    unplugged, the hidden row cleared the remembered genre unseen (the same
+    hidden-row clear the plan review took out of the bus). And the row's
+    mapping — "None" first, the index, the stale genre — is `music::picker` /
+    `genre_at`, three unit tests, because in `main.rs` no test could reach it.
+    The three tick flags are one `show_ticks`.
 
 **Shipping: three PRs, in order, none parallel.** 1 changes `audio_regions` and
 `Track`, which 2 calls; 3 writes the `state.json` keys 2 reads.
