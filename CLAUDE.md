@@ -56,7 +56,10 @@ After both reviews return:
 | Skill | Use it to |
 |---|---|
 | `port-swift-module` | Read a module out of the `macos-reference` tag into `pundit-core` without repeating past mistakes |
-| `verify` | Run fmt, clippy, tests and the core dependency audit before committing |
+| `start-task` | Before any code: check the work isn't already done or in flight, branch, re-derive the plan's citations, and grep a census of everything the change touches |
+| `verify` | The gate CI runs — fmt, clippy on the pinned 1.92, the tests, the core audit — under the shared cargo lock, telling a known flake (#101) from a regression |
+| `sabotage-proof` | Prove each new test can fail: one mutation at a time, the named test fails and its siblings don't, then restore |
+| `recheck-claims` | Before handing on any spec, plan, commit, PR body or backlog entry: re-derive every citation, number, version and quantifier in it |
 | `measure-media` | Benchmark GStreamer decode/seek on real hardware without fooling yourself |
 | `adversarial-review` | Run the review pattern below on a spec, plan, or diff |
 
@@ -67,6 +70,10 @@ After both reviews return:
 ### Rust port (primary)
 
 The Linux port is the active codebase. Spec: `docs/superpowers/specs/2026-09-19-linux-port-design.md`.
+
+What each command checks, as CI runs them; **on this laptop the gate is the
+`verify` skill**, which adds the shared cargo lock, `-j 3` and CI's pinned
+clippy (the paragraphs below say why each is needed).
 
 ```bash
 cargo test -p pundit-core   # pure logic -- needs NO GStreamer
