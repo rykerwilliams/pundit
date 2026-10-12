@@ -56,7 +56,11 @@ apt_install gstreamer1.0-tools
 # vajpegdec), absent without /dev/dri and checked by hand; the test sources
 # and `fixtures.rs`'s encoders, which only tests use. The last five aren't
 # named: decodebin3 autoplugs them for game film (MP4, H.264/H.265) and for
-# the recordings (Matroska, Opus) when no VA decoder is present.
+# the recordings (Matroska, Opus) when no VA decoder is present. The last
+# line isn't named either: decodebin3 autoplugs it for a goals reel's music
+# (BACKLOG #84) in each format the music folder lists — mp3, ogg/oga, flac,
+# wav, m4a (opus is `opusdec`, above; m4a's demuxer is `qtdemux`, above) —
+# and `id3demux`, which nearly every real mp3 goes through first, for its tags.
 elements=(
     playbin3 decodebin3 filesrc filesink fakesink queue capsfilter
     appsrc appsink videoconvert audioconvert audioresample level
@@ -66,6 +70,7 @@ elements=(
     h264parse avenc_aac aacparse mp4mux
     souphttpsrc
     qtdemux matroskademux avdec_h264 avdec_h265 opusdec
+    id3demux mpegaudioparse mpg123audiodec oggdemux vorbisdec flacparse flacdec wavparse avdec_aac
 )
 missing=()
 for element in "${elements[@]}"; do

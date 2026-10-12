@@ -6,7 +6,25 @@ Spec: `docs/superpowers/specs/2026-10-12-reel-music-design.md`. Read it and
 
 ## Where this stands (update it as tasks land)
 
-- **1 — the music track: core, media, and their callers.** Not started.
+- **1 — the music track: core, media, and their callers.** **Done**
+  (`claude/84-task-1`). `Track::{Game { entry }, Commentary { entry },
+  Music(PathBuf)}`, `envelope`'s edges by track, `audio_regions(.., music)`
+  owning `MUSIC_GAIN` / `MUSIC_DUCK` and the assert on their sum; both app
+  callers pass `None`; a `tone_audio` fixture (Ogg Vorbis). Core audio tests 15 →
+  19, media export 32 → 33. **The first "Done" was premature**: the new tests
+  were added after the last `cargo fmt`, and the code review — not the gate I had
+  claimed to run — found `fmt --check` red. The review also added `id3demux` to
+  the smoke test (nearly every real mp3 carries ID3 tags), a fractional source
+  volume to the duck test so the multiply is pinned, and the caller contract
+  (music only without commentary) on `audio_regions`. **Sabotage, five, each where predicted:** the duck
+  dropped fails the gain test; music on the 5 ms ramp fails both core fade tests
+  (the short-reel one because the peak then reaches full level) and the media
+  test's last frame (still at 0.322); the `Music` arm mapped to no file fails the
+  media test (music at 0.000).
+  **One mistake of my own, in the test:** `decode_audio` is mono and I indexed it
+  as stereo, so "mid-reel" was really 4–5 s, inside the fade-out — the music read
+  half its level (0.176) and the test failed for the wrong reason before it
+  passed for the right one.
 - **2 — the bus: the folder, the genre, the choice, the refusals.** Not started.
 - **3 — the window: the Music row.** Not started.
 

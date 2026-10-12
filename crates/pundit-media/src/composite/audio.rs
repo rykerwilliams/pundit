@@ -74,7 +74,9 @@ fn caps(rate: u32, channels: usize) -> gst::Caps {
 /// The regions of one track never overlap, and every region boundary is a
 /// whole output frame — core quantizes entries and segments to frames — so a
 /// block never retires one region and starts another on the **same** file.
-/// That is what lets a region seek its reader as it comes in.
+/// That is what lets a region seek its reader as it comes in. Readers are keyed
+/// by path, so a reel's music (#84) must never be one of its game videos — true
+/// while the music folder lists audio files only.
 pub(super) struct Mixer {
     regions: Vec<Region>,
     /// The file each region reads, in the same order.
@@ -91,32 +93,33 @@ pub(super) struct Mixer {
 }
 
 impl Mixer {
-    /// The mixer for `encode`: its regions, resolved to the files they read
-    /// through the entry each one belongs to.
+    /// The mixer for `encode`: its regions, resolved to the files they read —
+    /// through the entry a game or commentary region names, or the music's own
+    /// path.
     pub(super) fn new(encode: &Encode) -> Mixer {
         let paths: Vec<PathBuf> = encode
             .audio
             .iter()
-            .map(|region| {
-                let media = &encode.entries[region.entry];
-                match region.track {
-                    // **A whiteboard entry never reaches here** (#138): its
-                    // `playback_segments` is one `Freeze`, and
-                    // `core::audio::game_regions` emits only for `Play` — which
-                    // is the whole of why that rule lives in the timeline and
-                    // not as a guard in this crate. So this path is a game
-                    // video in practice; were it ever a still, `Reader` would
-                    // find no audio stream and yield silence rather than break.
-                    Track::Game => media.picture.path().to_path_buf(),
-                    // An entry with no clip has no recording: audio_regions
-                    // gives it no commentary region, and one would be silence
-                    // anyway.
-                    Track::Commentary => media
-                        .clip
-                        .as_ref()
-                        .map(|clip| clip.recording.clone())
-                        .unwrap_or_default(),
-                }
+            .map(|region| match &region.track {
+                // **A whiteboard entry never reaches here** (#138): its
+                // `playback_segments` is one `Freeze`, and
+                // `core::audio::game_regions` emits only for `Play` — which is
+                // the whole of why that rule lives in the timeline and not as a
+                // guard in this crate. So this path is a game video in
+                // practice; were it ever a still, `Reader` would find no audio
+                // stream and yield silence rather than break.
+                Track::Game { entry } => encode.entries[*entry].picture.path().to_path_buf(),
+                // An entry with no clip has no recording: audio_regions gives
+                // it no commentary region, and one would be silence anyway.
+                Track::Commentary { entry } => encode.entries[*entry]
+                    .clip
+                    .as_ref()
+                    .map(|clip| clip.recording.clone())
+                    .unwrap_or_default(),
+                // A goals reel's music (#84) names its own file; one gone since
+                // the job was built is `Reader`'s usual silence and a logged
+                // line.
+                Track::Music(path) => path.clone(),
             })
             .collect();
         let mut order: Vec<usize> = (0..encode.audio.len()).collect();

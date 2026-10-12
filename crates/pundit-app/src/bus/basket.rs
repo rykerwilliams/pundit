@@ -510,6 +510,9 @@ impl Bus {
                         true => 0.0,
                         false => 1.0,
                     },
+                    // A basket is clips with commentary, never a reel: no
+                    // music (#84 spec §M4).
+                    None,
                 ),
                 entries,
                 resolution: self.basket.resolution,

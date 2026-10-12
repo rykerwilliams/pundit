@@ -252,6 +252,22 @@ pub fn audio_only(dir: &Path) -> PathBuf {
     )
 }
 
+/// A `seconds`-long sine at `freq` and `amplitude`, as **Ogg Vorbis** at `path`
+/// with no video — a music track in a format the coach would have (BACKLOG
+/// #84). Vorbis smears an onset, which is [`tone_video`]'s reason for raw
+/// audio; a level measured mid-file is unaffected.
+pub fn tone_audio(path: &Path, freq: f64, amplitude: f64, seconds: u32) -> PathBuf {
+    run(
+        &format!(
+            "audiotestsrc wave=sine freq={freq} volume={amplitude} num-buffers={seconds} \
+               samplesperbuffer={AUDIO_RATE} \
+           ! audio/x-raw,rate={AUDIO_RATE},channels=2 \
+           ! audioconvert ! vorbisenc ! oggmux ! filesink name=out"
+        ),
+        path,
+    )
+}
+
 /// Which codec a [`still_image`] is written in — the two an avatar may be
 /// (avatar spec A1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
