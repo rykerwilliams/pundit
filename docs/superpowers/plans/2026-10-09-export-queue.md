@@ -77,7 +77,50 @@ everything" section. Read §B before §A: one of the things it removes is a task
   the queue is published *before* the notice (the drop is what the notice is
   about), and `wait_for_error` advances the cursor past everything before the
   error — so the `Event::Queue` was behind it and the wait timed out.
-- **3 — the Queue section in the export sheet.** Not started.
+- **3 — the Queue section in the export sheet.** **Done**
+  (`claude/77-task-3`), and **#77 is complete**. `Add to queue` in the action
+  row, the Queue section with `Start queue` and a ✕ per row, the seven
+  `enabled: !root.exporting` off, `clear_run(w, RunKind)` with a third call
+  site, and `export_outcome` holding the decision. **UI tests 65 → 70, plus
+  four in the new lib module.** All nine `app.slint` line numbers were
+  re-derived and held exactly.
+
+  **Two design calls the plan left open, decided and why:**
+  - **`RunKind` is Rust's, in the lib, and `basket-run` is derived from it** —
+    not a Slint enum. The plan wanted one property instead of two bools, and
+    wanted the outcome decision testable; a Slint enum satisfies the first and
+    defeats the second, because `main.rs` is unreachable from either test
+    harness. With the authoritative value in `export_outcome` there is still
+    exactly one writer (`clear_run`) and still no second flag, *and* the six
+    cases have tests.
+  - **The card stayed 480px.** Step 3 said to measure the fourth button rather
+    than assume the basket's width, and it fits: the row is at most three
+    buttons in either state (Cancel/Close/Add, or Close/Add/Export), against
+    440px of usable width. `:2084`'s *"a 480px card has no fourth column"*
+    comment stands untouched.
+
+  **Sabotage, four, each failing its own test:** the three checkboxes' greying
+  put back → `a_run_leaves_every_switch_live`; `Add to queue`'s `clicked`
+  emptied → `add_to_queue_is_there_and_stays_live_during_a_run` (*"wired to
+  nothing"*), which is why that test **clicks** rather than only finding the
+  button; the bus clearing its queue in `commit` → **three** harness tests,
+  headed by *"the first project's rows did not survive"*; and the queue's
+  failure given the modal → the lib unit test (*"a modal over the project he
+  moved on to"*), **which is the proof the plan said its own version could not
+  make** — it reached for a `show_export` unit, and step 7's extraction is what
+  made it writable.
+
+  **One correction to the plan's sabotage 3.** It expected *"clear the Queue
+  list on `ProjectOpened`"* to fail harness (a). It cannot, for task 1's
+  reason: that clear would be in `main.rs`, which no harness test can see. The
+  writable form is the **bus** clearing its own queue, which is what was run.
+  The `main.rs` half joins Risk 1's list of changes this repo cannot test.
+
+  **And two mistakes of my own, both found by a test rather than reasoning:**
+  an assertion that `"Export"` is absent during a run matched the **sheet's
+  title**, which is also "Export" — a `Text` carries an `accessible-label` by
+  default, so it had to be scoped to Buttons; and `export_outcome` grew its own
+  `sentence` helper before I noticed `format` is already a lib module.
 
 **Shipping: three PRs, in order, none parallel.** 1 and 2 both edit
 `bus/export.rs`; 1 and 3 both edit `main.rs`. Task 1 is a feature on its own —

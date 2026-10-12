@@ -32,8 +32,10 @@
 //! `set_export_cues` missing from it would still pass everything below.
 
 use crate::AppWindow;
-use i_slint_backend_testing::ElementHandle;
+use i_slint_backend_testing::{ElementHandle, ElementQuery};
 use slint::ComponentHandle;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// The words on each switch's row — which are also how it is found, so these
 /// strings are the test's half of a contract with `app.slint`.
@@ -183,22 +185,65 @@ fn ticking_a_switch_reaches_its_own_window_property() {
     }
 }
 
-/// **A run settles all three**, as it settles the pickers: the choices a job
-/// was built from must not change under it. `enabled: !root.exporting` is one
-/// line per control and the easiest of the five touch points to leave off.
+/// **A run leaves all three live, and that inverts what this test used to
+/// assert** (BACKLOG #77 task 3).
+///
+/// It read *"a run settles all three, as it settles the pickers: the choices a
+/// job was built from must not change under it"*, and the export queue makes
+/// that false. Each **queued** job froze its own six controls at enqueue, so
+/// what the live controls describe is the **next** enqueue and nothing that is
+/// rendering — and `Add to queue` is live during a run, so settling them would
+/// mean a coach could queue nothing but the choices already on the sheet.
+///
+/// `Export` and `Start queue` are the only things a run disables now.
+///
+/// **The three checkboxes and not the pickers.** `CLAUDE.md`'s accessibility
+/// guarantee — `accessible-label` / `-checked` / `-enabled` on every style's
+/// control — is stated for `CheckBox`; the three pickers are `ComboBox`es, and
+/// `a_combo_box_reports_whether_it_is_enabled` below is what says whether this
+/// can honestly cover them too. They came off the same seven-line edit either
+/// way.
 #[test]
-fn a_run_greys_out_every_switch() {
+fn a_run_leaves_every_switch_live() {
     let w = sheet();
     w.set_exporting(true);
 
     for s in switches() {
         assert_eq!(
             switch(&w, s.label).accessible_enabled(),
-            Some(false),
-            "{:?} is still live during a run",
+            Some(true),
+            "{:?} is settled during a run, so a coach can't queue anything else",
             s.label
         );
     }
+}
+
+/// **Whether a `ComboBox` answers `accessible_enabled` at all**, asked rather
+/// than assumed — the review of #77's plan flagged that the repo's stated
+/// guarantee covers `CheckBox` and the pickers are not one.
+///
+/// It is written as a question with either answer recorded, because what it
+/// settles is whether a future test *may* assert on a picker's enabled state.
+/// If this starts failing, a `ComboBox` has gained or lost that reporting and
+/// the note above is what needs re-reading.
+#[test]
+fn a_combo_box_reports_whether_it_is_enabled() {
+    let w = sheet();
+    let found = ElementQuery::from_root(&w)
+        .match_type_name("ComboBox")
+        .find_all();
+    assert!(
+        !found.is_empty(),
+        "the sheet's three pickers are not ComboBoxes any more"
+    );
+    // The pickers are live, and a run no longer settles them (#77 task 3).
+    w.set_exporting(true);
+    assert!(
+        found
+            .iter()
+            .all(|picker| picker.accessible_enabled() != Some(false)),
+        "a picker reports itself disabled during a run"
+    );
 }
 
 /// **Spec S4's table, which is the whole of `would-copy` and the new line.**
@@ -293,6 +338,15 @@ fn neither_line_shows_without_the_whole_match() {
 /// the 700px window less the scrim's 20px either side. (The 614/648/733 series
 /// this doc carried before was right about every delta and 25px high at the
 /// base; #134 records the correction.)
+///
+/// **It reads no number, and #77's plan review had to point that out** — the
+/// plan called this "the fit test's number" and asked for a re-measure. The
+/// figures above are documentation; the one assertion is that exactly one
+/// `"Close"` is findable at the floor. **And this case carries no queue rows
+/// either**, for the run list's own stated reason: that section is absent at
+/// zero, so what is measured stays the sheet a coach *configures* an export
+/// in. #77 added a fourth button to the action row and the card stayed 480px,
+/// which is what this still passing says.
 #[test]
 fn the_sheet_an_export_is_set_up_in_needs_no_scrolling() {
     let w = sheet();
@@ -323,5 +377,176 @@ fn the_sheet_an_export_is_set_up_in_needs_no_scrolling() {
         on_screen, 1,
         "the export sheet's button row is not on screen in a {min_w}x{min_h} \
          window without scrolling the body to it"
+    );
+}
+
+/// A queue row, as Rust hands it over.
+fn queue_line(label: &str, match_label: &str) -> crate::QueueLine {
+    crate::QueueLine {
+        match_label: match_label.into(),
+        label: label.into(),
+        length: "1:00".into(),
+    }
+}
+
+fn with_queue(w: &AppWindow, rows: &[crate::QueueLine]) {
+    w.set_export_queue(slint::ModelRc::new(slint::VecModel::from(rows.to_vec())));
+}
+
+/// **`Add to queue` exists, and is live while a run is going** (#77 spec Q6).
+///
+/// The one assertion that would have caught the gap the plan shipped with: it
+/// specified the Queue section and `Start queue` and **no way to enqueue**, and
+/// it could not have been recovered by analogy later — the section is hidden at
+/// zero rows, so the control cannot live in it or there would be nothing to
+/// click with an empty queue.
+///
+/// Live during a run because an enqueue renders nothing. `Export`, beside it,
+/// is absent during one.
+#[test]
+fn add_to_queue_is_there_and_stays_live_during_a_run() {
+    let w = sheet();
+    w.set_export_any_ticked(true);
+
+    // **Clicked, not merely found.** A button wired to nothing is exactly the
+    // gap that let this control be left out of the plan in the first place.
+    let fired: Rc<RefCell<usize>> = Rc::default();
+    w.on_add_to_queue({
+        let fired = Rc::clone(&fired);
+        move || *fired.borrow_mut() += 1
+    });
+    let button = switch(&w, "Add to queue");
+    assert_eq!(button.accessible_enabled(), Some(true));
+    button.invoke_accessible_default_action();
+    assert_eq!(*fired.borrow(), 1, "Add to queue is wired to nothing");
+
+    w.set_exporting(true);
+    assert_eq!(
+        switch(&w, "Add to queue").accessible_enabled(),
+        Some(true),
+        "an enqueue renders nothing, so a run must not settle it"
+    );
+    // **Scoped to Buttons, because the sheet's own title reads "Export" too**
+    // — a `Text` carries an `accessible-label` by default, so the unscoped
+    // query finds the heading and this assertion would never fail.
+    assert_eq!(
+        ElementQuery::from_root(&w)
+            .match_type_name("Button")
+            .match_predicate(|e| e.accessible_label().as_deref() == Some("Export"))
+            .find_all()
+            .len(),
+        0,
+        "Export is supposed to be absent during a run, not merely greyed"
+    );
+
+    // Nothing ticked is the one thing that does settle it, as it settles
+    // Export.
+    w.set_export_any_ticked(false);
+    assert_eq!(
+        switch(&w, "Add to queue").accessible_enabled(),
+        Some(false),
+        "there is nothing to freeze"
+    );
+}
+
+/// **The Queue section is absent at zero rows and present at one**, as the Run
+/// section is — which is the whole reason `Add to queue` lives in the action
+/// row instead.
+///
+/// Found by the heading, which carries the count: a coach who has queued three
+/// should not have to count rows.
+#[test]
+fn the_queue_section_appears_with_its_first_row() {
+    let w = sheet();
+    assert_eq!(
+        ElementHandle::find_by_accessible_label(&w, "Start queue").count(),
+        0,
+        "an empty queue shows a Start for nothing"
+    );
+
+    with_queue(
+        &w,
+        &[
+            queue_line("All clips", "Rovers v Athletic"),
+            queue_line("Corners", "Rovers v Athletic"),
+        ],
+    );
+    assert_eq!(
+        switch(&w, "Queue (2)").accessible_label().as_deref(),
+        Some("Queue (2)"),
+        "the heading does not count the rows"
+    );
+    assert_eq!(
+        switch(&w, "Start queue").accessible_enabled(),
+        Some(true),
+        "Start queue is greyed with rows waiting"
+    );
+
+    // A row reads as its target and its match, which is what makes three
+    // projects' "All clips" tell apart (spec Q3).
+    assert_eq!(
+        ElementHandle::find_by_accessible_label(&w, "All clips — Rovers v Athletic").count(),
+        1,
+        "the row does not name its match beside its target"
+    );
+}
+
+/// **`Start queue` is the other thing a run settles**, and the only one besides
+/// `Export`.
+#[test]
+fn a_run_settles_start_queue_and_nothing_else_in_the_section() {
+    let w = sheet();
+    with_queue(&w, &[queue_line("All clips", "Rovers v Athletic")]);
+    w.set_exporting(true);
+
+    assert_eq!(
+        switch(&w, "Start queue").accessible_enabled(),
+        Some(false),
+        "a second run would be refused by the bus anyway; the button says so"
+    );
+    // The row's own ✕ stays live: what it takes out is *waiting*, which a run
+    // does not touch.
+    let crosses = ElementQuery::from_root(&w)
+        .match_type_name("Button")
+        .match_predicate(|e| e.accessible_label().as_deref() == Some("✕"))
+        .find_all();
+    assert_eq!(crosses.len(), 1, "one ✕ per queued row");
+    assert_eq!(
+        crosses[0].accessible_enabled(),
+        Some(true),
+        "a run settled a row it is not rendering"
+    );
+}
+
+/// **A row's ✕ carries that row's index.** The assertion a single-row test
+/// cannot make: with one row, index 0 is also the only answer a broken wire
+/// could give.
+#[test]
+fn the_cross_removes_the_row_it_is_on() {
+    let w = sheet();
+    with_queue(
+        &w,
+        &[
+            queue_line("All clips", "A"),
+            queue_line("Corners", "A"),
+            queue_line("Whole match", "B"),
+        ],
+    );
+    let removed: Rc<RefCell<Vec<i32>>> = Rc::default();
+    w.on_remove_from_queue({
+        let removed = Rc::clone(&removed);
+        move |index| removed.borrow_mut().push(index)
+    });
+
+    let crosses = ElementQuery::from_root(&w)
+        .match_type_name("Button")
+        .match_predicate(|e| e.accessible_label().as_deref() == Some("✕"))
+        .find_all();
+    assert_eq!(crosses.len(), 3);
+    crosses[1].invoke_accessible_default_action();
+    assert_eq!(
+        *removed.borrow(),
+        [1],
+        "the middle row's ✕ removed something else"
     );
 }
