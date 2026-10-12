@@ -46,7 +46,10 @@ fn record_a_take(avatar: Option<&str>) -> (Clip, PathBuf, TempDir) {
         zoom: Zoom::IDENTITY,
         take: Take::Footage,
     });
-    assert_eq!(h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: false }
+    );
     assert!(matches!(
         h.wait_recording(),
         RecordingStatus::Recording { .. }

@@ -99,7 +99,10 @@ impl Rig {
             zoom: Zoom::IDENTITY,
             take: Take::Footage,
         });
-        assert_eq!(self.h.wait_recording(), RecordingStatus::Starting);
+        assert_eq!(
+            self.h.wait_recording(),
+            RecordingStatus::Starting { whiteboard: false }
+        );
         match self.h.wait_recording() {
             RecordingStatus::Recording { t0_ns } => t0_ns,
             status => panic!("expected Recording, got {status:?}"),
@@ -300,7 +303,10 @@ fn stopping_before_the_first_video_frame_leaves_no_clip_and_no_file() {
         zoom: Zoom::IDENTITY,
         take: Take::Footage,
     });
-    assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        rig.h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: false }
+    );
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
         take: Take::Footage,
@@ -323,7 +329,10 @@ fn play_during_the_camera_warm_up_is_logged() {
         zoom: Zoom::IDENTITY,
         take: Take::Footage,
     });
-    assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        rig.h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: false }
+    );
     rig.h.toggle_play();
     assert!(rig.h.wait_playing());
     assert!(matches!(

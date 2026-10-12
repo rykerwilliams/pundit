@@ -109,14 +109,42 @@ tasks.
   the `is_notice()` assertion. The position and unwind proofs were re-run after
   the review's restructure and still fail their own tests alone.
   **Four things the review found for tasks 4 and 5**, recorded there.
-- **4 — the window shows the diagram during the take.** Not started.
-  **From task 3's review — the bus does not yet say a take is a whiteboard
-  take.** The window can't infer it from its own W press (a W during an R
-  take's start-up *stops* that take), so this task first makes the bus say so —
-  `RecordingStatus::Starting` or an event carrying the **copied**
-  `backdrops/<id>.<ext>`, which is better: the window then decodes the file the
-  clip names, not the armed one. The same flag is what lets the window hide the
-  highlight tool, the rings and the scan board for the take.
+- **4 — the window shows the diagram during the take.** **Done**
+  (`claude/138-task-4`). `RecordingStatus::Starting { whiteboard }` from the
+  bus; `app.slint`'s `backdrop` / `whiteboard-take` and the derived
+  `picture-width`/`picture-height` that `place-picture` and `update_zoom` now
+  read; the bus decoding the armed diagram once (`bus::Armed`, at startup and
+  per arm) and sending the pixels; rings, the scan board and the H tool off
+  during the take; and `advance_pass` skipped after one (task 3's review item,
+  brought forward because the flag is here). New `tests/ui/whiteboard.rs`, 2,
+  and a harness restart test.
+  **Corrections to this plan:**
+  - **"Say where the decoded copy is cached": nowhere in the window.** The bus
+    holds the decoded diagram and sends it; the window's `backdrop` property is
+    just what it was handed. The first build decoded in the window instead, at
+    startup and on each arm — and the review found that **panicked on every
+    launch with a diagram armed**, because `main.rs` reached it before
+    `Bus::spawn` had initialised GStreamer. No test could see it (`main.rs` is
+    a `[[bin]]`); moving the decode into the bus makes it testable, and
+    `a_diagram_armed_last_run_is_armed_at_startup` is that test (sabotaged:
+    fails alone). It also removed a second decode and the window and the bus
+    disagreeing about a file replaced between them.
+  - **`frame-width`/`frame-height` are not rewritten** (step 2): `video.rs` sets
+    them on every frame, so overriding them would race it. A derived
+    `picture-width`/`-height` is one value with no writer to fight.
+  - **The zoom's `Viewport` read the footage's shape too** (`update_zoom`),
+    which the plan didn't list; it now reads the picture's.
+  - **The H tool had to go off for the take** — with it on, every drag went to
+    the highlight area and was refused, so the coach could not draw at all.
+  **Sabotage:** the footage's shape kept while the diagram is drawn fails the
+  shape test; the rings left shown fails the ring test; no startup load fails
+  the restart test. The plan's stroke-normalisation and inset tests were
+  written and then **deleted in review** — each recomputed what the shape test
+  already pins, through no code of the feature's. **Proof 2 holds as the plan
+  predicted**: nothing enforces "no decode at W", and now nothing needs to —
+  the window has no decode at all.
+  **Left as is:** `F` during a whiteboard take fits the window to the diagram,
+  the picture on screen, which is consistent with what Fit means.
 - **5 — the UI: the popover and `W`.** Not started. **Three things from task
   3's review:**
   - **Preview is greyed whenever any half is missing** (`main.rs`'s

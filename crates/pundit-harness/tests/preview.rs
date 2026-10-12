@@ -252,7 +252,10 @@ fn a_preview_while_recording_is_dropped() {
         zoom: Zoom::IDENTITY,
         take: Take::Footage,
     });
-    assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        rig.h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: false }
+    );
 
     rig.preview();
     rig.h.send(Command::StopRecording);

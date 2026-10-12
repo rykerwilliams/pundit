@@ -1093,6 +1093,15 @@ v12; spec `docs/superpowers/specs/2026-09-25-slates-design.md`).
   and `start_preview` — and a whiteboard is refused when its **diagram** is
   gone, never its game video. Starting one still needs every game video
   present (`can_record`): the anchor is read from the player.
+- **During the take the window draws the diagram in the diagram's shape**
+  (`app.slint`'s `picture-width`/`-height`), which is what makes the strokes
+  land where the export replays them. The bus says which take it is
+  (`RecordingStatus::Starting { whiteboard }`): a W during an R take's start-up
+  stops that take, so the window can't tell from its own key.
+- **The bus is the diagram's one decoder** (`bus::Armed`, sent in
+  `Event::Backdrop`): at startup and at every arm, never in the window — which
+  is also what keeps GStreamer's init ahead of it — and a W take copies the
+  file the window is drawing.
 
 **Player highlights** (`pundit-core/src/highlight.rs`, spec H).
 - **A highlight belongs to the footage, not to a clip.** It is stored on the

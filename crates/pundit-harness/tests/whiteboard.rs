@@ -95,7 +95,10 @@ impl Rig {
     /// Starts a whiteboard take and waits for its first buffer.
     fn record(&mut self) {
         self.whiteboard();
-        assert_eq!(self.h.wait_recording(), RecordingStatus::Starting);
+        assert_eq!(
+            self.h.wait_recording(),
+            RecordingStatus::Starting { whiteboard: true }
+        );
         assert!(matches!(
             self.h.wait_recording(),
             RecordingStatus::Recording { .. }
@@ -120,9 +123,10 @@ impl Rig {
     }
 }
 
+/// The armed diagram's path, from the next `Backdrop` event.
 fn wait_backdrop(h: &mut Harness) -> Option<PathBuf> {
     h.wait_map("the armed diagram", |e| match e {
-        Event::Backdrop(path) => Some(path.clone()),
+        Event::Backdrop(armed) => Some(armed.as_ref().map(|a| a.path.clone())),
         _ => None,
     })
 }
@@ -164,6 +168,33 @@ fn arming_is_remembered_machine_wide_and_disarming_forgets() {
     assert_eq!(wait_backdrop(&mut rig.h), None);
     assert_eq!(AppFiles::in_config_dir(&rig.config).backdrop(), None);
     rig.h.shutdown();
+}
+
+/// **A diagram armed in an earlier run is armed in this one**, decoded by
+/// the bus as it starts — and a W take records over it. This is the path that
+/// used to decode in `main.rs` before GStreamer was initialised and panic on
+/// every launch with a diagram armed: the window no longer decodes at all, so
+/// the bus is the only place a restart can go wrong, and this is its test.
+#[test]
+fn a_diagram_armed_last_run_is_armed_at_startup() {
+    let mut rig = Rig::open();
+    rig.arm();
+    rig.h.shutdown();
+
+    let mut h = Harness::new(&rig.config);
+    assert_eq!(wait_backdrop(&mut h), Some(rig.diagram.clone()));
+    h.send(Command::OpenProject(rig.folder.clone()));
+    h.wait_opened();
+    h.wait_settled();
+    h.send(Command::ToggleRecording {
+        zoom: Zoom::IDENTITY,
+        take: Take::Whiteboard,
+    });
+    assert_eq!(
+        h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: true }
+    );
+    h.shutdown();
 }
 
 /// Decoded at the pick: a file that isn't an image is refused, as a notice,
@@ -267,7 +298,10 @@ fn an_aborted_take_leaves_no_diagram() {
     let mut rig = Rig::open_with(SLOW_CAMERA);
     rig.arm();
     rig.whiteboard();
-    assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        rig.h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: true }
+    );
     assert_eq!(files(&rig.backdrops()).len(), 1, "copied at the start");
     rig.whiteboard();
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Idle);

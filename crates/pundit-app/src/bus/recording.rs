@@ -11,6 +11,7 @@
 //! player: its EOS would advance the source and its ERROR reset the player.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gstreamer::glib;
@@ -25,7 +26,7 @@ use pundit_media::{
 };
 use uuid::Uuid;
 
-use super::{Bus, Event, Input, Take, UserError};
+use super::{Armed, Bus, Event, Input, Take, UserError};
 
 /// How long a recording may wait for its first buffer.
 const START_TIMEOUT: Duration = Duration::from_secs(5);
@@ -48,7 +49,14 @@ pub enum RecordingStatus {
     Idle,
     /// Recording, but nothing has reached the muxer yet: stopping now
     /// aborts.
-    Starting,
+    ///
+    /// **`whiteboard` is whether the take is over the armed diagram** (BACKLOG
+    /// #138), and it is the window's only way to know: a W pressed during an R
+    /// take's start-up *stops* that take, so the window cannot infer it from
+    /// the key it sent.
+    Starting {
+        whiteboard: bool,
+    },
     /// `t0_ns` is the recording's time 0 on `now_ns()`'s clock, for the
     /// elapsed-time readout.
     Recording {
@@ -131,8 +139,8 @@ impl Bus {
             },
             // A notice: it refuses one key, and the answer is a pick in a
             // popover, not a dialog.
-            Take::Whiteboard => match self.files.backdrop() {
-                Some(path) => (None, Some(path)),
+            Take::Whiteboard => match &self.backdrop {
+                Some(armed) => (None, Some(armed.path.clone())),
                 None => {
                     return self.emit(Event::Error(UserError::Whiteboard(
                         "no diagram is armed; pick one first".into(),
@@ -212,6 +220,7 @@ impl Bus {
             }
         };
         let slate = shot.map(|(id, ..)| id);
+        let whiteboard = backdrop.is_some();
         self.recording = Some(Active {
             pending,
             slate,
@@ -230,7 +239,7 @@ impl Bus {
         // refuse any more — every refusal above must leave the arm it found
         // alone, exactly as it leaves the player.
         self.armed_slate = slate;
-        self.emit(Event::Recording(RecordingStatus::Starting));
+        self.emit(Event::Recording(RecordingStatus::Starting { whiteboard }));
         // Recording always wins (Phase 10 spec S5): the transcript running
         // gives way and goes back to the front of the queue. **Here**, once
         // the recording exists — not at the top of `toggle_recording`, which
@@ -357,19 +366,52 @@ impl Bus {
     /// fails at export. `set_avatar` decodes and copies adjacently; this
     /// splits them, and that is where the resemblance stops.
     pub(super) fn arm_backdrop(&mut self, path: PathBuf) {
-        if let Err(e) = decode_still(&path) {
-            return self.emit(Event::Error(UserError::Whiteboard(format!(
-                "that image couldn't be read, so it wasn't armed: {e}"
-            ))));
-        }
+        let still = match decode_still(&path) {
+            Ok(still) => still,
+            Err(e) => {
+                return self.emit(Event::Error(UserError::Whiteboard(format!(
+                    "that image couldn't be read, so it wasn't armed: {e}"
+                ))))
+            }
+        };
         self.files.set_backdrop(Some(&path));
-        self.emit(Event::Backdrop(Some(path)));
+        self.backdrop = Some(Armed {
+            path,
+            still: Arc::new(still),
+        });
+        self.emit(Event::Backdrop(self.backdrop.clone()));
     }
 
     /// Forgets the armed diagram. The coach's file is theirs.
     pub(super) fn disarm_backdrop(&mut self) {
         self.files.set_backdrop(None);
+        self.backdrop = None;
         self.emit(Event::Backdrop(None));
+    }
+
+    /// Decodes the diagram `state.json` says is armed, once, as the bus
+    /// starts — **the bus is its one decoder**, and the window draws the
+    /// pixels this sends. A file that won't decode any more (gone, replaced,
+    /// on a drive not mounted) arms nothing for this run and leaves the file's
+    /// choice alone, so the next run tries again.
+    pub(super) fn load_backdrop(&mut self) {
+        self.backdrop = self
+            .files
+            .backdrop()
+            .and_then(|path| match decode_still(&path) {
+                Ok(still) => Some(Armed {
+                    path,
+                    still: Arc::new(still),
+                }),
+                Err(e) => {
+                    eprintln!(
+                        "bus: the armed diagram {} won't decode: {e}",
+                        path.display()
+                    );
+                    None
+                }
+            });
+        self.emit(Event::Backdrop(self.backdrop.clone()));
     }
 
     /// Start's preconditions (R6), and no export or preview running. A skip or

@@ -454,7 +454,10 @@ fn clip_commands_are_refused_while_recording() {
         zoom: Zoom::IDENTITY,
         take: Take::Footage,
     });
-    assert_eq!(h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: false }
+    );
     assert!(matches!(
         h.wait_recording(),
         RecordingStatus::Recording { .. }
@@ -481,7 +484,10 @@ fn an_edit_while_recording_is_applied_and_saved() {
         zoom: Zoom::IDENTITY,
         take: Take::Footage,
     });
-    assert_eq!(h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: false }
+    );
     assert!(matches!(
         h.wait_recording(),
         RecordingStatus::Recording { .. }

@@ -3821,6 +3821,17 @@ export component AppWindow inherits Window {
     /// included), so the picture is never stretched. Only its shape matters.
     in property <float> frame-width: 16;
     in property <float> frame-height: 9;
+    /// The armed diagram (BACKLOG #138), as the bus decoded it.
+    in property <image> backdrop;
+    /// A whiteboard take is on, from its `Starting` to its `Idle`: the player
+    /// draws `backdrop` instead of `frame`, and takes its shape too.
+    in property <bool> whiteboard-take;
+    property <bool> backdrop-shown: root.whiteboard-take && root.backdrop.width > 0;
+    /// The shape the player letterboxes. Strokes are normalised against
+    /// `content`, which is placed from it — so during a whiteboard take they
+    /// land where the export replays them, in the diagram's rect.
+    out property <float> picture-width: root.backdrop-shown ? root.backdrop.width : root.frame-width;
+    out property <float> picture-height: root.backdrop-shown ? root.backdrop.height : root.frame-height;
     /// The camera, live, while recording (set by `src/video.rs`), in square
     /// pixels. Drawn where the export puts the webcam inset, so what the
     /// coach sees is what viewers will.
@@ -4111,8 +4122,10 @@ export component AppWindow inherits Window {
     /// ... and there is a picture to use it on. The touch area, the panel's
     /// hint and the swatch recolour all key off this, so a preview or an
     /// unloaded project can't leave a live tool behind. `highlight-tool`
-    /// itself is left alone, so closing a preview gives the tool back.
-    out property <bool> in-highlight-tool: root.highlight-tool && root.can-play && !root.previewing;
+    /// itself is left alone, so closing a preview gives the tool back. Off
+    /// for a whiteboard take too (#138), which has no footage to ring and
+    /// whose drags are the pen's — the take's whole point.
+    out property <bool> in-highlight-tool: root.highlight-tool && root.can-play && !root.previewing && !root.whiteboard-take;
     /// Every highlight on the footage, in stored order.
     in property <[HighlightRow]> highlight-rows;
     /// The selected one's id, empty for none: a drag on its ring selects it,
@@ -6000,13 +6013,13 @@ export component AppWindow inherits Window {
                     /// transform would apply it twice. The window's `zoom` is
                     /// left alone, so closing the preview restores the view.
                     property <ZoomState> shown-zoom: root.previewing ? { scale: 1, pan-x: 0, pan-y: 0 } : root.zoom;
-                    property <PictureRect> picture: root.place-picture(self.shown-zoom, root.frame-width, root.frame-height, self.width, self.height);
+                    property <PictureRect> picture: root.place-picture(self.shown-zoom, root.picture-width, root.picture-height, self.width, self.height);
                     // The letterboxed rect at 1×. The zoomed picture is clipped
                     // to it, not to the whole player area, so the view is
                     // exactly the crop export produces (spec D9: one
                     // `Zoom::transform`) and the letterbox bars stay black at
                     // any zoom. Phase 6 strokes are normalized to this rect too.
-                    property <PictureRect> content: root.place-picture({ scale: 1, pan-x: 0, pan-y: 0 }, root.frame-width, root.frame-height, self.width, self.height);
+                    property <PictureRect> content: root.place-picture({ scale: 1, pan-x: 0, pan-y: 0 }, root.picture-width, root.picture-height, self.width, self.height);
 
                     background: black;
                     clip: true;
@@ -6032,7 +6045,7 @@ export component AppWindow inherits Window {
                         // left there is harmless.) Same rect either way.
                         // Coordinates are relative to the content rect.
                         Image {
-                            source: root.frame;
+                            source: root.backdrop-shown ? root.backdrop : root.frame;
                             x: player.picture.x - player.content.x;
                             y: player.picture.y - player.content.y;
                             width: player.picture.width / player.shown-zoom.scale;
@@ -6085,21 +6098,27 @@ export component AppWindow inherits Window {
                             // burns in. Every pill goes over every ring, so
                             // one player's number is never cut in half by the
                             // next player's ring.
-                            for ring in root.live-highlights: StrokePath {
-                                commands: ring.commands;
-                                ink: ring.ink;
-                                line-width: root.stroke-line-width;
-                            }
-                            for ring in root.live-highlights: HighlightLabel {
-                                label: ring.label;
-                                ink: ring.ink;
-                                label-ink: ring.label-ink;
-                                anchor-x: ring.label-x;
-                                anchor-y: ring.label-y;
-                                font-size: ring.font-size;
-                                label-pad: ring.label-pad;
-                                pill-height: ring.pill-height;
-                                content-width: parent.width;
+                            //
+                            // Not over a diagram (BACKLOG #138): a ring
+                            // belongs to the footage, which is behind it, and
+                            // the export draws none on a whiteboard entry.
+                            if !root.whiteboard-take: Rectangle {
+                                for ring in root.live-highlights: StrokePath {
+                                    commands: ring.commands;
+                                    ink: ring.ink;
+                                    line-width: root.stroke-line-width;
+                                }
+                                for ring in root.live-highlights: HighlightLabel {
+                                    label: ring.label;
+                                    ink: ring.ink;
+                                    label-ink: ring.label-ink;
+                                    anchor-x: ring.label-x;
+                                    anchor-y: ring.label-y;
+                                    font-size: ring.font-size;
+                                    label-pad: ring.label-pad;
+                                    pill-height: ring.pill-height;
+                                    content-width: parent.width;
+                                }
                             }
                             for stroke in root.live-paths: StrokePath {
                                 commands: stroke.commands;
@@ -6124,8 +6143,9 @@ export component AppWindow inherits Window {
                     // rather than the picture, so the zoom doesn't move it —
                     // in the export it is chrome on the output frame. Hidden
                     // while previewing, where the clip's own texture already
-                    // carries its board.
-                    if root.scoreboard-width > 0 && !root.previewing: Image {
+                    // carries its board — and over a diagram, which is not in
+                    // the match and gets none in the export either (#138).
+                    if root.scoreboard-width > 0 && !root.previewing && !root.whiteboard-take: Image {
                         x: player.content.x;
                         y: player.content.y;
                         width: root.scoreboard-width;

@@ -174,7 +174,10 @@ fn stopping_a_recording_leaves_the_transcript_to_the_coach() {
         zoom: Zoom::IDENTITY,
         take: Take::Footage,
     });
-    assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        rig.h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: false }
+    );
     assert!(matches!(
         rig.h.wait_recording(),
         RecordingStatus::Recording { .. }
@@ -310,7 +313,10 @@ fn a_recording_preempts_the_running_job_and_it_resumes_first() {
         zoom: Zoom::IDENTITY,
         take: Take::Footage,
     });
-    assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        rig.h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: false }
+    );
     let preempted = rig.wait("clip 0 preempted", |t, _| {
         t.running.is_none() && !t.queued.is_empty()
     });
@@ -349,7 +355,10 @@ fn a_recording_that_aborts_still_resumes_the_queue() {
         zoom: Zoom::IDENTITY,
         take: Take::Footage,
     });
-    assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
+    assert_eq!(
+        rig.h.wait_recording(),
+        RecordingStatus::Starting { whiteboard: false }
+    );
     rig.wait("clip 0 preempted", |t, _| t.running.is_none());
     rig.h.send(Command::StopRecording);
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Idle);
