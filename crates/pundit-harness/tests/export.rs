@@ -13,8 +13,8 @@
 use std::path::{Path, PathBuf};
 
 use pundit_app::bus::{
-    AppFiles, Command, Event, ExportChoices, ExportRun, QueueRow, RecordingStatus, TargetState,
-    UserError,
+    AppFiles, Command, Event, ExportChoices, ExportRun, QueueRow, RecordingStatus, Take,
+    TargetState, UserError,
 };
 use pundit_core::layout::scoreboard_rects;
 use pundit_core::plan::ExportTarget;
@@ -438,7 +438,7 @@ fn while_a_run_is_going_a_second_run_and_recording_are_refused() {
     rig.export(vec![ExportTarget::AllClips]);
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
 
     assert!(rig.h.wait_export().is_running());
@@ -617,7 +617,7 @@ fn an_export_while_recording_is_dropped() {
     });
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
 

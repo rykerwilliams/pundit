@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use pundit_app::bus::{Command, Event, ExportChoices, RecordingStatus, UserError};
+use pundit_app::bus::{Command, Event, ExportChoices, RecordingStatus, Take, UserError};
 use pundit_core::plan::ExportTarget;
 use pundit_core::project::{Quality, Resolution};
 use pundit_core::store;
@@ -222,7 +222,7 @@ fn a_recording_is_refused_while_previewing() {
     rig.previewing();
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(
         rig.h.wait_for_error(),
@@ -250,7 +250,7 @@ fn a_preview_while_recording_is_dropped() {
     });
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
 

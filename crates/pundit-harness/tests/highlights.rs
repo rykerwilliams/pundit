@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use pundit_app::bus::{Command, Event, ExportChoices, TargetState, UserError};
+use pundit_app::bus::{Command, Event, ExportChoices, Take, TargetState, UserError};
 use pundit_core::highlight::{HighlightEdit, NormRect};
 use pundit_core::plan::ExportTarget;
 use pundit_core::project::{Project, Quality, Resolution};
@@ -175,7 +175,7 @@ fn a_key_lands_while_recording_and_the_other_edits_are_refused() {
 
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     h.wait_recording();
     h.wait_recording();

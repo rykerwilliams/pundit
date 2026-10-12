@@ -10,20 +10,22 @@
 //! generation of the recording that produced them, and never reach the
 //! player: its EOS would advance the source and its ERROR reset the player.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use gstreamer::glib;
 use pundit_core::project::Preferences;
 use pundit_core::recording::{PendingClip, RecordingLog};
+use pundit_core::store::{BACKDROPS_DIRNAME, RECORDINGS_DIRNAME};
 use pundit_core::stroke::Stroke;
 use pundit_core::zoom::Zoom;
 use pundit_media::{
-    list_devices, resolve_camera, resolve_mic, CaptureSources, Origin, Recorder, RecorderMessage,
+    decode_still, list_devices, resolve_camera, resolve_mic, CaptureSources, Origin, Recorder,
+    RecorderMessage,
 };
 use uuid::Uuid;
 
-use super::{Bus, Event, Input, UserError};
+use super::{Bus, Event, Input, Take, UserError};
 
 /// How long a recording may wait for its first buffer.
 const START_TIMEOUT: Duration = Duration::from_secs(5);
@@ -55,21 +57,15 @@ pub enum RecordingStatus {
 }
 
 /// The recording in progress.
-/// What a take shot from a slate starts on: the range's video and in point,
-/// and the slate the clip will carry. A tuple read positionally at three use
-/// sites was harder to read than the four lines this costs.
-#[derive(Debug, Clone, Copy)]
-pub(super) struct Shot {
-    pub(super) slate: Uuid,
-    pub(super) source_index: usize,
-    pub(super) in_seconds: f64,
-}
-
 pub(super) struct Active {
     pub(super) pending: PendingClip,
     /// The slate this take was shot from, if it was shot from one. The clip
     /// it produces inherits that slate's name and tags, and carries its id.
     pub(super) slate: Option<Uuid>,
+    /// The diagram this take is recorded over (BACKLOG #138), as the clip will
+    /// name it — copied in already, under `backdrops/`. **`Some` is a
+    /// whiteboard take**, which is what narrows the recording allow-list.
+    pub(super) backdrop: Option<String>,
     recorder: Recorder,
     pub(super) log: RecordingLog,
     /// The file, deleted on an abort.
@@ -81,52 +77,97 @@ pub(super) struct Active {
 }
 
 impl Bus {
-    /// R: starts a recording while idle, else stops (or aborts) it. The UI's
-    /// status can lag the bus's, so the bus decides: a second R during
-    /// start-up cancels, as the user means.
+    /// R and W: starts `take` while idle, else stops (or aborts) the take
+    /// running, whichever it is. The UI's status can lag the bus's, so the bus
+    /// decides: a second R during start-up cancels, as the user means.
     ///
-    /// **`slate` is the selected range, and the same lag is why it arrives
+    /// **`take` carries the selected range, and the same lag is why it arrives
     /// here rather than being branched on in the window** (BACKLOG #120). With
-    /// one, R is that range's take — [`Bus::shoot_slate`] — so the themed
-    /// pass is two keys and the clip carries the `slate_id` that marks the
-    /// range shot. A window that chose between two commands from its own
-    /// phase would send a `ShootSlate` into a take the recording guard
-    /// refuses it in, and the R meant as a cancel would do nothing.
-    pub(super) fn toggle_recording(&mut self, zoom: Zoom, slate: Option<Uuid>) {
-        match (self.recording.is_some(), slate) {
-            (true, _) => self.stop_recording(),
-            (false, Some(id)) => self.shoot_slate(id, zoom),
-            (false, None) => self.start_recording(zoom, None),
+    /// one, R is that range's take, so the themed pass is two keys and the clip
+    /// carries the `slate_id` that marks the range shot. A window that chose
+    /// between two commands from its own phase would send a `ShootSlate` into
+    /// a take the recording guard refuses it in, and the R meant as a cancel
+    /// would do nothing.
+    pub(super) fn toggle_recording(&mut self, zoom: Zoom, take: Take) {
+        match self.recording.is_some() {
+            true => self.stop_recording(),
+            false => self.start_recording(zoom, take),
         }
     }
 
-    /// Starts recording from where the player is heading (R6), or — shooting a
-    /// slate — from `from`, the range's video and in point. Refused with an
-    /// error unless a project with sources, none missing, is open and its
-    /// current source is loaded or loading.
+    /// Starts `take` from where the player is heading (R6), or — shooting a
+    /// slate — from the range's video and in point. Refused with an error
+    /// unless a project with sources, none missing, is open and its current
+    /// source is loaded or loading.
     ///
     /// **A slate's seek happens here, not in the caller**, and after
     /// `capture_sources`. `can_record` does not see every refusal:
     /// `UserError::NoCamera` comes from `resolve_camera` inside
     /// `capture_sources`, so a caller that seeked first would move the game
-    /// video to the in point and *then* refuse on a machine with no camera —
-    /// breaking the promise the comment below makes. Every refusal `can_record`
-    /// and `capture_sources` raise still leaves the player exactly as it was —
-    /// the two below the seek (the recordings directory, and the recorder
-    /// failing to start) leave it at the in point, which is harmless and where
-    /// the coach was going anyway.
-    pub(super) fn start_recording(&mut self, zoom: Zoom, from: Option<Shot>) {
+    /// video to the in point and *then* refuse on a machine with no camera.
+    /// Every refusal but one leaves the player exactly as it was — the
+    /// recorder failing to start leaves it at the in point, which is harmless
+    /// and where the coach was going anyway.
+    ///
+    /// **A whiteboard's diagram is copied with the refusals, above the pause**
+    /// (#138), so a failed copy leaves the player as it was; the clip's id is
+    /// minted there because the copy is named by it. Copied in
+    /// `finish_recording` instead, a failure would land after the coach had
+    /// spoken, as a clip silently recorded over footage it never showed.
+    pub(super) fn start_recording(&mut self, zoom: Zoom, take: Take) {
         if let Err(e) = self.can_record() {
             return self.emit(Event::Error(e));
         }
         let Some(open) = &self.open else {
             return;
         };
-        let folder = open.folder.join("recordings");
+        // What the take starts on: a range's video and in point, or the
+        // armed diagram.
+        let (shot, armed) = match take {
+            Take::Footage => (None, None),
+            Take::Slate(id) => match open.project.slates.iter().find(|s| s.id == id) {
+                Some(slate) => (Some((id, slate.source_index, slate.in_seconds)), None),
+                None => return eprintln!("bus: a take of slate {id}, which isn't there"),
+            },
+            // A notice: it refuses one key, and the answer is a pick in a
+            // popover, not a dialog.
+            Take::Whiteboard => match self.files.backdrop() {
+                Some(path) => (None, Some(path)),
+                None => {
+                    return self.emit(Event::Error(UserError::Whiteboard(
+                        "no diagram is armed; pick one first".into(),
+                    )))
+                }
+            },
+        };
+        let folder = open.folder.join(RECORDINGS_DIRNAME);
         // Before anything changes: a refusal leaves the player as it was.
         let sources = match self.capture_sources(&open.project.preferences) {
             Ok(sources) => sources,
             Err(e) => return self.emit(Event::Error(e)),
+        };
+        if let Err(e) = std::fs::create_dir_all(&folder) {
+            return self.emit(Event::Error(UserError::Io(format!(
+                "{}: {e}",
+                folder.display()
+            ))));
+        }
+        let id = Uuid::new_v4();
+        let backdrops = open.folder.join(BACKDROPS_DIRNAME);
+        let backdrop = match armed {
+            None => None,
+            Some(path) => match copy_into(&path, &backdrops, &id.to_string()) {
+                Ok(name) => Some(name),
+                Err(e) => {
+                    let why = match e.kind() {
+                        std::io::ErrorKind::NotFound => {
+                            "the armed diagram is gone; pick it again".to_owned()
+                        }
+                        _ => format!("the diagram couldn't be copied into the project: {e}"),
+                    };
+                    return self.emit(Event::Error(UserError::Whiteboard(why)));
+                }
+            },
         };
 
         // Every clip starts on a still frame.
@@ -138,22 +179,16 @@ impl Bus {
         // target over the player's, so a skip burst still in the air would
         // otherwise stamp this clip where the arrows were heading rather than
         // where the range starts.
-        if let Some(shot) = from {
+        if let Some((_, source_index, in_seconds)) = shot {
             self.reset_skip();
-            self.load(shot.source_index, shot.in_seconds, true, Origin::Scrub);
+            self.load(source_index, in_seconds, true, Origin::Scrub);
         }
         let (source_index, start_source_seconds) = self.heading(None);
         let pending = PendingClip {
-            id: Uuid::new_v4(),
+            id,
             source_index,
             start_source_seconds,
         };
-        if let Err(e) = std::fs::create_dir_all(&folder) {
-            return self.emit(Event::Error(UserError::Io(format!(
-                "{}: {e}",
-                folder.display()
-            ))));
-        }
         let path = folder.join(format!("{}.mkv", pending.id));
 
         self.generation += 1;
@@ -167,14 +202,20 @@ impl Bus {
         let recorder = match started {
             Ok(recorder) => recorder,
             Err(e) => {
-                // filesink has already created it.
-                remove_recording(&path);
+                // filesink has already created it — and the diagram, copied
+                // above, would be left with no clip to name it.
+                remove_file(&path);
+                if let Some(name) = &backdrop {
+                    remove_file(&backdrops.join(name));
+                }
                 return self.emit(Event::Error(UserError::RecordingFailed(e)));
             }
         };
+        let slate = shot.map(|(id, ..)| id);
         self.recording = Some(Active {
             pending,
-            slate: from.map(|shot| shot.slate),
+            slate,
+            backdrop,
             log: RecordingLog::new(recorder.t0_ns(), zoom, start_source_seconds),
             recorder,
             path,
@@ -188,7 +229,7 @@ impl Bus {
         // at a range it has nothing to do with. **Here**, where nothing can
         // refuse any more — every refusal above must leave the arm it found
         // alone, exactly as it leaves the player.
-        self.armed_slate = from.map(|shot| shot.slate);
+        self.armed_slate = slate;
         self.emit(Event::Recording(RecordingStatus::Starting));
         // Recording always wins (Phase 10 spec S5): the transcript running
         // gives way and goes back to the front of the queue. **Here**, once
@@ -306,6 +347,31 @@ impl Bus {
         }
     }
 
+    /// Arms `path` as the diagram W records over (BACKLOG #138), decoded first
+    /// as `set_avatar` decodes: pixels out of [`decode_still`] are proof the
+    /// export will get pixels too, and a refused pick leaves the arm it found.
+    ///
+    /// **Not the guarantee it looks like**, and worth saying so: the take
+    /// copies the file minutes later, so one *deleted* since is refused at the
+    /// copy, but one *replaced* with something undecodable records fine and
+    /// fails at export. `set_avatar` decodes and copies adjacently; this
+    /// splits them, and that is where the resemblance stops.
+    pub(super) fn arm_backdrop(&mut self, path: PathBuf) {
+        if let Err(e) = decode_still(&path) {
+            return self.emit(Event::Error(UserError::Whiteboard(format!(
+                "that image couldn't be read, so it wasn't armed: {e}"
+            ))));
+        }
+        self.files.set_backdrop(Some(&path));
+        self.emit(Event::Backdrop(Some(path)));
+    }
+
+    /// Forgets the armed diagram. The coach's file is theirs.
+    pub(super) fn disarm_backdrop(&mut self) {
+        self.files.set_backdrop(None);
+        self.emit(Event::Backdrop(None));
+    }
+
     /// Start's preconditions (R6), and no export or preview running. A skip or
     /// scrub in flight is not a reason to refuse: the recording starts where
     /// the player is heading.
@@ -409,6 +475,7 @@ impl Bus {
                 created_at(),
             );
             clip.slate_id = active.slate;
+            clip.backdrop = active.backdrop;
             if let Some((name, tags)) = inherited {
                 // An unnamed slate leaves the generated "2-01:02:05" alone: it
                 // says more than an empty name would.
@@ -438,13 +505,45 @@ impl Bus {
         self.armed_slate = None;
         // NULL first, so nothing still writes the file.
         drop(active.recorder);
-        remove_recording(&active.path);
+        remove_file(&active.path);
+        // The diagram goes with the recording: nothing will ever name it.
+        if let (Some(name), Some(open)) = (&active.backdrop, &self.open) {
+            remove_file(&open.folder.join(BACKDROPS_DIRNAME).join(name));
+        }
         self.emit(Event::Recording(RecordingStatus::Idle));
     }
 }
 
-/// Deletes a recording's file. One that was never created is already gone.
-fn remove_recording(path: &std::path::Path) {
+/// Copies `src` into `dir` as `<stem>.<ext>` and returns that file name — a
+/// project's avatar and a whiteboard take's diagram alike. The extension is
+/// kept, lowercased, so the file opens in a file manager as what it is (the
+/// decoders sniff regardless), and the bytes go through `.<stem>.tmp` and a
+/// rename in the same directory, as `store::write` writes `project.json`: a
+/// copy cut short leaves nothing.
+///
+/// `dir` is made if it isn't there, with **`create_dir`**: it is one leaf under
+/// a project folder that exists, and a project folder deleted from under the
+/// app should refuse the copy rather than be re-created around it.
+pub(super) fn copy_into(src: &Path, dir: &Path, stem: &str) -> std::io::Result<String> {
+    match std::fs::create_dir(dir) {
+        Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => return Err(e),
+        _ => {}
+    }
+    let name = match src.extension().and_then(|e| e.to_str()) {
+        Some(ext) => format!("{stem}.{}", ext.to_ascii_lowercase()),
+        None => stem.to_owned(),
+    };
+    let temp = dir.join(format!(".{stem}.tmp"));
+    if let Err(e) = std::fs::copy(src, &temp).and_then(|_| std::fs::rename(&temp, dir.join(&name)))
+    {
+        let _ = std::fs::remove_file(&temp);
+        return Err(e);
+    }
+    Ok(name)
+}
+
+/// Deletes a take's file. One that was never created is already gone.
+fn remove_file(path: &Path) {
     match std::fs::remove_file(path) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
             eprintln!("bus: could not delete {}: {e}", path.display());

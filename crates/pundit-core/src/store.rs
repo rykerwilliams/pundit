@@ -31,6 +31,10 @@ pub const RECORDINGS_DIRNAME: &str = "recordings";
 /// [`write`]: a project that has never been exported has no use for an empty
 /// folder, so the export run creates it on demand.
 pub const EXPORTS_DIRNAME: &str = "exports";
+/// Where a whiteboard clip's diagram is copied, as `<clip id>.<ext>`
+/// (`Clip::backdrop`, #138). Like `exports/` it is **not** created by
+/// [`write`]: the first whiteboard take makes it.
+pub const BACKDROPS_DIRNAME: &str = "backdrops";
 
 #[derive(thiserror::Error, Debug)]
 pub enum StoreError {

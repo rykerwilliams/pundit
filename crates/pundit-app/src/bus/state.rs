@@ -130,6 +130,16 @@ struct State {
     /// and not in `project.json`: no `Preferences` field, no format bump.
     #[serde(deserialize_with = "lenient")]
     keys: BTreeMap<String, Vec<String>>,
+    /// The diagram `W` records over (BACKLOG #138): the coach's own file,
+    /// wherever it is. Each take copies it into its project's `backdrops/`, so
+    /// nothing a clip needs is ever read from here.
+    ///
+    /// **Here and not in `project.json`** because it is "the file on this
+    /// machine I am drawing on today" — the whisper model's test. A project
+    /// carried to another computer must not bring a path into someone else's
+    /// home directory.
+    #[serde(deserialize_with = "lenient")]
+    backdrop: Option<PathBuf>,
 }
 
 /// Any value this build can't read falls back to the field's default, so one
@@ -450,6 +460,21 @@ impl AppFiles {
     pub fn set_keymap(&self, keymap: &Keymap) {
         let mut state = self.read();
         state.keys = keymap.overrides();
+        self.save(&state);
+    }
+
+    /// The armed diagram (BACKLOG #138), if one is. **Not checked to exist**:
+    /// the take's copy is what finds a file deleted since the pick, and refuses
+    /// before a word is spoken.
+    pub fn backdrop(&self) -> Option<PathBuf> {
+        self.read().backdrop
+    }
+
+    /// Arms `path` for every project on this machine, or disarms with `None`.
+    /// The caller has decoded it; this only remembers.
+    pub fn set_backdrop(&self, path: Option<&Path>) {
+        let mut state = self.read();
+        state.backdrop = path.map(Path::to_path_buf);
         self.save(&state);
     }
 

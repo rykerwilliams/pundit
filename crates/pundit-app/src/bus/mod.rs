@@ -75,6 +75,24 @@ pub enum ScanStep {
     Cycle,
 }
 
+/// Which take [`Command::ToggleRecording`] starts, when it starts one.
+///
+/// **One value rather than a slate and a flag** (BACKLOG #138): a take shot
+/// from a range plays the footage from its in point, and a whiteboard take
+/// shows no footage at all, so "a slate *and* the diagram" is a request with no
+/// meaning. As two fields it would need a refusal and a notice of its own; as
+/// one value the window, which knows which key was pressed, cannot send it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Take {
+    /// R with no range selected: over the game video, where the player is.
+    Footage,
+    /// R with a range selected: that range's take ([`Command::ShootSlate`]).
+    Slate(Uuid),
+    /// W: over the armed diagram ([`Command::ArmBackdrop`]), anchored where
+    /// the player is.
+    Whiteboard,
+}
+
 /// What the UI asks the bus to do.
 #[derive(Debug)]
 pub enum Command {
@@ -295,21 +313,24 @@ pub enum Command {
     },
 
     // Recording (spec R6).
-    /// R: while idle, starts a recording with `zoom` (the UI's) as the log's
-    /// first event; while recording, [`Command::StopRecording`].
+    /// R and W: while idle, starts `take` with `zoom` (the UI's) as the log's
+    /// first event; while recording, [`Command::StopRecording`], whichever
+    /// take it is.
     ///
-    /// **`slate` is whichever range is selected** (BACKLOG #120), and with one
-    /// the take is that range's: [`Command::ShootSlate`]'s seek to the in
-    /// point and its arm at the out. **The bus decides which, not the UI**,
-    /// which is why this carries the range rather than the window choosing
-    /// between two commands: the UI's status lags the bus's, so a second R
-    /// inside a take's start-up has to cancel it — "as the user means" — and a
-    /// window that read its own stale phase would send a `ShootSlate` the
-    /// recording guard refuses, leaving the take running under a key press
-    /// that meant to stop it.
+    /// **`take` carries whichever range is selected** (BACKLOG #120), and with
+    /// one the take is that range's: [`Command::ShootSlate`]'s seek to the in
+    /// point and its arm at the out. **The bus decides whether to start or
+    /// stop, not the UI**, which is why this carries the take rather than the
+    /// window choosing between commands: the UI's status lags the bus's, so a
+    /// second R inside a take's start-up has to cancel it — "as the user
+    /// means" — and a window that read its own stale phase would send a
+    /// `ShootSlate` the recording guard refuses, leaving the take running under
+    /// a key press that meant to stop it. **W is this command for the same
+    /// reason** (#138): as a command of its own it would be off the recording
+    /// allow-list, and W could not stop the take it started.
     ToggleRecording {
         zoom: Zoom,
-        slate: Option<Uuid>,
+        take: Take,
     },
     /// Stops the recording, or aborts it if no video has arrived yet.
     StopRecording,
@@ -349,6 +370,13 @@ pub enum Command {
     /// The coach's original is untouched, and the project records on camera
     /// again.
     ClearAvatar,
+    /// Arm this image as the diagram W records over (BACKLOG #138): decode
+    /// it, then remember the path machine-wide in `state.json`. A file that
+    /// will not decode is refused and the arm is left as it was. Nothing is
+    /// copied until a take starts, because the copy is per clip.
+    ArmBackdrop(PathBuf),
+    /// Forget the armed diagram. The coach's file is theirs and is untouched.
+    DisarmBackdrop,
 
     // Export (Phase 5 spec X4, Phase 8 spec E1).
     /// Render each target into `<project>/exports/`, one after another, in
@@ -514,6 +542,10 @@ pub enum Event {
     Queue(Vec<export::QueueRow>),
     /// The clip being previewed, or `None` once the preview closed.
     Preview(Option<Uuid>),
+    /// The armed diagram changed (BACKLOG #138): the coach's own file, or
+    /// `None` once disarmed. Sent on [`Command::ArmBackdrop`] and
+    /// [`Command::DisarmBackdrop`] only, not at startup.
+    Backdrop(Option<PathBuf>),
     /// The basket, whole (basket spec C4): at startup, on every change to it
     /// and on [`Command::ShowBasket`]. **Not** on [`Event::ProjectChanged`],
     /// which fires on every clip edit — re-reading three projects per keystroke
@@ -647,6 +679,13 @@ pub enum UserError {
     /// is on the recording allow-list, so this can arrive over a live take.
     #[error("{0}")]
     Slate(String),
+    /// A notice (BACKLOG #138): W with no diagram armed, a diagram that won't
+    /// decode or can't be copied, or a key that would move or tag the footage
+    /// during a whiteboard take. **A notice for [`UserError::Slate`]'s reason
+    /// and [`UserError::Avatar`]'s**: the refused keys arrive over a live take,
+    /// and the refused pick is one click in a popover still open.
+    #[error("{0}")]
+    Whiteboard(String),
     #[error("{0}")]
     Io(String),
 }
@@ -662,6 +701,7 @@ impl UserError {
                 | UserError::StopNotClean
                 | UserError::Scoreboard(_)
                 | UserError::Slate(_)
+                | UserError::Whiteboard(_)
                 | UserError::Basket(_)
                 | UserError::Queue(_)
         )
@@ -1069,6 +1109,31 @@ impl Bus {
         {
             return eprintln!("bus: refused while recording: {cmd:?}");
         }
+        // The same allow-list minus six for a whiteboard take (BACKLOG #138):
+        // these are about the footage, which is behind the diagram. A highlight
+        // matters most — keyed to footage nobody saw, it would ring a player
+        // over the game video somewhere else entirely. A notice, not the
+        // guard's `eprintln!`, because nothing greys these keys out.
+        if self
+            .recording
+            .as_ref()
+            .is_some_and(|a| a.backdrop.is_some())
+            && matches!(
+                cmd,
+                Command::TogglePlay { .. }
+                    | Command::Skip { .. }
+                    | Command::TagMatchEvent { .. }
+                    | Command::SetHighlightKey { .. }
+                    | Command::MarkSlateIn { .. }
+                    | Command::MarkSlateOut { .. }
+            )
+        {
+            return self.emit(Event::Error(UserError::Whiteboard(
+                "the game video is behind the diagram during a whiteboard take, so it can't be \
+                 played, skipped, tagged, marked or ringed"
+                    .into(),
+            )));
+        }
         match cmd {
             Command::OpenProject(folder) => self.open_project(folder),
             Command::NewMatch {
@@ -1119,7 +1184,7 @@ impl Bus {
             } => self.mark_slate_out(source_index, source_seconds),
             Command::EditSlate { id, edit } => self.edit_slate(id, edit),
             Command::DeleteSlate(id) => self.delete_slate(id),
-            Command::ShootSlate { id, zoom } => self.shoot_slate(id, zoom),
+            Command::ShootSlate { id, zoom } => self.start_recording(zoom, Take::Slate(id)),
             Command::JumpToSlate(id) => {
                 self.jump_to_slate(id);
             }
@@ -1139,7 +1204,7 @@ impl Bus {
             Command::StepFrame { forward } => self.step_frame(forward),
             Command::ScanSpeed(step) => self.scan_speed(step),
             Command::SetVolume { value, commit } => self.set_volume(value, commit),
-            Command::ToggleRecording { zoom, slate } => self.toggle_recording(zoom, slate),
+            Command::ToggleRecording { zoom, take } => self.toggle_recording(zoom, take),
             Command::StopRecording => self.stop_recording(),
             Command::Zoom { host_ns, zoom } => self.log_zoom(host_ns, zoom),
             Command::Stroke { host_ns, stroke } => self.log_stroke(host_ns, stroke),
@@ -1149,6 +1214,8 @@ impl Bus {
             Command::SetMic(mic) => self.set_mic(mic),
             Command::SetAvatar(path) => self.set_avatar(path),
             Command::ClearAvatar => self.clear_avatar(),
+            Command::ArmBackdrop(path) => self.arm_backdrop(path),
+            Command::DisarmBackdrop => self.disarm_backdrop(),
             Command::Export { targets, choices } => self.export(targets, choices),
             Command::CancelExport => self.cancel_export(),
             Command::EnqueueExport { targets, choices } => self.enqueue_export(&targets, choices),

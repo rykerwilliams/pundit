@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use pundit_app::bus::{Command, Event, RecordingStatus, ScanStep, UserError};
+use pundit_app::bus::{Command, Event, RecordingStatus, ScanStep, Take, UserError};
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::project::{Clip, Project, SlateEdit};
 use pundit_core::store;
@@ -177,7 +177,7 @@ fn marking_works_while_recording_and_the_other_edits_are_refused() {
 
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     h.wait_recording();
     h.wait_recording();
@@ -393,7 +393,7 @@ fn shooting_while_recording_is_refused() {
 
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     h.wait_recording();
     assert!(matches!(
@@ -430,7 +430,7 @@ fn toggling_a_recording_with_a_range_selected_shoots_it() {
 
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: Some(id),
+        take: Take::Slate(id),
     });
     h.wait_recording();
     h.wait_recording();
@@ -464,7 +464,7 @@ fn a_second_toggle_stops_the_range_take_rather_than_starting_another() {
 
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: Some(id),
+        take: Take::Slate(id),
     });
     assert_eq!(h.wait_recording(), RecordingStatus::Starting);
     assert!(matches!(
@@ -474,7 +474,7 @@ fn a_second_toggle_stops_the_range_take_rather_than_starting_another() {
 
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: Some(id),
+        take: Take::Slate(id),
     });
     h.wait_changed();
     assert_eq!(
@@ -694,7 +694,7 @@ fn a_plain_take_is_not_stopped_by_a_timed_slate_on_another_video() {
     });
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(h.wait_recording(), RecordingStatus::Starting);
     assert!(matches!(
@@ -909,7 +909,7 @@ fn a_plain_take_does_not_inherit_a_previews_arm() {
     // take is parked well short of the out point, which is still ahead of it.
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(h.wait_recording(), RecordingStatus::Starting);
     assert!(matches!(

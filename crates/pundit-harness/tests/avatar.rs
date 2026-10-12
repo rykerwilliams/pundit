@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use pundit_app::bus::{Command, Event, RecordingStatus};
+use pundit_app::bus::{Command, Event, RecordingStatus, Take};
 use pundit_core::project::{Clip, Inset};
 use pundit_core::store;
 use pundit_core::zoom::Zoom;
@@ -44,7 +44,7 @@ fn record_a_take(avatar: Option<&str>) -> (Clip, PathBuf, TempDir) {
     h.wait_settled();
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(h.wait_recording(), RecordingStatus::Starting);
     assert!(matches!(

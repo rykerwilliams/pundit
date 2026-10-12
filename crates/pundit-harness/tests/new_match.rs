@@ -16,7 +16,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use pundit_app::bus::{
-    AppFiles, CaptureKind, Command, Event, ExportChoices, RecordingStatus, TargetState, UserError,
+    AppFiles, CaptureKind, Command, Event, ExportChoices, RecordingStatus, Take, TargetState,
+    UserError,
 };
 use pundit_core::plan::ExportTarget;
 use pundit_core::project::{Project, Quality, Resolution};
@@ -680,7 +681,7 @@ fn new_match_while_recording_is_dropped() {
 
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
     let live = rig.h.wait_recording();
