@@ -2026,6 +2026,17 @@ component ExportSheet inherits Sheet {
     /// The whole match is ticked, and so the run may copy rather than
     /// re-encode. `src/main.rs` owns it, beside the ticks themselves.
     in property <bool> whole-match-ticked;
+    /// A goals reel is ticked (#84): the Music row shows only then.
+    in property <bool> reel-ticked;
+    /// "None" and then the music folder's genres, in the order `main.rs`
+    /// listed them; empty but for "None" when there is no folder or no genre.
+    in property <[string]> music-genres;
+    /// The picked genre's index into `music-genres`; 0 is None.
+    in-out property <int> music-index;
+    /// The genre was picked: the window remembers it at once (spec §M2).
+    callback music-picked(int);
+    /// Folder…: choose the music folder and re-list its genres.
+    callback choose-music-folder();
     /// **This run would copy rather than re-encode**, which both lines under
     /// the picker are about. Only the whole match is ever copied, so its tick
     /// is the first term; the board then has to be going anywhere but into the
@@ -2134,6 +2145,35 @@ component ExportSheet inherits Sheet {
         }
     }
 
+    // **Music under a goals reel** (#84): a genre from the coach's music
+    // folder, and the button that sets the folder — the folder's one reader is
+    // this picker, so it sits here rather than on a Settings sheet (spec §M6).
+    // With no genres the picker gives way to the line that says what to do.
+    if root.reel-ticked: VerticalLayout {
+        spacing: 4px;
+        FieldLabel { text: "Music under the reel"; }
+        HorizontalLayout {
+            spacing: 8px;
+            if root.music-genres.length > 1: ComboBox {
+                model: root.music-genres;
+                current-index <=> root.music-index;
+                selected => { root.music-picked(self.current-index); }
+                horizontal-stretch: 1;
+            }
+            if root.music-genres.length <= 1: Text {
+                text: "Choose a music folder with a subfolder per genre";
+                color: Palette.alternate-foreground;
+                wrap: word-wrap;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Button {
+                text: "Folder…";
+                clicked => { root.choose-music-folder(); }
+            }
+        }
+    }
+
     // **Source audio**, which is what this codebase calls the game video
     // throughout, and the commentary is deliberately untouched (spec M1).
     CheckBox {
@@ -2141,7 +2181,7 @@ component ExportSheet inherits Sheet {
         checked <=> root.mute-source;
 
         Tooltip {
-            text: @markdown("Drop the game video's sound. Your commentary is kept -- but a whole match or a goals reel has none, so it comes out silent.");
+            text: @markdown("Drop the game video's sound. Your commentary is kept. A whole match has none, so it comes out silent; a goals reel carries only its music, or nothing with no music picked.");
         }
     }
 
@@ -4299,6 +4339,12 @@ export component AppWindow inherits Window {
     /// explanatory lines under the Scoreboard picker — only the whole match is
     /// ever copied, and both lines are about a copy.
     in property <bool> export-whole-match-ticked;
+    /// The export sheet's Music row (#84): see `ExportSheet`'s own properties.
+    in property <bool> export-reel-ticked;
+    in property <[string]> export-music-genres;
+    in-out property <int> export-music-index;
+    callback music-picked(int);
+    callback choose-music-folder();
     /// The run in progress, and when it finishes; both from the bus's events,
     /// so a closed sheet reopens on the run it left.
     in property <[RunRow]> export-run;
@@ -7284,6 +7330,11 @@ export component AppWindow inherits Window {
                 chapters <=> root.export-chapters;
                 cues <=> root.export-cues;
                 whole-match-ticked: root.export-whole-match-ticked;
+                reel-ticked: root.export-reel-ticked;
+                music-genres: root.export-music-genres;
+                music-index <=> root.export-music-index;
+                music-picked(index) => { root.music-picked(index); }
+                choose-music-folder => { root.choose-music-folder(); }
                 queue: root.export-queue;
                 tick(index, ticked) => { root.tick-target(index, ticked); }
                 start => { root.start-export(); }

@@ -33,7 +33,10 @@ git switch -c claude/<N-or-name>-task-<n> origin/main
 
 Never write on `main`. A task stacked on a prerequisite still in CI may branch
 from that branch, then `git rebase --onto origin/main <prereq>` once it
-squash-merges.
+squash-merges. **Retarget the dependent PR to `main` before merging the
+prerequisite** (`gh pr edit <dep> --base main`): `--delete-branch` deletes the
+dependent's base, which closes it for good — GitHub refuses to reopen it
+(2026-10-12, #81 had to be re-opened as #82).
 
 ## 3. Re-read; don't remember
 

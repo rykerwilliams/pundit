@@ -1384,6 +1384,17 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   (measured) and the bus handling is irrelevant (measured). What is left is the
   code between `uridecodebin3`'s collection and `playsink`'s chains, all of
   which is GStreamer's.
+- **Sighted after the fix, 2026-10-12, during #84 task 3's gate.**
+  `fast_scanning_runs_at_the_chosen_speed_on_the_apps_sinks`
+  (`pundit-harness --test transport`, the `Harness::production()` rig) panicked
+  at `lib.rs:164` with `timed out waiting for a settled position; unconsumed
+  events: []`, in a full `cargo test --workspace -j 3` that also aborted
+  `--test export` on #101's write. The binary then ran green three times alone.
+  The branch touches only `pundit-app`'s window wiring, so it cannot have caused
+  it. **No stderr was captured**, so whether the retry fired (`player: the load of
+  … stalled on its way to PAUSED; loading it again`) and the second stall was reported, or the wedge was
+  somewhere the bound does not cover, is not known. **Next sighting: keep the
+  test's stderr** — that line is the whole discriminator.
 
 
 73. **`,` looks stuck across a timestamp gap longer than half a frame.** A back
@@ -2852,6 +2863,9 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   bystander: the abort is this entry's write, detected in an `appsink`
   callback's `malloc` as before. Ten runs with the whiteboard tests and ten
   without gave 0 and 1 aborts, so #138 neither causes nor widens it.
+- **Sighting, 2026-10-12, #84 task 3's gate:** `corrupted size vs. prev_size`,
+  `pundit-harness --test export` (not media's), SIGABRT, in a full workspace
+  run beside #72's first post-fix sighting.
 
 102. **Snap the scrubber to events, as an option.** The coach (2026-09-28):
   "snap to events in the scrubber as an option." Dragging the scrubber lands on

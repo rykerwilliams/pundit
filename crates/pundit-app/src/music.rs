@@ -46,6 +46,41 @@ pub fn tracks(folder: &Path, genre: &str) -> Vec<PathBuf> {
     tracks
 }
 
+/// The Music picker's first row, which is no music at all.
+pub const NONE: &str = "None";
+
+/// What the export sheet's Music picker shows (spec §M2): its rows — [`NONE`]
+/// then the folder's `genres` — and the row selected.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Picker {
+    pub rows: Vec<String>,
+    pub index: usize,
+    /// A genre was remembered that `genres` no longer lists. The caller clears
+    /// it, so the None on screen is the None the bus reads: the bus refuses a
+    /// genre it cannot honour, and a refusal over music the sheet does not show
+    /// would be one the coach cannot act on.
+    pub stale: bool,
+}
+
+/// The picker for `genres` with `remembered` selected.
+pub fn picker(genres: Vec<String>, remembered: Option<&str>) -> Picker {
+    let found = remembered.and_then(|g| genres.iter().position(|x| x == g));
+    let mut rows = vec![NONE.to_owned()];
+    rows.extend(genres);
+    Picker {
+        rows,
+        index: found.map_or(0, |i| i + 1),
+        stale: remembered.is_some() && found.is_none(),
+    }
+}
+
+/// The genre at picker row `index` of `rows`: none for [`NONE`]'s row, and none
+/// for an index off the list (a `ComboBox` reports -1 for no selection).
+pub fn genre_at(rows: &[String], index: i32) -> Option<String> {
+    let i = usize::try_from(index).ok().filter(|&i| i > 0)?;
+    rows.get(i).cloned()
+}
+
 /// The files in `dir` with a listed extension, in directory order.
 fn track_files(dir: &Path) -> impl Iterator<Item = PathBuf> {
     std::fs::read_dir(dir)
@@ -109,6 +144,32 @@ mod tests {
         assert!(tracks(&root, &dir.path().join("outside").to_string_lossy()).is_empty());
         assert!(tracks(&root, "").is_empty());
         assert_eq!(tracks(&root, "rock").len(), 1);
+    }
+
+    #[test]
+    fn the_picker_puts_none_first_and_selects_the_remembered_genre() {
+        let genres = || vec!["edm".to_owned(), "rock".to_owned()];
+        let p = picker(genres(), Some("rock"));
+        assert_eq!(p.rows, ["None", "edm", "rock"]);
+        assert_eq!((p.index, p.stale), (2, false));
+        assert_eq!(genre_at(&p.rows, p.index as i32).as_deref(), Some("rock"));
+        assert_eq!(picker(genres(), None).index, 0);
+    }
+
+    #[test]
+    fn a_remembered_genre_no_longer_listed_is_stale_and_shows_none() {
+        let p = picker(vec!["edm".to_owned()], Some("rock"));
+        assert_eq!((p.index, p.stale), (0, true));
+        assert!(picker(Vec::new(), Some("rock")).stale);
+    }
+
+    #[test]
+    fn none_and_an_index_off_the_list_are_no_genre() {
+        let rows = picker(vec!["edm".to_owned()], None).rows;
+        assert_eq!(genre_at(&rows, 0), None);
+        assert_eq!(genre_at(&rows, -1), None);
+        assert_eq!(genre_at(&rows, 2), None);
+        assert_eq!(genre_at(&rows, 1).as_deref(), Some("edm"));
     }
 
     /// A music folder built from links lists like a real one.

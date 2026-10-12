@@ -38,6 +38,7 @@ use pundit_app::highlight_view::{self, LiveHighlight as Ring};
 use pundit_app::match_panel::{
     self, parse_hex, parse_minutes, parse_overtime_periods, parse_periods,
 };
+use pundit_app::music;
 use pundit_app::new_match::{self, Draft};
 use pundit_app::recents;
 use pundit_app::slate_pass::{self, PassRow};
@@ -424,6 +425,7 @@ fn main() {
     video::install(&window, bus.clone());
     let pickers = Pickers::default();
     wire_callbacks(&window, &bus, &pickers);
+    wire_export(&window, &bus, &machine_state);
     wire_zoom(&window, &bus);
     wire_drawing(&window, &bus);
     wire_highlights(&window, &bus);
@@ -432,6 +434,7 @@ fn main() {
     wire_new_match(&window, &bus, &machine_state, &pickers);
     wire_recents(&window, &bus, &machine_state);
     wire_pen_width(&window, &machine_state);
+    wire_music(&window, &machine_state, &pickers);
     wire_folds(&window, &machine_state);
     // The keymap is read here, once: the window asks `action-for` per key
     // event and that lookup is a scan over the returned table (#96). The file
@@ -521,7 +524,7 @@ fn wire_new_match(
             let Some(w) = weak.upgrade() else { return };
             let draft = draft.clone();
             let inner = w.as_weak();
-            let pick = Pick::ProjectFolder {
+            let pick = Pick::Folder {
                 title: "Choose Where Projects Go",
             };
             pickers.open(&w, pick, move |folder| {
@@ -650,7 +653,7 @@ fn wire_callbacks(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, pickers: &Pi
         move || {
             let Some(w) = weak.upgrade() else { return };
             let send = send.clone();
-            let pick = Pick::ProjectFolder {
+            let pick = Pick::Folder {
                 title: "Open Project Folder",
             };
             pickers.open(&w, pick, move |folder| send(Command::OpenProject(folder)));
@@ -838,7 +841,6 @@ fn wire_callbacks(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, pickers: &Pi
     });
     wire_devices(window, bus);
     wire_clips(window, bus);
-    wire_export(window, bus);
     wire_basket(window, bus);
     wire_preview(window, bus);
     wire_match(window, bus);
@@ -913,7 +915,7 @@ fn wire_clips(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
 /// opens it over the whole target list, the clip menu's "Export video…" opens
 /// it on that one clip, and Export hands the bus what's ticked. Every target
 /// goes into the project's own `exports/` folder, so there is no save picker.
-fn wire_export(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
+fn wire_export(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, state: &AppFiles) {
     window.on_open_export({
         let weak = window.as_weak();
         move || {
@@ -935,7 +937,7 @@ fn wire_export(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
         }
     });
     window.on_tick_target({
-        let weak = window.as_weak();
+        let (weak, state) = (window.as_weak(), state.clone());
         move |index, ticked| {
             let (Some(w), Ok(index)) = (weak.upgrade(), usize::try_from(index)) else {
                 return;
@@ -945,8 +947,14 @@ fn wire_export(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
                 return;
             };
             rows.set_row_data(index, TargetRow { ticked, ..row });
-            w.set_export_any_ticked(rows.iter().any(|row| row.ticked));
-            w.set_export_whole_match_ticked(whole_match_ticked(rows.iter()));
+            let reel_was = w.get_export_reel_ticked();
+            show_ticks(&w, rows.iter());
+            // The Music row is read as it appears and not as the sheet opens,
+            // when it is hidden: a genre cleared then — say with the folder's
+            // drive unplugged for a clips-only export — would be lost unseen.
+            if !reel_was && w.get_export_reel_ticked() {
+                show_music(&w, &state);
+            }
         }
     });
     window.on_start_export({
@@ -1196,8 +1204,7 @@ fn open_export_sheet(w: &AppWindow, clip: Option<Uuid>, only_clip: bool) {
     w.set_export_mute_source(choices.mute_source);
     w.set_export_chapters(choices.chapters);
     w.set_export_cues(choices.cues);
-    w.set_export_any_ticked(rows.iter().any(|row| row.ticked));
-    w.set_export_whole_match_ticked(whole_match_ticked(rows.iter().cloned()));
+    show_ticks(w, rows.iter().cloned());
     w.set_export_targets(ModelRc::new(VecModel::from(rows)));
     w.set_export_sheet_open(true);
 }
@@ -1285,18 +1292,78 @@ fn clear_run(w: &AppWindow, kind: RunKind) {
     UI.with_borrow_mut(|ui| ui.run_kind = kind);
 }
 
-/// Whether the whole-match row is among the ticked ones.
-///
-/// It is the one target a run ever copies, so it is also the one whose
-/// effective mode can be "separate track" — which is what the sheet's line
-/// under the Scoreboard picker is about (spec M1).
-fn whole_match_ticked(rows: impl Iterator<Item = TargetRow>) -> bool {
+/// Sets what the sheet reads off the ticks: whether anything is ticked, the
+/// whole match — the one target a run ever copies, so the one whose effective
+/// mode can be "separate track", which the line under the Scoreboard picker is
+/// about (spec M1) — and a goals reel, the only time the Music row shows (#84).
+fn show_ticks(w: &AppWindow, rows: impl Iterator<Item = TargetRow>) {
+    let (mut any, mut whole_match, mut reel) = (false, false, false);
     UI.with_borrow(|ui| {
-        ui.export_targets
+        for (target, _) in ui
+            .export_targets
             .iter()
             .zip(rows)
-            .any(|(target, row)| row.ticked && matches!(target, ExportTarget::WholeMatch))
-    })
+            .filter(|(_, row)| row.ticked)
+        {
+            any = true;
+            whole_match |= matches!(target, ExportTarget::WholeMatch);
+            reel |= matches!(target, ExportTarget::Reel(_));
+        }
+    });
+    w.set_export_any_ticked(any);
+    w.set_export_whole_match_ticked(whole_match);
+    w.set_export_reel_ticked(reel);
+}
+
+/// Fills the export sheet's Music row from `state.json` (#84 spec §M2), and
+/// clears a remembered genre the folder no longer lists (`music::Picker`'s
+/// `stale` says why).
+fn show_music(w: &AppWindow, state: &AppFiles) {
+    let genres = state
+        .music_folder()
+        .map(|folder| music::genres(&folder))
+        .unwrap_or_default();
+    let picker = music::picker(genres, state.music_genre().as_deref());
+    if picker.stale {
+        state.set_music_genre(None);
+    }
+    let rows: Vec<SharedString> = picker.rows.iter().map(SharedString::from).collect();
+    w.set_export_music_genres(ModelRc::new(VecModel::from(rows)));
+    w.set_export_music_index(picker.index as i32);
+}
+
+/// The Music row's two controls (#84): a genre pick is remembered at once, as a
+/// pen is — the window is the one writer of both `state.json` keys, the bus
+/// only reads them when it builds a job.
+fn wire_music(window: &AppWindow, state: &AppFiles, pickers: &Pickers) {
+    window.on_music_picked({
+        let (weak, state) = (window.as_weak(), state.clone());
+        move |index| {
+            let Some(w) = weak.upgrade() else { return };
+            let rows: Vec<String> = w
+                .get_export_music_genres()
+                .iter()
+                .map(String::from)
+                .collect();
+            state.set_music_genre(music::genre_at(&rows, index).as_deref());
+        }
+    });
+    window.on_choose_music_folder({
+        let (weak, state, pickers) = (window.as_weak(), state.clone(), pickers.clone());
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            let (state, weak) = (state.clone(), weak.clone());
+            let pick = Pick::Folder {
+                title: "Choose the Music Folder (a Subfolder per Genre)",
+            };
+            pickers.open(&w, pick, move |folder| {
+                state.set_music_folder(Some(&folder));
+                if let Some(w) = weak.upgrade() {
+                    show_music(&w, &state);
+                }
+            });
+        }
+    });
 }
 
 /// Preview (Phase 7 P6): the inspector's button and the clip menu's "Preview

@@ -60,11 +60,30 @@ carry highlights or drawings. On Default, whether the footage can be copied is
 only checked when you press **Export** — footage that cannot is encoded with the
 board burned in.
 
+## Music under a goals reel
+
+With a goals reel ticked, a **Music under the reel** row appears. Pick a genre
+and the reel gets a song from it, mixed under the game's sound — which is turned
+down, so a goal still sounds like a goal — fading in at the start and out at the
+end.
+
+The genres are the subfolders of your **music folder**: press **Folder…** and
+choose a folder holding, say, `rock/` and `edm/`, each with a few mp3, ogg,
+opus, flac, wav or m4a files. Each match usually gets its own song from the
+genre, and exporting the same match again keeps it as long as the genre's songs
+and the project's folder name stay the same. A song shorter than the reel simply
+ends, and the rest is the game's sound, still turned down.
+
+If the genre you picked has no songs left in it when you export, the reel is
+refused with a message saying so, rather than made without music. The genre and
+the folder are remembered on this computer, not in the project.
+
 ## Mute source audio
 
 Tick **Mute source audio** to leave the game's sound out and keep your
-commentary only. A whole match or a goals reel has no commentary, so muted it
-comes out silent. Muting can make a whole match copyable that was not — sound
+commentary only. A whole match has no commentary, so muted it comes out silent;
+a goals reel muted is its music alone, or silent with no music picked.
+Muting can make a whole match copyable that was not — sound
 the file will not carry cannot stand in the way of the copy.
 
 The sheet remembers your choices for the project.

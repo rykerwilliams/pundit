@@ -550,3 +550,65 @@ fn the_cross_removes_the_row_it_is_on() {
         "the middle row's ✕ removed something else"
     );
 }
+
+// --- The Music row (BACKLOG #84) ---
+
+const MUSIC_LABEL: &str = "Music under the reel";
+const NO_GENRES: &str = "Choose a music folder with a subfolder per genre";
+
+fn genres(w: &AppWindow, names: &[&str]) {
+    let model: Vec<slint::SharedString> = names.iter().map(|&n| n.into()).collect();
+    w.set_export_music_genres(slint::ModelRc::new(slint::VecModel::from(model)));
+}
+
+/// The row follows the reel tick: a clip or a whole match has no music to pick.
+#[test]
+fn the_music_row_shows_only_while_a_reel_is_ticked() {
+    let w = sheet();
+    assert!(!shows(&w, MUSIC_LABEL));
+    w.set_export_reel_ticked(true);
+    assert!(shows(&w, MUSIC_LABEL));
+}
+
+/// With no folder or no genre the picker gives way to the line that says what
+/// to do — and Folder… is there either way, reaching its callback.
+#[test]
+fn with_no_genres_the_row_says_what_to_do_and_folder_reaches_its_callback() {
+    let w = sheet();
+    w.set_export_reel_ticked(true);
+    genres(&w, &["None"]);
+    assert!(shows(&w, NO_GENRES));
+    let chosen = Rc::new(RefCell::new(false));
+    w.on_choose_music_folder({
+        let chosen = Rc::clone(&chosen);
+        move || *chosen.borrow_mut() = true
+    });
+    switch(&w, "Folder…").invoke_accessible_default_action();
+    assert!(*chosen.borrow(), "Folder… is wired to nothing");
+}
+
+/// The window's genre index reaches the picker on screen: the `<=>` chain from
+/// `export-music-index` to the `ComboBox`, read back by its displayed value.
+///
+/// **Not reached: a pick reaching `music-picked`.** The fluent `ComboBox`'s
+/// popup items are `accessible-role: none`, so no item can be chosen through
+/// the accessible API; that one hop is a stated gap, not a claimed test.
+#[test]
+fn the_remembered_genre_is_the_one_the_picker_shows() {
+    let w = sheet();
+    w.set_export_reel_ticked(true);
+    genres(&w, &["None", "edm", "rock"]);
+    w.set_export_music_index(2);
+    assert!(!shows(&w, NO_GENRES));
+    let shown: Vec<String> = ElementQuery::from_root(&w)
+        .match_type_name("ComboBox")
+        .find_all()
+        .iter()
+        .filter_map(|c| c.accessible_value())
+        .map(|v| v.to_string())
+        .collect();
+    assert!(
+        shown.iter().any(|v| v == "rock"),
+        "no picker shows the remembered genre: {shown:?}"
+    );
+}
