@@ -44,7 +44,7 @@ use pundit_core::plan::{
     compilation_plan, default_scoreboard_mode, ExportTarget, PlanEntry, ScoreboardMode,
 };
 use pundit_core::project::{Preferences, Project, Quality, Resolution};
-use pundit_core::reel::{reel_goals, ReelSide};
+use pundit_core::reel::{music_index, reel_goals, ReelSide};
 use pundit_core::scoreboard::ScoreboardContext;
 use pundit_core::store::{BACKDROPS_DIRNAME, EXPORTS_DIRNAME, RECORDINGS_DIRNAME};
 use pundit_core::tag::tag_summaries;
@@ -55,6 +55,7 @@ use pundit_media::{
 use uuid::Uuid;
 
 use super::{Bus, Event, Input, Open, UserError};
+use crate::music;
 
 /// Where one target of a run has got to.
 #[derive(Debug, Clone, PartialEq)]
@@ -385,7 +386,18 @@ impl Bus {
         let pickers = Pickers::from(choices);
         let mut jobs = Vec::with_capacity(targets.len());
         for (target, label) in targets.iter().zip(labels) {
-            let job = job(open, &exports, target, &label, pickers)?;
+            let music = match target {
+                // Read per reel: the window writes these on pick, never
+                // during a build, so nothing can change between two reads.
+                ExportTarget::Reel(side) => reel_music(
+                    self.files.music_folder().as_deref(),
+                    self.files.music_genre().as_deref(),
+                    &open.folder,
+                    *side,
+                )?,
+                _ => None,
+            };
+            let job = job(open, &exports, target, &label, pickers, music.as_deref())?;
             jobs.push((label, job));
         }
         std::fs::create_dir_all(&exports).map_err(|e| {
@@ -1179,6 +1191,38 @@ pub(super) fn entry_media(
     ))
 }
 
+/// The song under a goals reel (BACKLOG #84 spec §M3), or why there can't be
+/// one: `None` when no genre is picked, else the genre's track for this match
+/// and side. **Before `job`'s own refusals**, so a reel with no goals and a
+/// stale genre names the music first — accepted; both are one fix away.
+///
+/// **A genre that cannot be honoured refuses the target** rather than shipping
+/// the reel without music — the coach asked for music, and quietly leaving it
+/// out is the silent trade "Default" is never allowed. The genre is checked
+/// against the folder's own listing, since `state.json` can hold anything.
+fn reel_music(
+    folder: Option<&Path>,
+    genre: Option<&str>,
+    project: &Path,
+    side: ReelSide,
+) -> Result<Option<PathBuf>, UserError> {
+    let Some(genre) = genre else {
+        return Ok(None);
+    };
+    let refused = |why: String| Err(UserError::CantExport(why));
+    let Some(folder) = folder else {
+        return refused(format!(
+            "the reel's music is set to {genre}, but no music folder is set"
+        ));
+    };
+    let tracks = music::tracks(folder, genre);
+    if tracks.is_empty() {
+        return refused(format!("there is no {genre} music in {}", folder.display()));
+    }
+    let seed = project.file_name().unwrap_or_default().to_string_lossy();
+    Ok(Some(tracks[music_index(&seed, side, tracks.len())].clone()))
+}
+
 /// The job that renders `target` as `label`, or why it can't run.
 ///
 /// A snapshot: later edits to the project don't reach a running export. Each
@@ -1191,6 +1235,7 @@ fn job(
     target: &ExportTarget,
     label: &str,
     pickers: Pickers,
+    music: Option<&Path>,
 ) -> Result<ExportJob, UserError> {
     let refused = |why: String| UserError::CantExport(why);
     let mut compilation = compilation_schedule(&open.project, target);
@@ -1269,8 +1314,8 @@ fn job(
                     &compilation,
                     &open.project.preferences,
                     pickers.source_volume,
-                    // A reel's music is #84 task 2's; nothing chooses one yet.
-                    None,
+                    // A goals reel's song, chosen in `jobs` (#84).
+                    music,
                 ),
                 entries: pieces
                     .into_iter()

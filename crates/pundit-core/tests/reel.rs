@@ -480,3 +480,24 @@ fn a_one_goal_reel_has_no_chapters() {
     p.append_match_event(HOME, 0, 100.0);
     assert!(reel(&p).chapters.is_empty());
 }
+
+// --- Which song a reel takes (BACKLOG #84) ---
+
+#[test]
+fn a_matchs_song_is_stable_and_its_three_sides_differ() {
+    use pundit_core::reel::music_index;
+    let seed = "Rovers v Athletic";
+    // A golden value, computed outside this code (FNV-1a 64 of the seed is
+    // 6865440619226199918): a toolchain or hasher change must not move a
+    // coach's songs, and comparing the function with itself could not see it.
+    assert_eq!(music_index(seed, ReelSide::All, 7), 5);
+    let sides = [ReelSide::All, ReelSide::Home, ReelSide::Away].map(|s| music_index(seed, s, 3));
+    assert_ne!(sides[0], sides[1], "{sides:?}");
+    assert_ne!(sides[1], sides[2], "{sides:?}");
+    assert_ne!(sides[0], sides[2], "{sides:?}");
+    // Wraps within the genre, however few songs it has.
+    for side in [ReelSide::All, ReelSide::Home, ReelSide::Away] {
+        assert_eq!(music_index(seed, side, 1), 0);
+        assert!(music_index(seed, side, 2) < 2);
+    }
+}
