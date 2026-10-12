@@ -365,7 +365,7 @@ fn fiducial(kind: CounterKind) {
     let recording =
         fixtures::solid_video(&dir.path().join("rec.webm"), 320, 180, 30, 30, GREEN, true);
     let path = dir.path().join("out.mp4");
-    let audio = audio_regions(&compilation, &Preferences::default(), 1.0);
+    let audio = audio_regions(&compilation, &Preferences::default(), 1.0, None);
     let done = export(ExportJob {
         tags: FileTags::default(),
         compilation,
@@ -468,7 +468,7 @@ fn a_three_clip_export_shows_each_entry_s_frames_in_its_own_rect() {
     assert_eq!(frames.len(), 3 * per_entry as usize);
 
     let path = dir.path().join("out.mp4");
-    let audio = audio_regions(&compilation, &Preferences::default(), 1.0);
+    let audio = audio_regions(&compilation, &Preferences::default(), 1.0, None);
     export(ExportJob {
         tags: FileTags::default(),
         compilation,
@@ -1651,7 +1651,7 @@ fn an_avatar_and_a_camera_clip_export_together() {
     let per_entry = compilation.plan.entries[0].frames;
     let total = compilation.frames.len();
     let path = dir.path().join("out.mp4");
-    let audio = audio_regions(&compilation, &Preferences::default(), 1.0);
+    let audio = audio_regions(&compilation, &Preferences::default(), 1.0, None);
     // One match behind both entries, as every single-project export has.
     let match_media = with_avatar(avatar);
     export(ExportJob {
@@ -1813,7 +1813,7 @@ fn sounded_job(
     path: PathBuf,
 ) -> ExportJob {
     let compilation = fixtures::one_clip(&clip, source_duration);
-    let audio = audio_regions(&compilation, &Preferences::default(), 1.0);
+    let audio = audio_regions(&compilation, &Preferences::default(), 1.0, None);
     ExportJob {
         tags: FileTags::default(),
         compilation,
@@ -1846,6 +1846,70 @@ fn tone_level(samples: &[f32], freq: f64) -> f64 {
         im -= f64::from(s) * angle.sin();
     }
     2.0 * re.hypot(im) / samples.len() as f64
+}
+
+/// A goals reel's music (BACKLOG #84) is mixed under the game, which is ducked
+/// beneath it, and has faded out by the last frame. The two are tellable apart by
+/// frequency, so each level is a statement about one track.
+#[test]
+fn a_reel_carries_its_music_under_the_ducked_game() {
+    use pundit_core::audio::{MUSIC_DUCK, MUSIC_GAIN};
+    gst::init().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    const GAME: f64 = 1000.0;
+    const MUSIC: f64 = 440.0;
+    let source = fixtures::tone_video(
+        &dir.path().join("src.mkv"),
+        640,
+        360,
+        30,
+        180,
+        fixtures::Tone {
+            freq: GAME,
+            amplitude: 0.6,
+            window: None,
+        },
+    );
+    let recording =
+        fixtures::solid_video(&dir.path().join("rec.webm"), 320, 180, 30, 180, GREEN, true);
+    let music = fixtures::tone_audio(&dir.path().join("song.ogg"), MUSIC, 0.5, 10);
+    let path = dir.path().join("out.mp4");
+    let mut job = sounded_job(
+        clip(0.0, 6.0, Vec::new()),
+        source,
+        recording,
+        6.0,
+        path.clone(),
+    );
+    let Render::Encode(encode) = &mut job.render else {
+        unreachable!("sounded_job encodes")
+    };
+    encode.audio = audio_regions(&job.compilation, &Preferences::default(), 1.0, Some(&music));
+    export(job).unwrap();
+
+    let samples = fixtures::decode_audio(&path);
+    // `decode_audio` is mono at 48 kHz.
+    let at = |from: f64, to: f64| {
+        let i = |t: f64| ((t * 48_000.0) as usize).min(samples.len());
+        &samples[i(from)..i(to)]
+    };
+    // Mid-reel, clear of both fades: each track at its own level.
+    let mid = at(2.0, 2.5);
+    let (music_level, game_level) = (tone_level(mid, MUSIC), tone_level(mid, GAME));
+    assert!(
+        (music_level - 0.5 * MUSIC_GAIN).abs() < 0.05,
+        "music at {music_level:.3}, expected ~{:.3}",
+        0.5 * MUSIC_GAIN
+    );
+    assert!(
+        (game_level - 0.6 * MUSIC_DUCK).abs() < 0.05,
+        "game at {game_level:.3}, expected ~{:.3} (ducked)",
+        0.6 * MUSIC_DUCK
+    );
+    // The last frame: the music has all but faded out.
+    let end = samples.len() as f64 / 48_000.0;
+    let last = tone_level(at(end - 1.0 / 30.0, end), MUSIC);
+    assert!(last < 0.05, "music still at {last:.3} in the last frame");
 }
 
 /// A tone at a known time in the game video comes back out of the file at that
@@ -2010,7 +2074,7 @@ fn an_entry_with_no_media_exports_game_audio_only_with_a_filler_pip() {
     compilation.plan.entries[0].clip_id = None;
     let frames = compilation.plan.total_frames();
     let path = dir.path().join("out.mp4");
-    let audio = audio_regions(&compilation, &Preferences::default(), 1.0);
+    let audio = audio_regions(&compilation, &Preferences::default(), 1.0, None);
     export(ExportJob {
         tags: FileTags::default(),
         compilation,

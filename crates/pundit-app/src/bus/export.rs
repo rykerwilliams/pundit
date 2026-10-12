@@ -1269,6 +1269,8 @@ fn job(
                     &compilation,
                     &open.project.preferences,
                     pickers.source_volume,
+                    // A reel's music is #84 task 2's; nothing chooses one yet.
+                    None,
                 ),
                 entries: pieces
                     .into_iter()
