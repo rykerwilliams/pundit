@@ -148,6 +148,14 @@ struct State {
     /// against the folder's listing before it is used.
     #[serde(deserialize_with = "lenient")]
     music_genre: Option<String>,
+    /// Whether a drag on the scrubber snaps to the match marks (BACKLOG #102).
+    /// **`Option`, not `bool`**: the default is on, and [`lenient`] falls back
+    /// to `T::default()` — `false` for a bare `bool`, which would switch the
+    /// feature off on any value this build can't read. Absent, unreadable and
+    /// unknown all read as `None`, and [`AppFiles::snap_to_events`] makes that
+    /// on.
+    #[serde(deserialize_with = "lenient")]
+    snap_to_events: Option<bool>,
 }
 
 /// Any value this build can't read falls back to the field's default, so one
@@ -509,6 +517,21 @@ impl AppFiles {
     pub fn set_music_genre(&self, genre: Option<&str>) {
         let mut state = self.read();
         state.music_genre = genre.map(str::to_owned);
+        self.save(&state);
+    }
+
+    /// Whether a drag on the scrubber snaps to the match marks. **On unless
+    /// the file says off**: the coach asked for the snap and the switch is
+    /// his escape from it, so an opt-in behind a right-click he has not been
+    /// told about would ship the switch without the feature.
+    pub fn snap_to_events(&self) -> bool {
+        self.read().snap_to_events.unwrap_or(true)
+    }
+
+    /// Remembers whether the scrubber snaps, for every project on this machine.
+    pub fn set_snap_to_events(&self, on: bool) {
+        let mut state = self.read();
+        state.snap_to_events = Some(on);
         self.save(&state);
     }
 
@@ -994,6 +1017,11 @@ mod tests {
             inspector: 320,
         };
         state.set_panel_widths(widths);
+        // Off, not the default on: a clobbered snap must be visible below.
+        state.set_snap_to_events(false);
+        assert_eq!(state.pen(), Pen::Pink);
+        assert_eq!(state.window_size(), size);
+        assert_eq!(state.panel_widths(), widths);
         assert_eq!(state.last_project(), Some(PathBuf::from("/p/game")));
         assert_eq!(state.whisper_model(), WhisperModel::Base);
         // (Base, not the default Small: a clobbered model must be visible.)
@@ -1011,6 +1039,10 @@ mod tests {
         assert_eq!(state.pen(), Pen::Blue);
         assert_eq!(state.last_project(), Some(PathBuf::from("/p/other")));
         assert_eq!(state.panel_widths(), widths);
+        assert!(
+            !state.snap_to_events(),
+            "and the snap survives the later setters"
+        );
     }
 
     /// A state file from before the picker, and one from a version that knows
@@ -1059,6 +1091,26 @@ mod tests {
         .unwrap();
         assert_eq!(state.pen_width(), PenWidth::Normal);
         assert_eq!(state.pen(), Pen::Blue, "and it costs the pen nothing");
+    }
+
+    /// The snap is on until the coach turns it off, and an unreadable value
+    /// reads as on, costing nothing else (BACKLOG #100).
+    #[test]
+    fn remembers_the_snap_and_defaults_it_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppFiles::in_config_dir(dir.path());
+        assert!(state.snap_to_events());
+
+        state.set_snap_to_events(false);
+        assert!(!AppFiles::in_config_dir(dir.path()).snap_to_events());
+
+        std::fs::write(
+            dir.path().join(APP_DIR).join(FILE),
+            r#"{"pen":"blue","snapToEvents":"yes"}"#,
+        )
+        .unwrap();
+        assert!(state.snap_to_events());
+        assert_eq!(state.pen(), Pen::Blue);
     }
 
     /// Folds are machine-wide like the widths, and a file from before them
