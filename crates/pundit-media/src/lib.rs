@@ -26,6 +26,7 @@ pub use capture::{
 pub use chapters::ChapterOutcome;
 pub use composite::avatar::{decode_still, drawn as avatar_drawn, Drawn, Still};
 pub use composite::copy::can_copy;
+pub use composite::decode::Picture;
 pub use composite::export::{
     ClipMedia, Encode, EntryMedia, ExportDone, ExportError, ExportJob, ExportMessage, Exporter,
     MatchMedia, Render,

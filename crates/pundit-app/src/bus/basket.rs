@@ -32,7 +32,7 @@ use pundit_core::plan::{clip_source_duration, BasketPiece};
 use pundit_core::project::{Preferences, Project, Quality, Resolution};
 use pundit_core::scoreboard::ScoreboardContext;
 use pundit_core::store;
-use pundit_media::{Encode, EntryMedia, ExportJob, MatchMedia, Render};
+use pundit_media::{Encode, EntryMedia, ExportJob, MatchMedia, Picture, Render};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -471,7 +471,11 @@ impl Bus {
             let whose = format!("{label} — ");
             let (source, clip) = super::export::entry_media(folders[i], project, entry, &whose)?;
             entries.push(EntryMedia {
-                source,
+                // Always footage here, for now (#138 task 2); task 3 makes it
+                // `Backdrop` when the piece's clip names one. A basket piece is
+                // resolved like any other clip, so a whiteboard piece will work
+                // through the same seam.
+                picture: Picture::Footage(source),
                 clip,
                 match_media: media.clone(),
             });

@@ -50,7 +50,7 @@ use pundit_core::store::{EXPORTS_DIRNAME, RECORDINGS_DIRNAME};
 use pundit_core::tag::tag_summaries;
 use pundit_media::{
     ClipMedia, Encode, EntryMedia, ExportDone, ExportError, ExportJob, ExportMessage, Exporter,
-    MatchMedia, Render,
+    MatchMedia, Picture, Render,
 };
 use uuid::Uuid;
 
@@ -1251,7 +1251,10 @@ fn job(
                 entries: pieces
                     .into_iter()
                     .map(|(source, clip)| EntryMedia {
-                        source,
+                        // **Always footage here, for now** (#138 task 2): the
+                        // type is the one value both tails read, and task 3 is
+                        // what makes it `Backdrop` when the clip names one.
+                        picture: Picture::Footage(source),
                         clip,
                         match_media: match_media.clone(),
                     })

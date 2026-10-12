@@ -100,7 +100,14 @@ impl Mixer {
             .map(|region| {
                 let media = &encode.entries[region.entry];
                 match region.track {
-                    Track::Game => media.source.clone(),
+                    // **A whiteboard entry never reaches here** (#138): its
+                    // `playback_segments` is one `Freeze`, and
+                    // `core::audio::game_regions` emits only for `Play` — which
+                    // is the whole of why that rule lives in the timeline and
+                    // not as a guard in this crate. So this path is a game
+                    // video in practice; were it ever a still, `Reader` would
+                    // find no audio stream and yield silence rather than break.
+                    Track::Game => media.picture.path().to_path_buf(),
                     // An entry with no clip has no recording: audio_regions
                     // gives it no commentary region, and one would be silence
                     // anyway.

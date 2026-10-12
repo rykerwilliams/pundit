@@ -31,7 +31,7 @@
 pub(crate) mod audio;
 pub(crate) mod avatar;
 pub(crate) mod copy;
-mod decode;
+pub mod decode;
 pub mod export;
 pub mod preview;
 mod tags;
@@ -379,7 +379,7 @@ fn stamp(sample: &gst::Sample, n: u64) -> gst::Buffer {
 /// The PTS contract both tails push on: output frame `n` is at `n/30` and one
 /// frame long, with no DTS. The overlay takes the source frame's own stamp,
 /// which is what keeps the mixer's pads together.
-fn stamp_buffer(buffer: &mut gst::Buffer, n: u64) {
+pub(super) fn stamp_buffer(buffer: &mut gst::Buffer, n: u64) {
     let buffer = buffer.get_mut().expect("a buffer of our own is writable");
     buffer.set_pts(frame_time(n));
     buffer.set_dts(gst::ClockTime::NONE);
