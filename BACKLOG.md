@@ -2824,6 +2824,19 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   they are now confirmations of a known write, not new evidence.
 - **No sighting of #72** in any of it: not in the memcheck run, not in the four
   shards' output, not in the three cores read.
+- **Sightings, 2026-10-12, during #138 task 5's gates — three, and one of them
+  breaks a pattern.** `corrupted size vs. prev_size` and `malloc(): mismatching
+  next->prev_size`, `pundit-media --test export`, SIGABRT: twice in two
+  consecutive `cargo test --workspace` runs, then **once in twenty runs of that
+  binary alone on a quiet machine** (no other test or cargo process). **"Never in
+  a run of that suite alone" no longer holds.** Cores are in `coredumpctl list`
+  (14:18, 14:20, 14:34 EDT). A first read of the 14:34 core blamed Intel's VA
+  driver — a `vaMapBuffer` → `GmmResourceInfoCommon::CpuBlt` thread was
+  mid-copy beside the aborting `malloc` — and was **filed as a new entry (#139)
+  before this one was read; it was withdrawn the same hour.** That thread is a
+  bystander: the abort is this entry's write, detected in an `appsink`
+  callback's `malloc` as before. Ten runs with the whiteboard tests and ten
+  without gave 0 and 1 aborts, so #138 neither causes nor widens it.
 
 102. **Snap the scrubber to events, as an option.** The coach (2026-09-28):
   "snap to events in the scrubber as an option." Dragging the scrubber lands on
