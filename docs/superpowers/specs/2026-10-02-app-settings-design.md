@@ -317,6 +317,12 @@ module, and — the load-bearing one — **no change in `pundit-media`**.
 **U4. The Settings sheet: now justified, designed here, built by its first
 tenant.**
 
+> **Corrected 2026-10-12 (#84's spec, `2026-10-12-reel-music-design.md` §M6):
+> neither tenant needed the sheet.** #102 found a home on the scrubber's menu, and
+> #84's folder has one reader — the export sheet's Music picker — so it sits
+> beside that, with a Folder… button. The design below stands for a future tenant
+> that truly has nothing to sit beside; nothing builds it yet.
+
 The first version of this spec concluded no settings screen was warranted,
 because the one option in hand had something to sit beside. The coach's answer
 to #102 (**an on/off setting**) retired that: there are **two** options with
