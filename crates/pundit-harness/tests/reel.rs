@@ -9,7 +9,9 @@
 
 use std::path::{Path, PathBuf};
 
-use pundit_app::bus::{export_targets, Command, Event, ExportChoices, TargetState, UserError};
+use pundit_app::bus::{
+    export_targets, AppFiles, Command, Event, ExportChoices, TargetState, UserError,
+};
 use pundit_core::plan::{compilation_plan, ExportTarget};
 use pundit_core::project::{Project, Quality, Resolution};
 use pundit_core::reel::ReelSide;
@@ -83,6 +85,32 @@ impl Proj {
 
     fn saved(&self) -> Project {
         saved(&self.folder)
+    }
+
+    /// Sets the music the window would have set (#84): the folder and the
+    /// genre, in this bus's own scratch `state.json`, which the bus reads when
+    /// it builds a job.
+    fn music(&self, folder: Option<&Path>, genre: Option<&str>) {
+        let files = AppFiles::in_config_dir(&self._tmp.path().join("config"));
+        files.set_music_folder(folder);
+        files.set_music_genre(genre);
+    }
+
+    /// Exports the all-goals reel: its file, or the refusal.
+    fn export_reel(&mut self) -> Result<PathBuf, UserError> {
+        self.h.send(Command::Export {
+            targets: vec![ExportTarget::Reel(ReelSide::All)],
+            choices: choices(),
+        });
+        let outcome = self.h.wait_map("the run or its refusal", |e| match e {
+            Event::Export(run) if !run.is_running() => Some(Ok(run.clone())),
+            Event::Error(e) => Some(Err(e.clone())),
+            _ => None,
+        })?;
+        match &outcome.targets[0].state {
+            TargetState::Done(path) => Ok(path.clone()),
+            state => panic!("{state:?}"),
+        }
     }
 }
 
@@ -396,6 +424,84 @@ fn a_missing_game_video_is_refused_naming_the_file() {
     assert_eq!(
         p.h.wait_for_error(),
         UserError::CantExport("b.webm (the game video) is missing; relink it first".into())
+    );
+    p.h.shutdown();
+}
+
+// --- Music under the reel (BACKLOG #84) ---
+
+/// A reel with a genre picked takes a song from it, **and the song is in the
+/// file** — which is what pins the wiring from `state.json` to the mix, not just
+/// that the export ran. **The fixture game video is not silent**: `fixtures::webm`
+/// leaves `audiotestsrc` at its default, a 440 Hz sine, so the song is put at
+/// 1500 Hz and measured at that one frequency, where the game cannot register.
+/// (The first version checked for "any sound", on a reviewer's word that the
+/// fixture was silent, and passed with the music cut off.)
+#[test]
+fn a_reel_with_music_carries_the_song() {
+    const SONG: f64 = 1500.0;
+    let mut p = Proj::open(&[("a.webm", 3)]);
+    let music = p._tmp.path().join("music");
+    std::fs::create_dir_all(music.join("rock")).unwrap();
+    fixtures::tone_audio(&music.join("rock/song.ogg"), SONG, 0.5, 4);
+    p.music(Some(&music), Some("rock"));
+    p.goal(0, 1.5);
+    let path = p.export_reel().expect("the reel exports with its music");
+    let samples = fixtures::decode_audio(&path);
+    // A window around the reel's middle, clear of the fades' depths.
+    let mid = samples.len() / 2;
+    let window = &samples[mid.saturating_sub(4_800)..(mid + 4_800).min(samples.len())];
+    let level = tone_level(window, SONG);
+    assert!(
+        level > 0.05,
+        "no {SONG} Hz song in the reel (level {level:.3})"
+    );
+    p.h.shutdown();
+}
+
+/// How much of `freq` is in `samples` (mono, 48 kHz): a single-bin DFT, scaled
+/// so a pure sine of amplitude `a` reads `a` — media's export tests' measure.
+fn tone_level(samples: &[f32], freq: f64) -> f64 {
+    let (mut re, mut im) = (0.0, 0.0);
+    for (i, &s) in samples.iter().enumerate() {
+        let angle = std::f64::consts::TAU * freq * i as f64 / 48_000.0;
+        re += f64::from(s) * angle.cos();
+        im -= f64::from(s) * angle.sin();
+    }
+    2.0 * re.hypot(im) / samples.len() as f64
+}
+
+/// A genre with nothing in it refuses the reel, naming the genre and the
+/// folder — never a reel quietly without the music the coach asked for.
+#[test]
+fn a_genre_with_no_music_refuses_the_reel_naming_it() {
+    let mut p = Proj::open(&[("a.webm", 3)]);
+    let music = p._tmp.path().join("music");
+    std::fs::create_dir_all(music.join("rock")).unwrap();
+    std::fs::write(music.join("rock/notes.txt"), b"").unwrap();
+    p.music(Some(&music), Some("rock"));
+    p.goal(0, 1.5);
+    assert_eq!(
+        p.export_reel(),
+        Err(UserError::CantExport(format!(
+            "there is no rock music in {}",
+            music.display()
+        )))
+    );
+    p.h.shutdown();
+}
+
+/// A genre remembered with no folder set says so in its own words.
+#[test]
+fn a_genre_with_no_folder_refuses_in_its_own_words() {
+    let mut p = Proj::open(&[("a.webm", 3)]);
+    p.music(None, Some("rock"));
+    p.goal(0, 1.5);
+    assert_eq!(
+        p.export_reel(),
+        Err(UserError::CantExport(
+            "the reel's music is set to rock, but no music folder is set".into()
+        ))
     );
     p.h.shutdown();
 }

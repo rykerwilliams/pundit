@@ -62,6 +62,30 @@ pub enum ReelSide {
     Away,
 }
 
+/// Which of `tracks` songs a reel takes (BACKLOG #84 spec §M3): stable per
+/// match, so re-exporting keeps its song, and different for the three sides
+/// when there are at least three songs.
+///
+/// `seed` is the project folder's name. The side is added **after** the
+/// modulo: hashed in, two sides would collide one time in `tracks`, at random;
+/// added after, they collide only when there are fewer songs than sides. FNV-1a
+/// rather than `DefaultHasher`, whose output is not promised stable across Rust
+/// releases — a toolchain update must not change a coach's songs. `tracks` must
+/// be at least one.
+pub fn music_index(seed: &str, side: ReelSide, tracks: usize) -> usize {
+    assert!(tracks > 0, "music_index needs a track to choose");
+    let offset = match side {
+        ReelSide::All => 0,
+        ReelSide::Home => 1,
+        ReelSide::Away => 2,
+    };
+    let hash = seed.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    let base = (hash % tracks as u64) as usize;
+    (base + offset) % tracks
+}
+
 impl ReelSide {
     /// Whether a goal of this kind belongs in this reel.
     fn covers(self, kind: MatchEventKind) -> bool {

@@ -74,7 +74,7 @@ This is the reviewed draft; §B records what the review changed.
 - **The genre is checked against the folder's listing** (`music::genres`) before
   it is joined onto a path: it comes from `state.json`, which a hand edit can make
   anything.
-- **Chosen in `job`** for a `Reel` target, and **frozen into the job** as a path,
+- **Chosen in `jobs`** for a `Reel` target, and **frozen into the job** as a path,
   like everything a queued job holds. A file deleted before the run renders
   silence and a logged line — `Reader`'s existing rule.
 - **A genre with no tracks when the job is built refuses the target**

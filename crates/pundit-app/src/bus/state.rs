@@ -140,6 +140,14 @@ struct State {
     /// home directory.
     #[serde(deserialize_with = "lenient")]
     backdrop: Option<PathBuf>,
+    /// The folder a goals reel's music comes from (BACKLOG #84), one subfolder
+    /// per genre — the whisper model's test again: a folder on this machine.
+    #[serde(deserialize_with = "lenient")]
+    music_folder: Option<PathBuf>,
+    /// The genre last picked for a reel: a subfolder's **name**, checked
+    /// against the folder's listing before it is used.
+    #[serde(deserialize_with = "lenient")]
+    music_genre: Option<String>,
 }
 
 /// Any value this build can't read falls back to the field's default, so one
@@ -475,6 +483,32 @@ impl AppFiles {
     pub fn set_backdrop(&self, path: Option<&Path>) {
         let mut state = self.read();
         state.backdrop = path.map(Path::to_path_buf);
+        self.save(&state);
+    }
+
+    /// The music folder (BACKLOG #84), if one is set. **Not checked to exist**:
+    /// a job built over a folder that has gone refuses, naming it.
+    pub fn music_folder(&self) -> Option<PathBuf> {
+        self.read().music_folder
+    }
+
+    /// Remembers the music folder for every project on this machine.
+    pub fn set_music_folder(&self, folder: Option<&Path>) {
+        let mut state = self.read();
+        state.music_folder = folder.map(Path::to_path_buf);
+        self.save(&state);
+    }
+
+    /// The genre last picked for a reel, or `None` for no music.
+    pub fn music_genre(&self) -> Option<String> {
+        self.read().music_genre
+    }
+
+    /// Remembers the genre on pick — the window is its one writer, the bus
+    /// only reads it (#84 spec §M2).
+    pub fn set_music_genre(&self, genre: Option<&str>) {
+        let mut state = self.read();
+        state.music_genre = genre.map(str::to_owned);
         self.save(&state);
     }
 

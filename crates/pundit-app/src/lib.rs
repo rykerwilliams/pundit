@@ -13,6 +13,7 @@ pub mod format;
 pub mod highlight_view;
 pub mod keymap;
 pub mod match_panel;
+pub mod music;
 pub mod new_match;
 pub mod recents;
 pub mod slate_pass;

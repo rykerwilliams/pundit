@@ -248,8 +248,9 @@ loaded …` on stderr); that line is the zero-copy diagnostic, and on the
 reference laptop it reads `vah265dec` / `memory:DMABuf` / `egl`.
 `scripts/linux-gate-check.sh` measures decode throughput. **The projects the
 coach has had open** (newest first, capped at 8), the chosen speech model, the
-pen, the window's size, **the two side columns' widths** and **the keys the
-coach rebound** live in
+pen, the window's size, **the two side columns' widths**, **the keys the
+coach rebound**, the whiteboard's armed diagram and a goals reel's music folder
+and genre live in
 `$XDG_CONFIG_HOME/pundit/state.json` — every one of them a property of this
 machine and none of the project's;
 point `XDG_CONFIG_HOME` elsewhere when testing so the real one isn't
@@ -1038,7 +1039,12 @@ field and in its paste box alike, both read by `core::match_entry`
 
 **The goals reel** (`pundit-core/src/reel.rs`, spec R).
 - **It is an `ExportTarget` (`Reel`), never a clip.** Its entries have
-  `clip_id: None`, so its PiP is the GL filler and its audio is the game's alone.
+  `clip_id: None`, so its PiP is the GL filler and its audio is the game's — **or
+  music under the game** (#84): a genre picked for a reel (`musicGenre` in
+  `state.json`, a subfolder of `musicFolder`) gives it one song, chosen stably per
+  match by `reel::music_index`, and a genre that cannot be honoured **refuses the
+  reel** rather than shipping it silent of music. The window writes both keys;
+  the bus only reads them, in `jobs`.
 - **It holds confirmed goals only** (every goal match event), in match order.
 - **Each entry is one `Play` segment**, `[goal − lead-in, goal + tail]` on the
   goal's source, clamped to the source and to the previous entry's end on it. A
