@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use pundit_app::bus::{Command, Event, RecordingStatus, UserError};
+use pundit_app::bus::{Command, Event, RecordingStatus, Take, UserError};
 use pundit_core::project::{Clip, InsetCorner, InsetSize, Project};
 use pundit_core::store;
 use pundit_core::undo::ClipEdit;
@@ -452,7 +452,7 @@ fn clip_commands_are_refused_while_recording() {
     settle_at(&mut h, 0, 0.0);
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(h.wait_recording(), RecordingStatus::Starting);
     assert!(matches!(
@@ -479,7 +479,7 @@ fn an_edit_while_recording_is_applied_and_saved() {
     settle_at(&mut h, 0, 0.0);
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(h.wait_recording(), RecordingStatus::Starting);
     assert!(matches!(

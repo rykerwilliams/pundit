@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use pundit_app::bus::{Command, Event, RecordingStatus, ScanStep};
+use pundit_app::bus::{Command, Event, RecordingStatus, ScanStep, Take};
 use pundit_core::project::Project;
 use pundit_harness::{
     landings, open_one_source_project, round_trip, shown_end, write_project, Harness, FRAME,
@@ -415,7 +415,7 @@ fn fast_scanning_runs_at_the_chosen_speed() {
     h.wait_speed(2.0);
     h.send(Command::ToggleRecording {
         zoom: pundit_core::zoom::Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     h.wait_speed(1.0);
     h.wait_map("the recording", |e| {

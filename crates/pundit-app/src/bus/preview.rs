@@ -14,7 +14,7 @@
 use pundit_core::export::compilation_schedule;
 use pundit_core::plan::ExportTarget;
 use pundit_core::scoreboard::ScoreboardContext;
-use pundit_core::store::RECORDINGS_DIRNAME;
+use pundit_core::store::{BACKDROPS_DIRNAME, RECORDINGS_DIRNAME};
 use pundit_media::{Gl, Origin, Picture, Preview, PreviewJob, PreviewMessage, SinkKind};
 use uuid::Uuid;
 
@@ -55,12 +55,28 @@ impl Bus {
         let Some(clip) = open.project.clips.iter().find(|c| c.id == id) else {
             return refused("the clip is gone");
         };
-        let Some(video) = open.project.source_videos.get(clip.source_index) else {
-            return refused("the clip's game video is gone");
+        // A whiteboard's picture is its diagram and nothing of the game
+        // video (BACKLOG #138), so the game video's two refusals are not its
+        // to make: refused over a half it draws not a pixel of, the coach
+        // would have no remedy but relinking footage he isn't looking at.
+        let picture = match &clip.backdrop {
+            Some(name) => {
+                let path = open.folder.join(BACKDROPS_DIRNAME).join(name);
+                if !path.exists() {
+                    return refused("the clip's diagram is missing");
+                }
+                Picture::Backdrop(path)
+            }
+            None => {
+                let Some(video) = open.project.source_videos.get(clip.source_index) else {
+                    return refused("the clip's game video is gone");
+                };
+                if self.missing.get(clip.source_index).copied().unwrap_or(true) {
+                    return refused("the clip's game video is missing; relink it first");
+                }
+                Picture::Footage(open.folder.join(&video.relative_path))
+            }
         };
-        if self.missing.get(clip.source_index).copied().unwrap_or(true) {
-            return refused("the clip's game video is missing; relink it first");
-        }
         let recording = open
             .folder
             .join(RECORDINGS_DIRNAME)
@@ -91,9 +107,7 @@ impl Bus {
         };
         // A snapshot: later edits to the clip don't reach this preview.
         let job = PreviewJob {
-            // Always footage here, for now (#138 task 2); task 3 reads the
-            // clip's backdrop and skips the game-video refusals above.
-            picture: Picture::Footage(open.folder.join(&video.relative_path)),
+            picture,
             recording,
             clip: clip.clone(),
             compilation,

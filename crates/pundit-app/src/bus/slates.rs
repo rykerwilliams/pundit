@@ -12,9 +12,10 @@
 //! nothing was queued, and the time wanted is when the picture stopped, which
 //! is now. What keeps it honest is that the *position* is still not a reading:
 //! the pause is anchored at the stored `out_seconds`, exactly as
-//! [`Bus::shoot_slate`] seeks to a stored `in_seconds`. `transport.rs` declines
-//! to log a pause at a player error and at EOS, and the reason there is not a
-//! bus-side time either — it is that neither has anything to anchor to.
+//! `Bus::start_recording` seeks a slate's take to a stored `in_seconds`.
+//! `transport.rs` declines to log a pause at a player error and at EOS, and the
+//! reason there is not a bus-side time either — it is that neither has anything
+//! to anchor to.
 //!
 //! **A refusal here is a notice, never a modal.** Marking is on the recording
 //! allow-list — a coach spots the next moment while talking over this one — so
@@ -30,11 +31,9 @@ use std::time::{Duration, Instant};
 
 use pundit_core::project::{Project, SlateEdit, SlateError};
 use pundit_core::undo::UndoAction;
-use pundit_core::zoom::Zoom;
 use pundit_media::LEVEL_INTERVAL_NS;
 use uuid::Uuid;
 
-use super::recording::Shot;
 use super::{Bus, Event, UserError};
 
 /// How often the bus wakes to see whether the armed slate's out point has
@@ -75,31 +74,6 @@ impl Bus {
         if let Some(e) = refused {
             self.emit(Event::Error(UserError::Slate(e.to_string())));
         }
-    }
-
-    /// Record the commentary for slate `id`: go to its in point and arm a
-    /// take, which is the whole point of the feature.
-    ///
-    /// **This carries no captured position**, unlike the marks: the in point
-    /// is a stored field, not a reading of the playhead. `EditMatchEvent`
-    /// records the same reasoning for a typed time. The `zoom` is the one the
-    /// recording log opens with, which the window owns.
-    ///
-    /// The seek itself is `start_recording`'s, because the refusals are:
-    /// see its doc comment.
-    pub(super) fn shoot_slate(&mut self, id: Uuid, zoom: Zoom) {
-        let Some(open) = &self.open else {
-            return;
-        };
-        let Some(slate) = open.project.slates.iter().find(|s| s.id == id) else {
-            return eprintln!("bus: ShootSlate on slate {id}, which isn't there");
-        };
-        let shot = Shot {
-            slate: id,
-            source_index: slate.source_index,
-            in_seconds: slate.in_seconds,
-        };
-        self.start_recording(zoom, Some(shot));
     }
 
     /// Park the game video on the slate's first frame (BACKLOG #104), so a

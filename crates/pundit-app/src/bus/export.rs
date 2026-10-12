@@ -46,7 +46,7 @@ use pundit_core::plan::{
 use pundit_core::project::{Preferences, Project, Quality, Resolution};
 use pundit_core::reel::{reel_goals, ReelSide};
 use pundit_core::scoreboard::ScoreboardContext;
-use pundit_core::store::{EXPORTS_DIRNAME, RECORDINGS_DIRNAME};
+use pundit_core::store::{BACKDROPS_DIRNAME, EXPORTS_DIRNAME, RECORDINGS_DIRNAME};
 use pundit_core::tag::tag_summaries;
 use pundit_media::{
     ClipMedia, Encode, EntryMedia, ExportDone, ExportError, ExportJob, ExportMessage, Exporter,
@@ -1081,9 +1081,9 @@ fn source_date(sources: &[PathBuf]) -> Option<CalendarDate> {
     })
 }
 
-/// One entry's game video and, when it plays a clip, that clip's own media —
-/// or why it can't run. **The one place a missing game video or commentary
-/// recording is refused** (spec E5, basket spec V1), for an export of the open
+/// One entry's picture and, when it plays a clip, that clip's own media — or
+/// why it can't run. **The one place a missing picture or commentary recording
+/// is refused** (spec E5, basket spec V1), for an export of the open
 /// project and for a basket piece alike.
 ///
 /// `whose` prefixes the refusal: empty for an export, `"Rovers v Athletic — "`
@@ -1100,12 +1100,18 @@ fn source_date(sources: &[PathBuf]) -> Option<CalendarDate> {
 /// projects a basket reaches into (basket spec V2). An ordinary export is
 /// marginally more current for it: a video deleted since the last refresh is
 /// caught here.
+///
+/// **The picture is decided here, once** (BACKLOG #138): a clip that names a
+/// backdrop is a [`Picture::Backdrop`] and is refused when **that** file is
+/// gone, never because its game video is — a whiteboard draws not a pixel of
+/// the footage, so refusing it on a missing half would be a refusal with no
+/// remedy.
 pub(super) fn entry_media(
     folder: &Path,
     project: &Project,
     entry: &PlanEntry,
     whose: &str,
-) -> Result<(PathBuf, Option<ClipMedia>), UserError> {
+) -> Result<(Picture, Option<ClipMedia>), UserError> {
     let refused = |why: String| UserError::CantExport(why);
     let clip = entry.clip_id.map(|id| {
         project
@@ -1114,33 +1120,46 @@ pub(super) fn entry_media(
             .find(|c| c.id == id)
             .expect("the plan's clips are the project's clips")
     });
-    // The game video the entry reads. A source the project doesn't have and
-    // one whose file isn't there are the same refusal, and neither can reach
-    // the job.
-    let source = project
-        .source_videos
-        .get(entry.source_index)
-        .map(|s| folder.join(&s.relative_path))
-        .filter(|path| path.exists());
-    let Some(source) = source else {
-        let what = match clip {
-            Some(clip) => format!("{}'s game video", clip_label(clip)),
-            // A reel or whole-match entry has no clip to name: the file names
-            // itself.
-            None => {
-                let file = project
-                    .source_videos
-                    .get(entry.source_index)
-                    .map_or("a video", |s| s.display_name.as_str());
-                format!("{file} (the game video)")
+    let picture = match clip.and_then(|c| Some((c, c.backdrop.as_ref()?))) {
+        Some((clip, name)) => {
+            let backdrop = folder.join(BACKDROPS_DIRNAME).join(name);
+            if !backdrop.exists() {
+                let name = clip_label(clip);
+                return Err(refused(format!("{whose}{name}'s diagram is missing")));
             }
-        };
-        return Err(refused(format!(
-            "{whose}{what} is missing; relink it first"
-        )));
+            Picture::Backdrop(backdrop)
+        }
+        None => {
+            // The game video the entry reads. A source the project doesn't
+            // have and one whose file isn't there are the same refusal, and
+            // neither can reach the job.
+            let source = project
+                .source_videos
+                .get(entry.source_index)
+                .map(|s| folder.join(&s.relative_path))
+                .filter(|path| path.exists());
+            let Some(source) = source else {
+                let what = match clip {
+                    Some(clip) => format!("{}'s game video", clip_label(clip)),
+                    // A reel or whole-match entry has no clip to name: the
+                    // file names itself.
+                    None => {
+                        let file = project
+                            .source_videos
+                            .get(entry.source_index)
+                            .map_or("a video", |s| s.display_name.as_str());
+                        format!("{file} (the game video)")
+                    }
+                };
+                return Err(refused(format!(
+                    "{whose}{what} is missing; relink it first"
+                )));
+            };
+            Picture::Footage(source)
+        }
     };
     let Some(clip) = clip else {
-        return Ok((source, None));
+        return Ok((picture, None));
     };
     let name = clip_label(clip);
     let recording = folder
@@ -1152,7 +1171,7 @@ pub(super) fn entry_media(
         )));
     }
     Ok((
-        source,
+        picture,
         Some(ClipMedia {
             recording,
             clip: clip.clone(),
@@ -1198,7 +1217,7 @@ fn job(
     // joins them below rather than here, because the Scoreboard picker decides
     // whether the board is burned in or carried beside the file, and it reads
     // this list to answer.
-    let mut pieces: Vec<(PathBuf, Option<ClipMedia>)> =
+    let mut pieces: Vec<(Picture, Option<ClipMedia>)> =
         Vec::with_capacity(compilation.plan.entries.len());
     for entry in &compilation.plan.entries {
         pieces.push(entry_media(&open.folder, &open.project, entry, "")?);
@@ -1206,7 +1225,10 @@ fn job(
 
     // The files a copy would join, in entry order — every one of them asked
     // for above, so there is nothing to drop and nothing to report.
-    let files: Vec<PathBuf> = pieces.iter().map(|(source, _)| source.clone()).collect();
+    let files: Vec<PathBuf> = pieces
+        .iter()
+        .map(|(picture, _)| picture.path().to_owned())
+        .collect();
     // **The one negation, at the boundary** (spec M2): the coach's choice is a
     // mute down to here and the renderers' own word for it from here on. Both
     // readers below get this same bool — the gate `carry_scoreboard` asks and
@@ -1250,11 +1272,8 @@ fn job(
                 ),
                 entries: pieces
                     .into_iter()
-                    .map(|(source, clip)| EntryMedia {
-                        // **Always footage here, for now** (#138 task 2): the
-                        // type is the one value both tails read, and task 3 is
-                        // what makes it `Backdrop` when the clip names one.
-                        picture: Picture::Footage(source),
+                    .map(|(picture, clip)| EntryMedia {
+                        picture,
                         clip,
                         match_media: match_media.clone(),
                     })

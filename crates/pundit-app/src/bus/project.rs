@@ -400,23 +400,15 @@ impl Bus {
         if let Err(e) = decode_still(&path) {
             return self.emit(Event::Error(UserError::Avatar(e)));
         }
-        // The stored name keeps the original extension, so the file opens in
-        // a file manager as what it is; the decoder sniffs regardless, which
-        // is why a file without one needs no guess.
-        let name = match path.extension().and_then(|e| e.to_str()) {
-            Some(ext) => format!("avatar.{}", ext.to_ascii_lowercase()),
-            None => "avatar".to_owned(),
-        };
         let folder = open.folder.clone();
-        let temp = folder.join(".avatar.tmp");
-        if let Err(e) =
-            std::fs::copy(&path, &temp).and_then(|_| std::fs::rename(&temp, folder.join(&name)))
-        {
-            let _ = std::fs::remove_file(&temp);
-            return self.emit(Event::Error(UserError::Io(format!(
-                "the image couldn't be copied into the project: {e}"
-            ))));
-        }
+        let name = match super::recording::copy_into(&path, &folder, "avatar") {
+            Ok(name) => name,
+            Err(e) => {
+                return self.emit(Event::Error(UserError::Io(format!(
+                    "the image couldn't be copied into the project: {e}"
+                ))))
+            }
+        };
         let Some(open) = &mut self.open else { return };
         // Exactly the file the project named, never a `avatar.*` glob over a
         // folder the coach can also put files in.

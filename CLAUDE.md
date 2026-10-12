@@ -1068,6 +1068,32 @@ v12; spec `docs/superpowers/specs/2026-09-25-slates-design.md`).
   button reads **"Record range"** while one is selected, which is how the mode
   stays visible rather than being state on the primary key.
 
+**The tactics whiteboard: a take over a still** (BACKLOG #138; spec
+`2026-10-06-tactics-whiteboard-design.md`, plan `2026-10-09-tactics-whiteboard.md`).
+`Clip::backdrop` is the format half (v17, above); this is the bus half.
+- **One diagram is armed at a time, in `state.json`** (`AppFiles::backdrop`) —
+  the coach's own file, the whisper model's test. `ArmBackdrop` decodes it
+  first and refuses one that won't; `arm_backdrop`'s doc says why that is less
+  of a guarantee than `set_avatar`'s.
+- **W is `ToggleRecording { take: Take::Whiteboard }`**, never a command of its
+  own, which would be off the recording allow-list — W could not stop the take
+  it started.
+- **The copy is made with the refusals, above the pause**, into
+  `backdrops/<clip id>.<ext>` (`copy_into`, `set_avatar`'s copy too), so a
+  failed one leaves the player as it was; at the start rather than in
+  `finish_recording`, where a failure would come after the coach had spoken.
+  `abort_recording` and `Recorder::start` failing take it back. **Nothing else
+  ever deletes a backdrop**, a clip delete included — that is what makes
+  delete-then-undo work with no code.
+- **A whiteboard take's allow-list is the recording one minus six** —
+  `TogglePlay`, `Skip`, `TagMatchEvent`, `SetHighlightKey` and both slate marks
+  — one clause after the guard in `Bus::command`, refused with a notice
+  (`UserError::Whiteboard`) because nothing greys those keys out.
+- **The picture is decided once per site** — `entry_media` (export and basket)
+  and `start_preview` — and a whiteboard is refused when its **diagram** is
+  gone, never its game video. Starting one still needs every game video
+  present (`can_record`): the anchor is read from the player.
+
 **Player highlights** (`pundit-core/src/highlight.rs`, spec H).
 - **A highlight belongs to the footage, not to a clip.** It is stored on the
   project (`Project.player_highlights`, v9) and keyed by `source_index` and the

@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use pundit_app::bus::{
-    AppFiles, CaptureKind, Command, Event, Finish, RecordingStatus, Stage, TranscriptionState,
+    AppFiles, CaptureKind, Command, Event, Finish, RecordingStatus, Stage, Take, TranscriptionState,
 };
 use pundit_core::project::{Clip, Project};
 use pundit_core::store;
@@ -172,7 +172,7 @@ fn stopping_a_recording_leaves_the_transcript_to_the_coach() {
     );
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
     assert!(matches!(
@@ -308,7 +308,7 @@ fn a_recording_preempts_the_running_job_and_it_resumes_first() {
     // The record is not refused, and the transcript gives way to it.
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
     let preempted = rig.wait("clip 0 preempted", |t, _| {
@@ -347,7 +347,7 @@ fn a_recording_that_aborts_still_resumes_the_queue() {
     // The camera takes two seconds to warm up, so this stop aborts.
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
     rig.wait("clip 0 preempted", |t, _| t.running.is_none());

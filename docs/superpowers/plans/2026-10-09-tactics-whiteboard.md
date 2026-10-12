@@ -75,16 +75,65 @@ tasks.
   **And one mistake of my own:** the diagram fixture was `0xa060ff`, which is
   violet, so the "no board was drawn" assertion was testing for green in a
   picture that had none. The sampled pixel *was* the diagram.
-- **3 — the bus: arm it, record over it, preview it, refuse the rest.** Not
-  started.
+- **3 — the bus: arm it, record over it, preview it, refuse the rest.** **Done**
+  (`claude/138-task-3`). `AppFiles::backdrop`, `ArmBackdrop`/`DisarmBackdrop`
+  and `Event::Backdrop`, the copy above the pause, `Active::backdrop` into
+  `clip.backdrop`, the six-command clause, `UserError::Whiteboard`, and
+  `entry_media`/`start_preview` choosing the `Picture`. New
+  `harness/tests/whiteboard.rs`, 12 tests.
+  **Three corrections to this plan, found by building it:**
+  - **`ToggleRecording { take: Take }`, not `{ slate, backdrop }`** (step 2 of
+    task 5, brought forward because the harness needs a way to start a
+    whiteboard take). `Take::{Footage, Slate(id), Whiteboard}` makes "W with a
+    slate selected" **unsendable** where two fields made it a refusal with its
+    own notice and test. The window knows which key was pressed, so W simply
+    sends `Whiteboard`. Same ~30 call sites touched either way.
+  - **§B.12's cleanup had a third path it didn't name**: with the copy above
+    the pause, `create_dir_all` on `recordings/` was a second refusal below it.
+    The review moved that `create_dir_all` up with the refusals instead — it
+    changes nothing a refusal must leave alone — so `Recorder::start` is again
+    the one path besides `abort_recording`. `Shot`, `shoot_slate` and an
+    interim `Start` enum went with it: `start_recording` takes the `Take`.
+  - **`entry_media` returns the `Picture`**, so `export.rs` and `basket.rs`
+    lose their task-2 stand-ins and the decision is made once for both.
+  **Sabotage, all seven run, each failing only its own test(s):** the pause
+  above the copy fails the copy-failure test **on the position alone** (the
+  notice still came, no clip was written — §B.6 pinned rather than argued); a
+  failed copy that records anyway fails that test on the missing notice; no
+  unwind after `Recorder::start` fails the recorder test; `SetHighlightKey`,
+  `TogglePlay` and `TagMatchEvent` each out of the clause fail the refusal
+  test at that command's own notice (three of the six run; the review then
+  merged the three group tests into one, which localises by notice); preview
+  ignoring the backdrop fails both preview tests **on the refusal**; and
+  `Whiteboard` out of `is_notice` fails the six tests that expect a notice, at
+  the `is_notice()` assertion. The position and unwind proofs were re-run after
+  the review's restructure and still fail their own tests alone.
+  **Four things the review found for tasks 4 and 5**, recorded there.
 - **4 — the window shows the diagram during the take.** Not started.
-- **5 — the UI: the popover and `W`.** Not started.
+  **From task 3's review — the bus does not yet say a take is a whiteboard
+  take.** The window can't infer it from its own W press (a W during an R
+  take's start-up *stops* that take), so this task first makes the bus say so —
+  `RecordingStatus::Starting` or an event carrying the **copied**
+  `backdrops/<id>.<ext>`, which is better: the window then decodes the file the
+  clip names, not the armed one. The same flag is what lets the window hide the
+  highlight tool, the rings and the scan board for the take.
+- **5 — the UI: the popover and `W`.** Not started. **Three things from task
+  3's review:**
+  - **Preview is greyed whenever any half is missing** (`main.rs`'s
+    `set_can_play`, `app.slint`'s `can-preview: root.can-play && …`), so the
+    bus's "a whiteboard previews with its game video gone" is unreachable from
+    the window. Make it per row: a row whose clip has a backdrop ignores
+    `can-play`.
+  - **W inherits the footage's zoom** (`ui.zoom` is the log's first event).
+    Decide whether W resets to identity in the window first — never in the bus,
+    which would leave `ui.zoom` disagreeing with the log.
+  - **`advance_pass` runs on every `Idle`**, and its doc says every take
+    started with a range selected is that range's. A W take is not, so the pass
+    would jump to the still-unshot range afterwards. Advance only after a slate
+    take (task 4's flag), or have W clear the selection, and correct the doc.
 
-**Shipping: five PRs.** 1 ships alone. **2 and 3 are parallel after it** —
-task 2 is `pundit-media` and task 3 is `pundit-app/src/bus` plus the harness,
-and they share no file; the first draft said *"nothing is parallel"* on the
-grounds that both read the new field, which is a shared **dependency** on task
-1, not a conflict. 4 needs 3, and 5 needs 4.
+**Shipping: five PRs, in order.** The second draft said 2 and 3 were parallel;
+task 2's record above says why they were not.
 
 **Task 4 is new in this draft and is the one the feature's correctness rests
 on** (§B.2).
@@ -580,7 +629,11 @@ that file.
 1. **A popover to arm a diagram**, on the shape Devices has for the avatar: a
    thumbnail of what is armed, a pick, a clear. Same decode-at-pick-time path,
    so the thumbnail is proof the file decoded.
-2. **`W` is `Command::ToggleRecording { slate, backdrop }`, not a new command**
+2. **Already done in task 3, as `ToggleRecording { take: Take::Whiteboard }`**
+   — what is left here is the window sending it. The original wording, kept for
+   its reasoning: **`W` is `Command::ToggleRecording { slate, backdrop }`, not a
+   new command** — and a slate selected is no longer refused: `Take` makes it
+   unsendable, so the "refuses with the notice" sentence below is superseded
    (§B.9). A new variant would be off the allow-list, so **`W` could not stop the
    take it started** — refused with a bare `eprintln!`, breaking the R/W
    symmetry `toggle_recording`'s doc argues for. **And `W` with a slate selected

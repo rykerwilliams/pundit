@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use pundit_app::bus::{CaptureKind, Command, Event, RecordingStatus, UserError};
+use pundit_app::bus::{CaptureKind, Command, Event, RecordingStatus, Take, UserError};
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::project::{Clip, Project};
 use pundit_core::store;
@@ -97,7 +97,7 @@ impl Rig {
     fn record(&mut self) -> u64 {
         self.h.send(Command::ToggleRecording {
             zoom: Zoom::IDENTITY,
-            slate: None,
+            take: Take::Footage,
         });
         assert_eq!(self.h.wait_recording(), RecordingStatus::Starting);
         match self.h.wait_recording() {
@@ -298,12 +298,12 @@ fn stopping_before_the_first_video_frame_leaves_no_clip_and_no_file() {
     let mut rig = Rig::open_with(&[("a.webm", 2)], SLOW_CAMERA);
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Idle);
 
@@ -321,7 +321,7 @@ fn play_during_the_camera_warm_up_is_logged() {
     let mut rig = Rig::open_with(&[("a.webm", 6)], SLOW_CAMERA);
     rig.h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert_eq!(rig.h.wait_recording(), RecordingStatus::Starting);
     rig.h.toggle_play();
@@ -363,7 +363,7 @@ fn recording_is_refused_while_a_source_is_missing() {
     assert_eq!(*h.wait_opened().missing, [true]);
     h.send(Command::ToggleRecording {
         zoom: Zoom::IDENTITY,
-        slate: None,
+        take: Take::Footage,
     });
     assert!(matches!(h.wait_for_error(), UserError::CantRecord(_)));
 

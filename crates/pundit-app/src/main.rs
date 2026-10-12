@@ -26,7 +26,8 @@ use uuid::Uuid;
 use pundit_app::bus::{
     self, export_targets, whisper, whisper_model_override, AppFiles, BasketView, Bus, BusHandle,
     CaptureKind, Command, Event, ExportChoices, ExportRun, ExportTargetRun, Finish, Folds,
-    PanelWidths, RecordingStatus, Snapshot, Stage, TargetState, TranscriptionState, WindowSize,
+    PanelWidths, RecordingStatus, Snapshot, Stage, Take, TargetState, TranscriptionState,
+    WindowSize,
 };
 use pundit_app::color_picker;
 use pundit_app::drawing::{arrow_commands, path_commands, InProgress, Pen, PenWidth};
@@ -785,10 +786,8 @@ fn wire_callbacks(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, pickers: &Pi
             // `show_slate_span`'s reason: no selection is the ordinary case
             // here, and `parse_id` would log "not an id" for the empty
             // string on every plain take.
-            send(Command::ToggleRecording {
-                zoom,
-                slate: Uuid::parse_str(&slate).ok(),
-            })
+            let take = Uuid::parse_str(&slate).map_or(Take::Footage, Take::Slate);
+            send(Command::ToggleRecording { zoom, take })
         }
     });
     window.on_stop_recording({
@@ -3213,6 +3212,10 @@ fn on_event(w: &AppWindow, event: Event) {
         // a `_` catch-all, so the compiler keeps naming it until the section
         // exists.
         Event::Queue(_) => {}
+        // **Nothing shows the armed diagram yet** (BACKLOG #138): the popover
+        // is task 5's and the picture during a take task 4's. An empty arm, as
+        // `Queue`'s, so the compiler keeps naming it until they exist.
+        Event::Backdrop(_) => {}
         Event::Preview(previewing) => UI.with_borrow_mut(|ui| {
             let clip = previewing.and_then(|id| {
                 let project = &ui.snapshot.as_ref()?.project;
