@@ -25,7 +25,36 @@ Spec: `docs/superpowers/specs/2026-10-12-reel-music-design.md`. Read it and
   as stereo, so "mid-reel" was really 4–5 s, inside the fade-out — the music read
   half its level (0.176) and the test failed for the wrong reason before it
   passed for the right one.
-- **2 — the bus: the folder, the genre, the choice, the refusals.** Not started.
+- **2 — the bus: the folder, the genre, the choice, the refusals.** **Done**
+  (`claude/84-task-2`). `AppFiles::{music_folder, music_genre}` and setters,
+  `pundit-app/src/music.rs` (`genres`, `tracks`, the path check),
+  `core::reel::music_index`, and `reel_music` in `jobs`. Core reel tests 26 → 27,
+  `music.rs` 3 unit tests, harness reel 7 → 11.
+  **Two corrections to this plan:**
+  - **Sabotage 1 as written cannot fail.** "The side added before the modulo" is
+    `(h + k) % n == (h % n + k) % n` — the same number. The hazard the review
+    meant is hashing the side **into** the seed, which collides at random; that
+    is the sabotage run, and it fails the three-sides test.
+  - **The user guide moves to task 3**: it would describe a Music row that only
+    task 3 adds.
+  **Sabotage, three:** the side hashed into the seed fails the three-sides test;
+  the path check removed fails the `../outside` harness test and its unit test;
+  the empty-genre refusal turned into "no music" fails the empty-genre test —
+  **and the `../outside` test too**, since both lean on that refusal, so the path
+  check is pinned apart only by the unit test and the first mutation.
+  **Then the code review found what the sabotage list had missed**: no mutation
+  dropped the *wiring* (`jobs` passing `None` to `job`), and the happy-path
+  harness test only checked a file existed, so a reel with its music lost would
+  have passed. **And the first fix was vacuous too**: both reviewers said the
+  fixture game video was silent, I relayed it unchecked, and a "any sound in the
+  output" assertion passed with the wiring cut — `fixtures::webm` leaves
+  `audiotestsrc` at its default 440 Hz sine. The song is now 1500 Hz and measured
+  at that frequency; with the wiring cut it reads 0.000 and the test fails.
+  Also from review: the listing follows symlinks (a folder built from links into
+  `~/Music` listed nothing), `tracks` is "listed by `genres`" and nothing else,
+  `music_index` has a golden value (comparing it with itself could not catch a
+  hasher change), `reel_music`'s insertion had stolen `job`'s doc comment, and
+  the duplicate `../x` harness test went (the unit test is the proof).
 - **3 — the window: the Music row.** Not started.
 
 **Shipping: three PRs, in order, none parallel.** 1 changes `audio_regions` and
@@ -144,6 +173,13 @@ review found the first draft's numbers wrong.
    `music::genres`, preselect; a genre pick writes `musicGenre`; Folder… writes
    `musicFolder` and re-lists.
 5. **The mute tooltip's reel clause** (spec §M2).
+6. **The user guide**, `docs/book/src/guide/exporting.md` — the Music row, and a
+   muted reel no longer "comes out silent" with music on (moved from task 2).
+7. **A remembered genre whose folder has gone is cleared on read** (from task 2's
+   review): the bus refuses a genre it cannot honour, so a sheet that showed
+   "None" while `musicGenre` still named the gone folder would refuse on Export
+   over music the coach can't see. The window clears the key when the listing no
+   longer has it.
 
 ### Tests
 

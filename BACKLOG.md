@@ -22,15 +22,19 @@ made things worse.
   2026-10-05, planned 2026-10-06**: two on the export sheet (Chapters,
   Scoreboard subtitles), and a settings sheet designed but not built — **#84
   builds it** (#102 declined it, 2026-10-07)
-- **84.** Music under a goals reel — Openverse search, then the mixer (**builds**
-  the settings sheet #78 **designs**, for the music folder path, now that #102 has
-  found a cheaper home; the API key was never the blocker)
+- **84.** Music under a goals reel — **phase 1 specced and planned 2026-10-12**: a
+  Music row on the export sheet (a genre picker and a Folder… button), a stable
+  song per match, ducked and faded; **no Settings sheet** (spec §M6). Phase 2 is
+  the Openverse search and the credits
 - **102.** Snap the scrubber to events, as an option. The coach (2026-09-28):
   "snap to events in the scrubber as an option" (**an on/off setting**, the coach
   2026-10-03). **Specced 2026-10-07**: match marks only, a 6px radius, one
   `state.json` bool, and a checkable item on the **scrubber's own right-click
   menu** — so it does **not** build #78's settings sheet, which #84 does
 
+- **83.** `a_pause_while_a_flushing_seek_recovers_playing_sticks` — its "fails
+  twice, or once on CI" trigger fired 2026-10-12; first step is printing the
+  states the recovery went through
 - **133.** A title maker: words over the footage for a marked window — #138's
   other half, which the coach scoped out of it deliberately: *"the follow on
   feature … it would use a slate and a timing maybe"*
@@ -143,7 +147,6 @@ problem — which is the entry, not an excuse for it.
 - **74.** A reel trim can be a silent no-op. A goal merged into the…
 - **75.** A skip burst's replay margin failed once, by 54 ms. One…
 - **76.** a_cancelled_copy_leaves_nothing's fixtures sit on the 30…
-- **83.** a_pause_while_a_flushing_seek_recovers_playing_sticks…
 - **93.** Delete the 0.8.0 rename shims. Three things exist only to…
 - **97.** Typing slates in, as match events can be typed
 - **98.** Export the slates as a silent breakdown film
@@ -1718,6 +1721,12 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   a state the app reaches constantly and no user has ever seen wrong.
 - **When to revisit:** if it fails twice, or once on CI. Then print the states
   the recovery went through rather than only the final one.
+- **Second sighting, 2026-10-12, on CI — which fires that trigger.** PR #80
+  (#84 task 1, an audio-mixing change that touches nothing in the player), run
+  38301172216, the `workspace` job: `timed out waiting for SeekDone; unconsumed
+  events: []` at `player/tests.rs:75`, 126 of 127 green. Re-run, not chased
+  mid-feature (memory `no-detours`), and **promoted to "Next, in order"** with
+  the diagnostic step this entry names as the work.
 
 84. **Music under a goals reel.** The coach (2026-09-24): "pull in soundtrack
   files that are licensed for use, e.g. rock, edm, etc. for the goals clips." A
