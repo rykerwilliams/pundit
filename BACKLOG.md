@@ -1840,6 +1840,12 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   tenant, because #102 found a cheaper home (a checkable item on the scrubber's
   own right-click menu) and a menu item cannot hold a path or a file-chooser
   button. So building the sheet is #84's, and §U4's design is unspent.
+- **Specced 2026-10-12, phase 1** (`docs/superpowers/specs/2026-10-12-reel-music-design.md`):
+  a Music row on the export sheet for a reel — a genre picker and a **Folder…**
+  button — and the track mixed under the reel, ducked and faded. **It does not
+  build the Settings sheet after all** (the spec's §M6): the folder's one reader is
+  that picker, so the path sits beside it. Credits and the Openverse fetcher are
+  **phase 2**, which fetches into the music folder rather than a cache.
 - **When to revisit:** any time. Nothing further is needed from the coach, and
   nothing is owed by #78 beyond the sheet's design, which is written down.
 
