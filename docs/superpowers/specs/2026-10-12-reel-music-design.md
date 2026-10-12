@@ -50,18 +50,14 @@ This is the reviewed draft; §B records what the review changed.
   folder (the variant is renamed `Folder`, since it now picks two kinds), writes
   `musicFolder` through the window's `AppFiles` handle — the bus only *reads* it,
   so no command (§U4's rule) — and re-reads the genres.
-- **The genre reaches the bus on `ExportChoices` as `music_genre:
-  Option<String>`**, its seventh field. That ends `ExportChoices`' `Copy`, so the
-  call sites that pass it twice (`jobs`, then `settle_pickers`) clone or borrow.
-  **It is not a `Pickers` field** — `Pickers` is what writes back to `Preferences`,
-  and `From<ExportChoices> for Pickers` drops it deliberately.
-- **The genre is remembered in `state.json` (`musicGenre`, a label)**, not in
-  `Preferences`: it names a folder on this machine. **The bus writes it**, after the
-  jobs are built and only if they were — beside `settle_pickers`, for
-  `a_refused_run_leaves_the_pickers_alone`'s reason — so one click has one writer
-  (`state.rs` records that two handles writing the same document can lose a
-  field). The window only reads it, when the sheet opens; a remembered genre whose
-  folder has gone reads as None.
+- **The genre is remembered in `state.json` (`musicGenre`, a label), and the
+  window writes it the moment the coach picks it** — as the pen and the speech
+  model are remembered on pick — through the same `AppFiles` handle that writes
+  `musicFolder`. **The window is the one writer of both keys and the bus only
+  reads them** when it builds a job, so no command carries the genre and nothing
+  is threaded through `ExportChoices`. A genre picked and then cancelled stays
+  remembered, as a picked pen does. It is not in `Preferences`: it names a folder
+  on this machine. A remembered genre whose folder has gone reads as None.
 - **"Mute source audio" keeps its word**: it mutes the game sound, so a muted reel
   with music is music alone. Its tooltip's *"comes out silent"* for a reel becomes
   *"carries only the music, or nothing with Music: None"*.
@@ -69,18 +65,23 @@ This is the reviewed draft; §B records what the review changed.
 ## §M3. Which track
 
 - **A stable choice per match, not rotation state.** The genre's tracks are sorted
-  by file name and the index is a stable hash (FNV-1a, written in core — no crate,
-  no RNG) of the project's folder name, offset by the reel's side (All, Home, Away
-  are 0, 1, 2) so one run's three reels differ. Different matches mostly get
-  different songs; **re-exporting a match keeps its song**; nothing is stored, so
-  nothing is written and no state can go stale.
+  by file name and the index is `(fnv1a(folder name) % n + side) % n` — FNV-1a in
+  core, no crate, no RNG; the side is All 0, Home 1, Away 2. Different matches
+  mostly get different songs; **re-exporting a match keeps its song while its
+  folder keeps its name**; nothing is stored, so nothing is written and no state
+  can go stale. One match's three reels get three different songs **when the genre
+  has at least three tracks** — with two, All and Away share one.
+- **The genre is checked against the folder's listing** (`music::genres`) before
+  it is joined onto a path: it comes from `state.json`, which a hand edit can make
+  anything.
 - **Chosen in `job`** for a `Reel` target, and **frozen into the job** as a path,
   like everything a queued job holds. A file deleted before the run renders
   silence and a logged line — `Reader`'s existing rule.
 - **A genre with no tracks when the job is built refuses the target**
-  (`CantExport`, naming the folder): the coach asked for music, and shipping the
-  reel without it would be the silent trade `CLAUDE.md`'s Default rule forbids.
-  No folder at all with a genre remembered is the same refusal.
+  (`CantExport`, naming the genre and the folder): the coach asked for music, and
+  shipping the reel without it would be the silent trade `CLAUDE.md`'s Default rule
+  forbids. A remembered genre with **no folder set** refuses in its own words ("no
+  music folder is set").
 - **No probe.** The music region spans the whole reel; a track shorter than the
   reel plays to its own end and `Reader` pads past EOF with silence, and the fade
   is the reel's last seconds. Length would only buy fading a short track early,
@@ -89,15 +90,17 @@ This is the reviewed draft; §B records what the review changed.
 ## §M4. The mix
 
 - **`Track` carries what names its file**: `Game { entry }`, `Commentary { entry }`
-  and `Music`, with `Region.entry` removed. A music region spans every entry, so an
-  index on it would be a lie, and moving the index into the variant lets the
-  mixer's exhaustive `match` find every site. The music's file is
-  `Encode::music: Option<PathBuf>`; the `Music` arm reads it.
-- **`audio_regions` takes the music** (`Option<f64>`: the reel's music gain, or
-  None) and **applies the duck itself**: with music, each game region's gain is
-  `MUSIC_DUCK × source_volume`. The caller passes the source volume as today, so
-  the duck cannot be applied twice, and "no game region at `source_volume == 0`"
-  still holds — mute gives music alone.
+  and `Music(PathBuf)`, with `Region.entry` removed. A music region spans every
+  entry, so an index on it would be a lie; and the path rides on the one music
+  region rather than on `Encode`, so there is one truth and no "a music region
+  with no file" state. (`Region`'s doc chose an index over a path to avoid
+  repeating a file name per region; a reel has one music region, so nothing
+  repeats.) The mixer's exhaustive `match` finds every site.
+- **`audio_regions` takes the music's file** (`Option<&Path>`) and **owns both
+  levels**: the music at `MUSIC_GAIN`, each game region at `MUSIC_DUCK ×
+  source_volume`. No caller passes a gain, so the `const` assert below is the
+  whole guarantee; the duck cannot be applied twice; and "no game region at
+  `source_volume == 0`" still holds — mute gives music alone.
 - **The duck is static, for the whole reel**, including any tail after a short
   track ends (that tail is quiet crowd sound — §For the coach). A sidechain or a
   split at the music's end is not built until it is asked for.
@@ -155,20 +158,23 @@ listed `qtdemux`).
   source, no game region; with Music: None, the regions equal today's. The music
   envelope rises over 1 s and falls over the last 3 s, and on a 3-second reel the
   overlapping fades stay within 0..=1 and meet.
-- **core:** the stable choice — same folder name and side give the same index,
-  sides differ, and it wraps on a one- and two-track genre.
+- **core:** the stable choice — same folder name and side give the same index;
+  with three tracks the three sides differ; it wraps on a one- and two-track
+  genre.
 - **core:** `MUSIC_DUCK + MUSIC_GAIN <= 1.0` as a `const` assert.
 - **media:** a reel exported over a tone track decodes back with the tone present
   and fading to silence by the last frame (sabotage: the Music arm reading nothing
   must fail it).
 - **app (unit):** `music::genres` lists only non-hidden subfolders with a track,
   and `music::tracks` only the listed extensions, sorted.
-- **harness:** a reel export with a genre succeeds and records `musicGenre`; a
-  refused run does not; a genre emptied before the job is built refuses the target
-  naming the folder.
+- **harness:** a reel export with a genre succeeds; a genre emptied before the
+  job is built refuses the target naming it; no folder set refuses in its own
+  words; a genre not in the folder's listing (`../x`) refuses rather than reading
+  outside it.
 - **ui:** the Music row appears only while a reel is ticked; Folder… reaches its
-  callback; the empty-folder line shows with no genres (by label, the accessible
-  action — `tests/ui/export_sheet.rs`'s pattern).
+  callback; choosing a genre reaches the callback that remembers it; the
+  empty-folder line shows with no genres (by label, the accessible action —
+  `tests/ui/export_sheet.rs`'s pattern).
 - **No test reaches the network** — phase 1 has none.
 
 ## §R. What this corrects
@@ -191,6 +197,11 @@ listed `qtdemux`).
   variants; the envelope's shared-length shortcut called out.
 - A probe and a credits file → no probe (Reader pads), credits to phase 2.
 - An undefined failure for an empty genre → a named refusal.
+- **From the plan's review:** the genre is written by the window on pick, not by
+  the bus after a run (a hidden Music row would otherwise have cleared it on every
+  clips-only export); the path rides in `Track::Music` instead of `Encode`, and
+  core owns the gain; the side offset is added after the modulo, and "sides
+  differ" holds only from three tracks.
 - The smoke-test list was wrong (`opusdec` is already there) and incomplete
   (parsers and demuxers) → re-derived.
 
@@ -212,6 +223,6 @@ otherwise:
 2. **A reel longer than the song:** the song plays to its end and the rest of the
    reel is the crowd, still at that lower level — no looping.
 3. **Which song:** each match gets its own song from the genre, and re-exporting
-   the same match keeps it. Home, Away and All reels of one match get different
-   songs.
+   the same match keeps it (renaming the project folder picks again). With three or
+   more songs in the genre, a match's Home, Away and All reels get different ones.
 4. **The genre is remembered for the machine**, not per project.
