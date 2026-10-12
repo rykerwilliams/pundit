@@ -64,7 +64,7 @@ use pundit_core::layout::{avatar_box, pip_rect};
 use pundit_core::project::{Clip, InsetPlacement};
 use pundit_core::scoreboard::{ScoreboardConfig, ScoreboardContext, ScoreboardState};
 
-use super::decode::Decoder;
+use super::decode::{Decoder, Picture, Texture};
 use super::{
     avatar, display_aspect, fit_rect, frame_index, frame_time, head, install_overlay_pad,
     install_zoom, level_at, overlay_branch, place, premultiplied_over, pulsed, rounded, stamp,
@@ -84,11 +84,54 @@ const OUTPUT_HEIGHT: i32 = 720;
 /// before it is declared stuck. Nothing here waits without a bound.
 const STALL: Duration = Duration::from_secs(5);
 
+/// A preview's picture source: a decoder, or one still held for the run (#138).
+///
+/// **Two arms rather than two code paths**, because a preview is one clip and
+/// so one of them is live for its whole life. The still is uploaded once and
+/// the same `Sample` is handed back for every frame — the stamping is the
+/// composite's, as it is for a decoded frame.
+enum PreviewPicture {
+    Footage(Decoder),
+    Backdrop(gst::Sample),
+}
+
+impl PreviewPicture {
+    fn open(picture: &Picture, gl: &Gl, watch: &Watch) -> Result<PreviewPicture, CompositeError> {
+        match picture {
+            Picture::Footage(path) => Ok(PreviewPicture::Footage(Decoder::start(path, gl, watch)?)),
+            Picture::Backdrop(path) => {
+                let still = super::avatar::decode_still(path)
+                    .map_err(|e| CompositeError::Failed(format!("{}: {e}", path.display())))?;
+                let texture = Texture::upload(gl, watch, still.w, still.h, still.rgba)?;
+                let (buffer, caps) = texture.stamped(0);
+                Ok(PreviewPicture::Backdrop(
+                    gst::Sample::builder().buffer(&buffer).caps(&caps).build(),
+                ))
+            }
+        }
+    }
+
+    fn frame_at(
+        &mut self,
+        source_time: f64,
+        watch: &Watch,
+    ) -> Result<&gst::Sample, CompositeError> {
+        match self {
+            PreviewPicture::Footage(decoder) => {
+                decoder.frame_at(seconds_to_clock(source_time), watch)
+            }
+            PreviewPicture::Backdrop(sample) => Ok(sample),
+        }
+    }
+}
+
 /// What to preview: a snapshot, so later edits don't reach a running preview.
 #[derive(Debug, Clone)]
 pub struct PreviewJob {
-    /// The game video.
-    pub source: PathBuf,
+    /// Where the picture comes from: the game video, or (#138) the still this
+    /// take was recorded over. **A [`Picture`], not a path**, for
+    /// `EntryMedia`'s reason — one value rather than a path plus a flag.
+    pub picture: Picture,
     /// The commentary recording, under the project's `recordings/`.
     pub recording: PathBuf,
     /// The clip itself, for its drawings and its `show_pip`.
@@ -404,7 +447,11 @@ fn run(
             None => InsetSource::Nothing,
         },
     };
-    let mut decoder = Decoder::start(&job.source, gl, watch)?;
+    // **The picture is a decoder or one uploaded still** (#138). A preview is
+    // always **one** clip, so unlike the export there is no mid-run caps change
+    // here at all: a whiteboard preview pushes the same texture for every frame
+    // of its life.
+    let mut source = PreviewPicture::open(&job.picture, gl, watch)?;
     let mut overlays = OverlayRenderer::new();
     let mut composite: Option<Composite> = None;
     // Set once the schedule has run out and the tail has been flushed, and
@@ -437,13 +484,18 @@ fn run(
         }
         ended = false;
         let frame = &job.compilation.frames[n as usize];
-        let sample = decoder.frame_at(seconds_to_clock(frame.source_time), watch)?;
+        let sample = source.frame_at(frame.source_time, watch)?;
         let entry = job.compilation.plan.entries.get(frame.entry);
         // The scoreboard's clock is the **displayed** frame's source time, so
         // a pause in the commentary leaves it where it was (BACKLOG #27).
+        // No board on a whiteboard preview, for the export's reason: a diagram
+        // has no match time (#138).
         let scoreboard = job
-            .scoreboard
-            .as_ref()
+            .picture
+            .backdrop()
+            .is_none()
+            .then_some(())
+            .and(job.scoreboard.as_ref())
             .zip(entry)
             .and_then(|(context, entry)| {
                 let state = context.state_at(entry.source_index, frame.source_time)?;
@@ -460,16 +512,21 @@ fn run(
         // Highlights are keyed by the displayed frame's source time as well,
         // and mapped through its own zoom. Core owns that geometry; the
         // overlay only draws what comes back.
-        let highlights = entry.map_or_else(Vec::new, |entry| {
-            highlight_shapes(
-                &job.highlights,
-                entry.source_index,
-                frame.source_time,
-                frame.zoom,
-                f64::from(composite.picture.2),
-                f64::from(composite.picture.3),
-            )
-        });
+        // And no highlights, for the sharper reason: one is keyed to the
+        // footage, so a ring over a diagram is a ring placed on footage that is
+        // not on screen (#138).
+        let highlights = entry
+            .filter(|_| job.picture.backdrop().is_none())
+            .map_or_else(Vec::new, |entry| {
+                highlight_shapes(
+                    &job.highlights,
+                    entry.source_index,
+                    frame.source_time,
+                    frame.zoom,
+                    f64::from(composite.picture.2),
+                    f64::from(composite.picture.3),
+                )
+            });
         composite.push(
             Frame {
                 n,

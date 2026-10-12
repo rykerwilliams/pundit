@@ -35,7 +35,46 @@ tasks.
   own name", which the first draft said and §B corrected, and the panic names
   that line exactly; and `Play` in place of `Freeze` fails the timeline test
   with `left: [Play…] right: [Freeze…]`.
-- **2 — media: the picture is a decoder *or* a still.** Not started.
+- **2 — media: the picture is a decoder *or* a still.** **Done**
+  (`claude/138-task-2`). `Texture` moved to `decode.rs`, `Picture` added and
+  exported, `EntryMedia`/`PreviewJob` carrying it, both tails' two arms, the
+  board and the highlights omitted per entry, and `still_sample` /
+  `PreviewPicture` doing the upload. Media export tests 30 → 32.
+  **Four corrections to this plan, found by building it:**
+  - **Tasks 2 and 3 are *not* parallel, and the second draft overcorrected.**
+    The first draft said "nothing is parallel", the second said 2 and 3 are
+    because they share no file — but `EntryMedia` and `PreviewJob` are
+    *constructed* in `bus/export.rs`, `bus/preview.rs` **and `bus/basket.rs`**
+    (a third site neither review found), so changing the type does not compile
+    without them. Task 2 therefore owns the type change and all three sites,
+    always emitting `Picture::Footage`; task 3 is what makes them conditional.
+  - **The `Texture` move is justified after all, and the deferred question is
+    answered by the code.** §B.12 doubted it because preview's still path is
+    `AvatarInset`'s system memory — but that feeds the **inset** pad, whose
+    branch has its own `glupload`. `head`'s picture branch is
+    `appsrc ! gltransformation ! glvideomixer` with **none**, so anything on pad
+    0 must already be GL memory. **Two patterns are correct because two pads
+    differ**, and that is now written where `Texture` lives. Sabotage 1 proves
+    it: system memory on pad 0 fails with `not-negotiated`, which is a louder
+    failure than the inset pad's measured *"Failed to upload buffer"*.
+  - **Sabotage 3 cannot fail, and that is the finding.** Handing a `Backdrop` to
+    the decoder arm leaves the export **pixel-identical** and every test green:
+    `decodebin3` reads a PNG as a one-frame video. So `Picture` earns its place
+    by removing a pairing nobody can get wrong — and by the preview's needing
+    the distinction to skip its game-video refusals — **not** by turning a
+    silent error into a loud one. Recorded on the type rather than left as a
+    proof that passes vacuously.
+  - **`composite/audio.rs` reads the picture's path for a game region**, which
+    no task listed. Task 1's `Freeze` is what makes it unreachable for a
+    whiteboard, and that is now said at the line rather than inferred two crates
+    away.
+  **The other two sabotages hold:** the board blanked on `MatchMedia` instead of
+  per entry fails the whiteboard test **alone**, with 31 siblings green —
+  including `the_export_burns_in_the_scoreboard`, which is what proves the
+  footage path is untouched.
+  **And one mistake of my own:** the diagram fixture was `0xa060ff`, which is
+  violet, so the "no board was drawn" assertion was testing for green in a
+  picture that had none. The sampled pixel *was* the diagram.
 - **3 — the bus: arm it, record over it, preview it, refuse the rest.** Not
   started.
 - **4 — the window shows the diagram during the take.** Not started.

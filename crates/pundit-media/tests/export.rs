@@ -38,7 +38,7 @@ use pundit_media::fixtures::{
 };
 use pundit_media::{
     ChapterOutcome, ClipMedia, Encode, EntryMedia, ExportDone, ExportError, ExportJob,
-    ExportMessage, Exporter, MatchMedia, Render,
+    ExportMessage, Exporter, MatchMedia, Picture, Render,
 };
 use uuid::Uuid;
 
@@ -136,7 +136,7 @@ fn clip(start: f64, duration: f64, events: Vec<CommentaryEvent>) -> Clip {
 /// A test that needs a match writes `EntryMedia { match_media, ..media(...) }`.
 fn media(source: PathBuf, recording: PathBuf, clip: Clip) -> EntryMedia {
     EntryMedia {
-        source,
+        picture: Picture::Footage(source),
         clip: Some(ClipMedia { recording, clip }),
         match_media: Arc::default(),
     }
@@ -2019,7 +2019,7 @@ fn an_entry_with_no_media_exports_game_audio_only_with_a_filler_pip() {
         render: Render::Encode(Encode {
             audio,
             entries: vec![EntryMedia {
-                source,
+                picture: Picture::Footage(source),
                 clip: None,
                 match_media: Arc::default(),
             }],
@@ -2347,4 +2347,230 @@ fn a_chapter_list_lands_beside_the_encode() {
     // Beside the video it belongs to, and nowhere near the `.srt`'s name.
     assert!(path.exists());
     assert!(!dir.path().join("out.srt").exists());
+}
+
+/// A pitch diagram's colour: green, so a board burned over it is visible as
+/// anything that is not. `solid_png` masks to 24 bits, so this is plain RGB.
+const PITCH_GREEN: u32 = 0x0040_c040;
+
+/// The picture rect inside `path`'s first frame, read off the **bars**: the
+/// columns and rows that are not the background. That is `fit_rect`'s answer,
+/// and it is checkable without hashing a pixel.
+fn picture_rect(path: &Path) -> (u32, u32, u32, u32) {
+    let still = pundit_media::decode_still(path).expect("decode the export's first frame");
+    let lit = |x: u32, y: u32| {
+        let i = ((y * still.w + x) * 4) as usize;
+        // Anything but the mixer's black background, alpha ignored.
+        still.rgba[i] > 8 || still.rgba[i + 1] > 8 || still.rgba[i + 2] > 8
+    };
+    let cols: Vec<u32> = (0..still.w)
+        .filter(|&x| (0..still.h).any(|y| lit(x, y)))
+        .collect();
+    let rows: Vec<u32> = (0..still.h)
+        .filter(|&y| (0..still.w).any(|x| lit(x, y)))
+        .collect();
+    assert!(
+        !cols.is_empty() && !rows.is_empty(),
+        "the frame is all black"
+    );
+    (
+        cols[0],
+        rows[0],
+        cols[cols.len() - 1] - cols[0] + 1,
+        rows[rows.len() - 1] - rows[0] + 1,
+    )
+}
+
+/// **A whiteboard clip exports its diagram, letterboxed to the diagram's own
+/// aspect** (BACKLOG #138): the picture pad carries one uploaded still instead
+/// of decoded frames, and everything after the sample — `source_caps`,
+/// `fit_rect`, `set_caps`, the push — takes it unchanged.
+///
+/// **A 4:3 image against a 16:9 output**, so the pillarbox is a real
+/// measurement rather than a no-op: at 1280×720 a 4:3 picture is 960 wide and
+/// sits 160px in from each side. The assertion is the rect, read off the bars.
+#[test]
+fn a_whiteboard_clip_exports_its_diagram_letterboxed() {
+    gst::init().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let diagram = fixtures::solid_png(dir.path(), "pitch.png", 400, 300, PITCH_GREEN, 255);
+    let path = dir.path().join("out.mp4");
+
+    let mut clip = clip(0.0, 6.0 / f64::from(OUTPUT_FPS), Vec::new());
+    clip.backdrop = Some("pitch.png".into());
+    let frames: Vec<FrameSpec> = (0..6)
+        .map(|i| FrameSpec {
+            entry: 0,
+            source_time: f64::from(i) / f64::from(OUTPUT_FPS),
+            zoom: Zoom::IDENTITY,
+        })
+        .collect();
+    let mut job = job(PathBuf::new(), frames, path.clone());
+    let Render::Encode(encode) = &mut job.render else {
+        unreachable!("job builds an encode")
+    };
+    encode.entries[0].picture = Picture::Backdrop(diagram);
+    // **A board configured, and the diagram must still show none** (W6): a
+    // whiteboard has no match time, and the omission is per entry *at the
+    // draw* rather than on `MatchMedia` — which is built once per run and
+    // shared by `Arc`, so blanking it would cost the footage clips in the same
+    // export their board (the spec's own §R.6 correction).
+    let board = match_with_board(
+        2.0,
+        ScoreboardConfig {
+            home: team("HOME", 0xff00ff, 0xffff00),
+            away: team("AWAY", 0xff0000, 0x00ffff),
+            format: MatchFormat::default(),
+            auto_back_anchor_p1: false,
+        },
+        1,
+    );
+    encode.entries[0].match_media = with_board(&board);
+    job.compilation = fixtures::one_entry(&clip, job.compilation.frames.clone(), "");
+
+    export(job).unwrap();
+
+    // **Within 2px on each edge, and the tolerance is the encoder's.** The rect
+    // is read off a frame that has been through a lossy encode, so the bars'
+    // edges bleed by a pixel — measured (159, 0, 962, 720) against the exact
+    // (160, 0, 960, 720). What is being pinned is `fit_rect`'s answer, which is
+    // a 4:3 picture pillarboxed in a 16:9 frame, not a pixel hash.
+    let (x, y, w, h) = picture_rect(&path);
+    let near = |got: u32, want: u32, what: &str| {
+        assert!(
+            got.abs_diff(want) <= 2,
+            "{what}: {got} is not within 2px of {want} — rect was ({x}, {y}, {w}, {h})"
+        );
+    };
+    near(x, 160, "the left bar");
+    near(y, 0, "the top");
+    near(w, 960, "the picture's width");
+    near(h, 720, "the picture's height");
+
+    // **And no board was drawn.** The diagram is one solid colour, so the
+    // board's magenta home cell in the top-left corner of the *picture* would
+    // be the only thing there that is not that colour. Sampled inside the
+    // picture, past the bar.
+    let still = pundit_media::decode_still(&path).expect("decode the first frame");
+    let at = |px: u32, py: u32| {
+        let i = ((py * still.w + px) * 4) as usize;
+        (still.rgba[i], still.rgba[i + 1], still.rgba[i + 2])
+    };
+    let (r, g, b) = at(x + 20, y + 20);
+    assert!(
+        g > r && g > b,
+        "the diagram's green is not in its top-left corner — a board was burned \
+         over it: rgb({r}, {g}, {b})"
+    );
+}
+
+/// **A compilation that mixes a whiteboard with footage runs to EOS, in both
+/// orders** — the case `Texture`'s own doc says died when a pad's caps feature
+/// changed, and the one this task exists to pass.
+///
+/// Here the feature does **not** change: both arms put GL memory on pad 0 (the
+/// picture branch is `appsrc ! gltransformation ! glvideomixer` with no
+/// `glupload`, which is why the still has to be uploaded at all), and only the
+/// width, height and PAR differ — which GL to GL takes. That is already
+/// exercised by two sources of different resolutions in one run; this is the
+/// same mechanism with one side being a still.
+///
+/// **Both orders, because they are one extra entry each and they are not
+/// symmetric**: a run whose *first* entry is a whiteboard opens no decoder
+/// until its second, which is also what moves the zero-copy diagnostic.
+#[test]
+fn a_whiteboard_and_footage_mix_in_one_run() {
+    gst::init().unwrap();
+    for board_first in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let diagram = fixtures::solid_png(dir.path(), "pitch.png", 400, 300, PITCH_GREEN, 255);
+        let video = counter_video(
+            &dir.path().join("shot"),
+            640,
+            360,
+            30,
+            8,
+            CounterKind::H264Mp4BFrames,
+        );
+        let path = dir.path().join("mixed.mp4");
+
+        let board = {
+            let mut c = clip(0.0, 3.0 / f64::from(OUTPUT_FPS), Vec::new());
+            c.backdrop = Some("pitch.png".into());
+            c
+        };
+        let shot = clip(0.0, 3.0 / f64::from(OUTPUT_FPS), Vec::new());
+        let (first, second) = match board_first {
+            true => (board.clone(), shot.clone()),
+            false => (shot.clone(), board.clone()),
+        };
+        // Two entries from one project, which is what `AllClips` plans: there
+        // is no two-clip fixture, and building the project here is three lines.
+        let compilation = {
+            let mut project = pundit_core::project::Project::new("p");
+            project.source_videos.push(pundit_core::project::SourceRef {
+                relative_path: "src".into(),
+                display_name: "src".into(),
+                duration_seconds: 1.0,
+                display_aspect: 16.0 / 9.0,
+            });
+            project.clips = vec![first.clone(), second.clone()];
+            pundit_core::export::compilation_schedule(
+                &project,
+                &pundit_core::plan::ExportTarget::AllClips,
+            )
+        };
+        let frames = compilation.frames.clone();
+        assert!(
+            frames.iter().any(|f| f.entry == 1),
+            "board_first={board_first}: the fixture planned only one entry"
+        );
+
+        let pictures = match board_first {
+            true => [
+                Picture::Backdrop(diagram.clone()),
+                Picture::Footage(video.clone()),
+            ],
+            false => [
+                Picture::Footage(video.clone()),
+                Picture::Backdrop(diagram.clone()),
+            ],
+        };
+        let job = ExportJob {
+            tags: FileTags::default(),
+            compilation,
+            path: path.clone(),
+            cues: None,
+            render: Render::Encode(Encode {
+                entries: vec![
+                    EntryMedia {
+                        picture: pictures[0].clone(),
+                        clip: None,
+                        match_media: Arc::default(),
+                    },
+                    EntryMedia {
+                        picture: pictures[1].clone(),
+                        clip: None,
+                        match_media: Arc::default(),
+                    },
+                ],
+                audio: Vec::new(),
+                resolution: Resolution::R720,
+                quality: Quality::Medium,
+            }),
+        };
+
+        export(job).unwrap_or_else(|e| panic!("board_first={board_first}: {e:?}"));
+        assert!(
+            path.is_file(),
+            "board_first={board_first}: the run wrote nothing"
+        );
+        // Every frame reached the file, which is what "ran to EOS" means here:
+        // the decoded counter run is one value per output frame.
+        assert_eq!(
+            decode_counters(&path).len(),
+            frames.len(),
+            "board_first={board_first}: not every frame reached the file"
+        );
+    }
 }

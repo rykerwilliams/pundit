@@ -54,7 +54,7 @@ use pundit_core::project::{Clip, InsetSize, Quality, Resolution};
 use pundit_core::scoreboard::ScoreboardContext;
 
 use super::audio::Mixer;
-use super::decode::Decoder;
+use super::decode::{Decoder, Picture, Texture};
 use super::{
     audio, avatar, fit_rect, frame_time, head, install_geometry, install_overlay_pad, install_zoom,
     overlay_branch, premultiplied_over, push_buffer, rounded, stamp, stamp_buffer, tags,
@@ -62,7 +62,7 @@ use super::{
 };
 use crate::chapters::{self, ChapterOutcome};
 use crate::overlay::{OverlayFrame, OverlayRenderer};
-use crate::player::{gl_caps, seconds, seconds_to_clock, Diagnostics};
+use crate::player::{seconds, seconds_to_clock, Diagnostics};
 
 /// Where the PiP's filler lands: one transparent pixel, so the rect is only
 /// something for `glvideomixer` to scale nothing into.
@@ -105,8 +105,9 @@ pub enum Render {
 #[derive(Debug, Clone)]
 pub struct Encode {
     /// One per `compilation.plan.entries`, in the same order. **Not an
-    /// `Option`**: every entry has a game video and a match behind it, even
-    /// when it has no clip.
+    /// `Option`**: every entry has a **picture** and a match behind it, even
+    /// when it has no clip — a game video, or (#138) the still it was recorded
+    /// over.
     pub entries: Vec<EntryMedia>,
     /// The audio edit over the same compilation, from
     /// `pundit_core::audio::audio_regions`: which span of which file is
@@ -146,10 +147,15 @@ pub struct ExportJob {
 /// neither the files nor the drawings.
 #[derive(Debug, Clone)]
 pub struct EntryMedia {
-    /// The game video this entry's frames come from — **the file, not an
-    /// index**: `PlanEntry::source_index` stays the project-local index the
-    /// board and the highlights are keyed by, and nothing here has to map it.
-    pub source: PathBuf,
+    /// Where this entry's picture comes from — **the file, not an index**:
+    /// `PlanEntry::source_index` stays the project-local index the board and
+    /// the highlights are keyed by, and nothing here has to map it.
+    ///
+    /// **A [`Picture`], not a path**, since BACKLOG #138: a whiteboard entry's
+    /// picture is a still image rather than a game video, and that is one value
+    /// here instead of a path plus a flag somebody has to pair it with
+    /// correctly.
+    pub picture: Picture,
     /// `None` exactly for an entry with no clip (`PlanEntry::clip_id`): the
     /// PiP filler, no drawings, no commentary.
     pub clip: Option<ClipMedia>,
@@ -613,6 +619,11 @@ fn export(
     // is opened and closed with it.
     let mut laid_out: Option<usize> = None;
     let mut pip = Pip::filler();
+    // One `Sample` per distinct backdrop, uploaded on first use and held for
+    // the run — the picture pad's own half of `sources` (#138). It can only
+    // *reduce* what `close_unread` has to manage, because a whiteboard entry
+    // opens no decoder.
+    let mut stills: HashMap<PathBuf, gst::Sample> = HashMap::new();
     // The current entry's picture rect, which the overlay maps strokes into.
     let mut picture = (0, 0, out_w, out_h);
 
@@ -624,15 +635,41 @@ fn export(
         if laid_out != Some(frame.entry) {
             close_unread(&mut sources, &encode.entries, frame.entry);
         }
-        if let std::collections::hash_map::Entry::Vacant(slot) = sources.entry(media.source.clone())
-        {
-            let decoder = slot.insert(Decoder::start(&media.source, &gl, &watch)?);
-            diagnostics.get_or_insert_with(|| decoder.diagnostics());
-        }
-        let decoder = sources
-            .get_mut(&media.source)
-            .expect("opened just above, and not closed until a later entry");
-        let sample = decoder.frame_at(seconds_to_clock(frame.source_time), &watch)?;
+        // **The picture is a decoded frame or an uploaded still** (#138), and
+        // everything after this reads the sample rather than where it came
+        // from: `source_caps`, `fit_rect`, `set_caps` and the push all take it
+        // unchanged.
+        //
+        // **Both arms yield a borrow out of a map that outlives the loop**,
+        // which is what makes them one expression: `Frame` holds
+        // `&gst::Sample`, and `Texture::stamped` returns owned values — so a
+        // still is built into **one `Sample` per image**, cached here, and
+        // `Encoder::push` does the per-frame stamping it already does. Building
+        // it from `stamped(n)` instead would stamp twice.
+        let sample = match &media.picture {
+            Picture::Footage(path) => {
+                if let std::collections::hash_map::Entry::Vacant(slot) = sources.entry(path.clone())
+                {
+                    let decoder = slot.insert(Decoder::start(path, &gl, &watch)?);
+                    // **The zero-copy diagnostic is the first *decoder*'s**,
+                    // which for a run whose first entry is a whiteboard is a
+                    // later entry's — and that is the right reading of the
+                    // line, which is why it is taken at the open.
+                    diagnostics.get_or_insert_with(|| decoder.diagnostics());
+                }
+                let decoder = sources
+                    .get_mut(path)
+                    .expect("opened just above, and not closed until a later entry");
+                decoder.frame_at(seconds_to_clock(frame.source_time), &watch)?
+            }
+            Picture::Backdrop(path) => {
+                if let std::collections::hash_map::Entry::Vacant(slot) = stills.entry(path.clone())
+                {
+                    slot.insert(still_sample(path, &gl, &watch)?);
+                }
+                stills.get(path).expect("inserted just above")
+            }
+        };
         if laid_out != Some(frame.entry) {
             let caps = source_caps(sample)?;
             let info = gst_video::VideoInfo::from_caps(&caps)
@@ -661,21 +698,41 @@ fn export(
         // **The entry's own match's board**, reached through the entry rather
         // than through an index into a per-job list, so a piece from another
         // match cannot draw this one's score (spec J3).
-        let scoreboard = media.match_media.scoreboard.as_ref().and_then(|context| {
-            let state = context.state_at(entry.source_index, frame.source_time)?;
-            Some((context.config(), state))
-        });
+        // **No board on a whiteboard entry, and the omission is here rather
+        // than on `MatchMedia`** (#138): that value is built once per run and
+        // shared by `Arc` across a project's entries, so blanking it would cost
+        // the footage clips in the same export their board. A diagram has no
+        // match time to show.
+        let scoreboard = media
+            .picture
+            .backdrop()
+            .is_none()
+            .then_some(())
+            .and(media.match_media.scoreboard.as_ref())
+            .and_then(|context| {
+                let state = context.state_at(entry.source_index, frame.source_time)?;
+                Some((context.config(), state))
+            });
         // A highlight lives in the footage, so it is keyed by the displayed
         // frame's source time too, and mapped through that frame's own zoom.
         // Core owns the geometry; the overlay only draws what comes back.
-        let highlights = highlight_shapes(
-            &media.match_media.highlights,
-            entry.source_index,
-            frame.source_time,
-            frame.zoom,
-            f64::from(picture.2),
-            f64::from(picture.3),
-        );
+        // **And no player highlights either**, for a sharper reason than the
+        // board's: a highlight is keyed by `(source_index, the displayed
+        // frame's stream time)` because it belongs to the *footage*, so one
+        // drawn over a diagram would be a ring placed on footage that is not on
+        // screen. The empty slice rather than a guard at the draw, so the
+        // overlay never learns a whiteboard exists.
+        let highlights = match media.picture.backdrop() {
+            Some(_) => Vec::new(),
+            None => highlight_shapes(
+                &media.match_media.highlights,
+                entry.source_index,
+                frame.source_time,
+                frame.zoom,
+                f64::from(picture.2),
+                f64::from(picture.3),
+            ),
+        };
         let overlay = overlays.render(
             &OverlayFrame {
                 clip: media.clip.as_ref().map(|c| &c.clip),
@@ -740,7 +797,10 @@ fn export(
 /// closed once no entry that could ask for it is left.
 fn close_unread<T>(open: &mut HashMap<PathBuf, T>, entries: &[EntryMedia], from: usize) {
     let live = &entries[from.saturating_sub(1)..];
-    open.retain(|path, _| live.iter().any(|media| media.source == *path));
+    open.retain(|path, _| {
+        live.iter()
+            .any(|media| media.picture == Picture::Footage(path.clone()))
+    });
 }
 
 /// The avatar image `media` draws and the inset size it is drawn at, or `None` —
@@ -960,103 +1020,6 @@ impl Pip {
     }
 }
 
-/// One still RGBA image **in GL memory**, uploaded once and re-stamped for
-/// every frame that shows it: the inset pad's 1×1 transparent filler
-/// ([`Texture::filler`]), and the project's avatar ([`avatar_texture`]). The pad
-/// scales it to whatever rect it has — a transparent pixel is invisible
-/// however big (measured), and the avatar's rect is the pulse.
-///
-/// **It has to be GL memory, because the pad's caps feature may not change.**
-/// The recording decodes to GL, so a system-memory filler made the branch's
-/// `glupload` take GL frames and then a system-memory one, which it refuses
-/// ("Failed to upload buffer"): any target whose first entry has no inset and
-/// whose second has one died there (reproduced). Uploaded here, the pad
-/// carries GL memory from the first frame to the last, and only the caps
-/// change — which GL to GL takes. A mixed avatar-and-camera compilation is
-/// that same case (spec I2).
-///
-/// **Premultiplied, like the overlay's layer**: the pixels come from a
-/// tiny-skia pixmap and the pad is told so (`premultiplied_over`, spec E4).
-#[derive(Clone)]
-struct Texture {
-    buffer: gst::Buffer,
-    caps: gst::Caps,
-}
-
-impl Texture {
-    /// The inset pad's stand-in: one transparent pixel.
-    fn filler(gl: &Gl, watch: &Watch) -> Result<Texture, ExportError> {
-        Texture::upload(gl, watch, 1, 1, vec![0; 4])
-    }
-
-    /// This texture as output frame `n`, with the caps it must be pushed
-    /// under: a new buffer header over the **same texture**, never a copy of
-    /// the pixels.
-    fn stamped(&self, n: u64) -> (gst::Buffer, gst::Caps) {
-        let mut buffer = self.buffer.copy();
-        stamp_buffer(&mut buffer, n);
-        (buffer, self.caps.clone())
-    }
-
-    /// Uploads `rgba` (`w`×`h`, tightly packed) on `gl`, through a pipeline of
-    /// its own that is gone by the time this returns. The texture outlives it:
-    /// the buffer holds it, and `gl`'s context is the process's
-    /// ([`Gl::shared`]).
-    fn upload(
-        gl: &Gl,
-        watch: &Watch,
-        w: u32,
-        h: u32,
-        rgba: Vec<u8>,
-    ) -> Result<Texture, ExportError> {
-        debug_assert_eq!(rgba.len(), (w * h * 4) as usize, "tightly packed RGBA");
-        let pipeline = gst::parse::launch(&format!(
-            "appsrc name=src format=time is-live=false block=false \
-               caps=video/x-raw,format=RGBA,width={w},height={h},framerate={OUTPUT_FPS}/1 \
-             ! glupload ! glcolorconvert ! appsink name=out sync=false"
-        ))
-        .map_err(|e| ExportError::Failed(format!("could not build the upload graph: {e}")))?
-        .downcast::<gst::Pipeline>()
-        .expect("a multi-element launch string yields a pipeline");
-        let by_name = |n: &str| pipeline.by_name(n).expect("named in the launch string");
-        let src = by_name("src")
-            .downcast::<gst_app::AppSrc>()
-            .expect("named as an appsrc in the launch string");
-        let sink = by_name("out")
-            .downcast::<gst_app::AppSink>()
-            .expect("named as an appsink in the launch string");
-        sink.set_caps(Some(&gl_caps()));
-        gl.install(&pipeline, watch, |_| {});
-        let pipeline = Stopper(pipeline);
-        if pipeline.set_state(gst::State::Playing).is_err() {
-            return Err(watch.failure("could not start the upload graph"));
-        }
-
-        let mut buffer = gst::Buffer::from_mut_slice(rgba);
-        stamp_buffer(&mut buffer, 0);
-        src.push_buffer(buffer)
-            .map_err(|e| watch.failure(format!("uploading a {w}x{h} still: {e:?}")))?;
-        let _ = src.end_of_stream();
-        loop {
-            watch.check()?;
-            if let Some(sample) = sink.try_pull_sample(POLL) {
-                let (Some(buffer), Some(caps)) = (sample.buffer(), sample.caps()) else {
-                    return Err(ExportError::Failed(
-                        "an uploaded still came back bare".into(),
-                    ));
-                };
-                return Ok(Texture {
-                    buffer: buffer.copy(),
-                    caps: caps.to_owned(),
-                });
-            }
-            if sink.is_eos() {
-                return Err(watch.failure(format!("a {w}x{h} still did not upload")));
-            }
-        }
-    }
-}
-
 /// Decodes, pre-scales and uploads the project's avatar for an inset of
 /// `size`, or says on stderr why there is none.
 ///
@@ -1070,6 +1033,32 @@ impl Texture {
 /// gone under the project is exactly as fatal as a picture-in-picture that will
 /// not open, which is to say not at all: the entries that wanted it take the
 /// filler and the file is written.
+/// A backdrop image as one `gst::Sample` of GL memory, uploaded once (#138).
+///
+/// **There is no pixel preparation, and that is the whole of it.** `Still` is
+/// already straight-alpha, tightly packed RGBA and `Texture::upload` takes
+/// exactly that — so unlike the avatar's path there is no crop, no circle mask
+/// and, the one that would have bitten, **no premultiply**: the picture is
+/// mixer pad 0, which is not told `blend-function-src-rgb=one`, so straight
+/// alpha is what it blends correctly.
+///
+/// The design asked for a `tiny_skia` scale down to the output size here. It
+/// cannot be done that way: `tiny_skia::Pixmap` *is* premultiplied storage,
+/// which is why `avatar::circular` premultiplies first — so scaling through it
+/// would mean premultiply, scale, un-premultiply, losing precision in exactly
+/// the soft-alpha pixels the no-premultiply rule is about. If a pre-scale ever
+/// earns its place it is a `videoscale` in the upload's own launch string,
+/// straight alpha in and out, and it should be **measured** first: the claim is
+/// that the mixer resampling a large texture per frame costs more than footage
+/// does, and nothing has measured it.
+fn still_sample(path: &Path, gl: &Gl, watch: &Watch) -> Result<gst::Sample, ExportError> {
+    let still = avatar::decode_still(path)
+        .map_err(|e| ExportError::Failed(format!("{}: {e}", path.display())))?;
+    let texture = Texture::upload(gl, watch, still.w, still.h, still.rgba)?;
+    let (buffer, caps) = texture.stamped(0);
+    Ok(gst::Sample::builder().buffer(&buffer).caps(&caps).build())
+}
+
 fn avatar_texture(
     path: &Path,
     gl: &Gl,
@@ -1422,7 +1411,7 @@ mod tests {
         files
             .iter()
             .map(|file| EntryMedia {
-                source: PathBuf::from(file),
+                picture: Picture::Footage(PathBuf::from(file)),
                 clip: None,
                 match_media: Arc::default(),
             })
@@ -1541,7 +1530,7 @@ mod tests {
             cues: None,
             render: Render::Encode(Encode {
                 entries: vec![EntryMedia {
-                    source,
+                    picture: Picture::Footage(source),
                     clip: Some(ClipMedia {
                         recording: dir.path().join("missing.mkv"),
                         clip,

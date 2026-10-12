@@ -15,7 +15,7 @@ use pundit_core::export::compilation_schedule;
 use pundit_core::plan::ExportTarget;
 use pundit_core::scoreboard::ScoreboardContext;
 use pundit_core::store::RECORDINGS_DIRNAME;
-use pundit_media::{Gl, Origin, Preview, PreviewJob, PreviewMessage, SinkKind};
+use pundit_media::{Gl, Origin, Picture, Preview, PreviewJob, PreviewMessage, SinkKind};
 use uuid::Uuid;
 
 use super::{Bus, Event, Input, UserError};
@@ -91,7 +91,9 @@ impl Bus {
         };
         // A snapshot: later edits to the clip don't reach this preview.
         let job = PreviewJob {
-            source: open.folder.join(&video.relative_path),
+            // Always footage here, for now (#138 task 2); task 3 reads the
+            // clip's backdrop and skips the game-video refusals above.
+            picture: Picture::Footage(open.folder.join(&video.relative_path)),
             recording,
             clip: clip.clone(),
             compilation,

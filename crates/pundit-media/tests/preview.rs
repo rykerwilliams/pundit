@@ -24,7 +24,8 @@ use pundit_core::project::{Clip, Inset, InsetCorner, InsetPlacement, InsetSize};
 use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_media::fixtures::{self, counter_video, read_counter, CounterKind, GrayFrame};
 use pundit_media::{
-    Frame, FrameMailbox, Gl, Preview, PreviewJob, PreviewMessage, PreviewPosition, PreviewStats,
+    Frame, FrameMailbox, Gl, Picture as Source, Preview, PreviewJob, PreviewMessage,
+    PreviewPosition, PreviewStats,
 };
 use uuid::Uuid;
 
@@ -133,7 +134,7 @@ impl Running {
             "the clip has no frames to preview"
         );
         let job = PreviewJob {
-            source,
+            picture: Source::Footage(source),
             recording,
             clip,
             compilation,
