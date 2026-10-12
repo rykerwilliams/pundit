@@ -258,6 +258,9 @@ struct UiState {
     /// it, and the start of a take is the one moment on the UI thread that
     /// cannot afford one.
     avatar_image: Option<slint::Image>,
+    /// The footage's zoom while a whiteboard take shows the diagram at
+    /// identity (#138), put back when the take ends.
+    footage_zoom: Option<Zoom>,
 }
 
 /// Which file the avatar thumbnail stands for. Not the path: it is always
@@ -329,6 +332,7 @@ impl Default for UiState {
             transcription: Transcription::default(),
             avatar_shown: None,
             avatar_image: None,
+            footage_zoom: None,
         }
     }
 }
@@ -686,6 +690,23 @@ fn wire_callbacks(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, pickers: &Pi
         let send = send(bus);
         move || send(Command::ClearAvatar)
     });
+    // The diagram W records over (#138): the same file dialog as the avatar's,
+    // and the same decode-at-pick, which is the bus's.
+    window.on_choose_backdrop({
+        let (weak, pickers, send) = (window.as_weak(), pickers.clone(), send(bus));
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            let send = send.clone();
+            let pick = Pick::Image {
+                title: "Choose a Diagram for the Whiteboard",
+            };
+            pickers.open(&w, pick, move |path| send(Command::ArmBackdrop(path)));
+        }
+    });
+    window.on_disarm_backdrop({
+        let send = send(bus);
+        move || send(Command::DisarmBackdrop)
+    });
     window.on_remove_source({
         let send = send(bus);
         move |index| {
@@ -788,6 +809,20 @@ fn wire_callbacks(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, pickers: &Pi
             // string on every plain take.
             let take = Uuid::parse_str(&slate).map_or(Take::Footage, Take::Slate);
             send(Command::ToggleRecording { zoom, take })
+        }
+    });
+    // W (#138): R's twin, so the bus decides start or stop here too. A take
+    // over the diagram opens on the whole diagram — the footage's zoom is a
+    // corner of a different picture — so the log's first event is identity.
+    // The window's own zoom is left alone until the bus has accepted the take
+    // (`Event::Recording`), so a W it refuses changes nothing on screen.
+    window.on_record_whiteboard({
+        let send = send(bus);
+        move || {
+            send(Command::ToggleRecording {
+                zoom: Zoom::IDENTITY,
+                take: Take::Whiteboard,
+            })
         }
     });
     window.on_stop_recording({
@@ -3129,10 +3164,26 @@ fn on_event(w: &AppWindow, event: Event) {
             // The diagram stands in for the footage, in its shape, from the
             // take's `Starting` to its `Idle` (#138). Read first, for the
             // themed pass below.
+            //
+            // **And the zoom with it**: the take shows the whole diagram, at
+            // the identity W logged, and the footage gets back the zoom it
+            // was scanned at — either way round, a zoom is a corner of one
+            // picture and means nothing on the other.
             let was_whiteboard = w.get_whiteboard_take();
             match status {
-                RecordingStatus::Starting { whiteboard } => w.set_whiteboard_take(whiteboard),
-                RecordingStatus::Idle => w.set_whiteboard_take(false),
+                RecordingStatus::Starting { whiteboard } => {
+                    w.set_whiteboard_take(whiteboard);
+                    if whiteboard {
+                        UI.with_borrow_mut(|ui| ui.footage_zoom = Some(ui.zoom));
+                        set_zoom(w, Zoom::IDENTITY);
+                    }
+                }
+                RecordingStatus::Idle => {
+                    w.set_whiteboard_take(false);
+                    if let Some(footage) = UI.with_borrow_mut(|ui| ui.footage_zoom.take()) {
+                        set_zoom(w, footage);
+                    }
+                }
                 RecordingStatus::Recording { .. } => {}
             }
             UI.with_borrow_mut(|ui| {
@@ -3616,6 +3667,11 @@ fn show_avatar(w: &AppWindow, snapshot: &Snapshot) {
 /// what the take copies. Straight-alpha RGBA, which is what `from_rgba8`
 /// takes; unlike the avatar's, nothing here has been through tiny-skia.
 fn show_backdrop(w: &AppWindow, armed: Option<&bus::Armed>) {
+    let name = armed
+        .and_then(|armed| armed.path.file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    w.set_backdrop_name(name.into());
     w.set_backdrop(armed.map_or_else(slint::Image::default, |armed| {
         let still = &armed.still;
         slint::Image::from_rgba8(slint::SharedPixelBuffer::clone_from_slice(
@@ -3647,6 +3703,7 @@ fn show_clips(w: &AppWindow, project: &Project) {
             id: c.id.to_string().into(),
             name: clip_name(c).into(),
             duration: format_hms(c.recording_duration).into(),
+            whiteboard: c.backdrop.is_some(),
         })
         .collect();
     w.set_clips(ModelRc::new(VecModel::from(clips)));
@@ -3813,6 +3870,7 @@ fn show_clip(w: &AppWindow) {
             clip.map(|c| c.inset_corner).unwrap_or_default(),
         ));
         w.set_clip_avatar(clip.is_some_and(|c| c.inset == Inset::Avatar));
+        w.set_clip_whiteboard(clip.is_some_and(|c| c.backdrop.is_some()));
     });
 }
 

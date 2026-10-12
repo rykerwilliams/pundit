@@ -159,6 +159,9 @@ problem — which is the entry, not an excuse for it.
   sheet is capped at the window and its body scrolls, buttons and title
   included (see the entry)
 
+- **138.** The tactics whiteboard — shipped 2026-10-12 in five PRs; a library of
+  diagrams and two small follow-ups are in the entry
+
 - 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 92, 94
 
 ### Archived
@@ -4599,3 +4602,26 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   about which way the asymmetry resolves rather than a patch.
 - **When to revisit:** with #77's queue, which is what makes the window long
   enough to hit by accident. Related: #77 §Q6, #88 (the inset), avatar spec B1.
+
+138. **The tactics whiteboard: a take recorded over a still** — a pitch diagram
+  picked once, W to record over it, the coach's drawings and voice on it, and a
+  clip like any other. The coach (2026-10-06) chose it over a title card (#133)
+  and settled its one open question during the spec: *"Eventually yeah I would
+  want a library of diagrams but for now I guess you just choose one"*.
+  **Shipped 2026-10-12** in five PRs — spec
+  `docs/superpowers/specs/2026-10-06-tactics-whiteboard-design.md`, plan
+  `docs/superpowers/plans/2026-10-09-tactics-whiteboard.md`, whose "Where this
+  stands" block is the record of what each task corrected.
+- **What it left open, each small:**
+  - **A library of diagrams** — the coach's "eventually". One armed at a time
+    today, in `state.json`; a library changes nothing about `Clip::backdrop`,
+    because each clip keeps its own copy of what it was recorded over.
+  - **Removing a half is refused by a whiteboard clip that shows none of it**
+    (plan Risk 4): `source_is_referenced` counts the clip by its anchor. The
+    better answer is a refusal that names *which* clips, its own small change.
+  - **An orphaned diagram is left on disk** by a clip delete, by design (spec
+    W4) — it is what makes delete-then-undo work with no code.
+- **Why deferred:** none of the three has been asked for, and each is
+  independent of the feature as shipped.
+- **When to revisit:** the library when the coach has more than one diagram he
+  draws on; the refusal wording the first time a coach is blocked by it.

@@ -58,6 +58,7 @@ fn window() -> AppWindow {
         id: "c1".into(),
         name: "an extremely long clip name nobody would type".into(),
         duration: "0:42".into(),
+        whiteboard: false,
     }])));
     w.set_slates(ModelRc::new(VecModel::from(vec![SlateRow {
         id: "s1".into(),

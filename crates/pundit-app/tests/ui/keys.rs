@@ -9,7 +9,7 @@
 //! the readout and the window actually move.
 //!
 //! **The lookup under test is the production one.** `key_action::wire_keys` is
-//! a module of both this binary and the app's, so the 29-arm
+//! a module of both this binary and the app's, so the
 //! `Action` -> `KeyAction` map these tests press against is the shipped one; a
 //! handler written again here would pin the copy and let a crossed arm ship
 //! (`fit_window.rs`'s header is the record of that trap).
@@ -97,7 +97,7 @@ fn shift(mut c: Case) -> Case {
     c
 }
 
-/// **Every default binding in the table, one row each** — all 34 of them, and
+/// **Every default binding in the table, one row each** — every one of them, and
 /// the one action it leaves out is named rather than forgotten: `showRecents`
 /// ships with no default binding at all, so there is no key to press.
 ///
@@ -125,6 +125,7 @@ fn cases() -> Vec<Case> {
         fires(Action::TagPeriod, "v", "tag start-stop"),
         case(Action::HighlightTool, "h", Fires::HighlightTool),
         fires(Action::ToggleRecording, "r", "record \"\""),
+        fires(Action::RecordWhiteboard, "w", "record-whiteboard"),
         fires(Action::DeleteClip, Key::Delete, "delete \"c1\""),
         fires(Action::TogglePlay, " ", "toggle-play"),
         fires(Action::SkipBack, Key::LeftArrow, "skip -3"),
@@ -195,6 +196,10 @@ fn window() -> (AppWindow, Rc<RefCell<Vec<String>>>) {
     w.on_toggle_recording({
         let fired = Rc::clone(&fired);
         move |slate| fired.borrow_mut().push(format!("record {slate:?}"))
+    });
+    w.on_record_whiteboard({
+        let fired = Rc::clone(&fired);
+        move || fired.borrow_mut().push("record-whiteboard".into())
     });
     w.on_delete_clip({
         let fired = Rc::clone(&fired);
@@ -327,7 +332,7 @@ fn covers_every_action() {
 }
 
 /// **Every default binding still does what it did**, pressed on the real
-/// window: 33 of the table's 34, one row each.
+/// window, one row each.
 ///
 /// The failure this exists for is a crossed arm in `key_action.rs`'s map or a
 /// missing branch in `handle-key` — both of which leave the app building, the

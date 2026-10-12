@@ -1,5 +1,5 @@
 //! **The Keys sheet, driven through the real sheet** (BACKLOG #96, plan tasks
-//! 4 and 5): `F1` and the button open it, Esc closes it, the 29 rows on screen
+//! 4 and 5): `F1` and the button open it, Esc closes it, the rows on screen
 //! are the ones `keymap.rs` holds, and each row's *Set…* and ✕ change them.
 //!
 //! **What this closes.** The sheet is a list of a Rust table, and the two ways
@@ -172,7 +172,7 @@ fn row_labels(w: &AppWindow) -> BTreeSet<String> {
 /// is up.
 ///
 /// `keys.rs`'s census has `showKeys`' own row, so that the key reaches the
-/// action is pinned there with the other 33 defaults; what this adds is the
+/// action is pinned there with every other default; what this adds is the
 /// half that is this sheet's — Esc closing it, and the modal layer swallowing
 /// the keys behind it.
 #[test]
@@ -290,7 +290,7 @@ fn the_listing_has_a_row_for_every_action() {
 /// expected to have to carry on the manual list.
 ///
 /// A crossed column is caught by the same read: the label is the three cells
-/// joined in order, so `keys` and `when` swapped is 29 failures.
+/// joined in order, so `keys` and `when` swapped fails every row.
 #[test]
 fn every_row_the_table_holds_is_on_screen() {
     let w = open_sheet();
@@ -340,7 +340,7 @@ fn the_reserved_keys_have_a_row_each() {
 }
 
 /// **The card fits the smallest window the app opens** — the one thing a
-/// 29-row table of buttons could have cost.
+/// row-per-action table of buttons could have cost.
 ///
 /// Task 4 answered this with a 520px cap on the row list, because `Sheet` was
 /// `height: body.preferred-height` and a card taller than the window had its

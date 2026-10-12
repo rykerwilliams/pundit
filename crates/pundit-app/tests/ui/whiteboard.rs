@@ -114,3 +114,83 @@ fn the_rings_and_the_highlight_tool_are_off_over_the_diagram() {
     assert_eq!(ring(&w), 0, "and gone over the diagram");
     assert!(!w.get_in_highlight_tool(), "the drag is the pen's");
 }
+
+/// **The popover's Whiteboard row is wired** (plan task 5): it names what is
+/// armed beside its thumbnail, and its Remove reaches `disarm-backdrop`. Found
+/// by the words on it and pressed with the accessible action, as
+/// `export_sheet.rs` does — the popover opens from the real Devices button.
+///
+/// The avatar's row is the same component, so with no avatar picked its own
+/// Remove is absent and the one on screen can only be the diagram's. Its
+/// Choose… is not absent, so both are pressed and each callback must fire
+/// **once** — which catches one left unwired and the two crossed alike.
+#[test]
+fn the_popovers_whiteboard_row_shows_the_arm_and_disarms() {
+    use i_slint_backend_testing::ElementHandle;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    let w = window();
+    let disarmed = Rc::new(Cell::new(false));
+    w.on_disarm_backdrop({
+        let disarmed = Rc::clone(&disarmed);
+        move || disarmed.set(true)
+    });
+    let chosen = Rc::new(Cell::new((0, 0)));
+    w.on_choose_avatar({
+        let chosen = Rc::clone(&chosen);
+        move || chosen.set((chosen.get().0 + 1, chosen.get().1))
+    });
+    w.on_choose_backdrop({
+        let chosen = Rc::clone(&chosen);
+        move || chosen.set((chosen.get().0, chosen.get().1 + 1))
+    });
+    w.set_backdrop(diagram());
+    w.set_backdrop_name("pitch.png".into());
+    let press = |label: &str| {
+        let found: Vec<_> = ElementHandle::find_by_accessible_label(&w, label).collect();
+        assert_eq!(found.len(), 1, "one {label:?} on screen");
+        found[0].invoke_accessible_default_action();
+    };
+    press("Devices…");
+    assert_eq!(
+        ElementHandle::find_by_accessible_label(&w, "pitch.png").count(),
+        1,
+        "the armed file is named"
+    );
+    for choose in ElementHandle::find_by_accessible_label(&w, "Choose…") {
+        choose.invoke_accessible_default_action();
+    }
+    assert_eq!(chosen.get(), (1, 1), "(avatar, diagram) choices");
+    press("Remove");
+    assert!(disarmed.get(), "Remove reached disarm-backdrop");
+}
+
+/// **A whiteboard clip previews with its game video missing** (task 3's
+/// review, closed here): the bus allows it, and the window used to grey
+/// Preview whenever any half was missing, so the coach could never ask. The
+/// inspector's button follows the selected clip; a footage clip in the same
+/// project stays greyed. **Not reached:** the clip-list menu's own use of
+/// `can-preview(clip.whiteboard)`, and `main.rs` seeding `ClipRow::whiteboard`
+/// and `clip-whiteboard` — a `[[bin]]` no test reaches.
+#[test]
+fn preview_is_offered_for_a_whiteboard_clip_with_the_footage_missing() {
+    use i_slint_backend_testing::ElementHandle;
+
+    let w = window();
+    // What `show_project` sets with a half missing.
+    w.set_can_play(false);
+    w.set_selected_clip("c1".into());
+    let preview = |w: &AppWindow| {
+        let found: Vec<_> = ElementHandle::find_by_accessible_label(w, "Preview").collect();
+        assert_eq!(found.len(), 1, "one Preview button");
+        found[0].accessible_enabled()
+    };
+    assert_eq!(preview(&w), Some(false), "a footage clip needs its footage");
+    w.set_clip_whiteboard(true);
+    assert_eq!(
+        preview(&w),
+        Some(true),
+        "a whiteboard clip needs its diagram"
+    );
+}
