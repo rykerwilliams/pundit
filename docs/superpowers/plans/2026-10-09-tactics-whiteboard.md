@@ -145,23 +145,45 @@ tasks.
   the window has no decode at all.
   **Left as is:** `F` during a whiteboard take fits the window to the diagram,
   the picture on screen, which is consistent with what Fit means.
-- **5 — the UI: the popover and `W`.** Not started. **Three things from task
-  3's review:**
-  - **Preview is greyed whenever any half is missing** (`main.rs`'s
-    `set_can_play`, `app.slint`'s `can-preview: root.can-play && …`), so the
-    bus's "a whiteboard previews with its game video gone" is unreachable from
-    the window. Make it per row: a row whose clip has a backdrop ignores
-    `can-play`.
-  - **W inherits the footage's zoom** (`ui.zoom` is the log's first event).
-    Decide whether W resets to identity in the window first — never in the bus,
-    which would leave `ui.zoom` disagreeing with the log.
-  - **`advance_pass` runs on every `Idle`**, and its doc says every take
-    started with a range selected is that range's. A W take is not, so the pass
-    would jump to the still-unshot range afterwards. Advance only after a slate
-    take (task 4's flag), or have W clear the selection, and correct the doc.
+- **5 — the UI: the popover and `W`.** **Done** (`claude/138-task-5`).
+  `Action::RecordWhiteboard` on `w` (the popover's heading says "Whiteboard",
+  not "(W)": a key is spelled in `keymap.rs` alone); the window's `record-whiteboard` sending
+  `Take::Whiteboard`; the Devices popover's Whiteboard row (`InsetSection`
+  generalised to `StillSection`, used twice); and Preview offered per clip.
+  `tests/ui/whiteboard.rs` 2 → 4, plus a `cases()` row in `keys.rs`.
+  **All three of task 3's review items for this task are closed:**
+  - **Preview per clip:** `can-preview` became a pure function of the clip's
+    `whiteboard` flag, on `ClipRow` and on the inspector. Sabotaged (the flag
+    ignored): the preview test fails alone.
+  - **W's zoom: identity for the take, the footage's zoom back after it** —
+    the decision this plan deferred, both ways round for the same reason: a
+    zoom is a corner of one picture. W sends identity as the log's first
+    event; the window applies it on the bus's `Starting { whiteboard: true }`
+    and restores the saved footage zoom on `Idle`. **The first build reset it
+    in the key handler**, and both reviewers caught the cost: a W the bus
+    refuses — nothing armed, a half missing — wiped the coach's scan zoom.
+  - **`advance_pass` after a W take** — done in task 4.
+  **The first new action since #96's table, measured as the plan asked:** the
+  variant, `ALL` and its length, four match arms, the `KeyAction` arm and
+  Slint enum member, the `handle-key` branch, a window callback, a `cases()`
+  row, the `34` literal — and **seventeen** stale prose counts across
+  `keymap.rs`, `key_action.rs`, `tests/ui/keys.rs`, `keys_sheet.rs`,
+  `app.slint` and `CLAUDE.md` (fourteen found by hand, three more by review),
+  which is the part of a new action that nothing checks. **So the review
+  removed them**: the counts are now in `the_defaults_are_conflict_free`'s
+  assertion and `ALL`'s length, which the compiler and a test check, and in no
+  prose — the next action costs no count edits.
+  **Sabotage, both of the plan's:** the `handle-key` branch removed fails
+  `every_default_binding_still_does_what_it_did` (and nothing else does); and
+  `r` given to the new action, run **after** the count edit, fails
+  `the_defaults_are_conflict_free` — along with three tests that read `r` as
+  R's key, which is the collision being reported, not noise. The popover's
+  Remove unwired fails the popover test alone.
+  **No `W`-with-a-slate refusal**, by task 3's `Take`: the window sends
+  `Whiteboard` whatever is selected.
 
-**Shipping: five PRs, in order.** The second draft said 2 and 3 were parallel;
-task 2's record above says why they were not.
+**Shipping: five PRs, in order** — all five landed. The second draft said 2 and
+3 were parallel; task 2's record above says why they were not.
 
 **Task 4 is new in this draft and is the one the feature's correctness rests
 on** (§B.2).

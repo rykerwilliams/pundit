@@ -264,12 +264,12 @@ since every setter still rewrites the whole document.
 (`keymap.rs`, BACKLOG #96; spec
 `docs/superpowers/specs/2026-10-02-rebindable-keys-design.md`, plan
 `2026-10-07-rebindable-keys.md`). The convention is VS Code's
-`keybindings.json`: the defaults are in code (`Action::default_keys` — 29
-actions, 34 bindings), the `keys` object holds the **diff** keyed by the
+`keybindings.json`: the defaults are in code (`Action::default_keys`,
+counted by `the_defaults_are_conflict_free` and nowhere else), the `keys` object holds the **diff** keyed by the
 action's camelCase name, and an action it doesn't mention keeps its default —
 so deleting the key is the reset path, and a later version that retunes a
 default still reaches a coach who rebound something else. **Storing a copy of
-the table would pin all 29 rows for ever**, which is why `Keymap::overrides`
+the table would pin every row for ever**, which is why `Keymap::overrides`
 emits nothing for an untouched map. A stored row **displaces the default** that
 held its key (the loser is left unbound, logged, and shown so); two *stored*
 rows claiming one key are resolved by `Action::ALL`'s order, which is why that
@@ -313,7 +313,7 @@ sheet's and not the status bar's, whose notice renders **behind the scrim**.
   the plan had Backspace and Delete *unbind* during a capture, but Delete is
   `deleteClip`'s own default, so that would have made a shipped binding
   unreachable. Unbinding is the ✕ instead.
-- **Every one of the 29 actions now has a `handle-key` branch**, `showRecents`
+- **Every action has a `handle-key` branch**, `showRecents`
   included — it still has no default, so the branch is unreachable until a coach
   binds it, which is the whole reason it exists.
 
@@ -676,7 +676,7 @@ fix is argued from.
 
 **The speakers are `autoaudiosink` with `pulsesink` demoted.** `keep_pulsesink_out()` drops `pulsesink`'s rank process-wide at `Bus::spawn`, so `autoaudiosink` picks `alsasink`, which reaches PipeWire through `pipewire-alsa`. Against Ubuntu 24.04's `pipewire-pulse` (PipeWire 1.0.5), `pulsesink` wedged the stream permanently after a quick burst of flushing seeks while playing — a dragged scrubber or a held skip key — and since it supplies the pipeline clock, picture and position froze with it (journal: `pipewire-pulse … [pundit]: stream … OVERFLOW`). Measured A/V offset is unchanged (~+1 ms, audio leading). **The test harness's `Harness::production()` runs the app's exact path** — the GL sink on a surfaceless display plus the real `autoaudiosink` — because the default harness (`fakesink` audio, silent WebM fixtures) can never reach the sound server, which is why this escaped. Real-footage checks are `#[ignore]`d: `PUNDIT_FOOTAGE=/path/to/game.mp4 cargo test -p pundit-harness --test real_footage -- --ignored --nocapture`.
 
-**Every key the app binds is one row in one table** (`pundit-app/src/keymap.rs`, BACKLOG #96): 29 actions, 34 default bindings, overridden per machine by `state.json`'s `keys` — which holds the **diff and not a copy**, so deleting that key is the reset path and a default this build changes still reaches a coach who never touched that action. `handle-key` in `app.slint` asks `action-for` once per key event and acts on the `KeyAction` it answers with; `key_action.rs` is the `match` between the two, and it is a module of **both the binary and `tests/ui`** so `tests/ui/keys.rs` presses the shipped map rather than a copy of it. **A key is spelled in `keymap.rs` and nowhere else** — where a paragraph below names a letter it names today's *default*, to be read, not a binding to be edited. The far skip is its own pair of actions rather than a Shift read inside the near one, and the cost is named: a shifted **letter** now fires nothing of its own, so Shift+R no longer records and `Ctrl+Shift+Y` no longer redoes (`Ctrl+Y` still does).
+**Every key the app binds is one row in one table** (`pundit-app/src/keymap.rs`, BACKLOG #96), **counted in one assertion and in no prose** (#138 added the first action after the table and found seventeen stale counts), overridden per machine by `state.json`'s `keys` — which holds the **diff and not a copy**, so deleting that key is the reset path and a default this build changes still reaches a coach who never touched that action. `handle-key` in `app.slint` asks `action-for` once per key event and acts on the `KeyAction` it answers with; `key_action.rs` is the `match` between the two, and it is a module of **both the binary and `tests/ui`** so `tests/ui/keys.rs` presses the shipped map rather than a copy of it. **A key is spelled in `keymap.rs` and nowhere else** — where a paragraph below names a letter it names today's *default*, to be read, not a binding to be edited. The far skip is its own pair of actions rather than a Shift read inside the near one, and the cost is named: a shifted **letter** now fires nothing of its own, so Shift+R no longer records and `Ctrl+Shift+Y` no longer redoes (`Ctrl+Y` still does).
 
 **Context stays in three layers and none of them is the table.** Whether the window sees a key at all is `text-editing` — Slint's own `TextInputInterface.text-input-focused`, tested ahead of every binding. Whether an action fires *now* is the gate **in its branch** (`can-tag`, `can-draw`, `can-play`, `!event.repeat`), which is why a row carries no `when` clause: a clause makes a binding *not match*, so a gated key would fall through to whichever child has focus and `←` would reach a touched volume slider in exactly the case `can-play` is false. Whether the bus will do it while recording is the **recording allow-list**, a `!matches!` over `Command` variants — and that is **not reachable from a rebinding**: a rebound key sends the command it always sent, and a command added later is still refused by default. Two more rules the rewrite rests on. **Escape, Tab, Return, Home and End are not actions**, and the three the window handles are tested *ahead* of the lookup, so a hand-edited `state.json` cannot claim one and leave a sheet unleavable. And a bound key is swallowed **on release as well as on press**: `handle-key` runs for both, because a slider fires `released` on an arrow key's release — so the lookup is ahead of every `pressed` test and every `accept` is outside its guard.
 
@@ -1098,6 +1098,12 @@ v12; spec `docs/superpowers/specs/2026-09-25-slates-design.md`).
   land where the export replays them. The bus says which take it is
   (`RecordingStatus::Starting { whiteboard }`): a W during an R take's start-up
   stops that take, so the window can't tell from its own key.
+- **W is an action of its own** (`w` by default), and the picker is a row of
+  the Devices popover. **A whiteboard take shows the diagram at identity zoom
+  and gives the footage its zoom back after**, keyed on the bus's
+  `Starting`/`Idle` rather than the key press, so a W the bus refuses changes
+  nothing on screen. **Preview is offered per clip**, because a whiteboard
+  previews with its game video missing.
 - **The bus is the diagram's one decoder** (`bus::Armed`, sent in
   `Event::Backdrop`): at startup and at every arm, never in the window — which
   is also what keeps GStreamer's init ahead of it — and a W take copies the

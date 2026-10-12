@@ -52,6 +52,9 @@ export struct ClipRow {
     name: string,
     /// The recording's length, already formatted.
     duration: string,
+    /// Recorded over a diagram (#138), so it previews with its game video
+    /// missing: its picture is the diagram, not a pixel of the footage.
+    whiteboard: bool,
 }
 
 /// One row of the tag overview (Phase 3 C8).
@@ -223,6 +226,7 @@ export enum KeyAction {
     tag-period,
     highlight-tool,
     toggle-recording,
+    record-whiteboard,
     delete-clip,
     toggle-play,
     skip-back,
@@ -642,13 +646,14 @@ component RecentList inherits VerticalLayout {
     }
 }
 
-/// The Devices popover's Inset section (avatar spec G1): the project's avatar
-/// image, or the camera when it has none.
-///
-/// There are no radio rows, because the image **is** the mode (B1): picking
-/// one is what makes a take record commentary without a camera, and removing
-/// it is what puts the camera back.
-component InsetSection inherits VerticalLayout {
+/// One picked image in the Devices popover: a thumbnail, its name, Choose…
+/// and Remove. Twice over — the project's avatar (avatar spec G1) and the
+/// diagram W records over (#138), both an image whose presence **is** the
+/// mode, so neither has radio rows.
+component StillSection inherits VerticalLayout {
+    in property <string> title;
+    /// What the row says with nothing picked.
+    in property <string> empty-text;
     /// The picked image, empty when there is none or its file has gone.
     in property <image> thumb;
     /// Its file name, empty when nothing is picked.
@@ -662,7 +667,7 @@ component InsetSection inherits VerticalLayout {
     spacing: 4px;
 
     Text {
-        text: "Inset";
+        text: root.title;
         color: Palette.alternate-foreground;
         font-size: 11px;
     }
@@ -680,7 +685,7 @@ component InsetSection inherits VerticalLayout {
             image-fit: contain;
         }
         Text {
-            text: root.name == "" ? "Camera — no avatar picked"
+            text: root.name == "" ? root.empty-text
                 : root.missing ? root.name + " is missing"
                 : root.name;
             color: root.missing ? #ffcc00 : Palette.foreground;
@@ -1905,7 +1910,7 @@ component Scrim inherits Rectangle {
 /// drawn off the bottom of the window. Measured at the declared 1100x700
 /// minimum, two of the six sheets did not fit -- the export sheet reopened over
 /// a run (823px) and New match with twenty videos (704px) -- and #96's keys
-/// sheet is 29 rows.
+/// sheet is a row per action.
 ///
 /// **A sheet's own action buttons scroll with it**, because each sheet puts
 /// its button row in `@children` like any other content. So Export can be one
@@ -3821,8 +3826,10 @@ export component AppWindow inherits Window {
     /// included), so the picture is never stretched. Only its shape matters.
     in property <float> frame-width: 16;
     in property <float> frame-height: 9;
-    /// The armed diagram (BACKLOG #138), as the bus decoded it.
+    /// The armed diagram (BACKLOG #138), as the bus decoded it, and its file
+    /// name for the popover — empty when nothing is armed.
     in property <image> backdrop;
+    in property <string> backdrop-name;
     /// A whiteboard take is on, from its `Starting` to its `Idle`: the player
     /// draws `backdrop` instead of `frame`, and takes its shape too.
     in property <bool> whiteboard-take;
@@ -4039,6 +4046,8 @@ export component AppWindow inherits Window {
     /// The selected clip's inset is the avatar, not a camera (avatar G3):
     /// one word of the inspector's checkbox.
     in property <bool> clip-avatar;
+    /// The selected clip was recorded over a diagram (#138).
+    in property <bool> clip-whiteboard;
     /// The selected clip's transcription and the line that describes it
     /// (Phase 10 S5). Both are written by `src/main.rs` from
     /// `Event::Transcription` -- and, unlike the fields above, they keep
@@ -4267,8 +4276,12 @@ export component AppWindow inherits Window {
     in property <string> previewing-name;
     out property <bool> previewing: root.previewing-clip != "";
     /// Opening one is refused while recording or exporting (P5), and needs
-    /// something to play.
-    out property <bool> can-preview: root.can-play && !root.recording && !root.exporting;
+    /// something to play — the footage, unless the clip is a whiteboard
+    /// (#138), whose picture is its diagram and which the bus previews with a
+    /// half missing.
+    pure function can-preview(whiteboard: bool) -> bool {
+        return (root.can-play || whiteboard) && !root.recording && !root.exporting;
+    }
 
     // --- Match (Phase 9 S4): the panel, the three tag keys, the setup sheet ---
 
@@ -4460,6 +4473,8 @@ export component AppWindow inherits Window {
     /// The *mode* is still visible, which is the slates spec's §S6 objection
     /// answered: the highlighted row, and the word on the Record button.
     callback toggle-recording(string);
+    /// W (#138): start or stop a take over the armed diagram.
+    callback record-whiteboard();
     /// Esc: stop (or abort) the recording.
     callback stop-recording();
     /// The Devices popover opened: look the devices up.
@@ -4478,6 +4493,10 @@ export component AppWindow inherits Window {
     /// JPEG to copy into the project, or drop the one it has.
     callback choose-avatar();
     callback remove-avatar();
+    /// The popover's Choose… and Remove for the whiteboard's diagram (#138):
+    /// arm a picture for W to record over, or forget it.
+    callback choose-backdrop();
+    callback disarm-backdrop();
     /// Slates, by id. `mark-in` and `mark-out` take no argument: the bus is
     /// given the displayed frame's video and source time by `main.rs`, which
     /// is the only place that knows what is on screen.
@@ -5041,6 +5060,14 @@ export component AppWindow inherits Window {
             }
             return accept;
         }
+        // R's twin (#138): the bus decides start or stop for the same reason,
+        // and a range selected is no business of a take over the diagram.
+        if (act == KeyAction.record-whiteboard) {
+            if (pressed && !event.repeat) {
+                root.record-whiteboard();
+            }
+            return accept;
+        }
         if (act == KeyAction.delete-clip) {
             if (pressed && !root.recording && root.selected-clip != "") {
                 root.delete-clip(root.selected-clip);
@@ -5191,8 +5218,8 @@ export component AppWindow inherits Window {
         // chain replaced.** Its only job once the table compares the three
         // modifiers exactly was to deliver every *other* Ctrl combo to
         // whatever has focus -- Ctrl+V into a field, Ctrl+A to select all --
-        // which is what landing here does. Every one of the 29 actions now has
-        // a branch above it.
+        // which is what landing here does. Every action has a branch above
+        // it — `keys.rs`'s `cases()` is what checks that.
         reject
     }
 
@@ -5886,7 +5913,7 @@ export component AppWindow inherits Window {
                                                 }
                                                 MenuItem {
                                                     title: "Preview clip";
-                                                    enabled: root.can-preview;
+                                                    enabled: root.can-preview(clip.whiteboard);
                                                     activated => { root.open-preview(clip.id); }
                                                 }
                                                 MenuItem {
@@ -6406,7 +6433,7 @@ export component AppWindow inherits Window {
                                         }
                                         root.edit-clip(id, field, text);
                                     }
-                                    can-preview: root.can-preview;
+                                    can-preview: root.can-preview(root.clip-whiteboard);
                                     previewing: root.previewing && root.previewing-clip == root.selected-clip;
                                     // The selection, since a click doesn't take focus
                                     // from a field.
@@ -7096,12 +7123,22 @@ export component AppWindow inherits Window {
                                 rows: root.mics;
                                 chosen(node-name) => { root.choose-mic(node-name); }
                             }
-                            InsetSection {
+                            StillSection {
+                                title: "Inset";
+                                empty-text: "Camera — no avatar picked";
                                 thumb: root.avatar-thumb;
                                 name: root.avatar-name;
                                 missing: root.avatar-missing;
                                 choose() => { root.choose-avatar(); }
                                 remove() => { root.remove-avatar(); }
+                            }
+                            StillSection {
+                                title: "Whiteboard";
+                                empty-text: "No diagram armed";
+                                thumb: root.backdrop;
+                                name: root.backdrop-name;
+                                choose() => { root.choose-backdrop(); }
+                                remove() => { root.disarm-backdrop(); }
                             }
                         }
                     }

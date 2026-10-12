@@ -2,7 +2,7 @@
 //! [`KeyAction`], wired onto `action-for` (BACKLOG #96, plan task 3).
 //!
 //! **This file is a module of two roots, the binary and `tests/ui`**, and that
-//! is deliberate rather than tidy. The mapping below is 29 arms of
+//! is deliberate rather than tidy. The mapping below is an arm per action of
 //! boilerplate where a copy-paste — `ZoomOut => ZoomIn` — is exactly the bug
 //! this task could ship, and the only thing that can catch one is a test that
 //! presses the key and watches the callback. A handler written again in the
@@ -167,6 +167,7 @@ fn key_action(action: Option<Action>) -> KeyAction {
         Action::TagPeriod => KeyAction::TagPeriod,
         Action::HighlightTool => KeyAction::HighlightTool,
         Action::ToggleRecording => KeyAction::ToggleRecording,
+        Action::RecordWhiteboard => KeyAction::RecordWhiteboard,
         Action::DeleteClip => KeyAction::DeleteClip,
         Action::TogglePlay => KeyAction::TogglePlay,
         Action::SkipBack => KeyAction::SkipBack,

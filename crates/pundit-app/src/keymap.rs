@@ -14,7 +14,7 @@
 //! rule below).
 //!
 //! **The stored map is a diff, not a copy**, which is the half of the
-//! convention the spec left open: writing all 29 rows out would pin every
+//! convention the spec left open: writing every row out would pin every
 //! default against every future change, for a coach who touched one key. So
 //! [`Keymap::overrides`] emits only the rows that differ, an absent row keeps
 //! its default, and deleting the whole `keys` key is the reset path.
@@ -83,6 +83,7 @@ pub enum Action {
     TagPeriod,
     HighlightTool,
     ToggleRecording,
+    RecordWhiteboard,
     DeleteClip,
     TogglePlay,
     SkipBack,
@@ -112,7 +113,7 @@ impl Action {
     /// On [`crate::drawing::Pen::ALL`]'s pattern, and with its one hazard: a
     /// variant added here and left out of the list is an action with no row.
     /// `the_list_holds_every_action_in_declaration_order` is what catches it.
-    pub const ALL: [Action; 29] = [
+    pub const ALL: [Action; 30] = [
         Action::OpenProject,
         Action::Undo,
         Action::Redo,
@@ -124,6 +125,7 @@ impl Action {
         Action::TagPeriod,
         Action::HighlightTool,
         Action::ToggleRecording,
+        Action::RecordWhiteboard,
         Action::DeleteClip,
         Action::TogglePlay,
         Action::SkipBack,
@@ -161,6 +163,7 @@ impl Action {
             Action::TagPeriod => "tagPeriod",
             Action::HighlightTool => "highlightTool",
             Action::ToggleRecording => "toggleRecording",
+            Action::RecordWhiteboard => "recordWhiteboard",
             Action::DeleteClip => "deleteClip",
             Action::TogglePlay => "togglePlay",
             Action::SkipBack => "skipBack",
@@ -200,6 +203,7 @@ impl Action {
             Action::TagPeriod => "Start or end a period",
             Action::HighlightTool => "Ring a player",
             Action::ToggleRecording => "Start or stop recording",
+            Action::RecordWhiteboard => "Start or stop a take over the armed diagram",
             Action::DeleteClip => "Delete the selected clip",
             Action::TogglePlay => "Play or pause",
             Action::SkipBack => "Skip back three seconds",
@@ -238,6 +242,7 @@ impl Action {
             | Action::HighlightTool => "While the game video is on screen",
             Action::TagPeriod => "While the game video is on screen, until the periods are full",
             Action::ToggleRecording | Action::TogglePlay => "Any time",
+            Action::RecordWhiteboard => "Any time, with a diagram armed",
             Action::DeleteClip => "With a clip selected, unless a recording is running",
             Action::SkipBack
             | Action::SkipForward
@@ -254,8 +259,9 @@ impl Action {
         }
     }
 
-    /// The keys it answers to out of the box, as labels (spec D1): 29 actions,
-    /// **34 bindings**, which is the window's own chain with the far skips
+    /// The keys it answers to out of the box, as labels (spec D1) — how many is
+    /// `the_defaults_are_conflict_free`'s to say, the one place a count is
+    /// checked — and the window's own chain with the far skips
     /// lifted out and nothing else moved.
     ///
     /// **Labels rather than [`Binding`] values**, so this table reads as the
@@ -280,6 +286,7 @@ impl Action {
             Action::TagPeriod => &["v"],
             Action::HighlightTool => &["h"],
             Action::ToggleRecording => &["r"],
+            Action::RecordWhiteboard => &["w"],
             Action::DeleteClip => &["Delete"],
             Action::TogglePlay => &["Space"],
             Action::SkipBack => &["LeftArrow", "a"],
@@ -797,8 +804,8 @@ impl Keymap {
     }
 
     /// **Only what differs from the defaults**, which is what `state.json`
-    /// stores — a diff, not a copy. Writing the whole table out would pin all
-    /// 29 rows for ever, so a later version that retunes a default would never
+    /// stores — a diff, not a copy. Writing the whole table out would pin every
+    /// row for ever, so a later version that retunes a default would never
     /// reach a coach who had rebound one unrelated key.
     ///
     /// `BTreeMap`, not `HashMap`: every `AppFiles` setter rewrites the whole
@@ -963,7 +970,7 @@ mod tests {
                 seen.push((*binding, action));
             }
         }
-        assert_eq!(seen.len(), 34, "spec D1: 29 actions, 34 bindings");
+        assert_eq!(seen.len(), 35, "spec D1 and #138: 30 actions, 35 bindings");
     }
 
     /// A default that does not parse is a default that silently is not there,
