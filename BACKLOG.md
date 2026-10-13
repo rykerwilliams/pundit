@@ -29,7 +29,10 @@ made things worse.
   **Phase 2 is next to spec**: the Openverse search and the credits
 - **133.** A title maker: words over the footage for a marked window — #138's
   other half, which the coach scoped out of it deliberately: *"the follow on
-  feature … it would use a slate and a timing maybe"*
+  feature … it would use a slate and a timing maybe"*. **Specced 2026-10-13
+  together with #115** (`2026-10-12-titles-and-caption-bar-design.md`): a title
+  is an optional line on a slate, burned in place of the caption bar over that
+  range, in exports and previews; one bump, v18
 - **131.** The slate band's colour should be a setting. The coach (2026-10-05):
   *"i mean the band color should be in the settings"* — and *"the slider bar
   colour clashes a bit"*
@@ -40,7 +43,9 @@ made things worse.
   clip, sticky for the next recording, as #88's inset size and corner are (**v16
   — v15 went to the mute switch, v14 to #117's arrowhead; take the next free
   number from `store.rs` rather than this line**).
-  **Three states, not two:** off, whole entry, or the first few seconds
+  **Three states, not two:** off, whole entry, or the first few seconds.
+  **Specced 2026-10-13 with #133**: a per-clip picker, first 3 s fixed, a
+  ~0.5 s fade out, sticky for the next recording
 
 ### Watch, rather than pick up
 
