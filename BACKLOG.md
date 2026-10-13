@@ -22,7 +22,8 @@ made things worse.
   2026-10-05, planned 2026-10-06**: two on the export sheet (Chapters,
   Scoreboard subtitles), and a settings sheet designed but not built — and
   still unbuilt: #102 declined it (2026-10-07) and #84 put its folder on the
-  export sheet instead (2026-10-12)
+  export sheet instead (2026-10-12). **#131 builds it** (specced 2026-10-13),
+  which closes this entry
 - **84.** Music under a goals reel — **phase 1 shipped 2026-10-12** (#80, #82,
   #83): a Music row on the export sheet (a genre picker and a Folder… button), a
   stable song per match, ducked and faded; **no Settings sheet** (spec §M6).
@@ -35,7 +36,10 @@ made things worse.
   range, in exports and previews; one bump, v18
 - **131.** The slate band's colour should be a setting. The coach (2026-10-05):
   *"i mean the band color should be in the settings"* — and *"the slider bar
-  colour clashes a bit"*
+  colour clashes a bit"*. **Specced 2026-10-13**
+  (`2026-10-13-settings-sheet-band-colour-design.md`): a full colour picker in
+  a new Settings sheet — #78's §U4, built at last — which the selected slate's
+  row follows too, also reached from the scrubber's right-click menu
 - **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
   clip, sticky for the next recording, as #88's inset size and corner are (**v16
   — v15 went to the mute switch, v14 to #117's arrowhead; take the next free
