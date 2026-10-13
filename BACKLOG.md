@@ -4282,30 +4282,11 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   read a popup and click what is in it, which is what `tests/ui` could not do
   before.
 
-128. **The themed pass is silent at both of its ends — SHIPPED 2026-10-13**,
-  both halves, in the coach's words (2026-10-13).
-- **`g` starts a pass** (`keymap::Action::FirstSlate`, "Select the first range
-  to shoot"): it selects the first **timed, unshot** row of the Slates list as
-  displayed — the tag filter applied — and parks on it with `JumpToSlate`, the
-  advance's own move. The rule is `slate_pass::first_slate`, and `next_slate`
-  is now *that* from the cursor on, so "what is a candidate" has one
-  definition. Gated `!recording && !previewing` in its `handle-key` branch
-  (`next-event`'s gate: the park moves the game video). Because it reads from
-  the top it is also the way back to a range the forward-only advance went
-  past. With nothing waiting and every range shot, it shows the notice below.
-- **The end is said**: when a take ends and the pass has run out, the status
-  bar reads **"All 8 'corner' ranges shot"** (no filter: **"All 8 ranges
-  shot"**; one range: "The one 'corner' range is shot", because "All 1" reads
-  as a slip — my call, not the coach's). The count is the list's timed rows.
-  `slate_pass::ran_out` is the gate, and it is narrower than `next_slate`'s
-  `None`: the cursor must be in the list (a plain take or a range the filter
-  hid is not the end of anything), and **every** timed row must be shot — the
-  advance only looks forwards, so it can run out with a skipped range behind
-  it, and "all 8 shot" would then be false; that case stays quiet, as before.
-  An aborted take can never trigger it: its range is still unshot.
-- **Not testable here:** `main.rs`'s `advance_pass` / `start_pass` wiring (the
-  select, the jump and the notice) — `main.rs` has no test reach. Everything
-  they decide is in `slate_pass.rs`'s tests and `tests/ui/keys.rs`.
+128. **The themed pass is silent at both of its ends — SHIPPED 2026-10-13.**
+  `g` selects and parks on `slate_pass::first_slate` (gated `!recording &&
+  !previewing`); a take that finishes the pass says "All 8 'corner' ranges
+  shot", gated by `ran_out` on every timed row being shot. `main.rs`'s wiring
+  (select, jump, notice) is untested — `main.rs` has no test reach.
 
   The entry as filed:
   #120 shipped the pass

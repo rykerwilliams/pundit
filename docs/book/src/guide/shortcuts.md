@@ -98,10 +98,8 @@ menu. At the end of the range the game **pauses on its last frame** while the
 recording keeps going, so you can finish your sentence. See
 [slates](slates.md).
 
-<kbd>G</kbd> starts a pass through the list without the mouse: it picks the
-first range in the Slates list — as filtered — that has both ends and has not
-been recorded yet, and parks the game on it. It does nothing while you are
-recording or a preview is open.
+<kbd>G</kbd> does nothing while you are recording or a preview is open; see
+[working through a theme](slates.md#working-through-a-theme).
 
 ## Ringing a player
 

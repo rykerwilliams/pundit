@@ -688,7 +688,7 @@ fix is argued from.
 
 **Context stays in three layers and none of them is the table.** Whether the window sees a key at all is `text-editing` — Slint's own `TextInputInterface.text-input-focused`, tested ahead of every binding. Whether an action fires *now* is the gate **in its branch** (`can-tag`, `can-draw`, `can-play`, `!event.repeat`), which is why a row carries no `when` clause: a clause makes a binding *not match*, so a gated key would fall through to whichever child has focus and `←` would reach a touched volume slider in exactly the case `can-play` is false. Whether the bus will do it while recording is the **recording allow-list**, a `!matches!` over `Command` variants — and that is **not reachable from a rebinding**: a rebound key sends the command it always sent, and a command added later is still refused by default. Two more rules the rewrite rests on. **Escape, Tab, Return, Home and End are not actions**, and the three the window handles are tested *ahead* of the lookup, so a hand-edited `state.json` cannot claim one and leave a sheet unleavable. And a bound key is swallowed **on release as well as on press**: `handle-key` runs for both, because a slider fires `released` on an arrow key's release — so the lookup is ahead of every `pressed` test and every `accept` is outside its guard.
 
-**The Keys sheet is the seventh `Sheet`, and it is a list** (#96 task 4). `F1` opens it — that is `Action::ShowKeys`' own default, listed in the table like every other key — and so does the **Keys** button, which sits in the *drawing* row beside `Fit` and for `Fit`'s reason: the transport row is full at the window's 1100px minimum (measured, `Devices…` ends at x=1199, 99px past the right edge). Its rows are `Keymap::listing()` set on `key-rows` in `wire_keys`, **beside `action-for` and nowhere else**, so the list and the lookup are one map read twice and the list cannot go stale. **The six reserved rows — Escape, Tab, Shift+Tab, Return, Home, End — are written in `app.slint`, not in the table:** they are not `Action` variants, so `Binding`, `overrides()` and a rebind would each have to filter them back out of a table whose whole point is that every row in it is rebindable, and their words belong beside their behaviour — for the three the window handles, `handle-key`'s own reserved block in the same file. The rows are capped in a `ScrollView { height: 520px; }` because `Sheet` is `body.preferred-height` and **does not scroll** (#134): 29 rows at 22px is 638px and the card has to fit a 700px window, which it does at 666px. Rebinding is task 5 and nothing in the sheet anticipates it.
+**The Keys sheet is the seventh `Sheet`, and it is a list** (#96 task 4). `F1` opens it — that is `Action::ShowKeys`' own default, listed in the table like every other key — and so does the **Keys** button, which sits in the *drawing* row beside `Fit` and for `Fit`'s reason: the transport row is full at the window's 1100px minimum (measured, `Devices…` ends at x=1199, 99px past the right edge). Its rows are `Keymap::listing()` set on `key-rows` in `wire_keys`, **beside `action-for` and nowhere else**, so the list and the lookup are one map read twice and the list cannot go stale. **The six reserved rows — Escape, Tab, Shift+Tab, Return, Home, End — are written in `app.slint`, not in the table:** they are not `Action` variants, so `Binding`, `overrides()` and a rebind would each have to filter them back out of a table whose whole point is that every row in it is rebindable, and their words belong beside their behaviour — for the three the window handles, `handle-key`'s own reserved block in the same file. The list is taller than the 700px minimum window, and it scrolls in the sheet's own body like every sheet's (#134, below), which retired the `ScrollView` cap it first had of its own.
 
 **A drag on the scrubber snaps to the match marks** (#102; right-click it to turn that off, remembered in `state.json`), and **only the drag does** — never the wheel, the arrows, `,`/`.` or `[`/`]`. The radius is one constant in pixels, `snap-radius` in `scrubber.slint`; the landing is `match_panel::nearest_chapter` over `match_abs`, so a snapped release and `]` seek to the same value.
 
@@ -740,7 +740,7 @@ slot on `Sheet` and an edit to all six. The keyboard is untouched, because
 One thing it costs a test: `ElementHandle` skips anything clipped away, so a
 button at the bottom of a tall sheet has to be flicked into view before it can
 be found (`flick_to_the_end` in `tests/ui/sheet_scroll.rs`). It also **retired a
-cap written hours earlier**: the Keys sheet's 29-row list had its own 520px
+cap written hours earlier**: the Keys sheet's list had its own 520px
 `ScrollView` for exactly this problem, and leaving it would have shown a coach
 520px of rows in the middle of a 1200px card and scrolled in two places at
 once.
@@ -1110,6 +1110,12 @@ v12; spec `docs/superpowers/specs/2026-09-25-slates-design.md`).
   its own phase would swallow the second R that means "cancel". The transport
   button reads **"Record range"** while one is selected, which is how the mode
   stays visible rather than being state on the primary key.
+  **`g` is the way in** (#128): `slate_pass::first_slate`, the same rule read
+  from the top of the list — `next_slate` *is* `first_slate` from the cursor,
+  so "candidate" has one definition. **The end is said only when every timed
+  row is shot** (`ran_out`), not when the advance merely finds nothing ahead:
+  it only moves forwards, so it could otherwise claim "all shot" over a range
+  it skipped. The notice names the Slates panel's own `slate-tag-filter`.
 
 **The tactics whiteboard: a take over a still** (BACKLOG #138; spec
 `2026-10-06-tactics-whiteboard-design.md`, plan `2026-10-09-tactics-whiteboard.md`).

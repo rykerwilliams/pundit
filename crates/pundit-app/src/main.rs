@@ -3971,8 +3971,6 @@ fn advance_pass(w: &AppWindow) {
     let current = w.get_selected_slate();
     match slate_pass::next_slate(&pass, current.as_str()) {
         Some(next) => park_on_slate(w, next),
-        // **Said only when the pass has run out** (BACKLOG #128) — not for a
-        // plain take or a range the filter hid, which `ran_out` keeps quiet.
         None => {
             if let Some(ranges) = slate_pass::ran_out(&pass, current.as_str()) {
                 show_pass_finished(w, ranges);

@@ -522,6 +522,9 @@ fn the_first_range_key_waits_out_a_take_and_a_preview() {
         );
     };
     base(&w);
+    w.set_recording_phase(RecordingPhase::Starting);
+    pressed_while("a take is starting");
+    base(&w);
     w.set_recording_phase(RecordingPhase::Recording);
     pressed_while("recording");
     base(&w);

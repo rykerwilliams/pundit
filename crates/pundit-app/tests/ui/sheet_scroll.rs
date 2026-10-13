@@ -12,7 +12,8 @@
 //! caps every sheet at the window and the body scrolls the rest, so the
 //! assertion below is over all six sheets at once, in the worst state each is
 //! configured in — which is what makes it a tripwire for the seventh (#96's
-//! keys sheet is 29 rows) rather than a measurement of today's tallest.
+//! keys sheet, a list taller than the window) rather than a measurement of
+//! today's tallest.
 //!
 //! **The buttons scroll with the body**, because each sheet puts its own button
 //! row in `@children`. That is the accepted trade, so the reachability test
