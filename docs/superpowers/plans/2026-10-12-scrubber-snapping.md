@@ -13,13 +13,25 @@ fastest. Paths are under `crates/pundit-app/` unless they say otherwise.
 
 ## Where this stands (update it as tasks land)
 
-- **1 — the scrubber's Slint half: the menu and `snap-seconds`.** Not started.
+- **1 — the scrubber's Slint half: the menu and `snap-seconds`.** Done
+  2026-10-12 on `claude/102-tasks-1-3`. **The checkmark test needed one thing
+  the plan didn't say**: an open popup keeps the entries it was opened with, so
+  reopening without closing first reads the old ✓. The test closes it with
+  Escape, which is what a coach does. That's harmless for the feature, because
+  choosing an item closes the menu. The popup's `Text` *is* reachable by
+  `accessible_label`, so the checkmark test stands. Sabotages: all eight failed.
+  **Sabotage 7 failed two tests, not one**: `the_menu_opens_while_recording`
+  also clicks the item and counts the toggle. The plan's prediction missed
+  that; the code is fine.
 - **2 — the Rust logic: `nearest_chapter` and the `state.json` bool.** Done
   2026-10-12 on `claude/102-task-2`, as planned: no deviation. The census held
   (no `State` literal, no fixture edit). All seven sabotages failed their one
   named test at the assertion named; sabotage 6's line read one low because
   deleting the attribute moves every test line up by one.
-- **3 — the wiring, the guide and the prose.** Not started.
+- **3 — the wiring, the guide and the prose.** Done 2026-10-12, same branch,
+  as planned. #102 now leaves the BACKLOG's Next list, which holds only open
+  work, rather than being marked shipped there. #78's stale index line
+  (*"#84 builds it"*) is corrected too.
 
 **Shipping: two PRs, in order.** **Task 2 first, as its own PR**: pure functions
 and a file field, reachable from unit tests, which nothing reads yet. **Then

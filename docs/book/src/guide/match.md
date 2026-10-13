@@ -27,8 +27,9 @@ and format already filled in.
 | <kbd>V</kbd> | The start or end of a period |
 
 Each one marks the game video at the playhead, and shows on the scrubber — goals
-in the scoring team's colour. <kbd>[</kbd> and <kbd>]</kbd> jump between them.
-They work while you are recording too.
+in the scoring team's colour. <kbd>[</kbd> and <kbd>]</kbd> jump between them,
+and dragging the scrubber snaps to them ([Watching the
+game](watching.md#playing-and-skipping)). They work while you are recording too.
 
 The clock follows the frame on screen, so it reads the same match time either
 side of a pause in your commentary.

@@ -27,8 +27,8 @@ use crate::format::format_hms;
 pub const CHAPTER_TOLERANCE: f64 = 0.5;
 
 /// One row of the panel's event list, which is also a chapter (spec C1): the
-/// scrubber's marks are built from these rows, and `[` / `]` from the same
-/// times ([`match_abs`]).
+/// scrubber's marks are built from these rows, and `[` / `]` and the
+/// scrubber's snap from the same times ([`match_abs`]).
 pub struct MatchRowText {
     pub id: Uuid,
     pub kind: MatchEventKind,
@@ -221,8 +221,9 @@ fn pending_label(kind: MatchEventKind) -> &'static str {
 }
 
 /// Every match event's place on the concat timeline, in match order: the
-/// chapters `[` and `]` step through, the same times as [`match_rows`]'s —
-/// the same list, so they cannot drift apart.
+/// chapters `[` and `]` step through and a scrub snaps to
+/// ([`nearest_chapter`]), the same times as [`match_rows`]'s — the same list,
+/// so they cannot drift apart.
 pub fn match_abs(project: &Project) -> Vec<f64> {
     labelled_events(project)
         .into_iter()
