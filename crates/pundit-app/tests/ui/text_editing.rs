@@ -347,8 +347,8 @@ fn a_letter_typed_in_a_sheet_field_reaches_the_field() {
         fired.borrow()
     );
     assert_eq!(
-        w.get_slate_band_hex(),
-        TYPED,
+        edit.accessible_value().as_deref(),
+        Some(TYPED),
         "the band field: the letters never arrived"
     );
 }

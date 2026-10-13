@@ -1956,7 +1956,7 @@ component Scrim inherits Rectangle {
 /// for its content's height and accepts less: [`Scrim`]'s column is what hands
 /// it `min(content, window)`, and what does not fit is scrolled rather than
 /// drawn off the bottom of the window. Measured at the declared 1100x700
-/// minimum, two of the **seven** sheets did not fit -- the export sheet
+/// minimum, two sheets did not fit -- the export sheet
 /// reopened over a run (823px) and New match with twenty videos (704px) -- and
 /// #96's keys sheet is a row per action.
 ///
@@ -2716,6 +2716,29 @@ component SetupField inherits VerticalLayout {
     }
 }
 
+/// **The app's colour maths, once** (#131): every hex string to a colour, a
+/// colour to the hue/saturation/brightness the picker holds and back, the kit
+/// colours, and the ink a label takes over a colour. All of it is Rust's
+/// (`src/color_wiring.rs`, wired once by the binary and by `tests/ui` alike):
+/// what is stored is the hex string, so there is one path to a colour and it
+/// is `match_panel::parse_hex`.
+///
+/// **A global rather than callbacks forwarded down**, because the picker sits
+/// two components deep in two sheets and the slate row needs the ink besides:
+/// forwarded, each of five functions was declared and passed on in four places.
+export global ColorMaths {
+    /// The picker's ready-made colours (`color_picker::KIT_COLORS`).
+    in property <[KitColor]> kit-colors;
+    /// `#rrggbb` as a colour; transparent for anything that is not one.
+    pure callback hex-color(string) -> color;
+    pure callback hsv-of-hex(string) -> Hsv;
+    pure callback hex-of-hsv(float, float, float) -> string;
+    pure callback valid-hex(string) -> bool;
+    /// Black or white, whichever reads over this colour
+    /// (`highlight::label_ink`).
+    pure callback band-ink(color) -> color;
+}
+
 /// The colour picker: a row of ready-made kit colours for the coach who
 /// doesn't know the club's hex codes, then a hue strip and a
 /// saturation/brightness area for anything else. The setup sheet hangs it as a
@@ -2725,37 +2748,35 @@ component SetupField inherits VerticalLayout {
 /// the picker follows that field's `text`.
 ///
 /// **No colour maths here.** Every colour it draws and every colour it
-/// reports goes through `src/color_picker.rs` (`hex-of-hsv`) and
-/// `match_panel::parse_hex` (`hex-color`): what the project stores is the hex
+/// reports goes through [`ColorMaths`]: what the project stores is the hex
 /// string, so the picker has to land on exactly those bytes. Slint's own
 /// `Colors.hsv` would be a second rounding, and then the swatch, the field
 /// and the scoreboard could disagree in the last bit.
 component ColorPicker inherits Rectangle {
-    in property <[KitColor]> kit-colors;
     /// The field the picker shows and writes: it follows this text.
     in property <string> text;
-    pure callback hex-color(string) -> color;
-    /// The picker's two conversions, both Rust's (`src/color_picker.rs`).
-    pure callback hsv-of-hex(string) -> Hsv;
-    pure callback hex-of-hsv(float, float, float) -> string;
-    pure callback valid-hex(string) -> bool;
     /// A colour for the field: a kit colour as it stands, or a point dragged.
     callback pick(string);
 
     property <length> swatch-size: 20px;
     /// The strip and the area are as wide as the row of kit colours, so the
     /// three controls line up without a number written twice.
-    property <length> span: root.kit-colors.length * (root.swatch-size + 2px) - 2px;
+    property <length> span: ColorMaths.kit-colors.length * (root.swatch-size + 2px) - 2px;
 
     /// Where the picker is standing. Held here rather than read straight off
     /// the text, because the hex cannot say everything: grey has no hue and
     /// black has neither hue nor saturation, so a drag into the white corner
     /// would swing the strip to red and the next drag would come back a
     /// different colour.
+    ///
+    /// **Saturation and brightness start full**, so a picker opened on no
+    /// colour at all -- the Settings sheet's Default -- turns the strip into
+    /// that hue rather than into black; a field that holds a colour moves them
+    /// onto it as the picker is made.
     property <float> picker-hue;
-    property <float> picker-sat;
-    property <float> picker-val;
-    property <Hsv> text-hsv: root.hsv-of-hex(root.text);
+    property <float> picker-sat: 1;
+    property <float> picker-val: 1;
+    property <Hsv> text-hsv: ColorMaths.hsv-of-hex(root.text);
 
     /// Pulls the picker onto the text. Typing a hex moves it; so does a kit
     /// colour, which is written as text like any other. What the picker
@@ -2763,8 +2784,8 @@ component ColorPicker inherits Rectangle {
     /// fight the hex it produced a moment ago, and opening the picker on a
     /// colour and touching nothing rewrites nothing.
     function sync-from-text() {
-        if (root.valid-hex(root.text)
-            && root.hex-of-hsv(root.picker-hue, root.picker-sat, root.picker-val)
+        if (ColorMaths.valid-hex(root.text)
+            && ColorMaths.hex-of-hsv(root.picker-hue, root.picker-sat, root.picker-val)
                 != root.text) {
             root.picker-sat = root.text-hsv.sat;
             root.picker-val = root.text-hsv.val;
@@ -2785,7 +2806,7 @@ component ColorPicker inherits Rectangle {
 
         HorizontalLayout {
             spacing: 2px;
-            for kit in root.kit-colors: Rectangle {
+            for kit in ColorMaths.kit-colors: Rectangle {
                 width: root.swatch-size;
                 height: root.swatch-size;
                 border-radius: 3px;
@@ -2793,7 +2814,7 @@ component ColorPicker inherits Rectangle {
                 // the popup behind them.
                 border-width: 1px;
                 border-color: #00000066;
-                background: root.hex-color(kit.hex);
+                background: ColorMaths.hex-color(kit.hex);
                 // Found by its name, as a coach reads it off the tooltip, and
                 // pressed by a test without a computed position.
                 accessible-role: button;
@@ -2815,7 +2836,7 @@ component ColorPicker inherits Rectangle {
             width: root.span;
             height: 110px;
             border-radius: 3px;
-            background: root.hex-color(root.hex-of-hsv(root.picker-hue, 1, 1));
+            background: ColorMaths.hex-color(ColorMaths.hex-of-hsv(root.picker-hue, 1, 1));
 
             Rectangle {
                 border-radius: 3px;
@@ -2893,14 +2914,14 @@ component ColorPicker inherits Rectangle {
     function take-area() {
         root.picker-sat = Math.min(1, Math.max(0, area.mouse-x / area.width));
         root.picker-val = Math.min(1, Math.max(0, 1 - area.mouse-y / area.height));
-        root.pick(root.hex-of-hsv(root.picker-hue, root.picker-sat, root.picker-val));
+        root.pick(ColorMaths.hex-of-hsv(root.picker-hue, root.picker-sat, root.picker-val));
     }
 
     /// The pointer on the strip, as a hue. Saturation and brightness stay put
     /// -- the strip only turns the colour round.
     function take-hue() {
         root.picker-hue = Math.min(360, Math.max(0, strip.mouse-x / strip.width * 360));
-        root.pick(root.hex-of-hsv(root.picker-hue, root.picker-sat, root.picker-val));
+        root.pick(ColorMaths.hex-of-hsv(root.picker-hue, root.picker-sat, root.picker-val));
     }
 }
 
@@ -2926,8 +2947,6 @@ component MatchSetupSheet inherits Rectangle {
     in-out property <string> overtime-periods;
     in-out property <string> overtime-minutes;
     in-out property <bool> back-anchor;
-    /// The picker's ready-made colours (`src/color_picker.rs`).
-    in property <[KitColor]> kit-colors;
     /// Which colour field the picker is open over -- -1 for closed, else the
     /// order the columns read: home primary, accent, text, then away's.
     ///
@@ -2936,14 +2955,8 @@ component MatchSetupSheet inherits Rectangle {
     /// showing the next time the sheet opens.
     in-out property <int> picker-field;
     /// The window's validators. They take the text so the bindings below
-    /// re-evaluate on every keystroke.
-    pure callback hex-color(string) -> color;
-    /// The picker's two conversions, both Rust's (`src/color_picker.rs`):
-    /// there is one hex-to-colour path in this app and this is it.
-    pure callback hsv-of-hex(string) -> Hsv;
-    pure callback hex-of-hsv(float, float, float) -> string;
+    /// re-evaluate on every keystroke; a colour's is [`ColorMaths`]'.
     pure callback valid-name(string) -> bool;
-    pure callback valid-hex(string) -> bool;
     /// One per numeric field: each knows its own range, which lives in
     /// `match_panel.rs` beside the parse that builds the config, so a field
     /// can't be marked good and then refuse to save.
@@ -2963,9 +2976,9 @@ component MatchSetupSheet inherits Rectangle {
     /// is trimmed.
     property <bool> can-save:
         root.valid-name(root.home-name) && root.valid-name(root.away-name)
-        && root.valid-hex(root.home-primary) && root.valid-hex(root.home-secondary)
-        && root.valid-hex(root.home-font) && root.valid-hex(root.away-primary)
-        && root.valid-hex(root.away-secondary) && root.valid-hex(root.away-font)
+        && ColorMaths.valid-hex(root.home-primary) && ColorMaths.valid-hex(root.home-secondary)
+        && ColorMaths.valid-hex(root.home-font) && ColorMaths.valid-hex(root.away-primary)
+        && ColorMaths.valid-hex(root.away-secondary) && ColorMaths.valid-hex(root.away-font)
         && root.valid-periods(root.regulation-periods)
         && root.valid-minutes(root.regulation-minutes)
         && root.valid-overtime-periods(root.overtime-periods)
@@ -3040,8 +3053,8 @@ component MatchSetupSheet inherits Rectangle {
                 home-primary := SetupField {
                     label: "Primary";
                     has-swatch: true;
-                    swatch: root.hex-color(root.home-primary);
-                    ok: root.valid-hex(root.home-primary);
+                    swatch: ColorMaths.hex-color(root.home-primary);
+                    ok: ColorMaths.valid-hex(root.home-primary);
                     placeholder: "#rrggbb";
                     text <=> root.home-primary;
                     pick(x, y) => { root.open-picker(0, x, y); }
@@ -3049,8 +3062,8 @@ component MatchSetupSheet inherits Rectangle {
                 home-accent := SetupField {
                     label: "Accent";
                     has-swatch: true;
-                    swatch: root.hex-color(root.home-secondary);
-                    ok: root.valid-hex(root.home-secondary);
+                    swatch: ColorMaths.hex-color(root.home-secondary);
+                    ok: ColorMaths.valid-hex(root.home-secondary);
                     placeholder: "#rrggbb";
                     text <=> root.home-secondary;
                     pick(x, y) => { root.open-picker(1, x, y); }
@@ -3058,8 +3071,8 @@ component MatchSetupSheet inherits Rectangle {
                 home-text := SetupField {
                     label: "Text";
                     has-swatch: true;
-                    swatch: root.hex-color(root.home-font);
-                    ok: root.valid-hex(root.home-font);
+                    swatch: ColorMaths.hex-color(root.home-font);
+                    ok: ColorMaths.valid-hex(root.home-font);
                     placeholder: "#rrggbb";
                     text <=> root.home-font;
                     pick(x, y) => { root.open-picker(2, x, y); }
@@ -3077,8 +3090,8 @@ component MatchSetupSheet inherits Rectangle {
                 away-primary := SetupField {
                     label: "Primary";
                     has-swatch: true;
-                    swatch: root.hex-color(root.away-primary);
-                    ok: root.valid-hex(root.away-primary);
+                    swatch: ColorMaths.hex-color(root.away-primary);
+                    ok: ColorMaths.valid-hex(root.away-primary);
                     placeholder: "#rrggbb";
                     text <=> root.away-primary;
                     pick(x, y) => { root.open-picker(3, x, y); }
@@ -3086,8 +3099,8 @@ component MatchSetupSheet inherits Rectangle {
                 away-accent := SetupField {
                     label: "Accent";
                     has-swatch: true;
-                    swatch: root.hex-color(root.away-secondary);
-                    ok: root.valid-hex(root.away-secondary);
+                    swatch: ColorMaths.hex-color(root.away-secondary);
+                    ok: ColorMaths.valid-hex(root.away-secondary);
                     placeholder: "#rrggbb";
                     text <=> root.away-secondary;
                     pick(x, y) => { root.open-picker(4, x, y); }
@@ -3095,8 +3108,8 @@ component MatchSetupSheet inherits Rectangle {
                 away-text := SetupField {
                     label: "Text";
                     has-swatch: true;
-                    swatch: root.hex-color(root.away-font);
-                    ok: root.valid-hex(root.away-font);
+                    swatch: ColorMaths.hex-color(root.away-font);
+                    ok: ColorMaths.valid-hex(root.away-font);
                     placeholder: "#rrggbb";
                     text <=> root.away-font;
                     pick(x, y) => { root.open-picker(5, x, y); }
@@ -3203,12 +3216,7 @@ component MatchSetupSheet inherits Rectangle {
             TouchArea { }
 
             picker := ColorPicker {
-                kit-colors: root.kit-colors;
                 text: root.picker-text;
-                hex-color(text) => { return root.hex-color(text); }
-                hsv-of-hex(text) => { return root.hsv-of-hex(text); }
-                hex-of-hsv(hue, sat, val) => { return root.hex-of-hsv(hue, sat, val); }
-                valid-hex(text) => { return root.valid-hex(text); }
                 // A kit colour and a drag both land in the field, which is
                 // what the sheet saves: there is no colour held anywhere the
                 // hex box can't see.
@@ -3963,16 +3971,27 @@ component KeysSheet inherits Sheet {
 /// to cancel -- a change applies as it is made, as the pen's and the panels' do.
 /// **Empty is the default**, and the Default button is the way back to it,
 /// because clearing a field is not a gesture a coach would find.
+///
+/// **The sheet owns its text.** It is made afresh on every open, from what is
+/// stored, so a half-typed field dies with it and is never what it reopens
+/// on; only a value that is a colour, or empty, leaves it.
 component SettingsSheet inherits Sheet {
-    /// The band field's text, two-way out to the window, which decides what
-    /// of it is stored.
-    in-out property <string> band-hex;
-    in property <[KitColor]> kit-colors;
-    pure callback hex-color(string) -> color;
-    pure callback hsv-of-hex(string) -> Hsv;
-    pure callback hex-of-hsv(float, float, float) -> string;
-    pure callback valid-hex(string) -> bool;
+    /// The band's stored value: `#rrggbb`, or empty for the default.
+    in property <string> stored;
+    /// A value for the band that is one: a colour, or empty.
+    callback edited(string);
     callback close();
+
+    /// The field's text: a hex, half-typed text, or empty.
+    property <string> field;
+    property <bool> ok: root.field == "" || ColorMaths.valid-hex(root.field);
+    // The seed is not an edit: an assignment in `init` runs no `changed`.
+    init => { root.field = root.stored; }
+    changed field => {
+        if (root.ok) {
+            root.edited(root.field);
+        }
+    }
 
     card-width: 440px;
     title: "Settings";
@@ -3983,27 +4002,22 @@ component SettingsSheet inherits Sheet {
         band := SetupField {
             label: "Slate band";
             placeholder: "Default";
-            ok: root.band-hex == "" || root.valid-hex(root.band-hex);
-            text <=> root.band-hex;
+            ok: root.ok;
+            text <=> root.field;
         }
         VerticalLayout {
             alignment: end;
             Button {
                 text: "Default";
-                enabled: root.band-hex != "";
-                clicked => { root.band-hex = ""; }
+                enabled: root.field != "";
+                clicked => { root.field = ""; }
             }
         }
     }
 
     ColorPicker {
-        kit-colors: root.kit-colors;
-        text: root.band-hex;
-        hex-color(text) => { return root.hex-color(text); }
-        hsv-of-hex(text) => { return root.hsv-of-hex(text); }
-        hex-of-hsv(hue, sat, val) => { return root.hex-of-hsv(hue, sat, val); }
-        valid-hex(text) => { return root.valid-hex(text); }
-        pick(hex) => { root.band-hex = hex; }
+        text: root.field;
+        pick(hex) => { root.field = hex; }
     }
 
     HorizontalLayout {
@@ -4260,18 +4274,9 @@ export component AppWindow inherits Window {
     /// what moves it when a mark is re-set under an unchanged selection.
     in property <float> slate-span-from;
     in property <float> slate-span-to;
-    /// The Settings sheet's band field (#131): a hex, half-typed text, or
-    /// empty for the default.
-    in-out property <string> slate-band-hex;
-    /// The last value of it that was a colour or empty -- what is stored and
-    /// drawn. A half-typed field leaves the band on this.
-    property <string> slate-band-good;
-    changed slate-band-hex => {
-        if (root.slate-band-hex == "" || root.valid-hex(root.slate-band-hex)) {
-            root.slate-band-good = root.slate-band-hex;
-            root.slate-band-edited(root.slate-band-hex);
-        }
-    }
+    /// The slate band's colour as stored (#131): `#rrggbb`, or empty for the
+    /// default. Rust seeds it from `state.json`; the Settings sheet writes it.
+    in-out property <string> slate-band;
     /// What the selected slate's band on the scrubber and its row in the
     /// Slates list draw. **The one place the default is written**, and why
     /// the two are one colour: the band *is* the selected slate's range (spec
@@ -4285,11 +4290,10 @@ export component AppWindow inherits Window {
     /// A palette colour cannot clash with the palette, and it follows light
     /// and dark without a second literal; a colour the coach picks is his,
     /// and absolute.
-    out property <color> slate-band-color: root.slate-band-good == ""
-        ? Palette.selection-background : root.hex-color(root.slate-band-good);
+    out property <color> slate-band-color: root.slate-band == ""
+        ? Palette.selection-background : ColorMaths.hex-color(root.slate-band);
     /// A colour, or `""` for the default, to remember (`main.rs`'s
-    /// `wire_settings`). Only ever a value that is one: never a half-typed
-    /// field.
+    /// `wire_settings`).
     callback slate-band-edited(string);
     /// The selected slate's name and tags, two-way as the inspector's fields
     /// are: a `text:` binding breaks the first time it is typed in.
@@ -4644,8 +4648,6 @@ export component AppWindow inherits Window {
     /// popup before the sheet (`handle-key`), and so a sheet that closes with
     /// the popup up doesn't reopen with it still showing.
     in-out property <int> match-picker-field: -1;
-    /// The picker's ready-made kit colours, from `src/color_picker.rs`.
-    in property <[KitColor]> kit-colors;
     /// Its fields, seeded from the project when it opens and read back on
     /// Save (`src/main.rs`). Two-way bound down to the fields, since a
     /// `text:` or `checked:` binding breaks once the user edits it.
@@ -4936,16 +4938,9 @@ export component AppWindow inherits Window {
     callback open-match-setup();
     /// Save the setup sheet's fields as the project's scoreboard.
     callback save-match-setup();
-    /// A colour field's text as a colour, and the sheet's validators, which
-    /// take their text so the bindings re-evaluate as it's typed.
-    pure callback hex-color(string) -> color;
+    /// The sheet's validators, which take their text so the bindings
+    /// re-evaluate as it's typed; a colour's is [`ColorMaths`]'.
     pure callback valid-name(string) -> bool;
-    pure callback valid-hex(string) -> bool;
-    /// The picker's two conversions, both `src/color_picker.rs`'s: the hex
-    /// string is what the project stores, so there is one path to a colour in
-    /// this app and these go through it.
-    pure callback hsv-of-hex(string) -> Hsv;
-    pure callback hex-of-hsv(float, float, float) -> string;
     pure callback valid-periods(string) -> bool;
     pure callback valid-overtime-periods(string) -> bool;
     pure callback valid-minutes(string) -> bool;
@@ -5074,11 +5069,8 @@ export component AppWindow inherits Window {
         root.settings-sheet-open = true;
     }
 
-    /// Closes the Settings sheet, however it was closed. The field goes back
-    /// on the last good value first, so a typo left in it is not what the
-    /// sheet reopens on.
+    /// Closes the Settings sheet, however it was closed.
     function close-settings() {
-        root.slate-band-hex = root.slate-band-good;
         root.settings-sheet-open = false;
         keys.focus();
     }
@@ -5888,12 +5880,20 @@ export component AppWindow inherits Window {
                             if root.slates.length > 0: ListView {
                                 height: min(root.slates.length * 30px + 4px, 124px);
 
-                                    for slate[index] in root.slates: Rectangle {
+                                    for slate[index] in root.slates: slate-row := Rectangle {
+                                        /// The selected row is painted in the
+                                        /// band's colour, which the coach
+                                        /// picks, so its words take the ink
+                                        /// that reads over it rather than the
+                                        /// palette's: white or silver would
+                                        /// hide them, black or navy would in
+                                        /// a light scheme.
+                                        property <bool> picked: slate.id == root.selected-slate;
+                                        property <color> ink: ColorMaths.band-ink(root.slate-band-color);
+
                                         height: 30px;
                                         border-radius: 4px;
-                                        background: slate.id == root.selected-slate
-                                            ? root.slate-band-color
-                                            : transparent;
+                                        background: self.picked ? root.slate-band-color : transparent;
 
                                         TouchArea {
                                             enabled: !root.recording;
@@ -6037,15 +6037,15 @@ export component AppWindow inherits Window {
 
                                                 Text {
                                                     text: slate.range;
-                                                    color: root.recording
-                                                        ? Palette.alternate-foreground
+                                                    color: slate-row.picked ? slate-row.ink
+                                                        : root.recording ? Palette.alternate-foreground
                                                         : Palette.foreground;
                                                     font-size: 12px;
                                                     vertical-alignment: center;
                                                 }
                                                 Text {
                                                     text: slate.video;
-                                                    color: Palette.alternate-foreground;
+                                                    color: slate-row.picked ? slate-row.ink : Palette.alternate-foreground;
                                                     font-size: 11px;
                                                     overflow: elide;
                                                     vertical-alignment: center;
@@ -6053,14 +6053,14 @@ export component AppWindow inherits Window {
                                                 }
                                                 Text {
                                                     text: slate.name;
-                                                    color: Palette.alternate-foreground;
+                                                    color: slate-row.picked ? slate-row.ink : Palette.alternate-foreground;
                                                     font-size: 11px;
                                                     overflow: elide;
                                                     vertical-alignment: center;
                                                 }
                                                 if slate.shot: Text {
                                                     text: "●";
-                                                    color: Palette.alternate-foreground;
+                                                    color: slate-row.picked ? slate-row.ink : Palette.alternate-foreground;
                                                     font-size: 11px;
                                                     vertical-alignment: center;
 
@@ -6073,7 +6073,7 @@ export component AppWindow inherits Window {
                                                 // the tooltip.
                                                 if slate.title != "": Text {
                                                     text: "T";
-                                                    color: Palette.alternate-foreground;
+                                                    color: slate-row.picked ? slate-row.ink : Palette.alternate-foreground;
                                                     font-size: 11px;
                                                     vertical-alignment: center;
 
@@ -7673,13 +7673,8 @@ export component AppWindow inherits Window {
                 overtime-periods <=> root.match-overtime-periods;
                 overtime-minutes <=> root.match-overtime-minutes;
                 back-anchor <=> root.match-back-anchor;
-                kit-colors: root.kit-colors;
                 picker-field <=> root.match-picker-field;
-                hex-color(text) => { return root.hex-color(text); }
-                hsv-of-hex(text) => { return root.hsv-of-hex(text); }
-                hex-of-hsv(hue, sat, val) => { return root.hex-of-hsv(hue, sat, val); }
                 valid-name(text) => { return root.valid-name(text); }
-                valid-hex(text) => { return root.valid-hex(text); }
                 valid-periods(text) => { return root.valid-periods(text); }
                 valid-overtime-periods(text) => { return root.valid-overtime-periods(text); }
                 valid-minutes(text) => { return root.valid-minutes(text); }
@@ -7789,12 +7784,11 @@ export component AppWindow inherits Window {
         // them in.
         if root.settings-sheet-open: Scrim {
             SettingsSheet {
-                band-hex <=> root.slate-band-hex;
-                kit-colors: root.kit-colors;
-                hex-color(text) => { return root.hex-color(text); }
-                hsv-of-hex(text) => { return root.hsv-of-hex(text); }
-                hex-of-hsv(hue, sat, val) => { return root.hex-of-hsv(hue, sat, val); }
-                valid-hex(text) => { return root.valid-hex(text); }
+                stored: root.slate-band;
+                edited(text) => {
+                    root.slate-band = text;
+                    root.slate-band-edited(text);
+                }
                 close => { root.close-settings(); }
             }
         }

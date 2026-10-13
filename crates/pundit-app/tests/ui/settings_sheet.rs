@@ -22,12 +22,6 @@
 //! writes its hex as it stands and never touches the held position, so it
 //! would pass with the sync dead.
 //!
-//! **The fixture wires the picker's pure callbacks before it reads or sets
-//! anything** — a copy of `main.rs`'s wiring over the library's own
-//! `parse_hex` and `color_picker`, because `main.rs` is unreachable. Unwired,
-//! `valid-hex` answers `false` and `hex-of-hsv` answers `""`, and every
-//! assertion below would pass or fail on that instead.
-//!
 //! **Every query is scoped to the sheet's element, not to its card.** The
 //! setup sheet's popup is the card's *sibling* (it hangs over the card), so a
 //! query inside the `Sheet` never finds a swatch.
@@ -37,14 +31,13 @@
 //! assignment; the pointer and key paths run that pass on the way in, but an
 //! `invoke_accessible_default_action` and a Rust `set_*` do not.
 
-use crate::key_action;
-use crate::{AppWindow, Hsv, KitColor, RecordingPhase};
+use crate::{color_wiring, key_action};
+use crate::{AppWindow, ColorMaths, RecordingPhase};
 use i_slint_backend_testing::ElementHandle;
 use pundit_app::color_picker;
 use pundit_app::keymap::Keymap;
-use pundit_app::match_panel::parse_hex;
 use slint::platform::{Key, PointerEventButton, WindowEvent};
-use slint::{Color, ComponentHandle, LogicalSize, ModelRc, SharedString, VecModel};
+use slint::{Color, ComponentHandle, LogicalSize, SharedString};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
@@ -55,8 +48,7 @@ const BUTTON: &str = "Settings…";
 /// Every value the window reported to be stored, in order.
 type Edits = Rc<RefCell<Vec<String>>>;
 
-/// The window with the picker's conversions, its kit colours and the keys
-/// wired, at the floor size it declares, and what `slate-band-edited` hears.
+/// The window with the app's own colour maths and keys wired, at the floor size it declares, and what `slate-band-edited` hears.
 fn window() -> (AppWindow, Edits) {
     i_slint_backend_testing::init_no_event_loop();
     let w = AppWindow::new().unwrap();
@@ -68,33 +60,7 @@ fn window() -> (AppWindow, Edits) {
         let edits = Rc::clone(&edits);
         move |text| edits.borrow_mut().push(text.to_string())
     });
-    w.on_hex_color(|text| match parse_hex(&text) {
-        Some(c) => slint::Color::from_rgb_f32(c.r as f32, c.g as f32, c.b as f32),
-        None => slint::Color::from_argb_u8(0, 0, 0, 0),
-    });
-    w.on_valid_hex(|text| parse_hex(&text).is_some());
-    w.on_hsv_of_hex(|text| {
-        let hsv = color_picker::hsv_of_hex(&text).unwrap_or(color_picker::Hsv {
-            hue: 0.0,
-            sat: 0.0,
-            val: 0.0,
-        });
-        Hsv {
-            hue: hsv.hue,
-            sat: hsv.sat,
-            val: hsv.val,
-        }
-    });
-    w.on_hex_of_hsv(|hue, sat, val| color_picker::hex_of_hsv(hue, sat, val).into());
-    w.set_kit_colors(ModelRc::new(VecModel::from(
-        color_picker::KIT_COLORS
-            .iter()
-            .map(|kit| KitColor {
-                name: kit.name.into(),
-                hex: kit.hex.into(),
-            })
-            .collect::<Vec<_>>(),
-    )));
+    color_wiring::wire_colors(&w);
     w.show().unwrap();
     let (min_w, min_h) = (w.get_min_window_width(), w.get_min_window_height());
     w.window().set_size(LogicalSize::new(min_w, min_h));
@@ -217,14 +183,26 @@ fn into_the_field(settings: &ElementHandle) {
         .mock_single_click(PointerEventButton::Left);
 }
 
+/// What the band field holds, read off the field itself: a half-typed value
+/// never leaves the sheet.
+fn field_text(settings: &ElementHandle) -> String {
+    by_id(&by_id(settings, "SettingsSheet::band"), "SetupField::edit")
+        .accessible_value()
+        .unwrap_or_default()
+        .to_string()
+}
+
 fn red() -> Color {
     Color::from_rgb_u8(255, 0, 0)
 }
 
 #[test]
 fn the_settings_button_opens_the_sheet_and_close_shuts_it() {
-    let (w, _) = window();
+    let (w, edits) = window();
+    w.set_slate_band("#ff0000".into());
     let settings = open(&w);
+    // Seeding the field from what is stored is not an edit.
+    assert!(edits.borrow().is_empty(), "{:?}", edits.borrow());
     by_label(&settings, "Close").invoke_accessible_default_action();
     settle();
     assert!(!w.get_settings_sheet_open());
@@ -234,8 +212,6 @@ fn the_settings_button_opens_the_sheet_and_close_shuts_it() {
 fn esc_in_the_field_leaves_it_before_it_closes_the_sheet() {
     let (w, _) = window();
     into_the_field(&open(&w));
-    press(&w, "r");
-    assert_eq!(w.get_slate_band_hex(), "r", "the letter reached the field");
     press(&w, Key::Escape);
     assert!(
         w.get_settings_sheet_open(),
@@ -279,22 +255,23 @@ fn a_typed_colour_reaches_the_band_and_is_reported() {
 #[test]
 fn a_typo_is_never_reported_and_does_not_outlive_the_sheet() {
     let (w, edits) = window();
-    into_the_field(&open(&w));
+    let settings = open(&w);
+    into_the_field(&settings);
     type_text(&w, "#ff0000");
     let reported = edits.borrow().len();
 
     select_all(&w);
     type_text(&w, "#12");
-    assert_eq!(w.get_slate_band_hex(), "#12", "the typo is in the field");
+    assert_eq!(field_text(&settings), "#12", "the typo is in the field");
     assert_eq!(edits.borrow().len(), reported, "{:?}", edits.borrow());
     assert_eq!(w.get_slate_band_color(), red(), "the band stays on red");
 
     press(&w, Key::Escape);
     press(&w, Key::Escape);
     assert!(!w.get_settings_sheet_open());
-    open(&w);
+    let reopened = open(&w);
     assert_eq!(
-        w.get_slate_band_hex(),
+        field_text(&reopened),
         "#ff0000",
         "what the sheet reopens on"
     );
@@ -331,9 +308,39 @@ fn the_inline_picker_follows_typed_text() {
     by_id(&settings, "ColorPicker::area").mock_single_click(PointerEventButton::Left);
     settle();
     assert_eq!(
-        w.get_slate_band_hex(),
+        w.get_slate_band(),
         color_picker::hex_of_hsv(240.0, 0.5, 0.5)
     );
+}
+
+/// From the default there is no colour to stand on, so the picker starts at
+/// full saturation and brightness: the strip gives that hue, not black.
+#[test]
+fn the_hue_strip_from_the_default_gives_a_colour() {
+    let (w, _) = window();
+    let settings = open(&w);
+    by_id(&settings, "ColorPicker::strip").mock_single_click(PointerEventButton::Left);
+    settle();
+    assert_eq!(
+        w.get_slate_band(),
+        color_picker::hex_of_hsv(180.0, 1.0, 1.0)
+    );
+}
+
+/// The selected slate's row is painted in the band's colour, so its words take
+/// whichever of black and white reads over it. What reaches the row's `Text`s
+/// is a binding no test can read (a `Text` exposes no colour); this pins the
+/// answer they are bound to.
+#[test]
+fn the_band_ink_reads_over_white_and_black() {
+    let (w, _) = window();
+    let maths = w.global::<ColorMaths>();
+    let (white, black) = (
+        Color::from_rgb_u8(255, 255, 255),
+        Color::from_rgb_u8(0, 0, 0),
+    );
+    assert_eq!(maths.invoke_band_ink(white), black, "over White");
+    assert_eq!(maths.invoke_band_ink(black), white, "over Black");
 }
 
 #[test]
@@ -343,5 +350,5 @@ fn a_kit_colour_lands_in_the_settings_field() {
     by_label(&settings, "White").invoke_accessible_default_action();
     settle();
     // `KIT_COLORS[0]`.
-    assert_eq!(w.get_slate_band_hex(), "#ffffff");
+    assert_eq!(w.get_slate_band(), "#ffffff");
 }

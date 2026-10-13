@@ -702,16 +702,17 @@ fix is argued from.
 
 **The Keys sheet is the seventh `Sheet`, and it is a list** (#96 task 4). `F1` opens it — that is `Action::ShowKeys`' own default, listed in the table like every other key — and so does the **Keys** button, which sits in the *drawing* row beside `Fit` and for `Fit`'s reason: the transport row is full at the window's 1100px minimum (measured, `Devices…` ends at x=1199, 99px past the right edge). Its rows are `Keymap::listing()` set on `key-rows` in `wire_keys`, **beside `action-for` and nowhere else**, so the list and the lookup are one map read twice and the list cannot go stale. **The six reserved rows — Escape, Tab, Shift+Tab, Return, Home, End — are written in `app.slint`, not in the table:** they are not `Action` variants, so `Binding`, `overrides()` and a rebind would each have to filter them back out of a table whose whole point is that every row in it is rebindable, and their words belong beside their behaviour — for the three the window handles, `handle-key`'s own reserved block in the same file. The list is taller than the 700px minimum window, and it scrolls in the sheet's own body like every sheet's (#134, below), which retired the `ScrollView` cap it first had of its own.
 
-**The Settings sheet is a `Sheet` beside Keys** (#131; spec
-`docs/superpowers/specs/2026-10-13-settings-sheet-band-colour-design.md`), and
-its two doors — the drawing row's **Settings…** and the scrubber's *Band
-colour…* — share one gate, `can-open-settings`, with **no guard in
-`open-settings()`**: each door's `enabled` is the gate, so a check there too
-would let a broken item pass `snap_menu.rs`. Its one row is the slate band's
-colour, which the band and the selected slate's row both draw from the window's
-`slate-band-color`; it is stored only on a change that is a colour (a hex, or
-empty for the default) and never on a half-typed one, which `close-settings()`
-puts back on the last good value.
+**The Settings sheet has two doors and one gate** (#131): the drawing row's
+**Settings…** and the scrubber's *Band colour…* are both `enabled:
+can-open-settings`, and the gate is on the doors, never in `open-settings()`.
+The slate band's colour is stored only when the field holds a colour (or is
+empty, the default) — never half-typed.
+
+**`ColorMaths` is the app's first Slint global** (#131): the colour maths — hex
+to colour, the picker's HSV both ways, the kit colours, a label's ink — wired
+once by `color_wiring.rs`, which both the binary and `tests/ui` `mod`, as
+`key_action.rs` is. It replaced the kit colours and four callbacks declared and
+forwarded through the window, both sheets and the picker.
 
 **A drag on the scrubber snaps to the match marks** (#102; right-click it to turn that off, remembered in `state.json`), and **only the drag does** — never the wheel, the arrows, `,`/`.` or `[`/`]`. The radius is one constant in pixels, `snap-radius` in `scrubber.slint`; the landing is `match_panel::nearest_chapter` over `match_abs`, so a snapped release and `]` seek to the same value.
 

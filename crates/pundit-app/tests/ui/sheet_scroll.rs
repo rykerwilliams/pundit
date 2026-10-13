@@ -12,9 +12,7 @@
 //! caps every sheet at the window and the body scrolls the rest, so the
 //! assertion below is over every sheet at once, in the worst state each is
 //! configured in — which is what makes it a tripwire for the next one rather
-//! than a measurement of today's tallest. A new sheet joins `sheets()`: #96's
-//! Keys sheet, a list taller than the window, shipped without joining it and
-//! was added with #131's Settings sheet.
+//! than a measurement of today's tallest. A new sheet joins `sheets()`.
 //!
 //! **The buttons scroll with the body**, because each sheet puts its own button
 //! row in `@children`. That is the accepted trade, so the reachability test

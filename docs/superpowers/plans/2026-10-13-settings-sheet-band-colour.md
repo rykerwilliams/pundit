@@ -59,6 +59,33 @@ fastest, and each task here moves the lines of the next. Paths are under
   2026-10-07 (#57) while its entry still said *"next"*. Both #78 and #131 went
   to "Closed, kept for the reasoning", which is where this file's shipped index
   lines live.
+- **Review fixes (PR #94).** Six changes:
+  - The selected slate row's words take `ColorMaths.band-ink` (black or white,
+    `highlight::label_ink`), because the opaque row in a pale or dark band
+    colour hid them; spec Risk 1, cured as the spec said it would be.
+  - `ColorPicker`'s saturation and brightness start at 1, so the strip from
+    the default gives a hue rather than black.
+  - `SettingsSheet` owns its text: a private `field`, seeded in `init` from
+    `stored`, reporting through `edited` only when it is a colour or empty.
+    The window keeps one `slate-band`; `slate-band-good`, the window's
+    `changed` handler, `close-settings()`'s reseed and the startup write-back
+    are gone. The plan's task 3 sabotage 4 (the reseed) no longer has a target;
+    its replacement is `init` removed.
+  - One `export global ColorMaths` replaces the colour callbacks forwarded
+    through the window, both sheets and the picker, wired by
+    `src/color_wiring.rs`, a module of the binary and of `tests/ui` like
+    `key_action.rs`; the fixture's hand copy is gone.
+  - Prose trimmed (CLAUDE.md's Settings paragraph, the `Sheet` doc's count,
+    `sheet_scroll.rs`' history).
+  - `esc_in_the_field…` lost its letter assertion (`text_editing.rs` has it).
+
+  Three tests are new: `the_hue_strip_from_the_default_gives_a_colour`,
+  `the_band_ink_reads_over_white_and_black`, and an "opening reports nothing"
+  assertion in `the_settings_button_opens_the_sheet_and_close_shuts_it`.
+  **What the row's ink reaches is still not testable** — a `Text` exposes no
+  colour — so the binding is manual check 8. A `field != stored` guard tried
+  on `changed field` was dead (a sabotage removing it passed everything),
+  because an assignment in `init` runs no `changed`, and was taken out.
 
 **Shipping: one PR, a commit per task, in order.** No commit puts a control on
 `main` that does nothing:
