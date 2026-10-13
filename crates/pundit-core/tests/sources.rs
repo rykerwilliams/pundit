@@ -5,12 +5,13 @@
 //! `removeSourceVideo`, `reorderSourceVideos`, `aspectsMatch`) live in the
 //! macOS app target and have no tests.
 
+mod common;
+
 use uuid::Uuid;
 
 use pundit_core::highlight::{HighlightKey, NormRect, PlayerHighlight};
 use pundit_core::project::{
-    aspects_match, AspectMismatch, Clip, Inset, InsetCorner, InsetSize, Project, Slate, SourceRef,
-    SourceReferenced,
+    aspects_match, AspectMismatch, Clip, Project, Slate, SourceRef, SourceReferenced,
 };
 use pundit_core::scoreboard::{MatchEventKind, MatchEventRecord};
 use pundit_core::stroke::Rgba;
@@ -40,22 +41,12 @@ fn clip_on(source_index: usize) -> Clip {
     Clip {
         id: Uuid::new_v4(),
         name: format!("clip on {source_index}"),
-        notes: String::new(),
-        tags: Vec::new(),
         source_index,
         start_source_seconds: 1.0,
         recording_duration: 1.0,
         recording_filename: "x.mkv".into(),
-        events: Vec::new(),
-        show_pip: true,
-        inset: Inset::Camera,
-        inset_size: InsetSize::Medium,
-        inset_corner: InsetCorner::BottomRight,
-        sort_index: 0,
         created_at: "2026-09-19T00:00:00Z".into(),
-        transcript: String::new(),
-        slate_id: None,
-        backdrop: None,
+        ..common::clip_stub()
     }
 }
 

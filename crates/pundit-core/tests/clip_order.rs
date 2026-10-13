@@ -1,31 +1,23 @@
 //! Clip order and clip edits (Phase 3 spec C2, C3). All new: macOS kept
 //! `sortIndex` loosely and snapshotted whole clips for edits.
 
+mod common;
+
 use uuid::Uuid;
 
-use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize, Project};
+use pundit_core::project::{Clip, Project};
 use pundit_core::undo::ClipEdit;
 
 fn clip(n: u128, source_index: usize, start: f64) -> Clip {
     Clip {
         id: Uuid::from_u128(n),
         name: format!("c{n}"),
-        notes: String::new(),
-        tags: Vec::new(),
         source_index,
         start_source_seconds: start,
         recording_duration: 1.0,
         recording_filename: format!("{n}.mkv"),
-        events: Vec::new(),
-        show_pip: true,
-        inset: Inset::Camera,
-        inset_size: InsetSize::Medium,
-        inset_corner: InsetCorner::BottomRight,
-        sort_index: 0,
         created_at: String::new(),
-        transcript: String::new(),
-        slate_id: None,
-        backdrop: None,
+        ..common::clip_stub()
     }
 }
 

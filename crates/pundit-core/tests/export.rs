@@ -6,6 +6,8 @@
 //! schedule — pieces from several matches — has its own section, and the rate
 //! window, which counts those same frames, is at the bottom.
 
+mod common;
+
 use uuid::Uuid;
 
 use pundit_core::event::{CommentaryEvent, EventKind};
@@ -13,7 +15,7 @@ use pundit_core::export::{
     basket_schedule, compilation_schedule, Compilation, FrameSpec, RateWindow, OUTPUT_FPS,
 };
 use pundit_core::plan::{BasketPiece, ExportTarget};
-use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize, Project, SourceRef};
+use pundit_core::project::{Clip, Project, SourceRef};
 use pundit_core::scoreboard::{
     ClockDisplay, MatchEventKind, MatchFormat, ScoreboardConfig, ScoreboardContext, TeamConfig,
 };
@@ -24,22 +26,12 @@ fn clip(start: f64, duration: f64, events: Vec<CommentaryEvent>) -> Clip {
     Clip {
         id: Uuid::new_v4(),
         name: "c".into(),
-        notes: String::new(),
-        tags: Vec::new(),
-        source_index: 0,
         start_source_seconds: start,
         recording_duration: duration,
         recording_filename: "c.mkv".into(),
         events,
-        show_pip: true,
-        inset: Inset::Camera,
-        inset_size: InsetSize::Medium,
-        inset_corner: InsetCorner::BottomRight,
-        sort_index: 0,
         created_at: "2026-09-19T00:00:00Z".into(),
-        transcript: String::new(),
-        slate_id: None,
-        backdrop: None,
+        ..common::clip_stub()
     }
 }
 

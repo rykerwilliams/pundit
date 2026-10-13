@@ -3131,7 +3131,8 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** with the next slate work (#104, #97, #98) — #104 touches
   the same rows.
 
-106. **Every format field costs a hand edit in eighteen test files.** A full `Clip`
+106. **Every format field costs a hand edit in eighteen test files — RESOLVED**
+  (2026-10-13, for `pundit-core`). A full `Clip`
   struct literal is written out by hand in each of `pundit-core/tests/*.rs`,
   `pundit-harness/src/lib.rs`, and four places in `pundit-media`; `Clip` has no
   `Default`, so adding a field breaks all of them. #88 (v13) spent 14 of its 35
@@ -3154,6 +3155,16 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** at the **start** of the next format bump, before its
   fields are added — that is the one moment the work pays for itself
   immediately.
+- **What shipped:** `pundit-core/tests/common/mod.rs`'s `clip_stub()`, which the
+  twelve core test literals (eleven files' helpers and `cues.rs`'s one
+  in-test literal) spread as `..common::clip_stub()`, each keeping its own id,
+  name, times, file name, tags, events and date, so no value a test sees
+  changed: 548 core tests pass before and after. `project_format.rs`'s
+  `sample_clip` stays whole on purpose — the format test is where naming every
+  field is the point. Core's full `Clip` literals fell from 14 to 3 (the stub,
+  `sample_clip` and `add_recorded_clip`). **Still open:** the five literals in
+  `pundit-media` (four) and `pundit-harness` (one), which a core `tests/common`
+  cannot reach; a new field still costs those.
 
 107. **Nothing built the book — RESOLVED** (2026-09-28). **Numbered 104 when it
   was filed**, which collided with the slate double-click entry another session

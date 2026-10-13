@@ -1,9 +1,11 @@
 //! Playback-timeline replay: source time and play/freeze segmentation.
 
+mod common;
+
 use uuid::Uuid;
 
 use pundit_core::event::{CommentaryEvent, EventKind};
-use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize};
+use pundit_core::project::Clip;
 use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_core::timeline::{playback_segments, source_time, PlaybackSegment, SegmentKind};
 use pundit_core::zoom::Zoom;
@@ -12,22 +14,12 @@ fn clip(start: f64, duration: f64, events: Vec<CommentaryEvent>) -> Clip {
     Clip {
         id: Uuid::nil(),
         name: "c".into(),
-        notes: String::new(),
-        tags: Vec::new(),
-        source_index: 0,
         start_source_seconds: start,
         recording_duration: duration,
         recording_filename: "c.mkv".into(),
         events,
-        show_pip: true,
-        inset: Inset::Camera,
-        inset_size: InsetSize::Medium,
-        inset_corner: InsetCorner::BottomRight,
-        sort_index: 0,
         created_at: "2026-09-19T00:00:00Z".into(),
-        transcript: String::new(),
-        slate_id: None,
-        backdrop: None,
+        ..common::clip_stub()
     }
 }
 

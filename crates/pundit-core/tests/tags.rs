@@ -1,9 +1,11 @@
 //! Tag summaries (ported from `TagAggregationTests.swift`) and tag-field
 //! suggestions (new: macOS computed them inline in `TagField`).
 
+mod common;
+
 use uuid::Uuid;
 
-use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize, Project, Slate};
+use pundit_core::project::{Clip, Project, Slate};
 use pundit_core::tag::{
     tag_suggestions, tag_summaries, tag_vocabulary, take_suggestion, TagSummary, MAX_SUGGESTIONS,
 };
@@ -12,22 +14,12 @@ fn clip(tags: &[&str], duration: f64) -> Clip {
     Clip {
         id: Uuid::new_v4(),
         name: String::new(),
-        notes: String::new(),
         tags: tags.iter().map(|t| t.to_string()).collect(),
-        source_index: 0,
         start_source_seconds: 0.0,
         recording_duration: duration,
         recording_filename: "x.mkv".into(),
-        events: Vec::new(),
-        show_pip: true,
-        inset: Inset::Camera,
-        inset_size: InsetSize::Medium,
-        inset_corner: InsetCorner::BottomRight,
-        sort_index: 0,
         created_at: String::new(),
-        transcript: String::new(),
-        slate_id: None,
-        backdrop: None,
+        ..common::clip_stub()
     }
 }
 

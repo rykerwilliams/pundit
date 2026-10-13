@@ -6,10 +6,12 @@
 //! `test_canUndo_canRedo_track_stacks` has no API left to test, and
 //! `a_push_clears_redo` covers `test_pushDelete_with_no_prior_returns_nil`.
 
+mod common;
+
 use uuid::Uuid;
 
 use pundit_core::highlight::{HighlightKey, NormRect, PlayerHighlight};
-use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize, Slate};
+use pundit_core::project::{Clip, Slate};
 use pundit_core::scoreboard::{MatchEventKind, MatchEventRecord};
 use pundit_core::stroke::Rgba;
 use pundit_core::undo::{ClipEdit, UndoAction, UndoController, STACK_CAP};
@@ -18,22 +20,11 @@ fn clip(id: Uuid) -> Clip {
     Clip {
         id,
         name: "Clip".into(),
-        notes: String::new(),
-        tags: Vec::new(),
-        source_index: 0,
         start_source_seconds: 0.0,
         recording_duration: 1.0,
         recording_filename: format!("{id}.mkv"),
-        events: Vec::new(),
-        show_pip: true,
-        inset: Inset::Camera,
-        inset_size: InsetSize::Medium,
-        inset_corner: InsetCorner::BottomRight,
-        sort_index: 0,
         created_at: String::new(),
-        transcript: String::new(),
-        slate_id: None,
-        backdrop: None,
+        ..common::clip_stub()
     }
 }
 

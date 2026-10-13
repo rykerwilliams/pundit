@@ -1,9 +1,11 @@
 //! Stroke visibility and partial-draw replay.
 
+mod common;
+
 use uuid::Uuid;
 
 use pundit_core::event::{CommentaryEvent, EventKind};
-use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize};
+use pundit_core::project::Clip;
 use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_core::stroke_replay::visible_strokes;
 
@@ -11,22 +13,12 @@ fn clip(events: Vec<CommentaryEvent>) -> Clip {
     Clip {
         id: Uuid::nil(),
         name: "c".into(),
-        notes: String::new(),
-        tags: Vec::new(),
-        source_index: 0,
         start_source_seconds: 0.0,
         recording_duration: 60.0,
         recording_filename: "c.mkv".into(),
         events,
-        show_pip: true,
-        inset: Inset::Camera,
-        inset_size: InsetSize::Medium,
-        inset_corner: InsetCorner::BottomRight,
-        sort_index: 0,
         created_at: "2026-09-19T00:00:00Z".into(),
-        transcript: String::new(),
-        slate_id: None,
-        backdrop: None,
+        ..common::clip_stub()
     }
 }
 
