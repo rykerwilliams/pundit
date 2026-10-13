@@ -80,9 +80,9 @@ export component Scrubber {
 
     /// How near a mark a drag has to come to land on it. In **pixels**, so the
     /// basin in seconds is `snap-radius × maximum ÷ travel`: it widens with
-    /// the footage and narrows as the window widens — about ±21 s on a
-    /// 90-minute match at the default window. Small on purpose: too wide and
-    /// it swallows the reel's 20 s lead-in, the stretch a coach drags to.
+    /// the footage and narrows as the window widens. A guess, to be tuned on
+    /// real footage — BACKLOG #102 has the seconds it comes to, and how they
+    /// sit against a reel's 20 s lead-in.
     property <length> snap-radius: 6px;
     /// Whether a drag snaps at all (the menu below; Rust stores it).
     in property <bool> snap-enabled;
@@ -92,7 +92,7 @@ export component Scrubber {
     out property <float> snap-seconds: root.snap-enabled && root.marks.length > 0
         ? root.snap-radius * root.maximum / max(root.width - root.thumb, 1px)
         : 0;
-    /// The menu's item: Rust flips the stored bool and pushes it back.
+    /// The menu's item (`main.rs`'s `wire_snap`).
     callback toggle-snap();
 
     /// Where the value `at` is drawn: `value-at` turned round, so a mark sits

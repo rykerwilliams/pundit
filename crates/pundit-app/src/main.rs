@@ -779,24 +779,8 @@ fn wire_callbacks(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, pickers: &Pi
             }))
         }
     });
-    // Both snap (#102): the release hands back the `f32` the moves wrote, and
-    // only a re-snap against `match_abs`'s `f64` lands exactly where `]` does.
-    window.on_scrub_move({
-        let (weak, bus) = (window.as_weak(), bus.clone());
-        move |abs| {
-            let Some(w) = weak.upgrade() else { return };
-            let abs = snap_scrub(&w, abs);
-            bus.borrow().send(Command::ScrubMove { abs });
-        }
-    });
-    window.on_scrub_release({
-        let (weak, bus) = (window.as_weak(), bus.clone());
-        move |abs| {
-            let Some(w) = weak.upgrade() else { return };
-            let abs = snap_scrub(&w, abs);
-            bus.borrow().send(Command::ScrubRelease { abs });
-        }
-    });
+    window.on_scrub_move(snapped(window, bus, |abs| Command::ScrubMove { abs }));
+    window.on_scrub_release(snapped(window, bus, |abs| Command::ScrubRelease { abs }));
     // A wheel over the scrubber skips, by whole notches, through the same
     // coordinator a held arrow key drives (`wheel.rs`). The moment is
     // captured here, at the input event, as the bus contract requires.
@@ -2358,6 +2342,22 @@ fn device_rows<'a>(
         rows.push(row(chosen, label.into(), true));
     }
     rows
+}
+
+/// [`cmd`] for the two scrub callbacks: the value is snapped first
+/// ([`snap_scrub`]). **Both snap** (#102): the release hands back the `f32` the
+/// moves wrote, and only a re-snap against `match_abs`'s `f64` lands exactly
+/// where `]` does.
+fn snapped(
+    window: &AppWindow,
+    bus: &Rc<RefCell<BusHandle>>,
+    command: impl Fn(f64) -> Command + 'static,
+) -> impl Fn(f32) {
+    let (weak, bus) = (window.as_weak(), bus.clone());
+    move |abs| {
+        let Some(w) = weak.upgrade() else { return };
+        bus.borrow().send(command(snap_scrub(&w, abs)));
+    }
 }
 
 /// A callback taking one Slint `float` that sends `command(value)`.

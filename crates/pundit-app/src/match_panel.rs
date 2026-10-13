@@ -260,10 +260,6 @@ pub fn previous_chapter(abs: f64, chapters: &[f64]) -> Option<f64> {
 /// reaches a mark is meant to stay on it. And the strict `<` is the whole of
 /// "don't snap": a `within` of `0`, below it or NaN admits nothing, so the
 /// scrubber's one number needs no flag beside it.
-///
-/// It is the third reader of [`match_abs`], with the scrubber's marks (through
-/// [`match_rows`]) and `[` / `]`, so a snapped release lands on the very value
-/// `]` seeks to.
 pub fn nearest_chapter(abs: f64, chapters: &[f64], within: f64) -> Option<f64> {
     chapters
         .iter()

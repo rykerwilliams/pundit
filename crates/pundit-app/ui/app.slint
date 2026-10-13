@@ -4630,8 +4630,7 @@ export component AppWindow inherits Window {
     callback step-scan-speed(ScanStep);
     callback scrub-move(float);
     callback scrub-release(float);
-    /// The scrubber's menu item: Rust flips the stored bool and pushes
-    /// `snap-to-events` back.
+    /// The scrubber's menu item (`wire_snap`).
     callback toggle-snap();
     /// A wheel over the scrubber: the scroll's deltas and whether Shift was
     /// held. It skips rather than seeking — see `wheel.rs`.

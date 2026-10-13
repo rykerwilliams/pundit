@@ -2869,8 +2869,17 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   on, and a checkable item on the scrubber's right-click menu. **The spec's
   seconds were the minimum window's**: the transport bar spans the whole
   window, so at the default 1600px the travel is 1564px and 6px is ±20.7 s on
-  a 90-minute match (the plan's §0.1 has the table). The coach's original
-  words: "snap to events in the scrubber as an option." Dragging the scrubber lands on
+  a 90-minute match (the plan's §0.1 has the table).
+- **Open: the radius against the reel's lead-in — the coach's call.** The spec
+  sized 6px so that it would *not* swallow `REEL_LEAD_IN`'s 20 s (a coach
+  dragging to a goal's build-up must not be pulled onto the goal). On the
+  corrected geometry it does, just: ±20.7 s on a 90-minute match at 1600px,
+  ±30.5 s at the 1100px minimum, ±17.2 s only at 1920px. 5px is ±17.3 s at
+  1600px and still ±25.4 s at 1100px; 4px is ±13.8 s and ±20.3 s. Shipped at 6px
+  because the plan said to tune on real footage, and the switch turns it off.
+  **When to revisit:** the coach's first drag to a build-up on a real match —
+  ask whether the goal pulled him off it.
+  The coach's original words: "snap to events in the scrubber as an option." Dragging the scrubber lands on
   whatever frame the pixel under the cursor works out to, so getting the playhead
   onto a goal you tagged means dragging and then nudging with the arrows.
 - **What "events" covers is the first thing to settle**, and it should be settled
