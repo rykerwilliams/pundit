@@ -27,7 +27,11 @@ made things worse.
 - **84.** Music under a goals reel — **phase 1 shipped 2026-10-12** (#80, #82,
   #83): a Music row on the export sheet (a genre picker and a Folder… button), a
   stable song per match, ducked and faded; **no Settings sheet** (spec §M6).
-  **Phase 2 is next to spec**: the Openverse search and the credits
+  **Phase 2 specced and planned 2026-10-13**
+  (`2026-10-13-reel-music-search-design.md`, plan
+  `2026-10-13-reel-music-search.md`): a Find music sheet off the Music row that
+  searches Openverse for CC0 / CC BY music and adds it to a genre folder, and a
+  `.credits.txt` beside the reel. Two PRs, the credit first
 - **131.** The slate band's colour should be a setting. The coach (2026-10-05):
   *"i mean the band color should be in the settings"* — and *"the slider bar
   colour clashes a bit"*. **Specced 2026-10-13**
@@ -1874,6 +1878,17 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   build the Settings sheet after all** (the spec's §M6): the folder's one reader is
   that picker, so the path sits beside it. Credits and the Openverse fetcher are
   **phase 2**, which fetches into the music folder rather than a cache.
+- **Phase 2 specced and planned 2026-10-13**
+  (`docs/superpowers/specs/2026-10-13-reel-music-search-design.md`, plan
+  `docs/superpowers/plans/2026-10-13-reel-music-search.md`). The coach took
+  every recommended answer the same day: the search sits on the Music row; it
+  uses Openverse anonymously, with genre matches first; it offers CC0, the
+  public-domain mark and CC BY only, with no BY-SA; the credit is a text file
+  beside the reel only; and there is no preview. **The spec's §R corrects this
+  entry three times.** Openverse lists three audio sources today, not five, and
+  FMA is not one of them. There is no checksum to be had for a catalogue track,
+  so a full decode stands in for it. And the network is reached from a function
+  no command can call, not through a permission carried on a job.
 - **When to revisit:** any time. Nothing further is needed from the coach, and
   nothing is owed by #78 beyond the sheet's design, which is written down.
 
