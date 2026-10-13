@@ -31,7 +31,19 @@ Paths are from the repository root; `core`, `media`, `app` and `harness` mean
   slate (two v12 tests read `slates[0]` and the whole sorted list as their
   own); 2.13 and 2.14 push a `titled_slate` instead. 2.10 also asserts a
   basket's entries take each piece's own mode (spec Testing 4).
-- **3 — drawing the strip, in export and preview.** Not started.
+- **3 — drawing the strip, in export and preview.** Done 2026-10-13 on
+  `claude/133-115-titles`: six new tests (media lib 128 → 129, `tests/export`
+  33 → 36, `tests/preview` 5 → 6, harness `tests/export` 19 → 20), the
+  workspace green but for `recorder.rs`'s wall-clock bounds under other
+  sessions' load (untouched code; green alone 2 runs in 3). The census matched
+  §A, `overlay.rs`'s test literals one line lower. All 7 sabotages went red
+  exactly where predicted. Deviations: `draw_label`'s premultiply put
+  `coverage²/255` in the alpha channel, and now puts the alpha itself — every
+  label's anti-aliased edge, measured by no test; preview's **strokes** keep
+  `n/30` and only the strip reads `entry.record_time(n)` (the same number in a
+  one-entry run); 3.4 gives its entry a real line under `Off`, so `Off` is
+  what keeps the caption away; the three-clip test's glyph count became the
+  shared `bar_glyphs`.
 - **4 — the controls, the wiring, the guide and the prose.** Not started.
 
 **Shipping: two PRs, in order.**

@@ -44,13 +44,14 @@ use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_video as gst_video;
 use pundit_core::audio::{Region, AUDIO_SAMPLE_RATE};
+use pundit_core::caption::strip_at;
 use pundit_core::chapters::chapter_list;
 use pundit_core::cues::{cues_to_srt, Cue};
 use pundit_core::export::{Compilation, OUTPUT_FPS};
 use pundit_core::highlight::{highlight_shapes, PlayerHighlight};
 use pundit_core::layout::{avatar_box, avatar_box_side, pip_rect};
 use pundit_core::metadata::FileTags;
-use pundit_core::project::{Clip, InsetSize, Quality, Resolution};
+use pundit_core::project::{Clip, InsetSize, Project, Quality, Resolution, Slate};
 use pundit_core::scoreboard::ScoreboardContext;
 
 use super::audio::Mixer;
@@ -191,10 +192,40 @@ pub struct MatchMedia {
     /// They belong to the footage rather than to a clip (spec H1), so an entry
     /// with no clip — a reel piece — gets them too.
     pub highlights: Vec<PlayerHighlight>,
+    /// The project's slates, whose titles are burned over the footage their
+    /// ranges cover (BACKLOG #133). **The whole list**, titled or not:
+    /// [`pundit_core::caption::strip_at`] is the one place that decides which
+    /// count, so pre-filtering here would be a second copy of that rule.
+    pub slates: Vec<Slate>,
     /// The project's avatar image, or `None` for a project that records on
     /// camera. One image for the project, so one path here: every entry of it
     /// whose clip has an `avatar_placement` draws this one (spec A1, I6).
     pub avatar: Option<PathBuf>,
+}
+
+impl MatchMedia {
+    /// What `project`, in `folder`, contributes to every entry of it — a
+    /// snapshot of its highlights, slates and avatar — with the `scoreboard`
+    /// to burn in, which is the caller's because it depends on the export's
+    /// picker as well as on the project.
+    ///
+    /// **The one constructor both runs use** (an export and a basket), so
+    /// "what a match contributes" is written once and one test of either run
+    /// covers both.
+    pub fn of(
+        project: &Project,
+        folder: &Path,
+        scoreboard: Option<ScoreboardContext>,
+    ) -> MatchMedia {
+        MatchMedia {
+            scoreboard,
+            highlights: project.player_highlights.clone(),
+            slates: project.slates.clone(),
+            // The project's one image: a pick or a removal while the run is
+            // going does not reach it (I6).
+            avatar: project.avatar.as_ref().map(|file| folder.join(file)),
+        }
+    }
 }
 
 /// What a running export reports, on its own thread.
@@ -733,13 +764,21 @@ fn export(
                 f64::from(picture.3),
             ),
         };
+        // **No titles over a diagram either**, for the highlights' reason just
+        // above: a title is bounded on the footage, and a whiteboard's frozen
+        // anchor would hold one on screen for the whole take (spec S7). The
+        // clip's own caption still applies.
+        let slates: &[Slate] = match media.picture.backdrop() {
+            Some(_) => &[],
+            None => &media.match_media.slates,
+        };
         let overlay = overlays.render(
             &OverlayFrame {
                 clip: media.clip.as_ref().map(|c| &c.clip),
                 record_time,
                 picture,
                 highlights: &highlights,
-                text: &entry.text,
+                bar: strip_at(entry, record_time, slates, frame.source_time),
                 scoreboard,
             },
             out_w as u32,

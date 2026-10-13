@@ -18,6 +18,7 @@ use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_pbutils as pbutils;
 use pundit_core::audio::audio_regions;
+use pundit_core::caption::CaptionBar;
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::export::{compilation_schedule, Compilation, FrameSpec, OUTPUT_FPS};
 use pundit_core::layout::{avatar_box, bar_rect, pip_rect, scoreboard_rects, Rect as LayoutRect};
@@ -25,7 +26,7 @@ use pundit_core::metadata::FileTags;
 use pundit_core::plan::ExportTarget;
 use pundit_core::project::{
     Clip, Inset, InsetCorner, InsetPlacement, InsetSize, Preferences, Project, Quality, Resolution,
-    SourceRef,
+    Slate, SourceRef,
 };
 use pundit_core::scoreboard::{
     MatchEventKind, MatchFormat, ScoreboardConfig, ScoreboardContext, TeamConfig,
@@ -34,7 +35,8 @@ use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_core::zoom::Zoom;
 use pundit_media::fixtures::{
     self, assert_export_tags, block_centre, counter_video, counter_video_with, decode_counters,
-    ffprobe, one_entry, read_counter, sample_export_tags, CounterKind, CounterQuirks, COUNTER_BITS,
+    ffprobe, one_entry, read_counter, sample_export_tags, CounterKind, CounterQuirks, GrayFrame,
+    COUNTER_BITS,
 };
 use pundit_media::{
     ChapterOutcome, ClipMedia, Encode, EntryMedia, ExportDone, ExportError, ExportJob,
@@ -560,19 +562,8 @@ fn a_three_clip_export_shows_each_entry_s_frames_in_its_own_rect() {
     // is black in the counter fixture and tinted blacker still by the bar.
     // Entries 0 and 2 show an inset, so their bar stops at its column; entry
     // 1's reaches the frame's edge. The glyphs are counted well left of both.
-    let bar = bar_rect(
-        f64::from(OUT_W),
-        f64::from(OUT_H),
-        Some(InsetPlacement::default()),
-    );
     let glyphs: Vec<usize> = (0..3)
-        .map(|entry| {
-            let frame = &out[entry * per_entry as usize + per_entry as usize / 2];
-            (bar.y as usize..OUT_H as usize)
-                .flat_map(|y| (0..640).map(move |x| (x, y)))
-                .filter(|&(x, y)| frame.mean(x, y, 0) > 150.0)
-                .count()
-        })
+        .map(|entry| bar_glyphs(&out[entry * per_entry as usize + per_entry as usize / 2]))
         .collect();
     assert!(
         glyphs.iter().all(|&n| n > 50),
@@ -580,6 +571,131 @@ fn a_three_clip_export_shows_each_entry_s_frames_in_its_own_rect() {
     );
 
     duration_is_the_schedule_s(&path, frames.len());
+}
+
+/// The white glyph pixels on `frame`'s bar: the bar's rows, left of x = 640 so
+/// clear of any inset's column, brighter than anything a counter fixture or a
+/// black picture puts there. The bar's tint over black is invisible, so the
+/// glyphs are what say a line was drawn.
+fn bar_glyphs(frame: &GrayFrame) -> usize {
+    // The bar's top is the same whatever stands in the corner.
+    let bar = bar_rect(f64::from(OUT_W), f64::from(OUT_H), None);
+    (bar.y as usize..OUT_H as usize)
+        .flat_map(|y| (0..640).map(move |x| (x, y)))
+        .filter(|&(x, y)| frame.mean(x, y, 0) > 150.0)
+        .count()
+}
+
+/// A counter source long enough for a clip starting 10 s in to run 5 s, at
+/// the output's own rate so output frame `n` is a known time (plan §0.6: the
+/// [`Source`] fixture is 5 s).
+fn sixteen_seconds(dir: &Path) -> PathBuf {
+    counter_video(
+        &dir.join("src16.webm"),
+        640,
+        360,
+        30,
+        480,
+        CounterKind::Vp8WebmWithAudio,
+    )
+}
+
+/// A clip 10 s into a [`sixteen_seconds`] source and 5 s long, with
+/// `caption_bar` and a name long enough that its caption is unmistakable.
+fn strip_clip(caption_bar: CaptionBar) -> Clip {
+    Clip {
+        name: "Corner routine".into(),
+        caption_bar,
+        ..clip(10.0, 5.0, Vec::new())
+    }
+}
+
+/// Exports `clip` over `source` through the app's own plan — so its entry
+/// carries its real caption and `caption_until` — with `match_media`, and
+/// decodes the result.
+fn export_strip(
+    dir: &Path,
+    source: PathBuf,
+    clip: Clip,
+    match_media: Arc<MatchMedia>,
+) -> Vec<GrayFrame> {
+    let compilation = compilation(std::slice::from_ref(&clip), &[16.0]);
+    let path = dir.join("strip.mp4");
+    export(ExportJob {
+        tags: FileTags::default(),
+        compilation,
+        path: path.clone(),
+        cues: None,
+        render: Render::Encode(Encode {
+            audio: Vec::new(),
+            entries: vec![EntryMedia {
+                match_media,
+                ..media(source, PathBuf::new(), clip)
+            }],
+            resolution: Resolution::R720,
+            quality: Quality::Medium,
+        }),
+    })
+    .unwrap();
+    fixtures::decode_gray(&path)
+}
+
+/// A slate on video 0 over `[in, out)`, titled `title`.
+fn titled_slate(in_seconds: f64, out_seconds: f64, title: &str) -> Slate {
+    Slate {
+        id: Uuid::new_v4(),
+        source_index: 0,
+        in_seconds,
+        out_seconds: Some(out_seconds),
+        name: String::new(),
+        tags: Vec::new(),
+        title: Some(title.into()),
+    }
+}
+
+/// **`FirstSeconds` is the caption for 3 s of the viewer's clock, then
+/// nothing** (#115): glyphs on the bar at 1 s, none at 4 s. The clip starts
+/// 10 s into its video, so a caption timed on the *source* clock would be
+/// gone from the first frame.
+#[test]
+fn a_first_seconds_caption_leaves_the_export_after_three_seconds() {
+    gst::init().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let source = sixteen_seconds(dir.path());
+    let out = export_strip(
+        dir.path(),
+        source,
+        strip_clip(CaptionBar::FirstSeconds),
+        Arc::default(),
+    );
+    assert_eq!(out.len(), 150);
+    let (at_1, at_4) = (bar_glyphs(&out[30]), bar_glyphs(&out[120]));
+    assert!(at_1 > 50, "{at_1} glyph pixels on the bar at 1 s");
+    assert_eq!(at_4, 0, "glyph pixels on the bar at 4 s");
+}
+
+/// **A slate's title takes the strip over its range** (#133), on a clip whose
+/// own caption is `Off`: glyphs at source 11.5, inside `[11, 12)`, and none
+/// either side of it.
+#[test]
+fn a_title_replaces_an_off_caption_inside_its_range() {
+    gst::init().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let source = sixteen_seconds(dir.path());
+    let match_media = Arc::new(MatchMedia {
+        slates: vec![titled_slate(11.0, 12.0, "Corner routine")],
+        ..MatchMedia::default()
+    });
+    let out = export_strip(dir.path(), source, strip_clip(CaptionBar::Off), match_media);
+    assert_eq!(out.len(), 150);
+    // Output frame n shows source 10 + n/30: no pauses, no skips.
+    let glyphs = |source: f64| bar_glyphs(&out[((source - 10.0) * 30.0).round() as usize]);
+    let (before, inside, after) = (glyphs(10.5), glyphs(11.5), glyphs(12.5));
+    assert!(
+        inside > 50,
+        "{inside} glyph pixels inside the title's range"
+    );
+    assert_eq!((before, after), (0, 0), "glyphs outside the title's range");
 }
 
 /// The compilation a project of `clips` over `source_durations` plans — the
@@ -2526,6 +2642,51 @@ fn a_whiteboard_clip_exports_its_diagram_letterboxed() {
         g > r && g > b,
         "the diagram's green is not in its top-left corner — a board was burned \
          over it: rgb({r}, {g}, {b})"
+    );
+}
+
+/// **No title over a diagram** (spec S7): a whiteboard take's anchor is real
+/// and its one `Freeze` holds the source time there, so a titled slate over
+/// the anchor would sit on the diagram for the whole take. The clip's caption
+/// is `Off`, so a strip here could only be the title; the diagram is **black**
+/// (plan §0.6), so a white glyph is the only bright thing the bar could hold.
+#[test]
+fn a_whiteboard_entry_draws_no_title() {
+    gst::init().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let diagram = fixtures::solid_png(dir.path(), "pitch.png", 400, 300, 0x000000, 255);
+    let path = dir.path().join("out.mp4");
+
+    let mut clip = clip(0.0, 6.0 / f64::from(OUTPUT_FPS), Vec::new());
+    clip.backdrop = Some("pitch.png".into());
+    clip.caption_bar = CaptionBar::Off;
+    let frames: Vec<FrameSpec> = (0..6)
+        .map(|_| FrameSpec {
+            entry: 0,
+            source_time: 0.0,
+            zoom: Zoom::IDENTITY,
+        })
+        .collect();
+    let mut job = job(PathBuf::new(), frames, path.clone());
+    let Render::Encode(encode) = &mut job.render else {
+        unreachable!("job builds an encode")
+    };
+    encode.entries[0].picture = Picture::Backdrop(diagram);
+    encode.entries[0].match_media = Arc::new(MatchMedia {
+        slates: vec![titled_slate(0.0, 5.0, "Corner routine")],
+        ..MatchMedia::default()
+    });
+    // A real line on the entry, so `Off` is what keeps the caption away.
+    job.compilation = fixtures::one_entry(&clip, job.compilation.frames.clone(), "1 / 1 | c");
+
+    export(job).unwrap();
+
+    let out = fixtures::decode_gray(&path);
+    assert_eq!(out.len(), 6);
+    let glyphs: Vec<usize> = out.iter().map(bar_glyphs).collect();
+    assert!(
+        glyphs.iter().all(|&n| n == 0),
+        "a title drawn over the diagram: {glyphs:?}"
     );
 }
 

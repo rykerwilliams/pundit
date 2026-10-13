@@ -1292,17 +1292,11 @@ fn job(
         pickers.cues,
     );
     // One record of the match for the whole run, shared by every entry of it.
-    let match_media = Arc::new(MatchMedia {
-        scoreboard: carry.scoreboard,
-        highlights: open.project.player_highlights.clone(),
-        // The project's one image, snapshotted like everything else here: a
-        // pick or a removal while this run is going does not reach it (I6).
-        avatar: open
-            .project
-            .avatar
-            .as_ref()
-            .map(|file| open.folder.join(file)),
-    });
+    let match_media = Arc::new(MatchMedia::of(
+        &open.project,
+        &open.folder,
+        carry.scoreboard,
+    ));
     let job = ExportJob {
         render: match carry.copy {
             // The mute reaches each renderer in its own vocabulary (spec M2):

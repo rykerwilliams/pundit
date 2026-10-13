@@ -16,14 +16,16 @@ use pundit_app::bus::{
     AppFiles, Command, Event, ExportChoices, ExportRun, QueueRow, RecordingStatus, Take,
     TargetState, UserError,
 };
-use pundit_core::layout::scoreboard_rects;
+use pundit_core::caption::CaptionBar;
+use pundit_core::layout::{bar_rect, scoreboard_rects};
 use pundit_core::plan::ExportTarget;
-use pundit_core::project::{Quality, Resolution};
+use pundit_core::project::{Quality, Resolution, SlateEdit};
 use pundit_core::scoreboard::{MatchEventKind, MatchFormat, ScoreboardConfig, TeamConfig};
 use pundit_core::store::{self, EXPORTS_DIRNAME, RECORDINGS_DIRNAME};
 use pundit_core::stroke::Rgba;
+use pundit_core::undo::ClipEdit;
 use pundit_core::zoom::Zoom;
-use pundit_harness::{add_clips, write_project, Harness, FRAME};
+use pundit_harness::{add_clips, write_one_source_project, write_project, Harness, FRAME};
 use pundit_media::fixtures;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -682,6 +684,104 @@ fn an_export_carries_the_projects_scoreboard() {
         let off = (0..3).any(|c| (i32::from(actual[c]) - i32::from(expected[c])).abs() > 40);
         assert!(!off, "{what} at ({x}, {y}): got {actual:?}");
     }
+}
+
+/// **A slate's title reaches an export through the bus** (#133): the title is
+/// typed with `EditSlate`, the clip switched `Off` with `EditClip`, and the
+/// run's `MatchMedia` is the bus's own fill (`MatchMedia::of`, which a basket
+/// shares) — so the glyphs in the file are inside the slate's range and
+/// nowhere else.
+///
+/// **Glyphs, not "runs to EOS"** (plan §0.8): a run missing its slates runs
+/// to EOS just as well. And a **black** source (§0.9): the default fixture's
+/// SMPTE bars put a white block inside the bar's rows.
+#[test]
+fn an_exported_clip_burns_in_its_slates_title() {
+    gstreamer::init().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let folder = tmp.path().join("project");
+    std::fs::create_dir(&folder).unwrap();
+    let video = fixtures::solid_video(
+        &tmp.path().join("black.webm"),
+        640,
+        360,
+        30,
+        300,
+        0x000000,
+        true,
+    );
+    let mut project = write_one_source_project(&folder, &video);
+    let clip = add_clips(&folder, &mut project, &[0])[0].id;
+    // Source 1 s to 5 s, and no inset, so the bar runs the frame's width.
+    project.clips[0].start_source_seconds = 1.0;
+    project.clips[0].recording_duration = 4.0;
+    project.clips[0].show_pip = false;
+    store::write(&folder, &mut project).unwrap();
+
+    let mut h = Harness::new(&tmp.path().join("config"));
+    h.send(Command::OpenProject(folder.clone()));
+    h.wait_opened();
+
+    // A range over the clip's middle, source [2.5, 3.5).
+    h.send(Command::MarkSlateIn {
+        source_index: 0,
+        source_seconds: 2.5,
+    });
+    h.wait_changed();
+    h.send(Command::MarkSlateOut {
+        source_index: 0,
+        source_seconds: 3.5,
+    });
+    let slate = h.wait_changed().project.slates[0].id;
+    h.send(Command::EditSlate {
+        id: slate,
+        edit: SlateEdit::Title("Corner routine".into()),
+    });
+    h.wait_changed();
+    h.send(Command::EditClip {
+        id: clip,
+        edit: ClipEdit::CaptionBar(CaptionBar::Off),
+    });
+    let saved = h.wait_changed().project;
+    assert_eq!(saved.slates[0].title.as_deref(), Some("Corner routine"));
+    assert_eq!(saved.clips[0].caption_bar, CaptionBar::Off);
+
+    h.send(Command::Export {
+        targets: vec![ExportTarget::AllClips],
+        choices: choices(),
+    });
+    let done = outcome(&mut h);
+    assert!(
+        matches!(done.targets[0].state, TargetState::Done(_)),
+        "{:?}",
+        done.targets[0]
+    );
+    h.shutdown();
+
+    let exports = folder.join(EXPORTS_DIRNAME);
+    let film = outputs(&exports)
+        .into_iter()
+        .find(|name| name.ends_with(".mp4"))
+        .expect("an exported film");
+    let frames = fixtures::decode_gray(&exports.join(film));
+    assert_eq!(frames.len(), 120);
+    // White glyphs in the bar's rows, left of x = 640; `choices` renders at
+    // 720p.
+    let bar = bar_rect(1280.0, 720.0, None);
+    // Output frame n shows source 1 + n/30.
+    let glyphs = |source: f64| {
+        let frame = &frames[((source - 1.0) * 30.0).round() as usize];
+        (bar.y as usize..720)
+            .flat_map(|y| (0..640).map(move |x| (x, y)))
+            .filter(|&(x, y)| frame.mean(x, y, 0) > 150.0)
+            .count()
+    };
+    let (before, inside, after) = (glyphs(1.5), glyphs(3.0), glyphs(4.5));
+    assert!(
+        inside > 50,
+        "{inside} glyph pixels inside the title's range"
+    );
+    assert_eq!((before, after), (0, 0), "glyphs outside the title's range");
 }
 
 /// A game video deleted since the project opened is refused too: the check is

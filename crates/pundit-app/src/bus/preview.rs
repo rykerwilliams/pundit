@@ -114,6 +114,7 @@ impl Bus {
             commentary_volume: open.project.preferences.preview_commentary_volume,
             scoreboard: ScoreboardContext::for_project(&open.project),
             highlights: open.project.player_highlights.clone(),
+            slates: open.project.slates.clone(),
             avatar: open
                 .project
                 .avatar

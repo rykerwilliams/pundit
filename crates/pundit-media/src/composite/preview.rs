@@ -17,13 +17,17 @@
 //! the recording's own timeline, so output frame `n` is at `n/30` there too.
 //! That is why the recording needs no pump, no re-timestamping and no appsink:
 //! it plays natively and the mixer aligns the pads by running time. It is also
-//! why the overlay's `record_time` is simply `n/30`.
+//! why the strokes' `record_time` is `n/30`, and why the strip's,
+//! `PlanEntry::record_time(n)` — export's own expression — is the same number
+//! here: the compilation has one entry, starting at frame 0.
 //!
 //! **The bar is export's own** (spec E7). Preview runs the clip's one-entry
-//! compilation, so its overlay carries the same text bar the file gets, and
-//! the line reads `1 / 1 | <name> | tags` because the target is that one clip.
-//! The scoreboard comes off the same per-frame call the export makes. What the
-//! coach checks here is what the export shows.
+//! compilation, so its overlay carries the same strip the file gets — the
+//! clip's caption, `1 / 1 | <name> | tags`, as its caption-bar mode says, or a
+//! slate's title over that slate's range — from the same per-frame
+//! `caption::strip_at` the export calls (BACKLOG #115, #133). The scoreboard
+//! comes off the same per-frame call the export makes too. What the coach
+//! checks here is what the export shows.
 //!
 //! **One pump, every appsrc, one PTS.** `glvideomixer` waits indefinitely on
 //! every pad, so frame `n`'s overlay — and an avatar's image — goes out with
@@ -58,10 +62,11 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_video as gst_video;
+use pundit_core::caption::{strip_at, Strip};
 use pundit_core::export::{Compilation, OUTPUT_FPS};
 use pundit_core::highlight::{highlight_shapes, HighlightShape, PlayerHighlight};
 use pundit_core::layout::{avatar_box, pip_rect};
-use pundit_core::project::{Clip, InsetPlacement};
+use pundit_core::project::{Clip, InsetPlacement, Slate};
 use pundit_core::scoreboard::{ScoreboardConfig, ScoreboardContext, ScoreboardState};
 
 use super::decode::{Decoder, Picture, Texture};
@@ -138,8 +143,8 @@ pub struct PreviewJob {
     pub clip: Clip,
     /// The clip as a **one-entry compilation**
     /// (`pundit_core::export::compilation_schedule` on
-    /// `ExportTarget::Clip`): the frames to pump, and the entry whose `text`
-    /// the bar draws — `1 / 1 | <name> | tags`, since the target is this one
+    /// `ExportTarget::Clip`): the frames to pump, and the entry whose caption
+    /// the strip draws — `1 / 1 | <name> | tags`, since the target is this one
     /// clip (spec E7). One schedule builds preview and export, so the picture
     /// the coach checks is the picture the file gets.
     pub compilation: Compilation,
@@ -154,6 +159,10 @@ pub struct PreviewJob {
     /// belong to the footage rather than to the clip (spec H1), so the preview
     /// shows every one the clip's span crosses.
     pub highlights: Vec<PlayerHighlight>,
+    /// The project's slates, whose titles are drawn over the footage their
+    /// ranges cover — a snapshot, like `highlights`, and like
+    /// `MatchMedia::slates` the whole list (BACKLOG #133).
+    pub slates: Vec<Slate>,
     /// The project's avatar image, or `None` for a project that records on
     /// camera. Read only by a clip whose `inset` is the avatar (spec A1, B2).
     pub avatar: Option<PathBuf>,
@@ -527,6 +536,20 @@ fn run(
                     f64::from(composite.picture.3),
                 )
             });
+        // The strip, by the export's own call on the export's own clocks. And
+        // no titles over a diagram, for the highlights' reason (spec S7).
+        let slates: &[Slate] = match job.picture.backdrop() {
+            Some(_) => &[],
+            None => &job.slates,
+        };
+        let bar = entry.and_then(|entry| {
+            strip_at(
+                entry,
+                entry.record_time(n as usize),
+                slates,
+                frame.source_time,
+            )
+        });
         composite.push(
             Frame {
                 n,
@@ -534,6 +557,7 @@ fn run(
                 sample,
                 clip: &job.clip,
                 highlights: &highlights,
+                bar,
                 scoreboard,
             },
             &mut overlays,
@@ -598,6 +622,9 @@ struct Frame<'a> {
     clip: &'a Clip,
     /// The rings showing at this frame, in picture pixels.
     highlights: &'a [HighlightShape],
+    /// The strip at this frame — `caption::strip_at`'s answer — or `None` for
+    /// no bar.
+    bar: Option<Strip<'a>>,
     /// The board at this frame, from the job's context, or `None` when the
     /// project has no scoreboard or nothing has been tagged yet.
     scoreboard: Option<(&'a ScoreboardConfig, ScoreboardState)>,
@@ -677,9 +704,6 @@ struct Composite {
     avatar: Option<(gst_app::AppSrc, gst::Buffer)>,
     /// The picture rect the strokes are mapped into.
     picture: PadRect,
-    /// The bar's line, from the compilation's one entry: fixed for the run,
-    /// since the entry is.
-    text: String,
     shared: Arc<Shared>,
 }
 
@@ -878,12 +902,6 @@ impl Composite {
             overlay,
             avatar: avatar_src.zip(avatar.map(|a| a.buffer.clone())),
             picture,
-            text: job
-                .compilation
-                .plan
-                .entries
-                .first()
-                .map_or_else(String::new, |entry| entry.text.clone()),
             shared: shared.clone(),
         })
     }
@@ -906,6 +924,7 @@ impl Composite {
             sample,
             clip,
             highlights,
+            bar,
             scoreboard,
         } = frame;
         let base = stamp(sample, n);
@@ -917,7 +936,7 @@ impl Composite {
                 record_time: n as f64 / f64::from(OUTPUT_FPS),
                 picture: self.picture,
                 highlights,
-                text: &self.text,
+                bar,
                 scoreboard,
             },
             OUTPUT_WIDTH as u32,
