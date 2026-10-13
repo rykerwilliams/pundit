@@ -169,7 +169,7 @@ problem — which is the entry, not an excuse for it.
   Whole clip / First 3 seconds / Off, sticky. **Still open:** the lighter
   variant, dropping the `1 / 1` from a one-entry export (see the entry)
 
-- **131.** The slate band's colour, a setting — shipped 2026-10-13 (PR #TODO): a
+- **131.** The slate band's colour, a setting — shipped 2026-10-13 (PR #94): a
   full colour picker in a new Settings sheet, which the selected slate's row
   follows too, also reached from the scrubber's right-click menu
 - **78.** App settings for the things an export writes — closed 2026-10-13: the
@@ -1570,7 +1570,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   coach asks.
 
 78. **App settings for the things an export writes — SHIPPED 2026-10-13**: the
-  switches 2026-10-07 (#57), the Settings sheet with #131 (PR #TODO). The coach (2026-09-24):
+  switches 2026-10-07 (#57), the Settings sheet with #131 (PR #94). The coach (2026-09-24):
   "add to the backlog an appsettings? we don't need a screen for it yet. maybe we
   already have it. e.g. the srt file gen, the other chapter track, etc. these are
   general app config settings to be turned off or on."
@@ -4439,7 +4439,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   in the repo, and they only cover the two fields they were written for.
 
 131. **The slate band's colour should be a setting — SHIPPED 2026-10-13** (PR
-  #TODO; spec `2026-10-13-settings-sheet-band-colour-design.md`, plan
+  #94; spec `2026-10-13-settings-sheet-band-colour-design.md`, plan
   `2026-10-13-settings-sheet-band-colour.md`). The coach (2026-10-05):
   *"slate bands look dope tho"* and then *"i mean the band color should be in the
   settings"*.
