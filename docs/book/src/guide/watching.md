@@ -16,6 +16,11 @@ them as one game, and playback carries straight on across the join.
   seconds, <kbd>Shift</kbd> makes it 10, and rolling away from you goes
   forward. It keeps working while you record, where dragging the scrubber
   does not.
+- **Dragging the scrubber snaps to a goal or period mark** once the pointer is
+  within a few pixels of it, and lets go when you drag on past — so letting go
+  on a mark lands exactly where <kbd>]</kbd> would. Right-click the scrubber to
+  turn **Snap to match events** off or on; the choice is remembered on this
+  computer.
 
 ## Scanning fast
 

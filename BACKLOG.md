@@ -20,20 +20,13 @@ made things worse.
   "the srt file gen, the other chapter track" — and (2026-10-03) *"I think all of
   them should be settings?"*, with **fully independent** switches. **Specced
   2026-10-05, planned 2026-10-06**: two on the export sheet (Chapters,
-  Scoreboard subtitles), and a settings sheet designed but not built — **#84
-  builds it** (#102 declined it, 2026-10-07)
+  Scoreboard subtitles), and a settings sheet designed but not built — and
+  still unbuilt: #102 declined it (2026-10-07) and #84 put its folder on the
+  export sheet instead (2026-10-12)
 - **84.** Music under a goals reel — **phase 1 shipped 2026-10-12** (#80, #82,
   #83): a Music row on the export sheet (a genre picker and a Folder… button), a
   stable song per match, ducked and faded; **no Settings sheet** (spec §M6).
   **Phase 2 is next to spec**: the Openverse search and the credits
-- **102.** Snap the scrubber to events, as an option. The coach (2026-09-28):
-  "snap to events in the scrubber as an option" (**an on/off setting**, the coach
-  2026-10-03). **Specced 2026-10-07**: match marks only, a 6px radius, one
-  `state.json` bool, and a checkable item on the **scrubber's own right-click
-  menu**. **Planned 2026-10-12** (`2026-10-12-scrubber-snapping.md`): two PRs,
-  the Rust half first; it also fixes a right-click mid-drag leaving the scrub
-  stuck
-
 - **83.** `a_pause_while_a_flushing_seek_recovers_playing_sticks` — its "fails
   twice, or once on CI" trigger fired 2026-10-12; first step is printing the
   states the recovery went through
@@ -2868,9 +2861,28 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **Sighting, 2026-10-12, #84 task 3's gate:** `corrupted size vs. prev_size`,
   `pundit-harness --test export` (not media's), SIGABRT, in a full workspace
   run beside #72's first post-fix sighting.
+- **Sighting, 2026-10-12, #102's gate:** the same message, `pundit-media --test
+  export`, SIGABRT, in a full workspace run of a change that touches no media
+  code; that suite alone then passed 33/33.
 
-102. **Snap the scrubber to events, as an option.** The coach (2026-09-28):
-  "snap to events in the scrubber as an option." Dragging the scrubber lands on
+102. **Snap the scrubber to events, as an option — SHIPPED 2026-10-12** (#85,
+  #86; spec `2026-10-07-scrubber-snapping-design.md`, plan
+  `2026-10-12-scrubber-snapping.md`). Match marks only, a 6px radius
+  (`scrubber.slint`'s `snap-radius`), `state.json`'s `snapToEvents` default
+  on, and a checkable item on the scrubber's right-click menu. **The spec's
+  seconds were the minimum window's**: the transport bar spans the whole
+  window, so at the default 1600px the travel is 1564px and 6px is ±20.7 s on
+  a 90-minute match (the plan's §0.1 has the table).
+- **Open: the radius against the reel's lead-in — the coach's call.** The spec
+  sized 6px so that it would *not* swallow `REEL_LEAD_IN`'s 20 s (a coach
+  dragging to a goal's build-up must not be pulled onto the goal). On the
+  corrected geometry it does, just: ±20.7 s on a 90-minute match at 1600px,
+  ±30.5 s at the 1100px minimum, ±17.2 s only at 1920px. 5px is ±17.3 s at
+  1600px and still ±25.4 s at 1100px; 4px is ±13.8 s and ±20.3 s. Shipped at 6px
+  because the plan said to tune on real footage, and the switch turns it off.
+  **When to revisit:** the coach's first drag to a build-up on a real match —
+  ask whether the goal pulled him off it.
+  The coach's original words: "snap to events in the scrubber as an option." Dragging the scrubber lands on
   whatever frame the pixel under the cursor works out to, so getting the playhead
   onto a goal you tagged means dragging and then nudging with the arrows.
 - **What "events" covers is the first thing to settle**, and it should be settled
@@ -4376,12 +4388,14 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **Scope question:** the band is one of four things drawn on that track. A
   colour setting for the band alone is odd; one for all four is a palette, which
   is a bigger feature than the request.
-- **When to revisit:** with the settings sheet #78 **designs** — #78 does not
-  build it (that spec's §U4; **#84 does**, since #102 declined it on 2026-10-07),
-  and #78's own two switches go on the export sheet. Or sooner if the band turns
-  out to read badly on a particular venue's footage. **A second home exists as of
-  #102's spec**, and it is nearer: that spec adds a right-click menu to the
-  scrubber, which is where a coach would look for the band's colour. Whether a
+- **When to revisit:** with the settings sheet #78 **designs** — nobody has
+  built it (#78's spec §U4 left it unbuilt, #102 declined it on 2026-10-07, and
+  #84 put its folder on the export sheet), and #78's own two switches went on
+  the export sheet. Or sooner if the band turns out to read badly on a
+  particular venue's footage. **A second home exists as of #102 (shipped
+  2026-10-12)**, and it is nearer: the scrubber now has a right-click menu
+  (`scrubber.slint`'s `snap-menu`), which is where a coach would look for the
+  band's colour. Whether a
   picker is wanted at all is still this entry's own question.
 
 132. **Two clicks silently renamed the wrong slate — FIXED 2026-10-06.** Found

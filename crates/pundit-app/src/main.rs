@@ -436,6 +436,7 @@ fn main() {
     wire_pen_width(&window, &machine_state);
     wire_music(&window, &machine_state, &pickers);
     wire_folds(&window, &machine_state);
+    wire_snap(&window, &machine_state);
     // The keymap is read here, once: the window asks `action-for` per key
     // event and that lookup is a scan over the returned table (#96). The file
     // handle is for the other direction -- the Keys sheet's *Set...* and ✕,
@@ -778,8 +779,8 @@ fn wire_callbacks(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, pickers: &Pi
             }))
         }
     });
-    window.on_scrub_move(cmd(bus, |abs| Command::ScrubMove { abs }));
-    window.on_scrub_release(cmd(bus, |abs| Command::ScrubRelease { abs }));
+    window.on_scrub_move(snapped(window, bus, |abs| Command::ScrubMove { abs }));
+    window.on_scrub_release(snapped(window, bus, |abs| Command::ScrubRelease { abs }));
     // A wheel over the scrubber skips, by whole notches, through the same
     // coordinator a held arrow key drives (`wheel.rs`). The moment is
     // captured here, at the input event, as the bus contract requires.
@@ -2343,6 +2344,22 @@ fn device_rows<'a>(
     rows
 }
 
+/// [`cmd`] for the two scrub callbacks: the value is snapped first
+/// ([`snap_scrub`]). **Both snap** (#102): the release hands back the `f32` the
+/// moves wrote, and only a re-snap against `match_abs`'s `f64` lands exactly
+/// where `]` does.
+fn snapped(
+    window: &AppWindow,
+    bus: &Rc<RefCell<BusHandle>>,
+    command: impl Fn(f64) -> Command + 'static,
+) -> impl Fn(f32) {
+    let (weak, bus) = (window.as_weak(), bus.clone());
+    move |abs| {
+        let Some(w) = weak.upgrade() else { return };
+        bus.borrow().send(command(snap_scrub(&w, abs)));
+    }
+}
+
 /// A callback taking one Slint `float` that sends `command(value)`.
 fn cmd(bus: &Rc<RefCell<BusHandle>>, command: impl Fn(f64) -> Command + 'static) -> impl Fn(f32) {
     let bus = bus.clone();
@@ -2683,6 +2700,44 @@ fn wire_folds(window: &AppWindow, state: &AppFiles) {
             show_folds(&w, folds);
         }
     });
+}
+
+/// Whether a drag on the scrubber snaps (BACKLOG #102), on the folds' pattern:
+/// the window's property is pushed once, and the menu item flips **it** —
+/// stored and set back, never re-read from the file — so the checkmark and
+/// `state.json` have one writer and cannot disagree. The bus never learns the
+/// option exists: it is sent an `abs` it cannot tell from a hand-dragged one.
+fn wire_snap(window: &AppWindow, state: &AppFiles) {
+    window.set_snap_to_events(state.snap_to_events());
+    window.on_toggle_snap({
+        let (weak, state) = (window.as_weak(), state.clone());
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            let on = !w.get_snap_to_events();
+            state.set_snap_to_events(on);
+            w.set_snap_to_events(on);
+        }
+    });
+}
+
+/// Where a scrub at `abs` lands: on the match mark the scrubber's
+/// `snap-seconds` reaches, if one is in reach, with the thumb and the readout
+/// moved onto it; otherwise `abs`. The reach is the scrubber's (0 is don't
+/// snap) and the search is [`match_panel::nearest_chapter`]'s.
+fn snap_scrub(w: &AppWindow, abs: f32) -> f64 {
+    let abs = f64::from(abs);
+    let within = f64::from(w.get_scrub_snap_seconds());
+    let snapped = UI.with_borrow(|ui| {
+        let project = &ui.snapshot.as_ref()?.project;
+        match_panel::nearest_chapter(abs, &match_panel::match_abs(project), within)
+    });
+    match snapped {
+        Some(at) => {
+            w.set_position_seconds(at as f32);
+            at
+        }
+        None => abs,
+    }
 }
 
 /// The one writer of the three fold properties, so a stored set and what is on

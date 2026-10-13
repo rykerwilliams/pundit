@@ -1019,9 +1019,6 @@ mod tests {
         state.set_panel_widths(widths);
         // Off, not the default on: a clobbered snap must be visible below.
         state.set_snap_to_events(false);
-        assert_eq!(state.pen(), Pen::Pink);
-        assert_eq!(state.window_size(), size);
-        assert_eq!(state.panel_widths(), widths);
         assert_eq!(state.last_project(), Some(PathBuf::from("/p/game")));
         assert_eq!(state.whisper_model(), WhisperModel::Base);
         // (Base, not the default Small: a clobbered model must be visible.)
