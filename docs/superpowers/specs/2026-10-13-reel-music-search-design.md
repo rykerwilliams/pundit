@@ -21,9 +21,9 @@ Every `path:line` below was re-derived from `main` at `f27cb38`. Every claim
 about Openverse was **measured against the live API on 2026-10-13** unless it
 says otherwise, and the sources are listed under §Sources.
 
-**This is a draft for review, with open questions for the coach at the end.**
-The design below takes each question's recommended answer; where an answer
-changes the design, the question says what moves.
+**The coach decided the six product questions on 2026-10-13**, each as
+recommended; they are recorded at the end under *Decided with the coach*, and
+the design below is written to those answers.
 
 **The design, in one paragraph.** A **Find music…** button in the export sheet's
 Music row opens a sheet of its own: a genre field, **Search**, and up to twenty
@@ -92,7 +92,7 @@ first twenty music results of `q=rock` (CC0/PDM/BY/BY-SA, medium), **7** had
 `rock` in `genres`; of `q=electronic`, 8; of `q=dance`, 8. `tags=rock` found 5
 results in all, because Jamendo's genres are not its tags. **#84 predicted this**
 (*"genre lives in tags… Jamendo's own API has explicit genre, mood and tempo
-filters"*); it is now measured, and it is open question 2.
+filters"*); it is now measured, and decision 2 accepts it.
 
 **O7. `category=music` is Jamendo in practice.** Every `category=music` result
 in every query above came from `jamendo`; without it, `q=rock` under CC0/BY
@@ -103,7 +103,7 @@ recorded (§R1).
 **O8. The licence filter costs most of the catalogue.** The same `q`, music,
 medium: `rock` reports 240 (the cap) with BY-SA and **58** without; `electronic`
 190 and **36**; `dance` 240 and **177**. In the first twenty with BY-SA allowed,
-16–18 were BY-SA. This is open question 3's cost.
+16–18 were BY-SA. This is decision 3's cost.
 
 **O9. Openverse's terms** (`docs.openverse.org/terms_of_service.html`): no
 scraping; respect the rate limits; the licence data is **not** warranted —
@@ -130,7 +130,7 @@ relation with a moving image"*; 3.0 §1(a) says the same of *"synching"*. Every
 - **NC is excluded by policy**: a coach may upload to a channel that is or
   becomes monetised, and NC turns that into a breach after the fact.
 - **CC0, PDM and CC BY are allowed.** BY asks for credit, which §C provides.
-- **CC BY-SA is excluded by default** (open question 3): its ShareAlike clause
+- **CC BY-SA is excluded** (decision 3): its ShareAlike clause
   (4.0 §3(b)(1): *"The Adapter's License You apply must be a Creative Commons
   license with the same License Elements"*) makes **the reel itself** CC BY-SA —
   the coach's footage of identifiable players, released for anyone to reuse,
@@ -162,7 +162,7 @@ search fills exactly the folder this picker reads, which is phase 1's §M6
 argument for the folder path sitting here at all. **Not inline in the export
 sheet** either: a results list and a download line would double a sheet that
 already scrolls (#134), and every switch in it describes the next export, which
-a search does not. (Open question 1.)
+a search does not. (Decision 1.)
 
 **S2. The sheet's contents.**
 
@@ -360,11 +360,11 @@ surviving chapters (`CLAUDE.md`) — that a credit must not inherit, and a third
 sidecar is cheaper than a file with two rules for whether it exists.
 
 **C5. Not burned into the picture, and not in the file's tags — in this
-phase** (open question 4). #84 called burning a credit *"a second step, not the
+phase** (decision 4). #84 called burning a credit *"a second step, not the
 first one"*. The in-file tag would be `description`, which on this muxer lands
 only in the XMP box (`CLAUDE.md`), where no player shows it — a credit no viewer
 sees is not a credit. **The gap is real**: a reel sent on as a file (a group
-chat) arrives without its `.credits.txt`. The question says what closes it.
+chat) arrives without its `.credits.txt`; the coach accepted that (decision 4).
 
 **C6. `pundit-media` learns nothing about Openverse or licences.** It receives a
 string and writes it; `ExportJob::credits` is media's whole knowledge of this
@@ -444,7 +444,7 @@ default `Catalogue` is `Off`.
 
 1. **Genre by title is coarse** (§O6): about a third of a page is the genre
    asked for. Ranking hides the worst of it; the cure, if the coach finds the
-   results useless, is Jamendo's own API (open question 2), which #84 named as
+   results useless, is Jamendo's own API (decision 2's option B), which #84 named as
    the upgrade and which this design's `Catalogue` seam is shaped to take.
 2. **Content ID does not read licences.** #84's warning stands: a CC BY track
    can still draw a claim on YouTube. The `.credits.txt` — licence and link — is
@@ -458,7 +458,7 @@ default `Catalogue` is `Off`.
    breaks Add while Search still works. The row's error names the host.
 5. **The anonymous quota is per address**, so a club's shared connection shares
    200 searches a day. Measured traffic is one request per Search or More; a
-   coach is unlikely to come near it. Registration is open question 5.
+   coach is unlikely to come near it. Anonymous use was decided (decision 5).
 6. **Openverse may change its terms or end anonymous access** (§O9: *"at any
    time for any reason"*). Phase 1's folder keeps working whatever happens;
    only the sheet stops.
@@ -479,14 +479,14 @@ default `Catalogue` is `Off`.
 
 ## What this does not do
 
-- **No listening before Add** — no streaming preview (open question 6). A track
+- **No listening before Add** — no streaming preview (decision 6). A track
   the coach dislikes is deleted from the folder like any other file.
-- **No credit in the picture or the tags** (C5, open question 4).
-- **No Jamendo API, no registered Openverse client** (questions 2 and 5).
+- **No credit in the picture or the tags** (C5, decision 4).
+- **No Jamendo API, no registered Openverse client** (decisions 2 and 5).
 - **No change to the mix, the choice of track or the project format**; no
   `state.json` key beyond phase 1's two (the default folder is written to the
   existing `musicFolder`).
-- **No BY-SA** unless question 3 says otherwise.
+- **No BY-SA** (decision 3).
 
 ## Sources
 
@@ -508,62 +508,28 @@ default `Catalogue` is `Off`.
 
 ---
 
-## Open questions for the coach
+## Decided with the coach (2026-10-13)
 
-**1. Where should the music search live?**
-- **(A) Recommended — a "Find music…" button in the export sheet's Music row**,
-  opening its own sheet over the export sheet. The search fills the very folder
-  that row picks from, so it sits beside it; you never leave the export you were
-  setting up.
-- (B) Inline in the export sheet, results under the Music row — no second
-  sheet, but the export sheet gets much longer and mixes "what this export does"
-  with "go shopping for songs".
-- (C) A row in the new Settings sheet (#131) — out of the way, but two steps from
-  the picker it serves, and the Settings sheet is meant for things with nowhere
-  else to go.
+All six questions were answered with the recommended option; the design above
+is written to them.
 
-**2. Openverse's genre search is weak — about a third of the results for "rock"
-are tagged rock (the search matches song titles). Is that good enough?**
-- **(A) Recommended — ship Openverse with genre matches listed first.** No
-  account or key for anyone, works today; if it disappoints in use, move to (B).
-- (B) Search Jamendo's own API instead, which filters by real genre, mood and
-  tempo — but each coach would paste a free Jamendo developer key into Settings
-  first (a key built into open-source code is one shared quota anyone can burn).
-- (C) Both: Openverse with no key, Jamendo when a key is set — the best results,
-  and twice the code to keep working.
+1. **Where the search lives — (A) a "Find music…" button in the export sheet's
+   Music row, opening its own sheet** (§S1). Not chosen: (B) inline in the export
+   sheet; (C) a row in #131's Settings sheet.
+2. **Openverse's weak genre search — (A) ship Openverse, genre matches listed
+   first** (§S2, §O6). Not chosen: (B) Jamendo's own API with each coach's key;
+   (C) both.
+3. **CC BY-SA — (A) no: CC0, the public-domain mark and CC BY only** (§L1).
+   Not chosen: (B) allow it, with the reel declared CC BY-SA; (C) a checkbox, off
+   by default.
+4. **The credit on the video — (A) a credits text file beside the reel only**
+   (§C3, §C5). Not chosen: (B) also burned over the last seconds; (C) also in
+   the file's metadata.
+5. **Registering with Openverse — (A) no; search anonymously** (§O3, §S5). Not
+   chosen: (B) each coach's own client ID and secret in Settings.
+6. **Listening before adding — (A) no preview; add, and delete the file if
+   unwanted.** Not chosen: (B) streaming in the app; (C) a link to the track's
+   page.
 
-**3. Allow CC BY-SA music?** It is most of the catalogue (16–18 of every 20
-results), but its "share-alike" rule means a reel using it must itself be
-released under CC BY-SA — anyone could reuse your footage of the players,
-commercially too.
-- **(A) Recommended — no: only public-domain and CC BY tracks.** Fewer songs (58
-  medium-length "rock" results instead of 240+), and nothing about your footage
-  is given away.
-- (B) Yes, and the credits file says the reel is CC BY-SA — the most music, and
-  you take on the licence for every reel that uses one.
-- (C) A checkbox on the search sheet, off by default, explaining the trade.
-
-**4. Should the credit be on the video itself?**
-- **(A) Recommended — a credits text file beside the reel only, for now**,
-  ready to paste into a YouTube description (as the chapters list is). Simple, and
-  what YouTube uploads need — but a reel forwarded as a file (WhatsApp, email)
-  travels without it.
-- (B) Also burn a one-line credit over the reel's last few seconds, while the
-  music fades — the credit goes wherever the file goes.
-- (C) Also put it in the file's metadata — invisible to almost every player, so
-  it mainly helps in a dispute.
-
-**5. Register pundit with Openverse for higher limits?**
-- **(A) Recommended — no; search anonymously** (20 searches a minute, 200 a day
-  per internet connection). A coach picking songs uses a handful.
-- (B) Let each coach register their own Openverse app and paste its ID and
-  secret into Settings — only worth it if a club's shared connection hits the
-  daily limit.
-
-**6. Listen before adding?**
-- **(A) Recommended — no preview: add it, and delete the file if you don't like
-  it.** A track is a few megabytes and seconds to fetch; no player for remote
-  audio to build.
-- (B) A play button on each result that streams the track in the app before you
-  add it.
-- (C) A link to the track's page (Jamendo) to listen in the browser.
+**Also confirmed:** with no music folder set, the first Add uses `~/Music/pundit`
+(§S6).
