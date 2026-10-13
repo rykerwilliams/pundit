@@ -42,6 +42,10 @@ export struct SlateRow {
     /// say so: a pass that silently passed over rows the coach can see is the
     /// hazard the spec's review found in its own T1.
     timed: bool,
+    /// The slate's title (v18, BACKLOG #133), empty for none. The row shows a
+    /// `T` with the words as its tooltip only when it is set, so a project
+    /// that never uses titles sees no change in the list.
+    title: string,
 }
 
 /// One row of the sidebar's Clips list, in the project's order.
@@ -264,15 +268,17 @@ export enum KeyAction {
     show-recents,
 }
 
-/// Which field of a slate an edit names, so one callback carries both.
+/// Which field of a slate an edit names, so one callback carries all three.
 export enum SlateField {
     name,
     tags,
+    /// The words burned over the range in exports and previews (v18, #133).
+    title,
 }
 
 /// Which of a slate's two marks a button moves (BACKLOG #119).
 ///
-/// **Not folded into [`SlateField`]**: those two carry the text of a field,
+/// **Not folded into [`SlateField`]**: those three carry the text of a field,
 /// these two carry no payload at all — the value is the playhead, read in Rust.
 export enum SlateMark {
     in-point,
@@ -943,6 +949,11 @@ component Inspector inherits Rectangle {
     /// oversight.
     in-out property <int> inset-size-index: 1;
     in-out property <int> inset-corner-index: 0;
+    /// The clip's caption bar (v18, #115), as an index into its picker's
+    /// model -- the inset pickers' rule, for their reason. `0` is Whole clip,
+    /// which is `CaptionBar::default()`, so Slint's own default is the right
+    /// one here.
+    in-out property <int> caption-index;
     /// This clip was recorded with the project's avatar rather than a camera
     /// (avatar G3). One word of the checkbox above follows it; the property,
     /// the command and the undo are the one `show-pip` either way.
@@ -1005,6 +1016,8 @@ component Inspector inherits Rectangle {
     /// A size or a corner was picked, by index into the picker's model.
     callback inset-size-chosen(int);
     callback inset-corner-chosen(int);
+    /// A caption-bar mode was picked, by index into the picker's model.
+    callback caption-chosen(int);
     /// Queue this clip's commentary for transcription (Phase 10 S6).
     callback transcribe-clicked();
     /// Stop the transcription running **and drop the queue behind it**.
@@ -1105,6 +1118,24 @@ component Inspector inherits Rectangle {
 
                 Tooltip { text: @markdown("Which corner this clip's inset sits in. The caption bar gives way to it"); }
             }
+        }
+
+        // What this clip's caption bar does (v18, BACKLOG #115). `min-width:
+        // 0` for the inset row's reason above: a default `ComboBox` declares
+        // 160px of this 280px column.
+        FieldLabel { text: "Caption bar"; }
+        ComboBox {
+            min-width: 0;
+            horizontal-stretch: 1;
+            // "First 3 seconds" is a second spelling of
+            // `caption::CAPTION_SECONDS` in `pundit-core`: change the two
+            // together. The order is `main.rs`'s `caption_bar_index`.
+            model: ["Whole clip", "First 3 seconds", "Off"];
+            enabled: root.enabled;
+            current-index <=> root.caption-index;
+            selected => { root.caption-chosen(self.current-index); }
+
+            Tooltip { text: @markdown("How long this clip's caption shows along the bottom of the export"); }
         }
 
         if root.avatar && root.avatar-missing: Text {
@@ -2105,7 +2136,7 @@ component ExportSheet inherits Sheet {
         // the trade without being asked (spec M1, N). `would-copy` is
         // the effective reading, subtitles included.
         if root.would-copy: Text {
-            text: "The whole match is copied, not re-encoded: player highlights and pen drawings can't ride a copy.";
+            text: "The whole match is copied, not re-encoded: player highlights, titles and pen drawings can't ride a copy.";
             color: Palette.alternate-foreground;
             font-size: 11px;
             wrap: word-wrap;
@@ -4157,6 +4188,8 @@ export component AppWindow inherits Window {
     /// are: a `text:` binding breaks the first time it is typed in.
     in-out property <string> slate-name;
     in-out property <string> slate-tags;
+    /// The selected slate's title (v18, #133), the same way.
+    in-out property <string> slate-title;
     /// Which slate the fields are editing, so a commit names it even after the
     /// selection has moved on -- `editing-clip-id`'s rule, which exists
     /// because `for` reuses its rows by index.
@@ -4193,6 +4226,9 @@ export component AppWindow inherits Window {
     /// defaults below are explained.
     in-out property <int> clip-inset-size-index: 1;
     in-out property <int> clip-inset-corner-index: 0;
+    /// The selected clip's caption bar (v18, #115), as an index into the
+    /// inspector's picker.
+    in-out property <int> clip-caption-index;
     /// The selected clip's inset is the avatar, not a camera (avatar G3):
     /// one word of the inspector's checkbox.
     in property <bool> clip-avatar;
@@ -4804,6 +4840,9 @@ export component AppWindow inherits Window {
     /// write-back in `Bus::edit_clip`.
     callback set-inset-size(string, int);
     callback set-inset-corner(string, int);
+    /// Clip `id`'s caption bar, by index into the picker's model (v18,
+    /// #115) -- sticky like the inset's, by the same write-back.
+    callback set-caption-bar(string, int);
     /// Queue clip `id`'s commentary for transcription (Phase 10 S6).
     callback transcribe(string);
     /// Stop the transcription running and drop the queue behind it.
@@ -5878,6 +5917,19 @@ export component AppWindow inherits Window {
                                                         text: @markdown("A clip was recorded from this slate");
                                                     }
                                                 }
+                                                // The slate carries a title
+                                                // (v18, #133); the words are
+                                                // the tooltip.
+                                                if slate.title != "": Text {
+                                                    text: "T";
+                                                    color: Palette.alternate-foreground;
+                                                    font-size: 11px;
+                                                    vertical-alignment: center;
+
+                                                    Tooltip {
+                                                        text: @markdown("\{slate.title}");
+                                                    }
+                                                }
                                             }
 
                                         }
@@ -5921,6 +5973,23 @@ export component AppWindow inherits Window {
                                     }
                                 }
                                 accepted => { root.edit-slate-field(SlateField.name, self.text); }
+                            }
+                            // The words a viewer reads over the range (v18,
+                            // #133); the name above is the coach's filing.
+                            // Committed exactly as the name is.
+                            slate-title-edit := LineEdit {
+                                placeholder-text: "Title in exports";
+                                text <=> root.slate-title;
+                                enabled: !root.recording;
+                                changed has-focus => {
+                                    if (self.has-focus) {
+                                        root.editing-slate-id = root.selected-slate;
+                                    } else {
+                                        root.edit-slate-field(SlateField.title, self.text);
+                                        root.editing-slate-id = "";
+                                    }
+                                }
+                                accepted => { root.edit-slate-field(SlateField.title, self.text); }
                             }
                             HorizontalLayout {
                                 spacing: 6px;
@@ -6610,6 +6679,7 @@ export component AppWindow inherits Window {
                                     show-pip <=> root.clip-show-pip;
                                     inset-size-index <=> root.clip-inset-size-index;
                                     inset-corner-index <=> root.clip-inset-corner-index;
+                                    caption-index <=> root.clip-caption-index;
                                     avatar: root.clip-avatar;
                                     avatar-missing: root.avatar-missing;
                                     begin-edit => { root.editing-clip-id = root.selected-clip; }
@@ -6639,6 +6709,10 @@ export component AppWindow inherits Window {
                                     inset-corner-chosen(index) => {
                                         keys.focus();
                                         root.set-inset-corner(root.selected-clip, index);
+                                    }
+                                    caption-chosen(index) => {
+                                        keys.focus();
+                                        root.set-caption-bar(root.selected-clip, index);
                                     }
                                     // Off the fields first, as the Preview button
                                     // does: a click doesn't move focus, and the

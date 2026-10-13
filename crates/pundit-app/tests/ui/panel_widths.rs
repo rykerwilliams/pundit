@@ -68,6 +68,7 @@ fn window() -> AppWindow {
         tags: "corner, set-piece, defending".into(),
         shot: false,
         timed: true,
+        title: SharedString::new(),
     }])));
     w.set_transcript_models(ModelRc::new(VecModel::from(vec![
         SharedString::from("base.en"),

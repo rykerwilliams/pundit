@@ -28,25 +28,12 @@ made things worse.
   #83): a Music row on the export sheet (a genre picker and a Folder… button), a
   stable song per match, ducked and faded; **no Settings sheet** (spec §M6).
   **Phase 2 is next to spec**: the Openverse search and the credits
-- **133.** A title maker: words over the footage for a marked window — #138's
-  other half, which the coach scoped out of it deliberately: *"the follow on
-  feature … it would use a slate and a timing maybe"*. **Specced 2026-10-13
-  together with #115** (`2026-10-12-titles-and-caption-bar-design.md`): a title
-  is an optional line on a slate, burned in place of the caption bar over that
-  range, in exports and previews; one bump, v18
 - **131.** The slate band's colour should be a setting. The coach (2026-10-05):
   *"i mean the band color should be in the settings"* — and *"the slider bar
   colour clashes a bit"*. **Specced 2026-10-13**
   (`2026-10-13-settings-sheet-band-colour-design.md`): a full colour picker in
   a new Settings sheet — #78's §U4, built at last — which the selected slate's
   row follows too, also reached from the scrubber's right-click menu
-- **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
-  clip, sticky for the next recording, as #88's inset size and corner are (**v16
-  — v15 went to the mute switch, v14 to #117's arrowhead; take the next free
-  number from `store.rs` rather than this line**).
-  **Three states, not two:** off, whole entry, or the first few seconds.
-  **Specced 2026-10-13 with #133**: a per-clip picker, first 3 s fixed, a
-  ~0.5 s fade out, sticky for the next recording
 
 ### Watch, rather than pick up
 
@@ -185,6 +172,12 @@ problem — which is the entry, not an excuse for it.
 
 - **138.** The tactics whiteboard — shipped 2026-10-12 in five PRs; a library of
   diagrams and two small follow-ups are in the entry
+
+- **133.** Titles over the footage — shipped 2026-10-13 with #115, in v18: an
+  optional title on a slate, burned in place of the caption bar over its range
+- **115.** The caption bar, switchable per clip — shipped 2026-10-13 with #133:
+  Whole clip / First 3 seconds / Off, sticky. **Still open:** the lighter
+  variant, dropping the `1 / 1` from a one-entry export (see the entry)
 
 - 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 92, 94
 
@@ -3445,7 +3438,21 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** with the other slate work (#104, #105), once the coach
   picks (a), (b) or (c).
 
-115. **The caption bar should be switchable off in an export.** The coach
+115. **The caption bar should be switchable off in an export — SHIPPED
+  2026-10-13** with #133 (v18; spec `2026-10-12-titles-and-caption-bar-design.md`).
+  `Clip::caption_bar` is **Whole clip / First 3 seconds / Off**, picked in the
+  inspector under the inset row, sticky through
+  `Preferences::last_caption_bar` by `Bus::edit_clip`'s write-back and never
+  reverted by undo. The 3 s is the constant `caption::CAPTION_SECONDS`, not a
+  preference; the strip fades over its last 0.5 s, in preview and export
+  alike. A reel keeps its bar (its entries have no clip); **a basket piece
+  follows its own clip's setting**, which answers the entry's one open
+  sub-question.
+  **Still open: the lighter variant** below — drop the `1 / 1` when an export
+  has one entry. Nothing shipped touches it; revisit if the coach still finds
+  the position noise on single-clip exports with the bar on.
+
+  The entry as filed: The coach
   (2026-10-02), over a screenshot of an exported clip whose bar reads
   `1 / 1 | possession2`: "this title should be toggleable in exported clips."
   Today every encoded export draws the text bar — `PlanEntry::text`
@@ -4466,7 +4473,20 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   already had that the copy did not. **When the slates panel grows, diff it
   against the inspector rather than against itself.**
 
-133. **A title maker: words over the footage for a marked window.** The coach
+133. **A title maker: words over the footage for a marked window — SHIPPED
+  2026-10-13** with #115 (v18; spec `2026-10-12-titles-and-caption-bar-design.md`).
+  **Not the new record this entry proposed**: the spec made a title an
+  optional field on the slate itself, `Slate::title`, typed in a field under
+  the slate's name — the coach's *"a slate and a timing"* taken literally, with
+  the slate's own range as the timing and its undo, remaps and delete covering
+  the title for free. The shared-strip question is answered by
+  `caption::strip_at`: a title **replaces** the caption bar for its range and
+  hands back with a hard swap, fading only when no caption follows. Drawn in
+  encoded exports and previews, never in the scan view, a stream copy (whose
+  sheet line says so) or over a whiteboard's diagram — the W7 check this entry
+  asked for. A titled row shows a `T`; re-timing is re-marking the slate.
+
+  The entry as filed: The coach
   (2026-10-06), having asked whether an image could be a source and then said
   what for — *"yeah basically title card ability or simlar, but also, sometime
   i'd want to draw over top a soccer field layout or similar"* — **chose the

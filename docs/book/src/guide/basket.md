@@ -17,7 +17,9 @@ existing one: a name already taken gets ` (2)`.
 ## What each piece carries
 
 Each piece draws its own match's scoreboard and clock, and its caption bar reads
-`<match> | <clip> | <tags>`. The film's chapters are its pieces. Every piece is
+`<match> | <clip> | <tags>` — for as long as that clip's **Caption bar** setting
+says, so a clip set to **Off** shows none. A titled slate the piece crosses shows
+its title there as it would in any export. The film's chapters are its pieces. Every piece is
 mixed at the same default volumes, so the level does not jump between matches;
 **Mute source audio** leaves the game's sound out of all of them.
 

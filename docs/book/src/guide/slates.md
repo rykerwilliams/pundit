@@ -30,6 +30,19 @@ keeps going until you stop it.
 The clip that comes out already carries the slate's name and tags. The slate
 stays in the list after its take, because coaches re-record.
 
+## Words over the range
+
+Type a title in the field under the slate's name. Any export or preview that
+shows that stretch of the game shows the words along the bottom, in place of the
+clip's caption, fading out as the range ends. The name is your filing; the title
+is what a viewer reads. A slate with a title shows a **T** in the list — hover it
+to read the words.
+
+To move the words, re-mark the slate with **Set in** and **Set out**. To remove
+them, clear the field. A range with no end yet shows nothing until you press
+<kbd>O</kbd>. The live picture while you scan never shows a title; a straight copy
+of the whole match cannot carry one either.
+
 ## Working through a theme
 
 Filter the list by a tag — "corners", say — and the Slates list becomes a queue:

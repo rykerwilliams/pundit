@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use pundit_app::bus::{Command, Event, RecordingStatus, Take, UserError};
+use pundit_core::caption::CaptionBar;
 use pundit_core::project::{Clip, InsetCorner, InsetSize, Project};
 use pundit_core::store;
 use pundit_core::undo::ClipEdit;
@@ -256,6 +257,52 @@ fn an_inset_edit_is_the_placement_the_next_recording_inherits() {
         prefs(&p.saved()),
         (InsetSize::Large, InsetCorner::BottomRight)
     );
+}
+
+/// The caption bar is sticky the same way (v18, BACKLOG #115), by the same
+/// write-back: `an_inset_edit_is_the_placement_the_next_recording_inherits`'s
+/// shape and its three ways of being lost — the write happens, it is inside
+/// the save, and undo leaves it alone — plus the pick of the value the clip
+/// already has, which is still a choice.
+#[test]
+fn a_caption_edit_is_the_mode_the_next_recording_inherits() {
+    let pref = |project: &Project| project.preferences.last_caption_bar;
+    let (mut h, p) = Proj::open(&["a.webm"], &[0]);
+    assert_eq!(pref(&p.saved()), CaptionBar::Whole);
+
+    edit(&h, p.id(0), ClipEdit::CaptionBar(CaptionBar::Off));
+    let project = h.wait_changed().project;
+    assert_eq!(project.clips[0].caption_bar, CaptionBar::Off);
+    assert_eq!(pref(&project), CaptionBar::Off);
+    // On disk, not only in the event: the write-back is inside the save.
+    assert_eq!(pref(&p.saved()), CaptionBar::Off);
+
+    // The clip goes back; the preference stays where the coach left it.
+    h.send(Command::Undo);
+    let project = h.wait_changed().project;
+    assert_eq!(project.clips[0].caption_bar, CaptionBar::Whole);
+    assert_eq!(pref(&project), CaptionBar::Off);
+    assert_eq!(h.wait_select(), p.id(0));
+
+    // Picking the clip's own value again is the only way to say "my takes
+    // get the whole bar again" about this clip: it changes no clip, and the
+    // preference is the whole of the edit.
+    edit(&h, p.id(0), ClipEdit::CaptionBar(CaptionBar::Whole));
+    let project = h.wait_changed().project;
+    assert_eq!(project.clips[0].caption_bar, CaptionBar::Whole);
+    assert_eq!(pref(&project), CaptionBar::Whole);
+    assert_eq!(pref(&p.saved()), CaptionBar::Whole);
+
+    // It filed no undo step of its own, so the redo still waiting is the
+    // edit to Off -- and redo, like undo, leaves the preference alone.
+    h.send(Command::Redo);
+    let project = h.wait_changed().project;
+    assert_eq!(project.clips[0].caption_bar, CaptionBar::Off);
+    assert_eq!(pref(&project), CaptionBar::Whole);
+    assert_eq!(h.wait_select(), p.id(0));
+
+    h.shutdown();
+    assert_eq!(pref(&p.saved()), CaptionBar::Whole);
 }
 
 #[test]

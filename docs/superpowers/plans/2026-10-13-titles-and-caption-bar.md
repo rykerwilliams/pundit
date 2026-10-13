@@ -44,7 +44,17 @@ Paths are from the repository root; `core`, `media`, `app` and `harness` mean
   one-entry run); 3.4 gives its entry a real line under `Off`, so `Off` is
   what keeps the caption away; the three-clip test's glyph count became the
   shared `bar_glyphs`.
-- **4 — the controls, the wiring, the guide and the prose.** Not started.
+- **4 — the controls, the wiring, the guide and the prose.** Done 2026-10-13
+  on `claude/133-115-titles`: three new tests (`tests/ui` slate_fields 4 → 6,
+  harness `tests/clips` 11 → 12) and the title field joined to
+  `text_editing.rs`'s list. The census matched §A — `SlateRow` 7, the
+  `SlateField` match, the one `_ => false` arm — at drifted lines. Deviations:
+  4.1 leaves the field with **Esc**, not a click, because Slint raises the new
+  item's focus before lowering the old one's, so a click into another slate
+  field would test that ordering instead of this commit; the copy sentence
+  had a third copy the census missed, `exporting.md`'s *"warns that a copy
+  cannot carry highlights or drawings"*, now naming titles; BACKLOG #133/#115
+  move to "Closed, kept for the reasoning" with no PR number yet.
 
 **Shipping: two PRs, in order.**
 

@@ -68,6 +68,7 @@ fn window() -> (AppWindow, Rc<RefCell<Vec<&'static str>>>) {
         tags: SharedString::new(),
         shot: false,
         timed: true,
+        title: SharedString::new(),
     }])));
     w.set_selected_slate("s1".into());
     w.show().unwrap();

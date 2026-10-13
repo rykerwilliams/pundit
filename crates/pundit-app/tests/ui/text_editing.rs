@@ -16,8 +16,9 @@
 //! focus-in and clears on focus-out *and* in its `deinit`. There is no list
 //! left to join.
 //!
-//! **Between them these tests type into sixteen fields, which is every one of
-//! the thirteen `LineEdit` / `TextEdit` / `TagField` sites in `ui/app.slint`.**
+//! **Between them these tests type into every text field in `ui/app.slint`**
+//! — every `LineEdit` / `TextEdit` / `TagField` site. The lists below are the
+//! count; a number written here beside them goes stale with the next field.
 //! The match setup sheet's twelve `SetupField`s are the one group never folded
 //! in even before this change — layer 5 of `handle-key` returns `reject` for
 //! every non-Esc key ahead of the shortcuts, so they were already protected —
@@ -59,9 +60,9 @@ struct Field {
     text: fn(&AppWindow) -> SharedString,
 }
 
-/// Every text field reachable with no sheet open. The clip inspector's four,
-/// the slate panel's three (the filter among them — #130's field) and the
-/// project name.
+/// Every text field reachable with no sheet open: the clip inspector's, the
+/// slate panel's fields (the filter among them — #130's field), the
+/// highlight's label and the project name.
 fn window_fields() -> Vec<Field> {
     vec![
         Field {
@@ -93,6 +94,10 @@ fn window_fields() -> Vec<Field> {
             text: AppWindow::get_slate_name,
         },
         Field {
+            id: "AppWindow::slate-title-edit",
+            text: AppWindow::get_slate_title,
+        },
+        Field {
             id: "AppWindow::slate-tags-edit",
             text: AppWindow::get_slate_tags,
         },
@@ -112,6 +117,7 @@ fn slate(id: &str) -> SlateRow {
         tags: SharedString::new(),
         shot: false,
         timed: true,
+        title: SharedString::new(),
     }
 }
 
@@ -179,7 +185,7 @@ fn press(w: &AppWindow, key: impl Into<SharedString> + Clone) {
 
 /// The one element with this id, or a message naming it: a field that cannot
 /// be found is as much a failure as one that lets a letter through, and `None`
-/// unwrapped bare says nothing about which of the sixteen it was.
+/// unwrapped bare says nothing about which one it was.
 fn one(w: &AppWindow, id: &str) -> ElementHandle {
     let mut found = ElementHandle::find_by_element_id(w, id);
     let it = found
