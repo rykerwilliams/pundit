@@ -25,7 +25,11 @@ fastest, and each task here moves the lines of the next. Paths are under
   `MatchSetupSheet::sync-from-text`; it now names `ColorPicker`'s. The setup
   sheet's `changed picker-field` handler went without a replacement: the
   picker is created per open, so `init` covers it.
-- **2 — the `state.json` field.** Not started.
+- **2 — the `state.json` field.** Done, as written; `bus/state.rs` had not
+  drifted under #92 (its two-line diff is elsewhere in the file). All four
+  sabotages failed their predicted assertion alone — the `5` row's pen, the
+  `"teal"` row's band, the `set(None)` row, and
+  `the_settings_are_independent` at its first assertion after the new setter.
 - **3 — the Settings sheet, its two doors, the band and the row.** Not started.
 - **4 — the prose: CLAUDE.md, the guide, BACKLOG, #78's spec.** Not started.
 
