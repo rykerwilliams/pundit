@@ -1,6 +1,6 @@
-//! The match setup sheet's colour picker: the kit colours its first row
-//! offers, and the maths between a `#rrggbb` string and the hue, saturation
-//! and brightness its strip and area are drawn and read in.
+//! The colour picker's Rust half: the kit colours its first row offers, and
+//! the maths between a `#rrggbb` string and the hue, saturation and
+//! brightness its strip and area are drawn and read in.
 //!
 //! **All of it is here rather than in the `.slint`.** What the project stores
 //! is the hex string ([`match_panel::hex`] / [`parse_hex`]), so the picker has
@@ -25,7 +25,7 @@ pub struct Hsv {
 
 /// One swatch of the picker's first row.
 pub struct KitColor {
-    /// What it's called, for the swatch's tooltip.
+    /// What it's called, for the swatch's tooltip and accessible label.
     pub name: &'static str,
     /// `#rrggbb`, lower case: written into the field as-is.
     pub hex: &'static str,
@@ -98,8 +98,8 @@ pub const KIT_COLORS: &[KitColor] = &[
 /// [`parse_hex`] refuses, which the sheet already marks.
 ///
 /// Grey has no hue and black has neither hue nor saturation: both come back
-/// as zero. The sheet keeps the hue it was showing in that case rather than
-/// swinging the strip to red — see `MatchSetupSheet::sync-from-text`.
+/// as zero. The picker keeps the hue it was showing in that case rather than
+/// swinging the strip to red — see `ColorPicker::sync-from-text`.
 pub fn hsv_of_hex(text: &str) -> Option<Hsv> {
     parse_hex(text).map(hsv_of_rgb)
 }

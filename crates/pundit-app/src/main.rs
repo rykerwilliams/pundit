@@ -1747,8 +1747,8 @@ fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             .collect::<Vec<_>>(),
     )));
     window.on_hsv_of_hex(|text| {
-        // Half-typed text has no position; the sheet gates on `valid-hex`
-        // before it moves the picker, so this is never what it stands on.
+        // Half-typed text has no position; the picker gates on `valid-hex`
+        // before it moves, so this is never what it stands on.
         let hsv = color_picker::hsv_of_hex(&text).unwrap_or(color_picker::Hsv {
             hue: 0.0,
             sat: 0.0,

@@ -13,7 +13,18 @@ fastest, and each task here moves the lines of the next. Paths are under
 
 ## Where this stands (update it as tasks land)
 
-- **1 — `ColorPicker` holds its own position.** Not started.
+- **1 — `ColorPicker` holds its own position.** Done. The labels went on
+  first and both tests in `tests/ui/settings_sheet.rs` ran green against the
+  old code, then again after the move; all three sabotages failed their own
+  test alone (`#804040`, `#0000ff`, `""`). **Census redone after #92**, which
+  moved this task's `app.slint` lines by +32 to +37 (the swatch `:2738` →
+  `:2772`, the chrome `:2721`–`:2730` → `:2753`–`:2762`, the sheet's held
+  position `:2943`–`:2970` → `:2975`–`:3002`, the popup `:3152` → `:3189`) and
+  `main.rs`' colour wiring `:1690`–`:1725` → `:1727`–`:1763`. **One more stale
+  comment than §0.7 lists:** `color_picker.rs`' `hsv_of_hex` doc pointed at
+  `MatchSetupSheet::sync-from-text`; it now names `ColorPicker`'s. The setup
+  sheet's `changed picker-field` handler went without a replacement: the
+  picker is created per open, so `init` covers it.
 - **2 — the `state.json` field.** Not started.
 - **3 — the Settings sheet, its two doors, the band and the row.** Not started.
 - **4 — the prose: CLAUDE.md, the guide, BACKLOG, #78's spec.** Not started.

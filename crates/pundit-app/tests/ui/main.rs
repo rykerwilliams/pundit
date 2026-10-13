@@ -74,6 +74,7 @@ mod keys_sheet;
 mod panel_widths;
 mod scrubber;
 mod self_view_placement;
+mod settings_sheet;
 mod sheet_scroll;
 mod slate_fields;
 mod slate_menu;
