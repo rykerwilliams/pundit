@@ -27,7 +27,11 @@ made things worse.
 - **84.** Music under a goals reel — **phase 1 shipped 2026-10-12** (#80, #82,
   #83): a Music row on the export sheet (a genre picker and a Folder… button), a
   stable song per match, ducked and faded; **no Settings sheet** (spec §M6).
-  **Phase 2 is next to spec**: the Openverse search and the credits
+  **Phase 2 specced and planned 2026-10-13**
+  (`2026-10-13-reel-music-search-design.md`, plan
+  `2026-10-13-reel-music-search.md`): a Find music sheet off the Music row that
+  searches Openverse for CC0 / CC BY music and adds it to a genre folder, and a
+  `.credits.txt` beside the reel. One PR, a commit per task
 - **131.** The slate band's colour should be a setting. The coach (2026-10-05):
   *"i mean the band color should be in the settings"* — and *"the slider bar
   colour clashes a bit"*. **Specced 2026-10-13**
@@ -1390,6 +1394,20 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   … stalled on its way to PAUSED; loading it again`) and the second stall was reported, or the wedge was
   somewhere the bound does not cover, is not known. **Next sighting: keep the
   test's stderr** — that line is the whole discriminator.
+- **Sighted again 2026-10-13, on CI, with the stderr this time** (run
+  38457388118, PR #93 — docs only). `pundit-harness --test basket`'s
+  `a_repeat_start_writes_a_second_film` panicked at `lib.rs:164`, `timed out
+  waiting for the run's outcome`, and its stderr **does** carry `player: the
+  load of …/a.webm stalled on its way to PAUSED; loading it again (BACKLOG
+  #72)` followed by `bus: loaded …`. So **the retry fired and the reload
+  succeeded**: the stall is recovered, as designed. What failed is the wait
+  after it. The recovery's ~8 s (3 s bound + up to 5 s `LOAD_SETTLE`) is
+  spent on the bus thread, and `outcome`'s 15 s `TIMEOUT` was evidently
+  started early enough to swallow it plus a basket run on a two-core runner.
+  The rerun passed. *Why deferred:* one sighting of a recovered stall
+  outlasting one wait. *When to revisit:* a second test failing the same way,
+  after a logged retry. The fix would then be a wait that budgets for
+  recovery — not a longer `TIMEOUT` everywhere.
 
 
 73. **`,` looks stuck across a timestamp gap longer than half a frame.** A back
@@ -1874,6 +1892,17 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   build the Settings sheet after all** (the spec's §M6): the folder's one reader is
   that picker, so the path sits beside it. Credits and the Openverse fetcher are
   **phase 2**, which fetches into the music folder rather than a cache.
+- **Phase 2 specced and planned 2026-10-13**
+  (`docs/superpowers/specs/2026-10-13-reel-music-search-design.md`, plan
+  `docs/superpowers/plans/2026-10-13-reel-music-search.md`). The coach took
+  every recommended answer the same day: the search sits on the Music row; it
+  uses Openverse anonymously, with genre matches first; it offers CC0, the
+  public-domain mark and CC BY only, with no BY-SA; the credit is a text file
+  beside the reel only; and there is no preview. **The spec's §R corrects this
+  entry three times.** Openverse lists three audio sources today, not five, and
+  FMA is not one of them. There is no checksum to be had for a catalogue track,
+  so a full decode stands in for it. And the network is reached from a function
+  no command can call, not through a permission carried on a job.
 - **When to revisit:** any time. Nothing further is needed from the coach, and
   nothing is owed by #78 beyond the sheet's design, which is written down.
 
