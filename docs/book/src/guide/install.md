@@ -41,7 +41,7 @@ you carry a project to another computer:
 
 | Where | What |
 |---|---|
-| `~/.config/pundit/state.json` | The projects you have had open, the pen you draw with, the speech model you chose, the window's size and the side panels' widths. |
+| `~/.config/pundit/state.json` | The projects you have had open, the pen you draw with, the speech model you chose, the window's size, the side panels' widths and the slate band's colour. |
 | `~/.config/pundit/basket.json` | [The basket](basket.md) and its settings. |
 | `~/.cache/pundit/models/` | The speech model, downloaded the first time you [transcribe](transcripts.md). |
 | `~/Videos/pundit/` | Films made from the basket (your videos folder, in your language). |

@@ -46,7 +46,19 @@ fastest, and each task here moves the lines of the next. Paths are under
   spec's Testing §2 names. **Not added to `sheet_scroll`'s measurement table**
   (the sheet heights at the top of `no_sheet_outgrows_the_window`), which records
   #134's measurement rather than every sheet.
-- **4 — the prose: CLAUDE.md, the guide, BACKLOG, #78's spec.** Not started.
+- **4 — the prose: CLAUDE.md, the guide, BACKLOG, #78's spec.** Done; the PR
+  number is a `#TODO` in BACKLOG's #131, #78 and the Closed index, for whoever
+  opens the PR. **Drift:** CLAUDE.md's `state.json` list `:249`–`:255` →
+  `:249`–`:255` (no move), the Keys paragraph `:691` → `:702` (the Settings
+  paragraph went after it, before the snap's); BACKLOG's #78 index `:19`–`:26` →
+  `:19`–`:26`, #131's `:34`–`:39` → `:31`–`:36`, #78's first-tenant paragraph
+  `:1620`–`:1627` → `:1615`–`:1622`, #84's *"unspent"* `:1875` → `:1870`, #102's
+  `:2946` → `:2941`, #129's trigger `:4347` → `:4374`, #131's entry `:4381` →
+  `:4408`; #78's spec callout `:320`–`:325` (no move). **#78 is marked
+  SHIPPED**, not only closed: its two export switches had already shipped
+  2026-10-07 (#57) while its entry still said *"next"*. Both #78 and #131 went
+  to "Closed, kept for the reasoning", which is where this file's shipped index
+  lines live.
 
 **Shipping: one PR, a commit per task, in order.** No commit puts a control on
 `main` that does nothing:

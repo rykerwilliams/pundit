@@ -250,7 +250,8 @@ reference laptop it reads `vah265dec` / `memory:DMABuf` / `egl`.
 coach has had open** (newest first, capped at 8), the chosen speech model, the
 pen, the window's size, **the two side columns' widths**, **the keys the
 coach rebound**, the whiteboard's armed diagram, a goals reel's music folder
-and genre, and whether a drag on the scrubber snaps live in
+and genre, whether a drag on the scrubber snaps, and the slate band's colour
+live in
 `$XDG_CONFIG_HOME/pundit/state.json` — every one of them a property of this
 machine and none of the project's;
 point `XDG_CONFIG_HOME` elsewhere when testing so the real one isn't
@@ -700,6 +701,17 @@ fix is argued from.
 **Context stays in three layers and none of them is the table.** Whether the window sees a key at all is `text-editing` — Slint's own `TextInputInterface.text-input-focused`, tested ahead of every binding. Whether an action fires *now* is the gate **in its branch** (`can-tag`, `can-draw`, `can-play`, `!event.repeat`), which is why a row carries no `when` clause: a clause makes a binding *not match*, so a gated key would fall through to whichever child has focus and `←` would reach a touched volume slider in exactly the case `can-play` is false. Whether the bus will do it while recording is the **recording allow-list**, a `!matches!` over `Command` variants — and that is **not reachable from a rebinding**: a rebound key sends the command it always sent, and a command added later is still refused by default. Two more rules the rewrite rests on. **Escape, Tab, Return, Home and End are not actions**, and the three the window handles are tested *ahead* of the lookup, so a hand-edited `state.json` cannot claim one and leave a sheet unleavable. And a bound key is swallowed **on release as well as on press**: `handle-key` runs for both, because a slider fires `released` on an arrow key's release — so the lookup is ahead of every `pressed` test and every `accept` is outside its guard.
 
 **The Keys sheet is the seventh `Sheet`, and it is a list** (#96 task 4). `F1` opens it — that is `Action::ShowKeys`' own default, listed in the table like every other key — and so does the **Keys** button, which sits in the *drawing* row beside `Fit` and for `Fit`'s reason: the transport row is full at the window's 1100px minimum (measured, `Devices…` ends at x=1199, 99px past the right edge). Its rows are `Keymap::listing()` set on `key-rows` in `wire_keys`, **beside `action-for` and nowhere else**, so the list and the lookup are one map read twice and the list cannot go stale. **The six reserved rows — Escape, Tab, Shift+Tab, Return, Home, End — are written in `app.slint`, not in the table:** they are not `Action` variants, so `Binding`, `overrides()` and a rebind would each have to filter them back out of a table whose whole point is that every row in it is rebindable, and their words belong beside their behaviour — for the three the window handles, `handle-key`'s own reserved block in the same file. The list is taller than the 700px minimum window, and it scrolls in the sheet's own body like every sheet's (#134, below), which retired the `ScrollView` cap it first had of its own.
+
+**The Settings sheet is a `Sheet` beside Keys** (#131; spec
+`docs/superpowers/specs/2026-10-13-settings-sheet-band-colour-design.md`), and
+its two doors — the drawing row's **Settings…** and the scrubber's *Band
+colour…* — share one gate, `can-open-settings`, with **no guard in
+`open-settings()`**: each door's `enabled` is the gate, so a check there too
+would let a broken item pass `snap_menu.rs`. Its one row is the slate band's
+colour, which the band and the selected slate's row both draw from the window's
+`slate-band-color`; it is stored only on a change that is a colour (a hex, or
+empty for the default) and never on a half-typed one, which `close-settings()`
+puts back on the last good value.
 
 **A drag on the scrubber snaps to the match marks** (#102; right-click it to turn that off, remembered in `state.json`), and **only the drag does** — never the wheel, the arrows, `,`/`.` or `[`/`]`. The radius is one constant in pixels, `snap-radius` in `scrubber.slint`; the landing is `match_panel::nearest_chapter` over `match_abs`, so a snapped release and `]` seek to the same value.
 
