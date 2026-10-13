@@ -3439,7 +3439,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   picks (a), (b) or (c).
 
 115. **The caption bar should be switchable off in an export — SHIPPED
-  2026-10-13** with #133 (v18; spec `2026-10-12-titles-and-caption-bar-design.md`).
+  2026-10-13** (PR #92) with #133 (v18; spec `2026-10-12-titles-and-caption-bar-design.md`).
   `Clip::caption_bar` is **Whole clip / First 3 seconds / Off**, picked in the
   inspector under the inset row, sticky through
   `Preferences::last_caption_bar` by `Bus::edit_clip`'s write-back and never
@@ -4474,7 +4474,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   against the inspector rather than against itself.**
 
 133. **A title maker: words over the footage for a marked window — SHIPPED
-  2026-10-13** with #115 (v18; spec `2026-10-12-titles-and-caption-bar-design.md`).
+  2026-10-13** (PR #92) with #115 (v18; spec `2026-10-12-titles-and-caption-bar-design.md`).
   **Not the new record this entry proposed**: the spec made a title an
   optional field on the slate itself, `Slate::title`, typed in a field under
   the slate's name — the coach's *"a slate and a timing"* taken literally, with
@@ -4485,6 +4485,12 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   encoded exports and previews, never in the scan view, a stream copy (whose
   sheet line says so) or over a whiteboard's diagram — the W7 check this entry
   asked for. A titled row shows a `T`; re-timing is re-marking the slate.
+  **One accepted wrinkle, from the code review:** with no caption to hand back
+  to, a commentary pause inside a title's last `STRIP_FADE` (0.5 s) holds it
+  part-faded for the whole pause, because the fade runs on source time. *Why
+  deferred:* rare, and fading on record time from the crossing needs state the
+  rule otherwise doesn't keep. *When to revisit:* the coach notices a ghosted
+  title over a pause.
 
   The entry as filed: The coach
   (2026-10-06), having asked whether an image could be a source and then said
