@@ -46,6 +46,7 @@ use pundit_app::slate_span::slate_span;
 use pundit_app::wheel::Wheel;
 use pundit_app::zoom_input::{self, DragPan, Viewport};
 use pundit_core::avatar;
+use pundit_core::caption::CaptionBar;
 use pundit_core::highlight::{highlight_shapes, HighlightEdit};
 use pundit_core::layout::{self, avatar_self_view_rect, self_view_rect};
 use pundit_core::match_entry::{self, PendingMatchEvent};
@@ -1116,6 +1117,25 @@ fn inset_corner_at(index: i32) -> project::InsetCorner {
     }
 }
 
+/// The inspector's caption-bar picker (v18, BACKLOG #115), on the inset
+/// pickers' pattern above and for their reason. The order is the picker's
+/// model in `app.slint`.
+fn caption_bar_index(mode: CaptionBar) -> i32 {
+    match mode {
+        CaptionBar::Whole => 0,
+        CaptionBar::FirstSeconds => 1,
+        CaptionBar::Off => 2,
+    }
+}
+
+fn caption_bar_at(index: i32) -> CaptionBar {
+    match index {
+        1 => CaptionBar::FirstSeconds,
+        2 => CaptionBar::Off,
+        _ => CaptionBar::Whole,
+    }
+}
+
 /// The window's placement enums as core's, for `place-self-view`.
 ///
 /// **Enums and not the pickers' indices**, because these two arrive as
@@ -1474,6 +1494,8 @@ fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             let edit = match field {
                 SlateField::Tags => SlateEdit::Tags(normalize_tags(&text)),
                 SlateField::Name => SlateEdit::Name(text.to_string()),
+                // Flattened, trimmed and emptied to `None` by core.
+                SlateField::Title => SlateEdit::Title(text.to_string()),
             };
             bus.borrow().send(Command::EditSlate { id, edit });
         }
@@ -1561,7 +1583,13 @@ fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
                     .slates
                     .iter()
                     .find(|slate| slate.id.to_string() == selected.as_str())
-                    .map(|slate| (slate.name.clone(), slate.tags.join(", ")))
+                    .map(|slate| {
+                        (
+                            slate.name.clone(),
+                            slate.tags.join(", "),
+                            slate.title.clone().unwrap_or_default(),
+                        )
+                    })
             });
             // **Not while a field is being edited** (#132), which is
             // `show_clip`'s rule and was missing here. Both fields are
@@ -1579,9 +1607,10 @@ fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             if !w.get_editing_slate_id().is_empty() {
                 return;
             }
-            let (name, tags) = found.unwrap_or_default();
+            let (name, tags, title) = found.unwrap_or_default();
             w.set_slate_name(name.into());
             w.set_slate_tags(tags.into());
+            w.set_slate_title(title.into());
         }
     });
     window.on_tag_match_event({
@@ -2210,6 +2239,18 @@ fn wire_inspector(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
                 bus.borrow().send(Command::EditClip {
                     id,
                     edit: ClipEdit::InsetCorner(inset_corner_at(index)),
+                });
+            }
+        }
+    });
+    // The caption bar (v18, #115): sticky the same way, by the same write-back.
+    window.on_set_caption_bar({
+        let bus = bus.clone();
+        move |id, index| {
+            if let Some(id) = parse_id(&id) {
+                bus.borrow().send(Command::EditClip {
+                    id,
+                    edit: ClipEdit::CaptionBar(caption_bar_at(index)),
                 });
             }
         }
@@ -3907,6 +3948,7 @@ fn show_slates(w: &AppWindow, project: &Project) {
             // disagree about what is in it. The *coach* already sees this: an
             // open range renders as `14:05–`, with nothing after the dash.
             timed: s.out_seconds.is_some(),
+            title: s.title.clone().unwrap_or_default().into(),
         })
         .collect();
     w.set_slates(ModelRc::new(VecModel::from(rows)));
@@ -4065,6 +4107,9 @@ fn show_clip(w: &AppWindow) {
         ));
         w.set_clip_inset_corner_index(inset_corner_index(
             clip.map(|c| c.inset_corner).unwrap_or_default(),
+        ));
+        w.set_clip_caption_index(caption_bar_index(
+            clip.map(|c| c.caption_bar).unwrap_or_default(),
         ));
         w.set_clip_avatar(clip.is_some_and(|c| c.inset == Inset::Avatar));
         w.set_clip_whiteboard(clip.is_some_and(|c| c.backdrop.is_some()));

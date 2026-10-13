@@ -157,6 +157,7 @@ fn the_vocabulary_is_the_union_of_clip_and_slate_tags() {
         out_seconds: None,
         name: String::new(),
         tags: vec!["corners".into()],
+        title: None,
     });
 
     assert_eq!(tag_vocabulary(&p), ["attack", "corners"]);

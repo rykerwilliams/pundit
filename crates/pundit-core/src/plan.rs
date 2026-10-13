@@ -94,6 +94,14 @@ pub struct PlanEntry {
     /// basket piece's names its match in place of the position
     /// ([`basket_plan`]).
     pub text: String,
+    /// The record time at which this entry's caption bar is gone, as
+    /// [`crate::caption::CaptionBar::until`] answers it; an entry with no
+    /// clip keeps its bar. v18, BACKLOG #115.
+    ///
+    /// **`text` is untouched either way — it is also the chapter**
+    /// (`entry_chapters`), and blanking it for `Off` would cost the chapters
+    /// their words.
+    pub caption_until: f64,
 }
 
 impl PlanEntry {
@@ -217,6 +225,7 @@ fn clip_entry(clip: &Clip, source_duration: f64, start_frame: usize, text: Strin
         start_frame,
         frames,
         text,
+        caption_until: clip.caption_bar.until(),
     }
 }
 

@@ -21,9 +21,40 @@ Paths are from the repository root; `core`, `media`, `app` and `harness` mean
   fails `clip_order.rs`'s `set_sets_one_field_and_returns_the_old_value`, the
   one core test that reads `show_pip` — not `plan.rs` or `export.rs`, which
   never read it (PiP is media's).
-- **2 — the v18 format and the strip rule, in core.** Not started.
-- **3 — drawing the strip, in export and preview.** Not started.
-- **4 — the controls, the wiring, the guide and the prose.** Not started.
+- **2 — the v18 format and the strip rule, in core.** Done 2026-10-13 on
+  `claude/133-115-titles`: core's tests 548 → 564, the workspace green. The
+  census matched §A exactly — `Clip` 8 (3 core, 4 media, 1 harness), `Slate`
+  7, `PlanEntry` 4. All 20 sabotages went red where predicted but one: #15
+  (`Default`'s `last_caption_bar: Off`) also fails 2.13 and 2.16, which the
+  list missed — the container default is what fills a v17 file's missing key,
+  and `Project::new` seeds from it. Deviations: `sample_project` gains **no**
+  slate (two v12 tests read `slates[0]` and the whole sorted list as their
+  own); 2.13 and 2.14 push a `titled_slate` instead. 2.10 also asserts a
+  basket's entries take each piece's own mode (spec Testing 4).
+- **3 — drawing the strip, in export and preview.** Done 2026-10-13 on
+  `claude/133-115-titles`: six new tests (media lib 128 → 129, `tests/export`
+  33 → 36, `tests/preview` 5 → 6, harness `tests/export` 19 → 20), the
+  workspace green but for `recorder.rs`'s wall-clock bounds under other
+  sessions' load (untouched code; green alone 2 runs in 3). The census matched
+  §A, `overlay.rs`'s test literals one line lower. All 7 sabotages went red
+  exactly where predicted. Deviations: `draw_label`'s premultiply put
+  `coverage²/255` in the alpha channel, and now puts the alpha itself — every
+  label's anti-aliased edge, measured by no test; preview's **strokes** keep
+  `n/30` and only the strip reads `entry.record_time(n)` (the same number in a
+  one-entry run); 3.4 gives its entry a real line under `Off`, so `Off` is
+  what keeps the caption away; the three-clip test's glyph count became the
+  shared `bar_glyphs`.
+- **4 — the controls, the wiring, the guide and the prose.** Done 2026-10-13
+  on `claude/133-115-titles`: three new tests (`tests/ui` slate_fields 4 → 6,
+  harness `tests/clips` 11 → 12) and the title field joined to
+  `text_editing.rs`'s list. The census matched §A — `SlateRow` 7, the
+  `SlateField` match, the one `_ => false` arm — at drifted lines. Deviations:
+  4.1 leaves the field with **Esc**, not a click, because Slint raises the new
+  item's focus before lowering the old one's, so a click into another slate
+  field would test that ordering instead of this commit; the copy sentence
+  had a third copy the census missed, `exporting.md`'s *"warns that a copy
+  cannot carry highlights or drawings"*, now naming titles; BACKLOG #133/#115
+  move to "Closed, kept for the reasoning" with no PR number yet.
 
 **Shipping: two PRs, in order.**
 

@@ -8,7 +8,8 @@
 //! a related reason: which command the key sends is decided in `app.slint`, so
 //! the harness — which has no window — can only see whichever one arrives.
 
-use slint::platform::WindowEvent;
+use i_slint_backend_testing::ElementHandle;
+use slint::platform::{Key, PointerEventButton, WindowEvent};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -18,7 +19,7 @@ use crate::key_action;
 // where a field lives in the real tree, so a stand-in would not have them. The
 // generated UI is compiled once for this whole test binary, in its `main.rs`
 // (BACKLOG #121).
-use crate::{AppWindow, SlateRow};
+use crate::{AppWindow, SlateField, SlateRow};
 use pundit_app::keymap::Keymap;
 
 fn slate(id: &str, name: &str) -> SlateRow {
@@ -30,6 +31,7 @@ fn slate(id: &str, name: &str) -> SlateRow {
         tags: SharedString::new(),
         shot: false,
         timed: true,
+        title: SharedString::new(),
     }
 }
 
@@ -184,4 +186,126 @@ fn r_with_nothing_selected_carries_no_range() {
     press_r(&w);
 
     assert_eq!(*sent.borrow(), [r#"toggle """#]);
+}
+
+fn press(w: &AppWindow, key: impl Into<SharedString> + Clone) {
+    w.window().dispatch_event(WindowEvent::KeyPressed {
+        text: key.clone().into(),
+    });
+    w.window()
+        .dispatch_event(WindowEvent::KeyReleased { text: key.into() });
+}
+
+/// `(field, text, editing-slate-id)` of every commit, the id read **inside**
+/// the callback, where `main.rs`'s `on_edit_slate_field` reads it.
+type Commits = Rc<RefCell<Vec<(SlateField, String, String)>>>;
+
+/// A window with two slates, `s1` selected, recording every field commit.
+fn commit_window() -> (AppWindow, Commits) {
+    i_slint_backend_testing::init_no_event_loop();
+    let w = AppWindow::new().unwrap();
+    key_action::wire_keys(&w, &crate::scratch_state(), Keymap::defaults());
+    let commits: Commits = Rc::default();
+    w.on_edit_slate_field({
+        let (commits, weak) = (Rc::clone(&commits), w.as_weak());
+        move |field, text| {
+            let editing = weak.unwrap().get_editing_slate_id().to_string();
+            commits
+                .borrow_mut()
+                .push((field, text.to_string(), editing));
+        }
+    });
+    w.set_slates(ModelRc::new(VecModel::from(vec![
+        slate("s1", "corner"),
+        slate("s2", "free kick"),
+    ])));
+    w.set_selected_slate("s1".into());
+    w.show().unwrap();
+    (w, commits)
+}
+
+/// **A title commits to the slate the field opened on** (v18, #133), not to
+/// whatever is selected when focus leaves — `editing-slate-id`'s rule.
+///
+/// The first test of that rule for **any** slate field: the name field's #132
+/// guard lives in `main.rs`, which no test reaches, and nothing pinned the
+/// Slint half — the field's focus-in writing the id the commit then reads.
+#[test]
+fn the_title_field_commits_to_the_slate_it_opened_on() {
+    let (w, commits) = commit_window();
+
+    // Clicked, as a coach reaches it — `text_editing.rs`'s way in.
+    let mut found = ElementHandle::find_by_element_id(&w, "AppWindow::slate-title-edit");
+    let field = found.next().expect("the title field is on screen");
+    assert!(found.next().is_none(), "one title field");
+    field.mock_single_click(PointerEventButton::Left);
+    for letter in ["C", "o", "r", "n", "e", "r"] {
+        press(&w, letter);
+    }
+
+    // The selection moves on under the focused field, then focus leaves it.
+    // **Esc, not a click**: a move into another slate field runs that field's
+    // focus-in handler before this one's focus-out (Slint runs `changed`
+    // handlers newest-first), which is the next test's business, not this one's.
+    w.set_selected_slate("s2".into());
+    press(&w, Key::Escape);
+
+    assert_eq!(
+        *commits.borrow(),
+        [(SlateField::Title, "Corner".to_string(), "s1".to_string())],
+        "one commit, of the title, to the slate the field opened on"
+    );
+}
+
+/// **Moving focus from one slate field to the next keeps the slate** (v18,
+/// #133). Slint runs `changed` handlers newest-first, so Tab from Name to
+/// Title runs Title's focus-in and *then* Name's focus-out; a focus-out that
+/// cleared `editing-slate-id` unconditionally left Title committing to no
+/// slate, which `main.rs` drops — the coach's title lost without a word.
+#[test]
+fn tabbing_between_slate_fields_keeps_the_slate() {
+    let (w, commits) = commit_window();
+
+    w.invoke_focus_slate_name();
+    press(&w, Key::Tab);
+    for letter in ["C", "o", "r", "n", "e", "r"] {
+        press(&w, letter);
+    }
+    press(&w, Key::Escape);
+
+    let titles: Vec<_> = commits
+        .borrow()
+        .iter()
+        .filter(|(field, ..)| *field == SlateField::Title)
+        .cloned()
+        .collect();
+    assert_eq!(
+        titles,
+        [(SlateField::Title, "Corner".to_string(), "s1".to_string())],
+        "one title commit, to the slate the fields opened on: {:?}",
+        commits.borrow()
+    );
+}
+
+/// **The row says when a slate has a title, and only then** (v18, #133): a
+/// `T` beside the shot marker, found by the words on it. An untitled row shows
+/// nothing, so a project that never uses titles sees no change in the list.
+#[test]
+fn a_titled_slate_shows_its_marker_and_an_untitled_one_none() {
+    i_slint_backend_testing::init_no_event_loop();
+    let w = AppWindow::new().unwrap();
+    w.set_slates(ModelRc::new(VecModel::from(vec![
+        SlateRow {
+            title: "Corner routine".into(),
+            ..slate("s1", "corner")
+        },
+        slate("s2", "free kick"),
+    ])));
+    w.show().unwrap();
+
+    assert_eq!(
+        ElementHandle::find_by_accessible_label(&w, "T").count(),
+        1,
+        "one marker, on the titled row"
+    );
 }

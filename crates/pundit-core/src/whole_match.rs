@@ -41,6 +41,7 @@ pub(crate) fn whole_match_entries(project: &Project) -> Vec<PlanEntry> {
                 start_frame,
                 frames,
                 text: String::new(),
+                caption_until: f64::INFINITY,
             };
             start_frame += frames;
             entry

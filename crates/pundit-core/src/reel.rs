@@ -210,6 +210,8 @@ pub(crate) fn reel_plan(project: &Project, side: ReelSide) -> CompilationPlan {
             start_frame,
             frames,
             text: entry_text(goal, scoreboard.as_ref(), i + 1, total),
+            // No clip, so no caption setting: a reel keeps its bar.
+            caption_until: f64::INFINITY,
         });
         start_frame += frames;
 

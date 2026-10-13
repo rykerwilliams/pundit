@@ -432,12 +432,12 @@ impl Bus {
             Vec::with_capacity(folders.len());
         for folder in &folders {
             let project = self.project_for(folder)?;
-            let media = Arc::new(MatchMedia {
-                // Frozen with the project as it stands: the run's own copy.
-                scoreboard: ScoreboardContext::for_project(&project),
-                highlights: project.player_highlights.clone(),
-                avatar: project.avatar.as_ref().map(|file| folder.join(file)),
-            });
+            // Frozen with the project as it stands: the run's own copy.
+            let media = Arc::new(MatchMedia::of(
+                &project,
+                folder,
+                ScoreboardContext::for_project(&project),
+            ));
             let label = match_label(&project);
             read.push((project, label, media));
         }

@@ -23,6 +23,7 @@
 //! string it returns and knows nothing about the format.
 
 use crate::metadata::UNTITLED;
+use crate::naming;
 
 /// The shortest gap YouTube accepts between two chapters.
 pub const MIN_GAP_SECONDS: u64 = 10;
@@ -44,19 +45,14 @@ fn timestamp(seconds: u64) -> String {
     }
 }
 
-/// A title as one line: runs of whitespace — including the newlines a clip
-/// name can hold — collapsed to single spaces, and a title left empty named
-/// [`UNTITLED`].
-///
-/// **A newline in a title would cost every chapter**, not just its own: the
-/// line after it wouldn't start with a timestamp, and YouTube would drop the
-/// whole list. A title is also never empty, because a timestamp alone is not
-/// a chapter.
-fn one_line(title: &str) -> String {
-    let words: Vec<&str> = title.split_whitespace().collect();
-    match words.is_empty() {
+/// A chapter's title: [`naming::one_line`], which says why a newline would
+/// cost every chapter, and a title left empty named [`UNTITLED`] — a
+/// timestamp alone is not a chapter.
+fn chapter_title(title: &str) -> String {
+    let line = naming::one_line(title);
+    match line.is_empty() {
         true => UNTITLED.to_owned(),
-        false => words.join(" "),
+        false => line,
     }
 }
 
@@ -102,15 +98,15 @@ pub fn chapter_list(chapters: &[(f64, String)]) -> Option<String> {
         match kept.last() {
             Some((last, _)) => {
                 if seconds >= last.saturating_add(MIN_GAP_SECONDS) {
-                    kept.push((seconds, one_line(title)));
+                    kept.push((seconds, chapter_title(title)));
                 }
             }
             None if seconds >= MIN_GAP_SECONDS => {
                 kept.push((0, LEAD_IN.to_owned()));
-                kept.push((seconds, one_line(title)));
+                kept.push((seconds, chapter_title(title)));
             }
             // At zero already, or near enough to be moved there.
-            None => kept.push((0, one_line(title))),
+            None => kept.push((0, chapter_title(title))),
         }
     }
     if kept.len() < MIN_CHAPTERS {

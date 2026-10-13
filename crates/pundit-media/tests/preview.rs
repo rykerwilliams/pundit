@@ -18,13 +18,14 @@ use std::time::{Duration, Instant};
 use gstreamer as gst;
 use gstreamer_video as gst_video;
 use gstreamer_video::prelude::*;
+use pundit_core::caption::CaptionBar;
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::layout::{avatar_box, bar_rect, pip_rect};
 use pundit_core::project::{Clip, Inset, InsetCorner, InsetPlacement, InsetSize};
 use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_media::fixtures::{self, counter_video, read_counter, CounterKind, GrayFrame};
 use pundit_media::{
-    Frame, FrameMailbox, Gl, Picture as Source, Preview, PreviewJob, PreviewMessage,
+    Frame, FrameMailbox, Gl, MatchMedia, Picture as Source, Preview, PreviewJob, PreviewMessage,
     PreviewPosition, PreviewStats,
 };
 use uuid::Uuid;
@@ -74,6 +75,7 @@ fn clip(duration: f64, show_pip: bool, events: Vec<CommentaryEvent>) -> Clip {
         transcript: String::new(),
         slate_id: None,
         backdrop: None,
+        caption_bar: pundit_core::caption::CaptionBar::Whole,
     }
 }
 
@@ -139,9 +141,10 @@ impl Running {
             clip,
             compilation,
             commentary_volume: 0.0,
-            scoreboard: None,
-            highlights: Vec::new(),
-            avatar,
+            match_media: MatchMedia {
+                avatar,
+                ..MatchMedia::default()
+            },
         };
         let mailbox = FrameMailbox::default();
         let position = PreviewPosition::default();
@@ -435,6 +438,52 @@ fn a_seek_lands_on_the_frame_it_asked_for() {
         counter, last_seek,
         "a seek out of the end landed on {counter}"
     );
+}
+
+/// **The preview's `FirstSeconds` agrees with the export's** (#115): the same
+/// clip as `tests/export.rs`'s
+/// `a_first_seconds_caption_leaves_the_export_after_three_seconds`, held at
+/// 1 s and at 4 s — glyphs on the bar at the first and none at the second. The
+/// clip starts 10 s into its video, so a caption timed on the source clock
+/// would be gone at both.
+#[test]
+fn a_first_seconds_caption_leaves_the_preview_after_three_seconds() {
+    gst::init().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    // 16 s (plan §0.6), 16:9 so the picture fills the output.
+    let source = counter_video(
+        &dir.path().join("src.webm"),
+        640,
+        360,
+        30,
+        480,
+        CounterKind::Vp8WebmWithAudio,
+    );
+    let recording =
+        fixtures::solid_video(&dir.path().join("rec.webm"), 640, 360, 30, 150, GREEN, true);
+    let clip = Clip {
+        name: "Corner routine".into(),
+        start_source_seconds: 10.0,
+        caption_bar: CaptionBar::FirstSeconds,
+        ..clip(5.0, false, Vec::new())
+    };
+    let running = Running::start(source, recording, clip, 16.0);
+    running.preview.set_playing(false);
+
+    // White glyphs in the bar's rows, left of x = 640: the counter's blocks
+    // are all above the bar, and its background is black.
+    let bar = bar_rect(OUT_W as f64, OUT_H as f64, None);
+    let glyphs = |seconds: f64| {
+        running.preview.seek(seconds);
+        let picture = running.settled_picture();
+        (bar.y as usize..OUT_H)
+            .flat_map(|y| (0..640).map(move |x| (x, y)))
+            .filter(|&(x, y)| picture.at(x, y)[0] > 150)
+            .count()
+    };
+    let (at_1, at_4) = (glyphs(1.0), glyphs(4.0));
+    assert!(at_1 > 50, "{at_1} glyph pixels on the preview's bar at 1 s");
+    assert_eq!(at_4, 0, "glyph pixels on the preview's bar at 4 s");
 }
 
 /// A seek while the end-of-schedule tail is draining leaves the preview

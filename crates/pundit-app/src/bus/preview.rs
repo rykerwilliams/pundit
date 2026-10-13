@@ -15,7 +15,9 @@ use pundit_core::export::compilation_schedule;
 use pundit_core::plan::ExportTarget;
 use pundit_core::scoreboard::ScoreboardContext;
 use pundit_core::store::{BACKDROPS_DIRNAME, RECORDINGS_DIRNAME};
-use pundit_media::{Gl, Origin, Picture, Preview, PreviewJob, PreviewMessage, SinkKind};
+use pundit_media::{
+    Gl, MatchMedia, Origin, Picture, Preview, PreviewJob, PreviewMessage, SinkKind,
+};
 use uuid::Uuid;
 
 use super::{Bus, Event, Input, UserError};
@@ -112,13 +114,11 @@ impl Bus {
             clip: clip.clone(),
             compilation,
             commentary_volume: open.project.preferences.preview_commentary_volume,
-            scoreboard: ScoreboardContext::for_project(&open.project),
-            highlights: open.project.player_highlights.clone(),
-            avatar: open
-                .project
-                .avatar
-                .as_ref()
-                .map(|file| open.folder.join(file)),
+            match_media: MatchMedia::of(
+                &open.project,
+                &open.folder,
+                ScoreboardContext::for_project(&open.project),
+            ),
         };
 
         // Whatever was on screen stops first, and takes its frame with it.

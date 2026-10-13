@@ -147,6 +147,7 @@ fn reel_of(frames: usize) -> Compilation {
         start_frame: 0,
         frames,
         text: String::new(),
+        caption_until: f64::INFINITY,
     };
     Compilation {
         frames: (0..frames as u32)

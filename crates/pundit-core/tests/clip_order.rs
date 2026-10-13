@@ -5,6 +5,7 @@ mod common;
 
 use uuid::Uuid;
 
+use pundit_core::caption::CaptionBar;
 use pundit_core::project::{Clip, Project};
 use pundit_core::undo::ClipEdit;
 
@@ -179,6 +180,11 @@ fn set_sets_one_field_and_returns_the_old_value() {
         (ClipEdit::ShowPip(false), ClipEdit::ShowPip(true), |c| {
             !c.show_pip
         }),
+        (
+            ClipEdit::CaptionBar(CaptionBar::Off),
+            ClipEdit::CaptionBar(CaptionBar::Whole),
+            |c| c.caption_bar == CaptionBar::Off,
+        ),
     ];
     for (edit, old, applied) in cases {
         let before = clip(1, 0, 0.0);

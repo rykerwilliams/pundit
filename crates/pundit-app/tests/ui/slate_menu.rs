@@ -33,6 +33,7 @@ fn slate(id: &str) -> SlateRow {
         tags: SharedString::new(),
         shot: false,
         timed: true,
+        title: SharedString::new(),
     }
 }
 

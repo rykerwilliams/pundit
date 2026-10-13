@@ -123,3 +123,18 @@ fn the_reel_keeps_a_chapter_per_entry() {
         [(0.0, "Goal 1 — Home"), (26.0, "Goal 2 — Home")]
     );
 }
+
+/// v18: an entry with no clip has no caption setting, so it keeps its bar —
+/// the reel's goal line for the whole entry (the coach, 2026-10-12), and the
+/// whole match's, which is empty and so draws nothing either way.
+#[test]
+fn the_reel_and_the_whole_match_keep_their_caption() {
+    let mut p = project(&[1000.0]);
+    p.append_match_event(HOME, 0, 100.0);
+    let reel = compilation_plan(&p, &ExportTarget::Reel(ReelSide::All));
+    let whole = whole(&p);
+    assert!(!reel.entries.is_empty() && !whole.entries.is_empty());
+    for entry in reel.entries.iter().chain(&whole.entries) {
+        assert_eq!(entry.caption_until, f64::INFINITY);
+    }
+}

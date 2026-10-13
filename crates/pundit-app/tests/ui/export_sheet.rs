@@ -44,7 +44,7 @@ const CUES: &str = "Scoreboard subtitles — an .srt beside the file, and a trac
 const MUTE: &str = "Mute source audio";
 
 /// The explanatory line that was already there, and the one spec S4 added.
-const COPY_LINE: &str = "The whole match is copied, not re-encoded: player highlights and pen drawings can't ride a copy.";
+const COPY_LINE: &str = "The whole match is copied, not re-encoded: player highlights, titles and pen drawings can't ride a copy.";
 const NO_BOARD_LINE: &str =
     "This export carries no scoreboard at all: not in the picture, not beside the file, not inside it.";
 

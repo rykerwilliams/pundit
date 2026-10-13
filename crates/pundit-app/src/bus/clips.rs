@@ -35,11 +35,12 @@ impl Bus {
         let Some(before) = open.project.apply_edit(id, edit.clone()) else {
             return eprintln!("bus: EditClip on a clip that isn't there: {id}");
         };
-        // The inset's size and corner are **sticky**: the value the coach last
-        // set on a clip is what the next recording is given (#88 spec I6), as
-        // the export sheet's three pickers are written back in `export.rs`.
-        // Here, before the save that carries it — after it, the preference
-        // would be lost until some unrelated edit wrote the project again.
+        // The inset's size and corner, and the caption bar (v18, #115), are
+        // **sticky**: the value the coach last set on a clip is what the next
+        // recording is given (#88 spec I6), as the export sheet's three
+        // pickers are written back in `export.rs`. Here, before the save that
+        // carries it — after it, the preference would be lost until some
+        // unrelated edit wrote the project again.
         //
         // **Before the no-op guard below, and reason enough to save on its
         // own.** Nothing to save about the *document* is not the same as nothing
@@ -61,6 +62,9 @@ impl Bus {
             }
             ClipEdit::InsetCorner(v) => {
                 std::mem::replace(&mut open.project.preferences.last_inset_corner, *v) != *v
+            }
+            ClipEdit::CaptionBar(v) => {
+                std::mem::replace(&mut open.project.preferences.last_caption_bar, *v) != *v
             }
             _ => false,
         };

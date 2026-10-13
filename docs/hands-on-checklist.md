@@ -182,7 +182,7 @@ New in 0.3.0. Pick a picture of yourself and the app records your voice only —
 
 New in 0.4.0. The export sheet has a third picker, **Scoreboard**, under Resolution and Quality.
 
-- [ ] **[must work] The whole match, copied.** Leave **Scoreboard** on **Default**, tick **Whole match**, export. **Right:** it finishes in a minute or two, not an hour, and the file is about the size of your two halves put together (~2 GB, not 8). A note in the sheet says the whole match is copied and that highlights and drawings can't ride a copy.
+- [ ] **[must work] The whole match, copied.** Leave **Scoreboard** on **Default**, tick **Whole match**, export. **Right:** it finishes in a minute or two, not an hour, and the file is about the size of your two halves put together (~2 GB, not 8). A note in the sheet says the whole match is copied and that highlights, titles and drawings can't ride a copy.
 - [ ] **[must work] The scoreboard, in VLC.** Open the exported match in VLC. **Right:** the score and match clock appear as subtitles, updating as the match goes, and Subtitle → Sub Track can switch them off. There's a `.srt` file beside the `.mp4` — that's what VLC is reading.
 - [x] **Where these actually get watched — answered 2026-09-24.** The coach uploaded a copied whole match to YouTube and attached the `.srt` there as a subtitle track: it works as expected. So the route is upload-the-copy, attach-the-srt; the burned-in board stays for anywhere that can't take a subtitle.
 - [ ] **Chapters still work** in the copied file (Playback → Chapter): "Kick-off", "<team> goal 1-0", "Half time".

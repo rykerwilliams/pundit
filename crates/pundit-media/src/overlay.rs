@@ -43,6 +43,7 @@ use cosmic_text::{
 };
 use gstreamer as gst;
 use gstreamer_video as gst_video;
+use pundit_core::caption::Strip;
 use pundit_core::highlight::{label_ink, HighlightShape, LABEL_PAD_RATIO, LABEL_PILL_RATIO};
 use pundit_core::layout::{
     bar_rect, scoreboard_rects, stroke_line_width, Rect as LayoutRect, BAR_FONT_RATIO,
@@ -121,10 +122,12 @@ pub(crate) struct OverlayFrame<'a> {
     /// through the frame's own zoom, so this layer stays zoom-agnostic exactly
     /// as it is for strokes (spec H4).
     pub highlights: &'a [HighlightShape],
-    /// The bar's line. **Empty draws no bar at all** — neither its background
-    /// nor its glyphs: that is how a caller suppresses the bar. Neither
-    /// shipping caller does; both draw the entry's own line (spec E7).
-    pub text: &'a str,
+    /// The strip along the bottom — a clip's caption or a slate's title, and
+    /// how strongly it is drawn — or `None` for no bar at all, neither its
+    /// background nor its glyphs. Both tails pass whatever
+    /// [`pundit_core::caption::strip_at`] answers, which decides everything:
+    /// this layer only draws it.
+    pub bar: Option<Strip<'a>>,
     /// The teams to draw and what the board reads at this frame, or `None`
     /// when the project has no scoreboard configured or nothing has been
     /// tagged yet (`core::scoreboard`'s two "draw nothing" cases). The state
@@ -141,8 +144,10 @@ pub(crate) struct OverlayRenderer {
     fonts: FontSystem,
     cache: SwashCache,
     /// The last line fitted in each [`TextSlot`], so [`Self::fit`]'s shrinking
-    /// and its search run once an entry rather than once a frame: none of
-    /// those lines changes inside one.
+    /// and its search run once per change of line rather than once a frame.
+    /// The team names hold still for a whole run; the bar's line changes
+    /// inside an entry at most twice per title it crosses (the title in, the
+    /// caption back), so it re-fits once per change.
     fitted: [Option<Fitted>; TextSlot::COUNT],
     /// The highlights' clip, with the picture rect and output size it was
     /// built for. Remembered for the same reason a line's fit is: the picture
@@ -156,9 +161,11 @@ pub(crate) struct OverlayRenderer {
 /// size that is the mask's own size.
 type MaskKey = ((i32, i32, i32, i32), u32, u32);
 
-/// A line that holds still for a whole entry, and so gets a memo slot of its
-/// own. The score, the clock and the stoppage tail change every frame and are
-/// fitted afresh each time — a slot for them would only thrash.
+/// A line that holds still for many frames at a time, and so gets a memo slot
+/// of its own: the team names for a whole run, and the bar's line between the
+/// at most two changes a title makes inside an entry. The score, the clock and
+/// the stoppage tail change every frame and are fitted afresh each time — a
+/// slot for them would only thrash.
 ///
 /// The two team names share a size and very nearly a width, so a single slot
 /// would thrash the same way: each frame would evict the other name's fit and
@@ -364,28 +371,33 @@ impl OverlayRenderer {
         // inset switched off, and a `Some` for every clip would cut that clip's
         // bar at a column nothing stands in.
         let bar = bar_rect(out_w, out_h, frame.clip.and_then(Clip::inset_placement));
-        if !frame.text.is_empty() {
+        if let Some(strip) = frame.bar {
+            debug_assert!(strip.opacity > 0.0, "a strip at opacity {}", strip.opacity);
             fill(
                 pixmap,
                 &bar,
-                Color::from_rgba(0.0, 0.0, 0.0, BAR_ALPHA).expect("a valid colour"),
+                Color::from_rgba(0.0, 0.0, 0.0, BAR_ALPHA * strip.opacity as f32)
+                    .expect("a valid colour"),
             );
         }
 
         draw_strokes(pixmap, frame);
 
-        if !frame.text.is_empty() {
+        if let Some(strip) = frame.bar {
+            // The glyphs fade with the background: `draw_label` honours the
+            // colour's alpha.
+            let alpha = (255.0 * strip.opacity).round() as u8;
             self.draw_label(
                 pixmap,
                 &Label {
-                    text: frame.text,
+                    text: strip.text,
                     rect: bar,
                     style: Style::new((bar.h * BAR_FONT_RATIO) as f32, Weight::NORMAL),
                     // Its own size, so the bar never shrinks: it is a whole
                     // sentence, and one that resized with its length would
                     // leave the bar dancing from entry to entry.
                     min_font_size: (bar.h * BAR_FONT_RATIO) as f32,
-                    color: TextColor::rgb(255, 255, 255),
+                    color: TextColor::rgba(255, 255, 255, alpha),
                     align: Align::Left,
                     pad: (bar.h * BAR_INSET_RATIO) as f32,
                     slot: Some(TextSlot::Bar),
@@ -652,13 +664,20 @@ impl OverlayRenderer {
         let (width, height) = (pixmap.width() as i32, pixmap.height() as i32);
         let data = pixmap.data_mut();
         let (fonts, cache) = (&mut self.fonts, &mut self.cache);
+        // cosmic-text hands each pixel the glyph's coverage as its alpha and
+        // **drops the colour's own** (`cosmic-text-0.19.0/src/swash.rs:212`–
+        // `:217`, "TODO: blend base alpha?"), so it is multiplied back in
+        // here — which is how a fading strip's glyphs fade with its bar.
+        let base_a = u32::from(label.color.a());
         buffer.draw(fonts, cache, label.color, |x, y, w, h, color| {
-            let a = u32::from(color.a());
+            let a = u32::from(color.a()) * base_a / 255;
             if a == 0 {
                 return;
             }
             // `color` is straight alpha; the pixmap is premultiplied.
-            let src = [color.r(), color.g(), color.b(), color.a()].map(|c| u32::from(c) * a / 255);
+            // Its alpha is `a` itself, not `a` premultiplied by `a`.
+            let [r, g, b] = [color.r(), color.g(), color.b()].map(|c| u32::from(c) * a / 255);
+            let src = [r, g, b, a];
             for dy in 0..h as i32 {
                 for dx in 0..w as i32 {
                     let (px, py) = (left + x + dx, top + y + dy);
@@ -1131,6 +1150,7 @@ mod tests {
             transcript: String::new(),
             slate_id: None,
             backdrop: None,
+            caption_bar: pundit_core::caption::CaptionBar::Whole,
         }
     }
 
@@ -1190,7 +1210,7 @@ mod tests {
                 record_time,
                 picture,
                 highlights: &[],
-                text,
+                bar: (!text.is_empty()).then_some(Strip { text, opacity: 1.0 }),
                 scoreboard: None,
             },
             w,
@@ -1511,6 +1531,54 @@ mod tests {
         assert!(bar.iter().any(|px| px[3] > 0));
     }
 
+    /// A strip halfway through its fade draws its bar **and its glyphs** at
+    /// half strength. The glyph half is the one that needs `draw_label` to
+    /// honour its colour's alpha: cosmic-text drops it, so without that the
+    /// words would stay solid white over a fading bar.
+    #[test]
+    fn a_half_faded_strip_halves_the_bar_and_its_glyphs() {
+        let (w, h) = (640, 360);
+        let c = clip(Vec::new());
+        let px = render_frame(
+            &OverlayFrame {
+                clip: Some(&c),
+                record_time: 0.0,
+                picture: (0, 0, w as i32, h as i32),
+                highlights: &[],
+                bar: Some(Strip {
+                    text: "Corner routine",
+                    opacity: 0.5,
+                }),
+                scoreboard: None,
+            },
+            w,
+            h,
+        );
+        let bar = bar_rect(f64::from(w), f64::from(h), c.inset_placement());
+        let (x0, y0) = (bar.x.ceil() as u32, bar.y.ceil() as u32);
+        let (x1, y1) = ((bar.x + bar.w) as u32, (bar.y + bar.h) as u32);
+
+        // The bar's top-left corner is inside its left pad, above the line:
+        // background alone, at half of 60% black.
+        let background = at(&px, w, x0 + 1, y0 + 1)[3];
+        assert!(
+            (f64::from(background) - 0.6 * 0.5 * 255.0).abs() <= 1.0,
+            "the bar's alpha is {background}"
+        );
+
+        // The brightest glyph pixel is white at half alpha, premultiplied:
+        // red about 128, not 255.
+        let red = (y0..y1)
+            .flat_map(|y| (x0..x1).map(move |x| (x, y)))
+            .map(|(x, y)| at(&px, w, x, y)[0])
+            .max()
+            .unwrap();
+        assert!(
+            (118..=138).contains(&red),
+            "the brightest glyph's red is {red}"
+        );
+    }
+
     /// The cut line is drawn on one row: the overflow never reaches the
     /// picture above the bar, which is where macOS's wrap put it.
     #[test]
@@ -1568,7 +1636,7 @@ mod tests {
                 record_time: 0.0,
                 picture,
                 highlights,
-                text: "",
+                bar: None,
                 scoreboard: None,
             },
             w,
@@ -1709,7 +1777,7 @@ mod tests {
                 record_time: 1.0,
                 picture: (0, 0, 800, 800),
                 highlights: &shapes,
-                text: "",
+                bar: None,
                 scoreboard: None,
             },
             w,
@@ -1858,7 +1926,7 @@ mod tests {
                 record_time: 0.0,
                 picture: (0, 0, OUT_W as i32, OUT_H as i32),
                 highlights: &[],
-                text: "",
+                bar: None,
                 scoreboard: Some((config, state)),
             },
             OUT_W,
@@ -2049,7 +2117,7 @@ mod tests {
                 record_time: 1.5,
                 picture: (0, 0, OUT_W as i32, OUT_H as i32),
                 highlights: &[],
-                text: "",
+                bar: None,
                 scoreboard: Some((&config, state(ClockDisplay::Running { seconds: 1.0 }))),
             },
             OUT_W,

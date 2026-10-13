@@ -164,6 +164,7 @@ fn slate_on(source_index: usize, in_seconds: f64) -> Slate {
         out_seconds: Some(in_seconds + 35.0),
         name: "corner routine".into(),
         tags: vec!["corners".into()],
+        title: None,
     }
 }
 

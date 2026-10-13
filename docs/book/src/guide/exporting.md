@@ -16,7 +16,13 @@ the same target again replaces the earlier file.
 
 Every clip carries a caption bar along the bottom with its number, name and
 tags, your inset in its corner, your drawings, any player highlights it crosses,
-and the scoreboard in the top left.
+and the scoreboard in the top left. A slate's title, where the clip crosses its
+range, takes the caption bar's place while that stretch is on screen (see
+[Slates](slates.md)).
+
+The inspector's **Caption bar** picker says how long a clip's caption shows:
+**Whole clip**, the **First 3 seconds**, or **Off**. A new take gets whatever
+you picked last.
 
 ## Resolution and quality
 
@@ -38,7 +44,7 @@ The whole match can be a **straight copy** of your footage instead of an
 encode: it finishes in about a minute rather than an hour, at about a quarter of
 the size, with not a pixel lost. The scoreboard then travels beside the picture
 rather than on it — as a subtitle track inside the file, and as an `.srt` beside
-it that VLC loads on its own and YouTube accepts as a caption file. Highlights
+it that VLC loads on its own and YouTube accepts as a caption file. Highlights and titles
 cannot ride a copy, and the sheet says so.
 
 A copy needs footage it can carry: H.264 in an MP4 file, with AAC sound (or
@@ -56,7 +62,7 @@ usually records exactly that; Matroska or HEVC footage is encoded instead.
 Only the whole match can carry the board beside the picture. A clip or a reel
 asked for on a separate track has it burned in, so the board is never lost.
 With the whole match ticked, a line under the picker warns that a copy cannot
-carry highlights or drawings. On Default, whether the footage can be copied is
+carry highlights, titles or drawings. On Default, whether the footage can be copied is
 only checked when you press **Export** — footage that cannot is encoded with the
 board burned in.
 

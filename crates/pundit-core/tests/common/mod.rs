@@ -1,5 +1,6 @@
 //! What `pundit-core`'s test files share.
 
+use pundit_core::caption::CaptionBar;
 use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize};
 use uuid::Uuid;
 
@@ -39,5 +40,6 @@ pub fn clip_stub() -> Clip {
         transcript: String::new(),
         slate_id: None,
         backdrop: None,
+        caption_bar: CaptionBar::Whole,
     }
 }
