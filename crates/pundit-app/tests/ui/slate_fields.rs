@@ -196,20 +196,16 @@ fn press(w: &AppWindow, key: impl Into<SharedString> + Clone) {
         .dispatch_event(WindowEvent::KeyReleased { text: key.into() });
 }
 
-/// **A title commits to the slate the field opened on** (v18, #133), not to
-/// whatever is selected when focus leaves — `editing-slate-id`'s rule.
-///
-/// The first test of that rule for **any** slate field: the name field's #132
-/// guard lives in `main.rs`, which no test reaches, and nothing pinned the
-/// Slint half — the field's focus-in writing the id the commit then reads.
-#[test]
-fn the_title_field_commits_to_the_slate_it_opened_on() {
+/// `(field, text, editing-slate-id)` of every commit, the id read **inside**
+/// the callback, where `main.rs`'s `on_edit_slate_field` reads it.
+type Commits = Rc<RefCell<Vec<(SlateField, String, String)>>>;
+
+/// A window with two slates, `s1` selected, recording every field commit.
+fn commit_window() -> (AppWindow, Commits) {
     i_slint_backend_testing::init_no_event_loop();
     let w = AppWindow::new().unwrap();
     key_action::wire_keys(&w, &crate::scratch_state(), Keymap::defaults());
-    // `(field, text, editing-slate-id)`, the id read **inside** the callback,
-    // where `main.rs`'s `on_edit_slate_field` reads it.
-    let commits: Rc<RefCell<Vec<(SlateField, String, String)>>> = Rc::default();
+    let commits: Commits = Rc::default();
     w.on_edit_slate_field({
         let (commits, weak) = (Rc::clone(&commits), w.as_weak());
         move |field, text| {
@@ -225,6 +221,18 @@ fn the_title_field_commits_to_the_slate_it_opened_on() {
     ])));
     w.set_selected_slate("s1".into());
     w.show().unwrap();
+    (w, commits)
+}
+
+/// **A title commits to the slate the field opened on** (v18, #133), not to
+/// whatever is selected when focus leaves — `editing-slate-id`'s rule.
+///
+/// The first test of that rule for **any** slate field: the name field's #132
+/// guard lives in `main.rs`, which no test reaches, and nothing pinned the
+/// Slint half — the field's focus-in writing the id the commit then reads.
+#[test]
+fn the_title_field_commits_to_the_slate_it_opened_on() {
+    let (w, commits) = commit_window();
 
     // Clicked, as a coach reaches it — `text_editing.rs`'s way in.
     let mut found = ElementHandle::find_by_element_id(&w, "AppWindow::slate-title-edit");
@@ -236,9 +244,9 @@ fn the_title_field_commits_to_the_slate_it_opened_on() {
     }
 
     // The selection moves on under the focused field, then focus leaves it.
-    // **Esc, not a click**: Slint raises the new item's focus before lowering
-    // the old one's, so a click into another slate field would be a test of
-    // that ordering rather than of this field's commit.
+    // **Esc, not a click**: a move into another slate field runs that field's
+    // focus-in handler before this one's focus-out (Slint runs `changed`
+    // handlers newest-first), which is the next test's business, not this one's.
     w.set_selected_slate("s2".into());
     press(&w, Key::Escape);
 
@@ -246,6 +254,36 @@ fn the_title_field_commits_to_the_slate_it_opened_on() {
         *commits.borrow(),
         [(SlateField::Title, "Corner".to_string(), "s1".to_string())],
         "one commit, of the title, to the slate the field opened on"
+    );
+}
+
+/// **Moving focus from one slate field to the next keeps the slate** (v18,
+/// #133). Slint runs `changed` handlers newest-first, so Tab from Name to
+/// Title runs Title's focus-in and *then* Name's focus-out; a focus-out that
+/// cleared `editing-slate-id` unconditionally left Title committing to no
+/// slate, which `main.rs` drops — the coach's title lost without a word.
+#[test]
+fn tabbing_between_slate_fields_keeps_the_slate() {
+    let (w, commits) = commit_window();
+
+    w.invoke_focus_slate_name();
+    press(&w, Key::Tab);
+    for letter in ["C", "o", "r", "n", "e", "r"] {
+        press(&w, letter);
+    }
+    press(&w, Key::Escape);
+
+    let titles: Vec<_> = commits
+        .borrow()
+        .iter()
+        .filter(|(field, ..)| *field == SlateField::Title)
+        .cloned()
+        .collect();
+    assert_eq!(
+        titles,
+        [(SlateField::Title, "Corner".to_string(), "s1".to_string())],
+        "one title commit, to the slate the fields opened on: {:?}",
+        commits.borrow()
     );
 }
 

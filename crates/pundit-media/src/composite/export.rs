@@ -44,11 +44,10 @@ use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_video as gst_video;
 use pundit_core::audio::{Region, AUDIO_SAMPLE_RATE};
-use pundit_core::caption::strip_at;
 use pundit_core::chapters::chapter_list;
 use pundit_core::cues::{cues_to_srt, Cue};
 use pundit_core::export::{Compilation, OUTPUT_FPS};
-use pundit_core::highlight::{highlight_shapes, PlayerHighlight};
+use pundit_core::highlight::PlayerHighlight;
 use pundit_core::layout::{avatar_box, avatar_box_side, pip_rect};
 use pundit_core::metadata::FileTags;
 use pundit_core::project::{Clip, InsetSize, Project, Quality, Resolution, Slate};
@@ -58,8 +57,8 @@ use super::audio::Mixer;
 use super::decode::{Decoder, Picture, Texture};
 use super::{
     audio, avatar, fit_rect, frame_time, head, install_geometry, install_overlay_pad, install_zoom,
-    overlay_branch, premultiplied_over, push_buffer, rounded, stamp, stamp_buffer, tags,
-    CompositeError, Gl, Layout, PadRect, Schedule, Stopper, Watch, POLL, QUEUED,
+    match_layer, overlay_branch, premultiplied_over, push_buffer, rounded, stamp, stamp_buffer,
+    tags, CompositeError, Gl, Layout, PadRect, Schedule, Stopper, Watch, POLL, QUEUED,
 };
 use crate::chapters::{self, ChapterOutcome};
 use crate::overlay::{OverlayFrame, OverlayRenderer};
@@ -180,9 +179,10 @@ pub struct ClipMedia {
 /// Everything an entry needs from the match it came from rather than from its
 /// clip: which is to say, everything that is a property of a project.
 ///
-/// Built once per contributing project when the run starts, and — like every
-/// [`ScoreboardContext`] — **never reused across a source add, move, remove or
-/// relink**, which a job being a snapshot already guarantees.
+/// Built once per contributing project when the run (or a preview) starts,
+/// and — like every [`ScoreboardContext`] — **never reused across a source
+/// add, move, remove or relink**, which a job being a snapshot already
+/// guarantees.
 #[derive(Debug, Clone, Default)]
 pub struct MatchMedia {
     /// The match clock and score to burn in, or `None` when the project has no
@@ -209,9 +209,8 @@ impl MatchMedia {
     /// to burn in, which is the caller's because it depends on the export's
     /// picker as well as on the project.
     ///
-    /// **The one constructor both runs use** (an export and a basket), so
-    /// "what a match contributes" is written once and one test of either run
-    /// covers both.
+    /// **The one constructor every caller uses** — an export, a basket and a
+    /// preview — so "what a match contributes" is written once.
     pub fn of(
         project: &Project,
         folder: &Path,
@@ -722,64 +721,22 @@ fn export(
         }
 
         let record_time = entry.record_time(n);
-        // **The displayed frame's source time**, not a per-clip constant plus
-        // the record time: that sum is exactly the macOS bug that put the
-        // match clock ahead of the footage after every pause (BACKLOG #27).
-        //
-        // **The entry's own match's board**, reached through the entry rather
-        // than through an index into a per-job list, so a piece from another
-        // match cannot draw this one's score (spec J3).
-        // **No board on a whiteboard entry, and the omission is here rather
-        // than on `MatchMedia`** (#138): that value is built once per run and
-        // shared by `Arc` across a project's entries, so blanking it would cost
-        // the footage clips in the same export their board. A diagram has no
-        // match time to show.
-        let scoreboard = media
-            .picture
-            .backdrop()
-            .is_none()
-            .then_some(())
-            .and(media.match_media.scoreboard.as_ref())
-            .and_then(|context| {
-                let state = context.state_at(entry.source_index, frame.source_time)?;
-                Some((context.config(), state))
-            });
-        // A highlight lives in the footage, so it is keyed by the displayed
-        // frame's source time too, and mapped through that frame's own zoom.
-        // Core owns the geometry; the overlay only draws what comes back.
-        // **And no player highlights either**, for a sharper reason than the
-        // board's: a highlight is keyed by `(source_index, the displayed
-        // frame's stream time)` because it belongs to the *footage*, so one
-        // drawn over a diagram would be a ring placed on footage that is not on
-        // screen. The empty slice rather than a guard at the draw, so the
-        // overlay never learns a whiteboard exists.
-        let highlights = match media.picture.backdrop() {
-            Some(_) => Vec::new(),
-            None => highlight_shapes(
-                &media.match_media.highlights,
-                entry.source_index,
-                frame.source_time,
-                frame.zoom,
-                f64::from(picture.2),
-                f64::from(picture.3),
-            ),
-        };
-        // **No titles over a diagram either**, for the highlights' reason just
-        // above: a title is bounded on the footage, and a whiteboard's frozen
-        // anchor would hold one on screen for the whole take (spec S7). The
-        // clip's own caption still applies.
-        let slates: &[Slate] = match media.picture.backdrop() {
-            Some(_) => &[],
-            None => &media.match_media.slates,
-        };
+        let layer = match_layer(
+            &media.match_media,
+            &media.picture,
+            entry,
+            frame,
+            record_time,
+            picture,
+        );
         let overlay = overlays.render(
             &OverlayFrame {
                 clip: media.clip.as_ref().map(|c| &c.clip),
                 record_time,
                 picture,
-                highlights: &highlights,
-                bar: strip_at(entry, record_time, slates, frame.source_time),
-                scoreboard,
+                highlights: &layer.highlights,
+                bar: layer.bar,
+                scoreboard: layer.scoreboard,
             },
             out_w as u32,
             out_h as u32,

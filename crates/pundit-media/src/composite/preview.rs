@@ -16,18 +16,14 @@
 //! **Record time is output time.** `playback_segments` emits its durations in
 //! the recording's own timeline, so output frame `n` is at `n/30` there too.
 //! That is why the recording needs no pump, no re-timestamping and no appsink:
-//! it plays natively and the mixer aligns the pads by running time. It is also
-//! why the strokes' `record_time` is `n/30`, and why the strip's,
-//! `PlanEntry::record_time(n)` — export's own expression — is the same number
-//! here: the compilation has one entry, starting at frame 0.
+//! it plays natively and the mixer aligns the pads by running time.
 //!
 //! **The bar is export's own** (spec E7). Preview runs the clip's one-entry
 //! compilation, so its overlay carries the same strip the file gets — the
 //! clip's caption, `1 / 1 | <name> | tags`, as its caption-bar mode says, or a
-//! slate's title over that slate's range — from the same per-frame
-//! `caption::strip_at` the export calls (BACKLOG #115, #133). The scoreboard
-//! comes off the same per-frame call the export makes too. What the coach
-//! checks here is what the export shows.
+//! slate's title over that slate's range — with the board and the rings, from
+//! the same per-frame `match_layer` the export calls (BACKLOG #115, #133).
+//! What the coach checks here is what the export shows.
 //!
 //! **One pump, every appsrc, one PTS.** `glvideomixer` waits indefinitely on
 //! every pad, so frame `n`'s overlay — and an avatar's image — goes out with
@@ -62,18 +58,20 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_video as gst_video;
-use pundit_core::caption::{strip_at, Strip};
+use pundit_core::caption::Strip;
 use pundit_core::export::{Compilation, OUTPUT_FPS};
-use pundit_core::highlight::{highlight_shapes, HighlightShape, PlayerHighlight};
+use pundit_core::highlight::HighlightShape;
 use pundit_core::layout::{avatar_box, pip_rect};
-use pundit_core::project::{Clip, InsetPlacement, Slate};
-use pundit_core::scoreboard::{ScoreboardConfig, ScoreboardContext, ScoreboardState};
+use pundit_core::project::{Clip, InsetPlacement};
+use pundit_core::scoreboard::{ScoreboardConfig, ScoreboardState};
 
 use super::decode::{Decoder, Picture, Texture};
+use super::export::MatchMedia;
 use super::{
     avatar, display_aspect, fit_rect, frame_index, frame_time, head, install_overlay_pad,
-    install_zoom, level_at, overlay_branch, place, premultiplied_over, pulsed, rounded, stamp,
-    stamp_buffer, wait_for_room, CompositeError, Gl, PadRect, Stopper, Watch, POLL, QUEUED,
+    install_zoom, level_at, match_layer, overlay_branch, place, premultiplied_over, pulsed,
+    rounded, stamp, stamp_buffer, wait_for_room, CompositeError, Gl, PadRect, Stopper, Watch, POLL,
+    QUEUED,
 };
 use crate::mailbox::FrameMailbox;
 use crate::overlay::{OverlayFrame, OverlayRenderer};
@@ -151,21 +149,10 @@ pub struct PreviewJob {
     /// The commentary's volume, the project's `preview_commentary_volume`, in
     /// the volume slider's `0..=1` space.
     pub commentary_volume: f64,
-    /// The match clock and score to draw, or `None` when the project has no
-    /// scoreboard configured. Built once by the bus, and **never reused across
-    /// a source add, move, remove or relink** — see [`ScoreboardContext`].
-    pub scoreboard: Option<ScoreboardContext>,
-    /// The project's player highlights, a snapshot like the clip itself. They
-    /// belong to the footage rather than to the clip (spec H1), so the preview
-    /// shows every one the clip's span crosses.
-    pub highlights: Vec<PlayerHighlight>,
-    /// The project's slates, whose titles are drawn over the footage their
-    /// ranges cover — a snapshot, like `highlights`, and like
-    /// `MatchMedia::slates` the whole list (BACKLOG #133).
-    pub slates: Vec<Slate>,
-    /// The project's avatar image, or `None` for a project that records on
-    /// camera. Read only by a clip whose `inset` is the avatar (spec A1, B2).
-    pub avatar: Option<PathBuf>,
+    /// What the project contributes — board, highlights, slates, avatar —
+    /// built by the export's own [`MatchMedia::of`], so a preview draws what
+    /// the export would.
+    pub match_media: MatchMedia,
 }
 
 /// What a running preview reports, on its own thread.
@@ -494,22 +481,7 @@ fn run(
         ended = false;
         let frame = &job.compilation.frames[n as usize];
         let sample = source.frame_at(frame.source_time, watch)?;
-        let entry = job.compilation.plan.entries.get(frame.entry);
-        // The scoreboard's clock is the **displayed** frame's source time, so
-        // a pause in the commentary leaves it where it was (BACKLOG #27).
-        // No board on a whiteboard preview, for the export's reason: a diagram
-        // has no match time (#138).
-        let scoreboard = job
-            .picture
-            .backdrop()
-            .is_none()
-            .then_some(())
-            .and(job.scoreboard.as_ref())
-            .zip(entry)
-            .and_then(|(context, entry)| {
-                let state = context.state_at(entry.source_index, frame.source_time)?;
-                Some((context.config(), state))
-            });
+        let entry = &job.compilation.plan.entries[frame.entry];
         // The first frame's caps shape the composite: its size, PAR and
         // memory, and with them the picture rect the overlay is drawn at.
         if composite.is_none() {
@@ -518,47 +490,26 @@ fn run(
             )?);
         }
         let composite = composite.as_ref().expect("started above");
-        // Highlights are keyed by the displayed frame's source time as well,
-        // and mapped through its own zoom. Core owns that geometry; the
-        // overlay only draws what comes back.
-        // And no highlights, for the sharper reason: one is keyed to the
-        // footage, so a ring over a diagram is a ring placed on footage that is
-        // not on screen (#138).
-        let highlights = entry
-            .filter(|_| job.picture.backdrop().is_none())
-            .map_or_else(Vec::new, |entry| {
-                highlight_shapes(
-                    &job.highlights,
-                    entry.source_index,
-                    frame.source_time,
-                    frame.zoom,
-                    f64::from(composite.picture.2),
-                    f64::from(composite.picture.3),
-                )
-            });
-        // The strip, by the export's own call on the export's own clocks. And
-        // no titles over a diagram, for the highlights' reason (spec S7).
-        let slates: &[Slate] = match job.picture.backdrop() {
-            Some(_) => &[],
-            None => &job.slates,
-        };
-        let bar = entry.and_then(|entry| {
-            strip_at(
-                entry,
-                entry.record_time(n as usize),
-                slates,
-                frame.source_time,
-            )
-        });
+        // The export's own clock and the export's own call.
+        let record_time = entry.record_time(n as usize);
+        let layer = match_layer(
+            &job.match_media,
+            &job.picture,
+            entry,
+            frame,
+            record_time,
+            composite.picture,
+        );
         composite.push(
             Frame {
                 n,
                 generation,
                 sample,
+                record_time,
                 clip: &job.clip,
-                highlights: &highlights,
-                bar,
-                scoreboard,
+                highlights: &layer.highlights,
+                bar: layer.bar,
+                scoreboard: layer.scoreboard,
             },
             &mut overlays,
             watch,
@@ -618,6 +569,9 @@ struct Frame<'a> {
     generation: u64,
     /// The decoded source frame to show.
     sample: &'a gst::Sample,
+    /// Where the frame sits in the recording: the strokes' clock and the
+    /// strip's, `PlanEntry::record_time` as the export reads it.
+    record_time: f64,
     /// The clip, for the drawings the overlay replays.
     clip: &'a Clip,
     /// The rings showing at this frame, in picture pixels.
@@ -659,7 +613,7 @@ impl AvatarInset {
     /// drift the placement is a stored field to avoid (spec I3).
     fn open(job: &PreviewJob, cancel: &AtomicBool) -> Option<AvatarInset> {
         let placement = job.clip.avatar_placement()?;
-        let path = job.avatar.as_deref()?;
+        let path = job.match_media.avatar.as_deref()?;
         let rect = avatar_box(f64::from(OUTPUT_WIDTH), f64::from(OUTPUT_HEIGHT), placement);
         let image = avatar::open_reported(path, rect.w)?;
         let levels = avatar::pulse_table(&job.recording, job.compilation.frames.len(), cancel);
@@ -922,18 +876,17 @@ impl Composite {
             n,
             generation,
             sample,
+            record_time,
             clip,
             highlights,
             bar,
             scoreboard,
         } = frame;
         let base = stamp(sample, n);
-        // Record time is output time (see the module docs), so the overlay's
-        // moment is the output frame's own, and its stamp the frame's own.
         let mut overlay = overlays.render(
             &OverlayFrame {
                 clip: Some(clip),
-                record_time: n as f64 / f64::from(OUTPUT_FPS),
+                record_time,
                 picture: self.picture,
                 highlights,
                 bar,

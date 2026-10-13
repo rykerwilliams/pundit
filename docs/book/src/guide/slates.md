@@ -34,7 +34,8 @@ stays in the list after its take, because coaches re-record.
 
 Type a title in the field under the slate's name. Any export or preview that
 shows that stretch of the game shows the words along the bottom, in place of the
-clip's caption, fading out as the range ends. The name is your filing; the title
+clip's caption, which comes back when the range ends. If the clip has no caption
+showing by then, the title fades out instead. The name is your filing; the title
 is what a viewer reads. A slate with a title shows a **T** in the list — hover it
 to read the words.
 

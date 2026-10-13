@@ -371,8 +371,6 @@ impl OverlayRenderer {
         // inset switched off, and a `Some` for every clip would cut that clip's
         // bar at a column nothing stands in.
         let bar = bar_rect(out_w, out_h, frame.clip.and_then(Clip::inset_placement));
-        // `strip_at` never answers `Some` at opacity 0 (its doc), so there is
-        // no "fully faded draws nothing" branch here.
         if let Some(strip) = frame.bar {
             debug_assert!(strip.opacity > 0.0, "a strip at opacity {}", strip.opacity);
             fill(

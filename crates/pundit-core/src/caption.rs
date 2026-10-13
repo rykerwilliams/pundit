@@ -117,7 +117,12 @@ pub fn strip_at<'a>(
     let title = slates
         .iter()
         .filter(|s| s.source_index == entry.source_index)
-        .filter_map(|s| Some((s, s.title.as_deref()?, s.out_seconds?)))
+        .filter_map(|s| {
+            // A stored empty title is no title: an empty strip would be a
+            // blank bar over the range.
+            let title = s.title.as_deref().filter(|t| !t.is_empty())?;
+            Some((s, title, s.out_seconds?))
+        })
         .filter(|(s, _, out)| s.in_seconds <= source_time && source_time < *out)
         .max_by(|a, b| a.0.in_seconds.total_cmp(&b.0.in_seconds));
     match title {

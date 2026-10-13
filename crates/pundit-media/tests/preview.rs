@@ -25,7 +25,7 @@ use pundit_core::project::{Clip, Inset, InsetCorner, InsetPlacement, InsetSize};
 use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_media::fixtures::{self, counter_video, read_counter, CounterKind, GrayFrame};
 use pundit_media::{
-    Frame, FrameMailbox, Gl, Picture as Source, Preview, PreviewJob, PreviewMessage,
+    Frame, FrameMailbox, Gl, MatchMedia, Picture as Source, Preview, PreviewJob, PreviewMessage,
     PreviewPosition, PreviewStats,
 };
 use uuid::Uuid;
@@ -141,10 +141,10 @@ impl Running {
             clip,
             compilation,
             commentary_volume: 0.0,
-            scoreboard: None,
-            highlights: Vec::new(),
-            slates: Vec::new(),
-            avatar,
+            match_media: MatchMedia {
+                avatar,
+                ..MatchMedia::default()
+            },
         };
         let mailbox = FrameMailbox::default();
         let position = PreviewPosition::default();

@@ -117,6 +117,12 @@ fn an_untitled_or_half_marked_slate_draws_nothing() {
         ..titled(0, (10.0, 12.0), "Pressing")
     };
     assert_eq!(strip_at(&e, LATE, &[untitled], 11.0), None);
+    // Stored empty is untitled too, not a blank bar over the range.
+    let empty = Slate {
+        title: Some(String::new()),
+        ..titled(0, (10.0, 12.0), "Pressing")
+    };
+    assert_eq!(strip_at(&e, LATE, &[empty], 11.0), None);
     let half_marked = Slate {
         out_seconds: None,
         ..titled(0, (10.0, 12.0), "Pressing")

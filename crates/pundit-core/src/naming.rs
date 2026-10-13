@@ -117,8 +117,7 @@ pub fn safe_chars(text: &str) -> String {
 /// **A newline would break a one-line reader.** A chapter title with one in it
 /// costs YouTube's whole list (the line after it starts with no timestamp), and
 /// a slate's title is drawn into the caption bar's one row, which does not
-/// wrap. Two callers, two rules on top: `chapters.rs` names an empty result
-/// `UNTITLED`, and a slate's title stores it as `None`.
+/// wrap. What an empty result means is the caller's.
 pub fn one_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

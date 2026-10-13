@@ -4194,6 +4194,14 @@ export component AppWindow inherits Window {
     /// selection has moved on -- `editing-clip-id`'s rule, which exists
     /// because `for` reuses its rows by index.
     in-out property <string> editing-slate-id;
+    /// Some slate field has focus -- the clip inspector's `editing`, for the
+    /// same question: focus left one field, but is it still in another? Then
+    /// `editing-slate-id` must go on naming that slate. A focus-out cannot
+    /// simply clear it, because Slint runs `changed` handlers newest-first:
+    /// moving Name -> Title runs Title's focus-in *before* Name's focus-out,
+    /// so a clear there would leave Title committing to no slate at all.
+    property <bool> slate-fields-editing: slate-name-edit.has-focus
+        || slate-title-edit.has-focus || slate-tags-edit.has-focus;
     /// The themed pass's tag filter (BACKLOG #120). **Not the window's
     /// `tag-filter`**, which the bus writes on `Event::Select` to un-hide a
     /// newly selected clip — that write would clear this one mid-pass.
@@ -5969,7 +5977,11 @@ export component AppWindow inherits Window {
                                         root.editing-slate-id = root.selected-slate;
                                     } else {
                                         root.edit-slate-field(SlateField.name, self.text);
-                                        root.editing-slate-id = "";
+                                        // Unless focus moved to another of
+                                        // these fields; see `slate-fields-editing`.
+                                        if (!root.slate-fields-editing) {
+                                            root.editing-slate-id = "";
+                                        }
                                     }
                                 }
                                 accepted => { root.edit-slate-field(SlateField.name, self.text); }
@@ -5986,7 +5998,9 @@ export component AppWindow inherits Window {
                                         root.editing-slate-id = root.selected-slate;
                                     } else {
                                         root.edit-slate-field(SlateField.title, self.text);
-                                        root.editing-slate-id = "";
+                                        if (!root.slate-fields-editing) {
+                                            root.editing-slate-id = "";
+                                        }
                                     }
                                 }
                                 accepted => { root.edit-slate-field(SlateField.title, self.text); }
@@ -6013,7 +6027,9 @@ export component AppWindow inherits Window {
                                             root.editing-slate-id = root.selected-slate;
                                         } else {
                                             root.edit-slate-field(SlateField.tags, text);
-                                            root.editing-slate-id = "";
+                                            if (!root.slate-fields-editing) {
+                                                root.editing-slate-id = "";
+                                            }
                                         }
                                     }
                                     committed(text) => { root.edit-slate-field(SlateField.tags, text); }

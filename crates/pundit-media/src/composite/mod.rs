@@ -51,9 +51,16 @@ use gstreamer_gl as gst_gl;
 use gstreamer_gl_egl as gst_gl_egl;
 use gstreamer_video as gst_video;
 use pundit_core::avatar::avatar_rect;
+use pundit_core::caption::{strip_at, Strip};
 use pundit_core::export::{FrameSpec, OUTPUT_FPS};
+use pundit_core::highlight::{highlight_shapes, HighlightShape};
 use pundit_core::layout::Rect as LayoutRect;
+use pundit_core::plan::PlanEntry;
+use pundit_core::scoreboard::{ScoreboardConfig, ScoreboardState};
 use pundit_core::zoom::Zoom;
+
+use decode::Picture;
+use export::MatchMedia;
 
 use crate::mailbox::{stream_end, stream_time};
 use crate::player::{answer_need_context, seconds, seconds_to_clock};
@@ -631,6 +638,66 @@ fn display_aspect(info: &gst_video::VideoInfo) -> f64 {
         (1, 1)
     };
     f64::from(info.width()) * f64::from(par_n) / (f64::from(info.height()) * f64::from(par_d))
+}
+
+/// What a match draws over one output frame, beside the clip's own strokes.
+struct MatchLayer<'a> {
+    scoreboard: Option<(&'a ScoreboardConfig, ScoreboardState)>,
+    /// In picture pixels.
+    highlights: Vec<HighlightShape>,
+    bar: Option<Strip<'a>>,
+}
+
+/// The board, the highlight rings and the strip over output frame `frame` of
+/// `entry`, whose record time is `record_time` and whose source picture sits
+/// at `picture` — **the one call export and preview both make**, so the two
+/// cannot disagree about any of the three.
+///
+/// The board and the rings read **the displayed frame's source time**, never
+/// a per-clip constant plus the record time — that sum is the macOS bug that
+/// put the clock ahead of the footage after every pause (BACKLOG #27) — and
+/// the board is **the entry's own match's** (spec J3).
+///
+/// **All three belong to the footage, so a whiteboard entry gets none of
+/// them** (#138), bar its own clip's caption: a diagram has no match time, a
+/// ring over it would sit on footage that is not on screen, and a title —
+/// bounded on the footage — would hold on the take's frozen anchor for the
+/// whole take (spec S7). The test is here rather than a blank on `MatchMedia`,
+/// which a project's entries share, so the footage entries of the same run
+/// keep their board.
+fn match_layer<'a>(
+    match_media: &'a MatchMedia,
+    shown: &Picture,
+    entry: &'a PlanEntry,
+    frame: &FrameSpec,
+    record_time: f64,
+    picture: PadRect,
+) -> MatchLayer<'a> {
+    let footage = shown.backdrop().is_none().then_some(match_media);
+    MatchLayer {
+        scoreboard: footage
+            .and_then(|m| m.scoreboard.as_ref())
+            .and_then(|context| {
+                let state = context.state_at(entry.source_index, frame.source_time)?;
+                Some((context.config(), state))
+            }),
+        highlights: footage.map_or_else(Vec::new, |m| {
+            highlight_shapes(
+                &m.highlights,
+                entry.source_index,
+                frame.source_time,
+                frame.zoom,
+                f64::from(picture.2),
+                f64::from(picture.3),
+            )
+        }),
+        bar: strip_at(
+            entry,
+            record_time,
+            footage.map_or(&[], |m| &m.slates),
+            frame.source_time,
+        ),
+    }
 }
 
 /// The source's picture rect inside an `out_w`×`out_h` output,
