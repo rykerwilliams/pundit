@@ -27,9 +27,6 @@ made things worse.
   #83): a Music row on the export sheet (a genre picker and a Folder… button), a
   stable song per match, ducked and faded; **no Settings sheet** (spec §M6).
   **Phase 2 is next to spec**: the Openverse search and the credits
-- **83.** `a_pause_while_a_flushing_seek_recovers_playing_sticks` — its "fails
-  twice, or once on CI" trigger fired 2026-10-12; first step is printing the
-  states the recovery went through
 - **133.** A title maker: words over the footage for a marked window — #138's
   other half, which the coach scoped out of it deliberately: *"the follow on
   feature … it would use a slate and a timing maybe"*
@@ -50,6 +47,10 @@ made things worse.
 Filed with a **trigger** instead of a place in the order: each says the one
 observation that should promote it, and none is worth doing before that.
 
+- **83.** `a_pause_while_a_flushing_seek_recovers_playing_sticks` — its CI
+  sighting was #72's load stall in the test's opening load, now recovered by
+  the test rig as the bus does (2026-10-12). *Trigger:* a failure **after**
+  that load, which would be the race the test is about
 - **135.** A second key per action, from the Keys sheet — #96 ships *Set…* as a
   **replace**. *Trigger:* a coach rebinds one of the four paired rows and asks
   where the other key went
@@ -1733,6 +1734,19 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   events: []` at `player/tests.rs:75`, 126 of 127 green. Re-run, not chased
   mid-feature (memory `no-detours`), and **promoted to "Next, in order"** with
   the diagnostic step this entry names as the work.
+- **Diagnosed 2026-10-12: the CI sighting was #72, not this race.** The
+  timeout is `wait_for` (`player/tests.rs:75`) waiting on the test's **first**
+  line, `rig.load` — the only `SeekDone` the test waits for — with nothing
+  unconsumed: the load never prerolled, which is #72's GStreamer stall, on
+  CI's two cores. The bus recovers that stall (`LOAD_BOUND`, one
+  `reload_stalled_load`), but the player's own test rig fed the slot with no
+  bound, so the stall failed whichever of the thirteen `rig.load` callers it
+  hit. **Fixed:** `Rig::wait_for` now bounds a load and issues it again once,
+  as `bus::sources::load_stalled` does, logging `rig: the load has not
+  prerolled…`; `the_rig_issues_a_stalled_load_again` pins it (it fails, timing
+  out, with the reload taken out). **The first sighting (2026-09-24) was never
+  diagnosed** — its message was not kept — and the race's own assertions
+  already print the state and both positions. So this moves to *Watch*.
 
 84. **Music under a goals reel.** The coach (2026-09-24): "pull in soundtrack
   files that are licensed for use, e.g. rock, edm, etc. for the goals clips." A
