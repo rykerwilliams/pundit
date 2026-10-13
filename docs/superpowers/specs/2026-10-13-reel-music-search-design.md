@@ -17,7 +17,7 @@ precedent. Phase 1's §R2 moved the landing place from a cache to the music
 folder (`<folder>/<genre>/`), because a cache can be evicted and a credit with
 it.
 
-Every `path:line` below was re-derived from `main` at `f27cb38`. Every claim
+Every `path:line` below was re-derived from `main` at `51d3767` (after #92). Every claim
 about Openverse was **measured against the live API on 2026-10-13** unless it
 says otherwise, and the sources are listed under §Sources.
 
@@ -155,9 +155,9 @@ about to paste anyway.
 ## §S. Decisions
 
 **S1. Where it lives: a Find music sheet, opened from the Music row** (decision
-1). The row (`app.slint:2149`–`:2176`) gains **Find music…** beside
+1). The row (`app.slint:2180`–`:2207`) gains **Find music…** beside
 **Folder…**. It opens a sheet of its own, a `Scrim` declared after the export
-sheet's (`:7343`), so it stacks over it the way the error dialog does (`:7563`).
+sheet's (`:7433`), so it stacks over it the way the error dialog does (`:7653`).
 It does not go on the Settings sheet #131 is building. That sheet is for
 machine-wide values with nothing to sit beside (its §U7: *"the next tenant is one
 row"*), and the search fills the very folder this picker reads, which is phase
@@ -200,7 +200,7 @@ pub fn add(candidate: &Candidate, folder: &Path, genre: &Genre,
 
 - **`main.rs` runs each one on a short-lived thread** and returns the answer
   with `upgrade_in_event_loop`. That is `wire_devices`' pattern
-  (`main.rs:2278`–`:2295`): it spawns at `:2290` and comes back at `:2293`.
+  (`main.rs:2319`–`:2337`): it spawns at `:2332` and comes back at `:2334`.
 - **The base URL is a `const` in `main.rs`** (`https://api.openverse.org/v1/`),
   passed to `search` as an argument. No other file names the host. Tests pass a
   local server's URL.
@@ -247,7 +247,7 @@ GET <base>audio/?q=<genre text>&category=music&length=medium&license=cc0,pdm,by
 
 - **`Genre`** is the folder name a search lands in, decided **when Search is
   pressed**. The field is trimmed and `naming::folder_slug`ged
-  (`naming.rs:167`). An empty slug refuses the search on the sheet's line
+  (`naming.rs:178`). An empty slug refuses the search on the sheet's line
   (*"Type a genre to search for"*) before any request is made.
 - **An existing genre folder whose `folder_slug` equals the field's** is used
   under its own name. So *"Rock "* finds `rock/`, and so does *"ROCK"*. Failing
@@ -271,7 +271,7 @@ GET <base>audio/?q=<genre text>&category=music&length=medium&license=cc0,pdm,by
   another (decision: `~/Music/pundit`).
 - **When the sheet closes after an Add, the picker re-lists and selects the
   genre added last**, written to `musicGenre` through the same `set_music_genre`
-  the picker uses (`main.rs:1349`). This is needed, not cosmetic. The bus reads
+  the picker uses (`main.rs:1369`). This is needed, not cosmetic. The bus reads
   `musicGenre` at job build (`bus/export.rs:393`–`:394`), so a coach who picks
   nothing on Find music, searches, adds, closes and exports would otherwise get
   Music: None, which is phase 1's "no music" and not a refusal. With no Add,
@@ -350,10 +350,10 @@ which is transcription's rule of *"asked for, never automatic"*.
 
 **S10. The sheet is modal, and its keys are its own.**
 - **`handle-key` gets a Find music branch *ahead* of the export sheet's**
-  (`app.slint:5017`–`:5024`), because this sheet is drawn over that one.
+  (`app.slint:5064`–`:5071`), because this sheet is drawn over that one.
   - **Esc while not `text-editing`** closes Find music only.
   - **Esc in the genre field** leaves the field and closes nothing. That is the
-    basket sheet's cascade (`:5025`–).
+    basket sheet's cascade (`:5072`–).
   - **Every other key is swallowed**, so R cannot start a recording while the
     sheet is open.
 - So an Add never overlaps a take that started from the keyboard, and there is
@@ -404,9 +404,10 @@ Licensed under CC BY 3.0 — https://creativecommons.org/licenses/by/3.0/
 - **A null `license_url` falls back to one built from licence and version**
   (`https://creativecommons.org/licenses/<license>/<version>/`, and the
   `publicdomain/` forms for CC0 and PDM).
-- **Title and creator are flattened to one line** by `naming::one_line`, which
-  is today `chapters.rs:55`'s private `one_line` moved to `naming` and made
-  public, with chapters calling it there.
+- **Title and creator are flattened to one line** by `naming::one_line`
+  (`naming.rs:121`, public since #92). It returns `""` for blank text, so a
+  title that is blank after flattening drops the row at parse, as a missing one
+  does (S4).
 - **Openverse's own `attribution` string is not used.** It has no link to the
   track, which BY asks for where reasonably practicable (4.0 §3(a)(1)(A)(v)),
   and its wording is not ours to keep stable.
@@ -426,8 +427,8 @@ track's path. Beside it, the bus reads `<track>.credit.txt` into
   outcome. That outcome carries no per-target notes today (`TargetState::Done`
   holds a path), and a sidecar that failed to write is not surfaced there
   either.
-- **`finish` (`composite/export.rs:439`) gains `write_credits(job)`** after
-  `write_chapter_list` (`:525`), under the same rules:
+- **`finish` (`composite/export.rs:469`) gains `write_credits(job)`** after
+  `write_chapter_list` (`:555`), under the same rules:
   - it writes `job.path.with_extension("credits.txt")`, so it inherits the run's
     name cleaning and `" (2)"`;
   - it runs after the rename, so a cancelled or failed run neither writes nor
@@ -456,7 +457,7 @@ as a file arrives without its `.credits.txt`.
 
 | Crate | Gains |
 |---|---|
-| `pundit-core` | `openverse` (the query, the parse, the licence list and check, `licence_words`, the ranking); `credits::credit_text`; `naming::one_line` (moved). Pure: no network, no clock. |
+| `pundit-core` | `openverse` (the query, the parse, the licence list and check, `licence_words`, the ranking); `credits::credit_text`. Pure: no network, no clock. |
 | `pundit-media` | `download::get`; `inspect_audio` (full decode and container); `ExportJob::credits` and `write_credits`. Nothing about catalogues. `download()` unchanged. |
 | `pundit-app` | `music_search.rs` (`search`, `add`, the landing step); `AppFiles`' default music folder; the reel's credit read in `reel_music`; the Find music sheet, its `handle-key` branch and its `main.rs` wiring. **The bus gains no command.** |
 | `pundit-harness` | One end-to-end test (Testing). |
