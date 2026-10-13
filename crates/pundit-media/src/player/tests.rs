@@ -14,6 +14,10 @@ const FRAME: f64 = 1.0 / 30.0;
 /// Generous: every wait here normally finishes in milliseconds, except EOS,
 /// which plays a one-second fixture in real time.
 const TIMEOUT: Duration = Duration::from_secs(15);
+/// The bus's bound on a load (`bus::sources::LOAD_BOUND`), which the rig
+/// enforces the same way: a load that has not prerolled by then is issued
+/// again, once ([`Rig::wait_for`], BACKLOG #72 and #83).
+const LOAD_BOUND: Duration = Duration::from_secs(3);
 
 /// Stands in for the bus thread: owns the player, receives its forwarded
 /// messages, and logs every event.
@@ -24,6 +28,8 @@ struct Rig {
     log: Vec<PlayerEvent>,
     /// Events before this index have been consumed by `wait_for`.
     cursor: usize,
+    /// How many stalled loads `wait_for` has issued again.
+    reloads: usize,
     dir: tempfile::TempDir,
 }
 
@@ -41,6 +47,7 @@ impl Rig {
             rx,
             log: Vec::new(),
             cursor: 0,
+            reloads: 0,
             dir: tempfile::tempdir().unwrap(),
         }
     }
@@ -58,19 +65,46 @@ impl Rig {
 
     /// Feeds forwarded messages to the player until an unconsumed event
     /// matches `pred`, and consumes everything up to and including it.
+    ///
+    /// **A load still in flight after [`LOAD_BOUND`] is issued again**, as the
+    /// bus does (`bus::sources::load_stalled`): GStreamer's own stall (BACKLOG
+    /// #72) comes once in a few hundred opens on two cores, and without the
+    /// bus's recovery here it failed whichever test it landed in — #83's CI
+    /// sighting was one, timing out in its opening load before the race it
+    /// tests had begun. The bound is re-armed after the reload, for the
+    /// bus's reason, and a second stall fails the wait as it fails the app.
     fn wait_for(&mut self, what: &str, pred: impl Fn(&PlayerEvent) -> bool) -> PlayerEvent {
         let deadline = Instant::now() + TIMEOUT;
+        let mut bound = Instant::now() + LOAD_BOUND;
         loop {
             if let Some(i) = self.log[self.cursor..].iter().position(&pred) {
                 let event = self.log[self.cursor + i].clone();
                 self.cursor += i + 1;
                 return event;
             }
-            let left = deadline.saturating_duration_since(Instant::now());
-            match self.rx.recv_timeout(left) {
+            let until = match self.player.loading() {
+                true => deadline.min(bound),
+                false => deadline,
+            };
+            match self
+                .rx
+                .recv_timeout(until.saturating_duration_since(Instant::now()))
+            {
                 Ok(msg) => {
                     let events = self.player.handle(&msg);
                     self.log.extend(events);
+                    if !self.player.loading() {
+                        bound = Instant::now() + LOAD_BOUND;
+                    }
+                }
+                Err(_) if Instant::now() < deadline => {
+                    eprintln!(
+                        "rig: the load has not prerolled in {LOAD_BOUND:?}; issuing it again"
+                    );
+                    let events = self.player.reload_stalled_load();
+                    self.log.extend(events);
+                    self.reloads += 1;
+                    bound = Instant::now() + LOAD_BOUND;
                 }
                 Err(_) => panic!(
                     "timed out waiting for {what}; unconsumed events: {:?}",
@@ -646,6 +680,24 @@ fn a_stalled_load_is_issued_again_and_lands() {
     assert_lands(rig.frame().0, 1.0);
 }
 
+/// The rig itself recovers a stalled load, as the bus does, so a GStreamer
+/// stall in some other test's opening load costs that test a few seconds
+/// and not its result (BACKLOG #83). The stall is made the way the test
+/// above makes it, but surely: what the load posts is dropped **up to and
+/// including its `ASYNC_DONE`**, which a stalled load never posts — a
+/// `try_iter` straight after the seek usually runs before it arrives, and
+/// the load then simply lands.
+#[test]
+fn the_rig_issues_a_stalled_load_again() {
+    let mut rig = Rig::new();
+    let a = rig.fixture("a.webm", 2, 320, 180);
+    rig.seek(&a, 1.0, true, Origin::System);
+    while rig.rx.recv_timeout(TIMEOUT).unwrap().type_() != gst::MessageType::AsyncDone {}
+    rig.wait_done(Origin::System);
+    assert_eq!(rig.reloads, 1);
+    assert_lands(rig.frame().0, 1.0);
+}
+
 /// A second stall on the same request is reported, not retried for ever: a
 /// file that genuinely never prerolls would otherwise be re-opened every few
 /// seconds (BACKLOG #72).
@@ -703,8 +755,6 @@ fn a_load_that_stalls_twice_is_reported() {
 #[test]
 #[ignore]
 fn every_open_settles() {
-    /// The bus's own bound (`bus::sources::LOAD_BOUND`).
-    const LOAD_BOUND: Duration = Duration::from_secs(3);
     /// The harness's wait, which is what a stalled open has to settle
     /// inside: it is the bound this flake failed against.
     const BOUND: Duration = TIMEOUT;
