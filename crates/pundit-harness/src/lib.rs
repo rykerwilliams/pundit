@@ -627,6 +627,7 @@ pub fn clip(source_index: usize) -> Clip {
         transcript: String::new(),
         slate_id: None,
         backdrop: None,
+        caption_bar: pundit_core::caption::CaptionBar::Whole,
     }
 }
 

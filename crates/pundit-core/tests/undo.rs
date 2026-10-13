@@ -70,6 +70,7 @@ fn slates(source_index: usize) -> UndoAction {
             out_seconds: Some(47.0),
             name: "corner routine".into(),
             tags: vec!["corners".into()],
+            title: None,
         }],
     }
 }

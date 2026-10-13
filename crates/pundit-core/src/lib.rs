@@ -8,6 +8,7 @@
 
 pub mod audio;
 pub mod avatar;
+pub mod caption;
 pub mod chapters;
 pub mod cues;
 pub mod event;

@@ -112,6 +112,7 @@ fn a_mark_moves_and_an_inverting_move_is_caught_in_both_directions() {
         (SlateEdit::Out(110.5), "an out just past the in point"),
         (SlateEdit::In(149.5), "an in just before the out point"),
         (SlateEdit::Name("x".into()), "a name"),
+        (SlateEdit::Title("x".into()), "a title"),
     ] {
         assert!(!p.slates[0].would_invert(&edit), "{why}");
     }
@@ -167,6 +168,22 @@ fn editing_a_slate_sets_the_field_it_names() {
     // A command naming a slate that is gone changes nothing.
     p.edit_slate(Uuid::new_v4(), SlateEdit::Name("ghost".into()));
     assert_eq!(p.slates[0].name, "corner routine");
+}
+
+/// v18. A title is drawn into the caption bar's one row, so a pasted
+/// two-line title is stored on one line; and an empty one is `None`, never
+/// `Some("")`, so "has a title" is `is_some()` with no second test.
+#[test]
+fn a_title_is_one_line_and_an_empty_one_is_none() {
+    let mut p = project(1);
+    let id = p.mark_slate_in(0, 1.0);
+    assert_eq!(p.slates[0].title, None, "a new slate has no title");
+
+    p.edit_slate(id, SlateEdit::Title("two\nlines".into()));
+    assert_eq!(p.slates[0].title.as_deref(), Some("two lines"));
+
+    p.edit_slate(id, SlateEdit::Title("  \n ".into()));
+    assert_eq!(p.slates[0].title, None);
 }
 
 /// Deleting a slate leaves the clip shot from it alone, `slate_id` and all:

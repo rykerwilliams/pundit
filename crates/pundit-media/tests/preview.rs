@@ -74,6 +74,7 @@ fn clip(duration: f64, show_pip: bool, events: Vec<CommentaryEvent>) -> Clip {
         transcript: String::new(),
         slate_id: None,
         backdrop: None,
+        caption_bar: pundit_core::caption::CaptionBar::Whole,
     }
 }
 

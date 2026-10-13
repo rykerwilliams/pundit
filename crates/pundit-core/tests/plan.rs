@@ -6,6 +6,7 @@ mod common;
 
 use uuid::Uuid;
 
+use pundit_core::caption::CaptionBar;
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::plan::{
     basket_plan, clip_source_duration, compilation_plan, BasketPiece, ExportTarget, PlanEntry,
@@ -247,6 +248,51 @@ fn chapters_start_on_each_entrys_first_frame() {
     assert_eq!(chapters.len(), 3);
     assert_eq!(chapters[0], (0.0, "1 / 3 | a".to_string()));
     assert_eq!(chapters[1], (151.0 / 30.0, "2 / 3 | b | shot".to_string()));
+}
+
+/// v18: each entry resolves its own clip's caption mode to the one number the
+/// strip reads (spec §S1), in a compilation and in a basket alike — a basket
+/// piece *is* its clip, so it honours that clip's setting.
+#[test]
+fn each_entry_carries_its_clips_caption_mode() {
+    let modes = [CaptionBar::Whole, CaptionBar::FirstSeconds, CaptionBar::Off];
+    let clips: Vec<Clip> = modes
+        .iter()
+        .enumerate()
+        .map(|(i, &mode)| Clip {
+            caption_bar: mode,
+            ..clip(&format!("c{i}"), i as i64, &[])
+        })
+        .collect();
+    let plan = compilation_plan(&project_with(clips.clone()), &ExportTarget::AllClips);
+    let untils: Vec<f64> = plan.entries.iter().map(|e| e.caption_until).collect();
+    let wanted: Vec<f64> = clips.iter().map(|c| c.caption_bar.until()).collect();
+    assert_eq!(untils, wanted);
+    assert!(
+        untils[0] != untils[1] && untils[1] != untils[2] && untils[0] != untils[2],
+        "the three modes must be three different numbers: {untils:?}"
+    );
+
+    let basket = basket_plan(&[piece(&clips[1], "A v B"), piece(&clips[2], "C v D")]);
+    let untils: Vec<f64> = basket.entries.iter().map(|e| e.caption_until).collect();
+    assert_eq!(untils, wanted[1..]);
+}
+
+/// #115's own words: switching the bar off keeps the chapters' words, because
+/// `Off` is a number on the entry and never a blanked `text`.
+#[test]
+fn the_chapters_keep_their_words_with_every_caption_off() {
+    let clips: Vec<Clip> = (0..2)
+        .map(|i| Clip {
+            caption_bar: CaptionBar::Off,
+            ..clip(&format!("c{i}"), i, &["shot"])
+        })
+        .collect();
+    let plan = compilation_plan(&project_with(clips), &ExportTarget::AllClips);
+    let titles: Vec<&str> = plan.chapters.iter().map(|(_, t)| t.as_str()).collect();
+    let texts: Vec<&str> = plan.entries.iter().map(|e| e.text.as_str()).collect();
+    assert_eq!(titles, texts);
+    assert!(texts.iter().all(|t| !t.is_empty()), "{texts:?}");
 }
 
 // ── A basket's plan: pieces from several matches ───────────────────────────

@@ -21,7 +21,16 @@ Paths are from the repository root; `core`, `media`, `app` and `harness` mean
   fails `clip_order.rs`'s `set_sets_one_field_and_returns_the_old_value`, the
   one core test that reads `show_pip` — not `plan.rs` or `export.rs`, which
   never read it (PiP is media's).
-- **2 — the v18 format and the strip rule, in core.** Not started.
+- **2 — the v18 format and the strip rule, in core.** Done 2026-10-13 on
+  `claude/133-115-titles`: core's tests 548 → 564, the workspace green. The
+  census matched §A exactly — `Clip` 8 (3 core, 4 media, 1 harness), `Slate`
+  7, `PlanEntry` 4. All 20 sabotages went red where predicted but one: #15
+  (`Default`'s `last_caption_bar: Off`) also fails 2.13 and 2.16, which the
+  list missed — the container default is what fills a v17 file's missing key,
+  and `Project::new` seeds from it. Deviations: `sample_project` gains **no**
+  slate (two v12 tests read `slates[0]` and the whole sorted list as their
+  own); 2.13 and 2.14 push a `titled_slate` instead. 2.10 also asserts a
+  basket's entries take each piece's own mode (spec Testing 4).
 - **3 — drawing the strip, in export and preview.** Not started.
 - **4 — the controls, the wiring, the guide and the prose.** Not started.
 

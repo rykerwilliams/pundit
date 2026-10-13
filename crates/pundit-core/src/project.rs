@@ -27,8 +27,10 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::caption::CaptionBar;
 use crate::event::CommentaryEvent;
 use crate::highlight::PlayerHighlight;
+use crate::naming;
 use crate::plan::ScoreboardMode;
 use crate::recording::PendingClip;
 use crate::scoreboard::{MatchEventRecord, ScoreboardConfig};
@@ -188,6 +190,15 @@ pub struct Preferences {
     /// has no control at all and so is written only by tests.
     pub last_inset_size: InsetSize,
     pub last_inset_corner: InsetCorner,
+    /// The caption bar the coach last set on a clip, seeding the next
+    /// recording ([`Project::add_recorded_clip`]). v18.
+    ///
+    /// Sticky last-used on exactly [`Preferences::last_inset_size`]'s
+    /// mechanism — "in general", in the coach's words (#115) — and for its
+    /// reason: there is no clip during a take, so "pick before" can only be a
+    /// preference. Written back whenever a clip's is changed, never reverted
+    /// by undo.
+    pub last_caption_bar: CaptionBar,
     /// Stable identifier for the preferred camera: its PipeWire `node.name`.
     /// A hint: if the device is absent at launch the app falls back to the
     /// default **without clearing this**, so the preference is restored if the
@@ -211,6 +222,7 @@ impl Default for Preferences {
             last_export_cues: true,
             last_inset_size: InsetSize::Medium,
             last_inset_corner: InsetCorner::BottomRight,
+            last_caption_bar: CaptionBar::Whole,
             preferred_camera_id: None,
             preferred_mic_id: None,
             pip_for_new_recordings: true,
@@ -362,6 +374,12 @@ pub struct Clip {
     /// footage.
     #[serde(default)]
     pub backdrop: Option<String>,
+
+    /// v18. What this clip's caption bar does in an export or a preview
+    /// (BACKLOG #115): see [`crate::caption`]. `Whole` is what every v7–v17
+    /// clip did, which is why the field-level default is right here.
+    #[serde(default)]
+    pub caption_bar: CaptionBar,
 }
 
 impl Clip {
@@ -378,6 +396,9 @@ impl Clip {
             }
             ClipEdit::InsetCorner(v) => {
                 ClipEdit::InsetCorner(std::mem::replace(&mut self.inset_corner, v))
+            }
+            ClipEdit::CaptionBar(v) => {
+                ClipEdit::CaptionBar(std::mem::replace(&mut self.caption_bar, v))
             }
             ClipEdit::Transcript(v) => {
                 ClipEdit::Transcript(std::mem::replace(&mut self.transcript, v))
@@ -477,9 +498,12 @@ pub struct Project {
 ///
 /// It carries no `created_at` and no `sort_index`. `Clip` has both because
 /// clips are hand-ordered and their position is burned into an export's
-/// caption; slates are never exported, so the only order that means anything
-/// is `(source_index, in_seconds)` — which is also the order a coach marking
-/// ranges in one pass produces.
+/// caption; a slate is never exported **as a film of its own**, so the only
+/// order that means anything is `(source_index, in_seconds)` — which is also
+/// the order a coach marking ranges in one pass produces. Its
+/// [`title`](Slate::title) *is* burned into exports, over the footage of any
+/// that crosses its range (v18) — which places it on the footage and still
+/// needs neither field.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Slate {
@@ -494,6 +518,16 @@ pub struct Slate {
     pub out_seconds: Option<f64>,
     pub name: String,
     pub tags: Vec<String>,
+    /// v18. Words burned over the footage for this range in every export and
+    /// preview whose footage crosses it (BACKLOG #133), in place of the caption
+    /// bar ([`crate::caption::strip_at`]). `None` is no title — every v12–v17
+    /// slate. Drawn only once the range is closed: an open slate has no window
+    /// to draw it in.
+    ///
+    /// **Stored on one line and never `Some("")`** ([`Project::edit_slate`]),
+    /// so "has a title" is `is_some()` with no second test.
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 impl Slate {
@@ -513,7 +547,7 @@ impl Slate {
         match edit {
             SlateEdit::In(seconds) => self.out_seconds.is_some_and(|out| out <= *seconds),
             SlateEdit::Out(seconds) => *seconds <= self.in_seconds,
-            SlateEdit::Name(_) | SlateEdit::Tags(_) => false,
+            SlateEdit::Name(_) | SlateEdit::Tags(_) | SlateEdit::Title(_) => false,
         }
     }
 }
@@ -535,6 +569,9 @@ pub enum SlateEdit {
     /// Move the out point. A slate with no out point gains one, which is how a
     /// half-marked range is finished from the editor rather than from `o`.
     Out(f64),
+    /// The words burned over the range (BACKLOG #133). Flattened to one line
+    /// on the way in, and an empty result stores `None`.
+    Title(String),
 }
 
 /// [`Project::mark_slate_out`] refused; the project is unchanged.
@@ -807,6 +844,8 @@ impl Project {
             // is only its caller.
             inset_size: self.preferences.last_inset_size,
             inset_corner: self.preferences.last_inset_corner,
+            // Sticky beside the inset pair, for their reason.
+            caption_bar: self.preferences.last_caption_bar,
             sort_index,
             created_at,
             transcript: String::new(),
@@ -833,6 +872,7 @@ impl Project {
             out_seconds: None,
             name: String::new(),
             tags: Vec::new(),
+            title: None,
         });
         id
     }
@@ -882,6 +922,11 @@ impl Project {
             SlateEdit::Tags(tags) => slate.tags = tags,
             SlateEdit::In(seconds) => slate.in_seconds = seconds,
             SlateEdit::Out(seconds) => slate.out_seconds = Some(seconds),
+            // One line, because the bar draws one row; and never `Some("")`.
+            SlateEdit::Title(text) => {
+                let line = naming::one_line(&text);
+                slate.title = (!line.is_empty()).then_some(line);
+            }
         }
     }
 

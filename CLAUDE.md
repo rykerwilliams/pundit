@@ -495,6 +495,14 @@ silently. If you need a media type in core, you need a different design.
     **An empty event list is all `Play`** (the walk starts at `rate: 1.0`),
     which is what every test fixture writes — the one shape where a missing
     guard would have survived unnoticed, since a real take opens with a `Pause`.
+- **v18 adds `Slate::title`, `Clip::caption_bar` and
+  `Preferences::last_caption_bar`** (#133, #115). `title` is an
+  `Option<String>` and `caption_bar` an enum defaulting to `Whole`, each
+  with a field-level `#[serde(default)]`, since `None` and `Whole` are what
+  an older file means; `last_caption_bar` takes none, as `Preferences`
+  always does. The floor stays 7. **The bump's reason is the forward
+  direction:** an older build would drop every title and reset every
+  caption on its next save.
 - **The first save after an upgrade keeps `project.json.v<old>`**, once, never
   overwritten, so the older build can still be gone back to. It is copied to a
   temporary name and renamed, like `project.json` itself, so a failed copy

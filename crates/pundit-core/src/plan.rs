@@ -94,6 +94,17 @@ pub struct PlanEntry {
     /// basket piece's names its match in place of the position
     /// ([`basket_plan`]).
     pub text: String,
+    /// The record time at which this entry's caption bar is gone: `INFINITY`
+    /// for the whole entry, `CAPTION_SECONDS` for `FirstSeconds`, and `0.0` for
+    /// `Off` ([`crate::caption::CaptionBar::until`]). v18, BACKLOG #115.
+    ///
+    /// **`text` is untouched either way — it is also the chapter**
+    /// (`entry_chapters`), and blanking it for `Off` would cost the chapters
+    /// their words. A number rather than the mode, because one formula
+    /// ([`crate::caption::strip_at`]) covers all three, so the per-frame code
+    /// has no branch on it. An entry with no clip — a reel's, the whole
+    /// match's — writes `INFINITY`: a reel keeps its bar.
+    pub caption_until: f64,
 }
 
 impl PlanEntry {
@@ -217,6 +228,7 @@ fn clip_entry(clip: &Clip, source_duration: f64, start_frame: usize, text: Strin
         start_frame,
         frames,
         text,
+        caption_until: clip.caption_bar.until(),
     }
 }
 

@@ -6,6 +6,7 @@ use serde_json::json;
 use tempfile::TempDir;
 use uuid::Uuid;
 
+use pundit_core::caption::CaptionBar;
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::highlight::{HighlightKey, NormRect, PlayerHighlight};
 use pundit_core::plan::ScoreboardMode;
@@ -44,6 +45,7 @@ fn sample_clip() -> Clip {
         transcript: String::new(),
         slate_id: None,
         backdrop: None,
+        caption_bar: CaptionBar::Whole,
     }
 }
 
@@ -130,6 +132,21 @@ fn sample_project() -> Project {
     p
 }
 
+/// A closed slate titled `title`, for the v18 tests. Not in [`sample_project`]:
+/// two slate tests below read `slates[0]` and the whole sorted list as the
+/// slates they push themselves.
+fn titled_slate(title: Option<&str>) -> Slate {
+    Slate {
+        id: Uuid::from_u128(3),
+        source_index: 0,
+        in_seconds: 845.0,
+        out_seconds: Some(880.0),
+        name: "corner routine".into(),
+        tags: vec!["corners".into()],
+        title: title.map(Into::into),
+    }
+}
+
 fn write_raw(dir: &Path, value: serde_json::Value) {
     std::fs::write(
         dir.join("project.json"),
@@ -154,6 +171,7 @@ fn preferences_defaults_are_not_zero() {
     assert_eq!(p.last_export_quality, Quality::Medium);
     assert_eq!(p.last_inset_size, InsetSize::Medium);
     assert_eq!(p.last_inset_corner, InsetCorner::BottomRight);
+    assert_eq!(p.last_caption_bar, CaptionBar::Whole);
     assert!(p.last_export_chapters);
     assert!(p.last_export_cues);
     assert!(p.pip_for_new_recordings);
@@ -419,6 +437,7 @@ fn a_v11_file_loads_under_the_current_version() {
         out_seconds: Some(880.0),
         name: "corner routine".into(),
         tags: vec!["corners".into()],
+        title: None,
     });
     store::write(dir.path(), &mut p).unwrap();
     assert_eq!(p.format_version, CURRENT_FORMAT_VERSION);
@@ -704,6 +723,68 @@ fn a_v16_file_loads_under_the_current_version() {
     assert_eq!(value["formatVersion"], json!(CURRENT_FORMAT_VERSION));
 }
 
+/// **The literal `v17` is what pins the bump**, for `a_v16_…`'s reason above.
+///
+/// **The bump is for the forward direction** (#133, #115): serde ignores
+/// unknown keys, so a v17 build would read a v18 file and drop every title and
+/// reset every clip's caption to `Whole` on its next save — words the coach
+/// typed, gone without a message. `project.json.v17` is what it can still be
+/// gone back to.
+#[test]
+fn a_v17_file_loads_under_the_current_version() {
+    let dir = TempDir::new().unwrap();
+    let mut p = sample_project();
+    // Written away from their defaults, then removed: a key that *was* read
+    // could not be mistaken for a default filling it in.
+    p.clips[0].caption_bar = CaptionBar::Off;
+    p.preferences.last_caption_bar = CaptionBar::FirstSeconds;
+    p.slates.push(titled_slate(Some("Corner")));
+    let mut raw = serde_json::to_value(&p).unwrap();
+    raw["formatVersion"] = json!(17);
+    for (pointer, key) in [
+        ("/clips/0", "captionBar"),
+        ("/preferences", "lastCaptionBar"),
+        ("/slates/0", "title"),
+    ] {
+        raw.pointer_mut(pointer)
+            .and_then(|object| object.as_object_mut())
+            .and_then(|object| object.remove(key))
+            .unwrap_or_else(|| panic!("v18 writes the key {key} this test removes"));
+    }
+    write_raw(dir.path(), raw);
+
+    let mut p = store::read(dir.path()).expect("a v17 file loads");
+    assert_eq!(p.clips[0].caption_bar, CaptionBar::Whole);
+    assert_eq!(p.preferences.last_caption_bar, CaptionBar::Whole);
+    assert_eq!(p.slates[0].title, None);
+
+    store::write(dir.path(), &mut p).unwrap();
+    assert_eq!(p.format_version, CURRENT_FORMAT_VERSION);
+    assert_eq!(store::read(dir.path()).unwrap(), p);
+    assert!(dir.path().join("project.json.v17").exists());
+}
+
+/// v18. A title and both caption fields survive a write and a read at the
+/// wire spellings a v18 file holds — the half `a_v17_…` does not own. A rename
+/// of any of them would make every v18 project read as the default and say
+/// nothing.
+#[test]
+fn a_title_and_a_caption_round_trip() {
+    let dir = TempDir::new().unwrap();
+    let mut p = sample_project();
+    p.clips[0].caption_bar = CaptionBar::FirstSeconds;
+    p.preferences.last_caption_bar = CaptionBar::Off;
+    p.slates.push(titled_slate(Some("Corner routine")));
+    store::write(dir.path(), &mut p).unwrap();
+    assert_eq!(store::read(dir.path()).unwrap(), p);
+
+    let text = std::fs::read_to_string(dir.path().join("project.json")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["slates"][0]["title"], json!("Corner routine"));
+    assert_eq!(value["clips"][0]["captionBar"], json!("firstSeconds"));
+    assert_eq!(value["preferences"]["lastCaptionBar"], json!("off"));
+}
+
 /// v17. **A backdrop survives a write and a read at the wire spelling a v17
 /// file holds**, which is the half `a_v16_…` above does not own: that test
 /// strips the key and watches the default fill it in, and this one watches a
@@ -774,6 +855,7 @@ fn an_open_slate_and_a_shot_one_round_trip() {
         out_seconds: None,
         name: String::new(),
         tags: Vec::new(),
+        title: None,
     });
     p.clips[0].slate_id = Some(slate);
     store::write(dir.path(), &mut p).unwrap();
@@ -798,6 +880,7 @@ fn slates_read_in_source_then_time_order() {
             out_seconds: None,
             name: String::new(),
             tags: Vec::new(),
+            title: None,
         });
     }
     let order: Vec<(usize, f64)> = p
@@ -1267,6 +1350,24 @@ fn the_inset_placement_of_a_new_clip_comes_from_the_sticky_preference() {
             size: InsetSize::Large,
             corner: InsetCorner::BottomLeft,
         })
+    );
+}
+
+/// #115's "in general": the caption mode is sticky on the inset pair's
+/// mechanism, so the next recording takes the mode last set on a clip.
+#[test]
+fn the_caption_of_a_new_clip_comes_from_the_sticky_preference() {
+    let mut p = Project::new("p");
+    assert_eq!(
+        p.add_recorded_clip(pending(0.0), 1.0, Vec::new(), String::new())
+            .caption_bar,
+        CaptionBar::Whole
+    );
+    p.preferences.last_caption_bar = CaptionBar::FirstSeconds;
+    assert_eq!(
+        p.add_recorded_clip(pending(0.0), 1.0, Vec::new(), String::new())
+            .caption_bar,
+        CaptionBar::FirstSeconds
     );
 }
 
