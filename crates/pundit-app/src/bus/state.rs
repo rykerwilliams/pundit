@@ -1152,12 +1152,12 @@ mod tests {
         std::fs::create_dir_all(dir.path().join(APP_DIR)).unwrap();
         std::fs::write(
             dir.path().join(APP_DIR).join(FILE),
-            r#"{"pen":"blue","keys":{"fitWindow":["g"],"tagTheRef":["t"]}}"#,
+            r#"{"pen":"blue","keys":{"fitWindow":["k"],"tagTheRef":["t"]}}"#,
         )
         .unwrap();
         let keymap = state.keymap();
         assert_eq!(
-            keymap.action_for("g", false, false, false),
+            keymap.action_for("k", false, false, false),
             Some(Action::FitWindow),
             "the stored key moved"
         );

@@ -1446,6 +1446,15 @@ fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             }
         }
     });
+    // `g` (BACKLOG #128): start a themed pass from the keyboard.
+    window.on_first_slate({
+        let weak = window.as_weak();
+        move || {
+            if let Some(w) = weak.upgrade() {
+                start_pass(&w);
+            }
+        }
+    });
     window.on_preview_slate({
         let bus = bus.clone();
         move |id| {
@@ -3953,25 +3962,66 @@ fn show_slate_span(w: &AppWindow, project: Option<&Project>) {
 /// deliberately (spec T5): `start_recording` pauses unconditionally and the
 /// log seeds a pause at record time 0.
 ///
-/// The selection is set **before** the jump, so the scrubber's span (spec S6)
-/// names the range the footage is heading for rather than the one just
-/// recorded.
+/// **When there is nothing to park on because every range is shot, it says
+/// so** (BACKLOG #128) — the one `None` of `next_slate` that is the end of a
+/// pass rather than no pass at all.
 fn advance_pass(w: &AppWindow) {
     let rows: Vec<SlateRow> = w.get_slates().iter().collect();
-    let pass: Vec<PassRow> = rows
-        .iter()
+    let pass = pass_rows(&rows);
+    let current = w.get_selected_slate();
+    match slate_pass::next_slate(&pass, current.as_str()) {
+        Some(next) => park_on_slate(w, next),
+        None => {
+            if let Some(ranges) = slate_pass::ran_out(&pass, current.as_str()) {
+                show_pass_finished(w, ranges);
+            }
+        }
+    }
+}
+
+/// `g` (BACKLOG #128): select the first range still waiting in the Slates list
+/// as it is shown and park on it — the advance's own move, from the top of the
+/// list. With nothing waiting it says why when the reason is that every range
+/// is shot, which is the same line a finished pass shows; an empty list, or
+/// one of half-marked ranges, has nothing to report beyond what it shows.
+fn start_pass(w: &AppWindow) {
+    let rows: Vec<SlateRow> = w.get_slates().iter().collect();
+    let pass = pass_rows(&rows);
+    match slate_pass::first_slate(&pass) {
+        Some(first) => park_on_slate(w, first),
+        None => {
+            if let Some(ranges) = slate_pass::all_shot(&pass) {
+                show_pass_finished(w, ranges);
+            }
+        }
+    }
+}
+
+/// The Slates rows as the pass reads them — a projection, not a second model.
+fn pass_rows(rows: &[SlateRow]) -> Vec<PassRow<'_>> {
+    rows.iter()
         .map(|row| PassRow {
             id: row.id.as_str(),
             timed: row.timed,
             shot: row.shot,
         })
-        .collect();
-    let Some(next) = slate_pass::next_slate(&pass, w.get_selected_slate().as_str()) else {
-        return;
-    };
-    let next = SharedString::from(next);
-    w.set_selected_slate(next.clone());
-    w.invoke_jump_to_slate(next);
+        .collect()
+}
+
+/// Selects `id` and parks the footage on it. The selection is set **before**
+/// the jump, so the scrubber's span (spec S6) names the range the footage is
+/// heading for rather than the one just recorded.
+fn park_on_slate(w: &AppWindow, id: &str) {
+    let id = SharedString::from(id);
+    w.set_selected_slate(id.clone());
+    w.invoke_jump_to_slate(id);
+}
+
+/// "All 8 'corner' ranges shot" on the status bar, naming the Slates panel's
+/// own tag filter — the list the count was taken from.
+fn show_pass_finished(w: &AppWindow, ranges: usize) {
+    let tag = w.get_slate_tag_filter();
+    show_notice(w, slate_pass::finished_notice(ranges, tag.as_str()));
 }
 
 /// A clip's name as the lists and the preview indicator show it.

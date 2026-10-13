@@ -36,9 +36,6 @@ made things worse.
 - **131.** The slate band's colour should be a setting. The coach (2026-10-05):
   *"i mean the band color should be in the settings"* — and *"the slider bar
   colour clashes a bit"*
-- **128.** The themed pass is silent at both of its ends — no keyboard way to
-  start one, and nothing said when it runs out of ranges (**its keyboard half
-  is one `keymap.rs` row now that #96 has landed**)
 - **115.** The caption bar (`1 / 1 | name | tags`) should be switchable off — per
   clip, sticky for the next recording, as #88's inset size and corner are (**v16
   — v15 went to the mute switch, v14 to #117's arrowhead; take the next free
@@ -4285,7 +4282,14 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   read a popup and click what is in it, which is what `tests/ui` could not do
   before.
 
-128. **The themed pass is silent at both of its ends.** #120 shipped the pass
+128. **The themed pass is silent at both of its ends — SHIPPED 2026-10-13.**
+  `g` selects and parks on `slate_pass::first_slate` (gated `!recording &&
+  !previewing`); a take that finishes the pass says "All 8 'corner' ranges
+  shot", gated by `ran_out` on every timed row being shot. `main.rs`'s wiring
+  (select, jump, notice) is untested — `main.rs` has no test reach.
+
+  The entry as filed:
+  #120 shipped the pass
   and it works from the keyboard once it is going — `R`, space, talk, `R`, and
   the list hands on to the next range. Two things it does not say, neither of
   which blocks the workflow:

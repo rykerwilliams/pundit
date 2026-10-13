@@ -237,6 +237,7 @@ export enum KeyAction {
     clear-drawings,
     mark-in,
     mark-out,
+    first-slate,
     tag-home-goal,
     tag-away-goal,
     tag-period,
@@ -4685,6 +4686,9 @@ export component AppWindow inherits Window {
     /// Park the game video on a slate's first frame (BACKLOG #104), the clip
     /// row's "Jump to clip start".
     callback jump-to-slate(string);
+    /// `g` (#128): select the first range still to shoot and park on it —
+    /// `slate_pass::first_slate`, in Rust.
+    callback first-slate();
     /// Watch the marked range: the jump, then play, then the stop at the out
     /// point (spec P2). The row's double-click, as a clip row's double-click
     /// is its jump.
@@ -5205,6 +5209,14 @@ export component AppWindow inherits Window {
         if (act == KeyAction.mark-out) {
             if (pressed && !event.repeat && root.can-tag) {
                 root.mark-out();
+            }
+            return accept;
+        }
+        // Start a themed pass (#128). Parks the game video: `next-event`'s
+        // gate, and the bus refuses a seek mid-take.
+        if (act == KeyAction.first-slate) {
+            if (pressed && !event.repeat && !root.recording && !root.previewing) {
+                root.first-slate();
             }
             return accept;
         }

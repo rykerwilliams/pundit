@@ -78,6 +78,7 @@ pub enum Action {
     ClearDrawings,
     MarkIn,
     MarkOut,
+    FirstSlate,
     TagHomeGoal,
     TagAwayGoal,
     TagPeriod,
@@ -113,13 +114,14 @@ impl Action {
     /// On [`crate::drawing::Pen::ALL`]'s pattern, and with its one hazard: a
     /// variant added here and left out of the list is an action with no row.
     /// `the_list_holds_every_action_in_declaration_order` is what catches it.
-    pub const ALL: [Action; 30] = [
+    pub const ALL: [Action; 31] = [
         Action::OpenProject,
         Action::Undo,
         Action::Redo,
         Action::ClearDrawings,
         Action::MarkIn,
         Action::MarkOut,
+        Action::FirstSlate,
         Action::TagHomeGoal,
         Action::TagAwayGoal,
         Action::TagPeriod,
@@ -158,6 +160,7 @@ impl Action {
             Action::ClearDrawings => "clearDrawings",
             Action::MarkIn => "markIn",
             Action::MarkOut => "markOut",
+            Action::FirstSlate => "firstSlate",
             Action::TagHomeGoal => "tagHomeGoal",
             Action::TagAwayGoal => "tagAwayGoal",
             Action::TagPeriod => "tagPeriod",
@@ -198,6 +201,7 @@ impl Action {
             Action::ClearDrawings => "Clear the drawings",
             Action::MarkIn => "Mark a slate's in point",
             Action::MarkOut => "Mark a slate's out point",
+            Action::FirstSlate => "Select the first range to shoot",
             Action::TagHomeGoal => "Tag a home goal",
             Action::TagAwayGoal => "Tag an away goal",
             Action::TagPeriod => "Start or end a period",
@@ -241,6 +245,7 @@ impl Action {
             | Action::TagAwayGoal
             | Action::HighlightTool => "While the game video is on screen",
             Action::TagPeriod => "While the game video is on screen, until the periods are full",
+            Action::FirstSlate => "Unless recording or previewing",
             Action::ToggleRecording | Action::TogglePlay => "Any time",
             Action::RecordWhiteboard => "Any time, with a diagram armed",
             Action::DeleteClip => "With a clip selected, unless a recording is running",
@@ -281,6 +286,7 @@ impl Action {
             Action::ClearDrawings => &["c"],
             Action::MarkIn => &["i"],
             Action::MarkOut => &["o"],
+            Action::FirstSlate => &["g"],
             Action::TagHomeGoal => &["z"],
             Action::TagAwayGoal => &["x"],
             Action::TagPeriod => &["v"],
@@ -970,7 +976,11 @@ mod tests {
                 seen.push((*binding, action));
             }
         }
-        assert_eq!(seen.len(), 35, "spec D1 and #138: 30 actions, 35 bindings");
+        assert_eq!(
+            seen.len(),
+            36,
+            "spec D1, #138 and #128: 31 actions, 36 bindings"
+        );
     }
 
     /// A default that does not parse is a default that silently is not there,
@@ -1149,22 +1159,22 @@ mod tests {
 
         // An unknown action name costs that row and nothing beside it.
         let keymap =
-            Keymap::with_overrides(&overrides(&[("tagTheRef", &["t"]), ("fitWindow", &["g"])]));
+            Keymap::with_overrides(&overrides(&[("tagTheRef", &["t"]), ("fitWindow", &["k"])]));
         assert_eq!(
-            keymap.action_for("g", false, false, false),
+            keymap.action_for("k", false, false, false),
             Some(Action::FitWindow)
         );
         assert_eq!(keymap.action_for("t", false, false, false), None);
 
         // An unparseable spelling costs that label; its siblings survive.
-        let keymap = Keymap::with_overrides(&overrides(&[("fitWindow", &["Fit", "g"])]));
+        let keymap = Keymap::with_overrides(&overrides(&[("fitWindow", &["Fit", "k"])]));
         assert_eq!(
             keymap
                 .bindings(Action::FitWindow)
                 .iter()
                 .map(|b| b.label())
                 .collect::<Vec<_>>(),
-            ["g"]
+            ["k"]
         );
 
         // And an override takes the key from whichever action held it by
@@ -1191,7 +1201,7 @@ mod tests {
     fn a_key_claimed_twice_goes_to_the_action_listed_first() {
         let keymap = Keymap::with_overrides(&overrides(&[
             ("markIn", &["q"]),
-            ("fitWindow", &["q", "g"]),
+            ("fitWindow", &["q", "k"]),
         ]));
         assert_eq!(
             keymap.action_for("q", false, false, false),
@@ -1203,7 +1213,7 @@ mod tests {
                 .iter()
                 .map(|b| b.label())
                 .collect::<Vec<_>>(),
-            ["g"],
+            ["k"],
             "it loses the contested key and keeps its own"
         );
     }
@@ -1214,7 +1224,7 @@ mod tests {
     fn what_is_stored_is_only_what_differs() {
         assert!(Keymap::defaults().overrides().is_empty());
 
-        let stored = overrides(&[("fitWindow", &["g"])]);
+        let stored = overrides(&[("fitWindow", &["k"])]);
         let keymap = Keymap::with_overrides(&stored);
         assert_eq!(
             keymap.overrides(),

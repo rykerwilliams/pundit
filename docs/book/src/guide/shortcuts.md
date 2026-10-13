@@ -1,7 +1,8 @@
-<!-- Source of truth: `handle-key` in crates/pundit-app/ui/app.slint. Every key
-     below is one branch of that function, and the conditions here are its gates
-     (`can-play`, `can-tag`, `can-draw`, `can-fit`, `can-scan-fast`) in plain
-     words. If you add or change a key there, change it here in the same commit. -->
+<!-- Source of truth: `Action::default_keys` in crates/pundit-app/src/keymap.rs
+     for which key does what, and `handle-key` in crates/pundit-app/ui/app.slint
+     for when each one fires (`can-play`, `can-tag`, `can-draw`, `can-fit`,
+     `can-scan-fast`, in plain words below). If you add or change a key there,
+     change it here in the same commit. -->
 
 # Keyboard shortcuts
 
@@ -52,9 +53,12 @@ picture — a change would only show once you closed it.
 | Key | What it does |
 |---|---|
 | <kbd>R</kbd> | Start or stop recording |
+| <kbd>W</kbd> | Start or stop recording over the whiteboard diagram |
 | <kbd>Esc</kbd> | Stop recording |
 | <kbd>C</kbd> | Clear what you have drawn |
 
+<kbd>W</kbd> records over the diagram picked in the **Devices** popover instead
+of the game video; see [the whiteboard](recording.md#over-a-diagram-the-whiteboard).
 <kbd>C</kbd> works while a take is actually running. Drawing itself is the mouse,
 with the pens beside the video.
 
@@ -81,6 +85,7 @@ A slate is a range you mark now to record commentary over later.
 |---|---|
 | <kbd>I</kbd> | Start of the range |
 | <kbd>O</kbd> | End of it |
+| <kbd>G</kbd> | Select the first range still to shoot, and go to it |
 
 The slate is saved the moment you press <kbd>I</kbd>, so nothing is lost if you
 stop there — you will see a row with an open end, which you can finish or delete.
@@ -92,6 +97,9 @@ To shoot one, select it and press <kbd>R</kbd> — the transport button reads
 menu. At the end of the range the game **pauses on its last frame** while the
 recording keeps going, so you can finish your sentence. See
 [slates](slates.md).
+
+<kbd>G</kbd> does nothing while you are recording or a preview is open; see
+[working through a theme](slates.md#working-through-a-theme).
 
 ## Ringing a player
 
@@ -145,4 +153,11 @@ slider you touched cannot jump the video to one end.
 
 ## Changing them
 
-You cannot yet. Reassignable keys are on the list.
+<kbd>F1</kbd> (or the **Keys** button beside **Fit**) opens the Keys sheet, which
+lists every key and what it does. **Set…** on a row waits for the next key you
+press and gives it to that action; a key another action held is taken from it,
+and the sheet says which. ✕ leaves an action with no key. Your changes are
+remembered on this computer. <kbd>Esc</kbd>, <kbd>Tab</kbd>, <kbd>Return</kbd>,
+<kbd>Home</kbd> and <kbd>End</kbd> cannot be reassigned.
+
+The keys on this page are the ones pundit starts with.

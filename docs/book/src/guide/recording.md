@@ -45,3 +45,16 @@ and goes back to the webcam.
 
 The photo is a setting of the project, not of the machine: every take in that
 match uses it.
+
+## Over a diagram: the whiteboard
+
+To talk over a still picture — a pitch layout, a set-piece diagram — instead of
+the game, choose it under **Whiteboard** in **Devices…** and press <kbd>W</kbd>
+rather than <kbd>R</kbd>. The diagram fills the picture for the whole take and
+you draw on it as usual; <kbd>W</kbd> again stops. Each take keeps its own copy
+of the diagram inside the project, so changing or deleting your file later
+changes nothing already recorded.
+
+The take is still tied to the moment of the match you started it from, which is
+where it sits among your clips. While it runs the game is behind the diagram, so
+playing, skipping, tagging, marking a range and ringing a player are refused.
