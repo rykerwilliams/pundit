@@ -14,7 +14,11 @@ fastest. Paths are under `crates/pundit-app/` unless they say otherwise.
 ## Where this stands (update it as tasks land)
 
 - **1 — the scrubber's Slint half: the menu and `snap-seconds`.** Not started.
-- **2 — the Rust logic: `nearest_chapter` and the `state.json` bool.** Not started.
+- **2 — the Rust logic: `nearest_chapter` and the `state.json` bool.** Done
+  2026-10-12 on `claude/102-task-2`, as planned: no deviation. The census held
+  (no `State` literal, no fixture edit). All seven sabotages failed their one
+  named test at the assertion named; sabotage 6's line read one low because
+  deleting the attribute moves every test line up by one.
 - **3 — the wiring, the guide and the prose.** Not started.
 
 **Shipping: two PRs, in order.** **Task 2 first, as its own PR**: pure functions

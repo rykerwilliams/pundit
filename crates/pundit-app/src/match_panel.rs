@@ -21,6 +21,9 @@ use crate::format::format_hms;
 /// it, which `[` and `]` step past, either side alike. A seek lands on a frame,
 /// not on the tag's exact instant, so a playhead sent to a chapter sits a hair
 /// either side of it — and a press there has to move on, not land again.
+/// **It is not the scrubber's snap radius** ([`nearest_chapter`]'s `within`):
+/// that is pixels of track turned into seconds, and it takes the mark under the
+/// playhead where this skips it.
 pub const CHAPTER_TOLERANCE: f64 = 0.5;
 
 /// One row of the panel's event list, which is also a chapter (spec C1): the
@@ -245,6 +248,27 @@ pub fn previous_chapter(abs: f64, chapters: &[f64]) -> Option<f64> {
         .rev()
         .copied()
         .find(|&at| at < abs - CHAPTER_TOLERANCE)
+}
+
+/// The chapter nearest `abs`, if one is strictly within `within` seconds: what
+/// a snapping scrub lands on (BACKLOG #102). `chapters` are in order, as
+/// [`match_abs`] gives them, and a tie goes to the earlier.
+///
+/// **The chapter under the playhead is returned** — the opposite of
+/// [`next_chapter`] and [`previous_chapter`], which step past it: a drag that
+/// reaches a mark is meant to stay on it. And the strict `<` is the whole of
+/// "don't snap": a `within` of `0`, below it or NaN admits nothing, so the
+/// scrubber's one number needs no flag beside it.
+///
+/// It is the third reader of [`match_abs`], with the scrubber's marks (through
+/// [`match_rows`]) and `[` / `]`, so a snapped release lands on the very value
+/// `]` seeks to.
+pub fn nearest_chapter(abs: f64, chapters: &[f64], within: f64) -> Option<f64> {
+    chapters
+        .iter()
+        .copied()
+        .filter(|&at| (at - abs).abs() < within)
+        .min_by(|a, b| (a - abs).abs().total_cmp(&(b - abs).abs()))
 }
 
 /// The panel's live line: the score once the match has started, and the two
@@ -528,6 +552,36 @@ mod tests {
         p.set_reel_trim(goal, ReelEnd::End, Some((0, 104.5)))
             .unwrap();
         assert_eq!(spans(&p)[1].as_deref(), Some("−20 s / +4.5 s"));
+    }
+
+    /// Two marks both in reach: the nearer wins, not the first in order.
+    #[test]
+    fn nearest_chapter_takes_the_nearest_not_the_first() {
+        assert_eq!(nearest_chapter(103.0, &[100.0, 104.0], 5.0), Some(104.0));
+    }
+
+    /// Where `[` and `]` step past the mark under the playhead, the snap
+    /// keeps it — exactly on it, and inside [`CHAPTER_TOLERANCE`] of it.
+    #[test]
+    fn nearest_chapter_includes_the_one_under_the_playhead() {
+        assert_eq!(nearest_chapter(104.0, &[100.0, 104.0], 1.0), Some(104.0));
+        assert_eq!(nearest_chapter(100.3, &[100.0, 104.0], 1.0), Some(100.0));
+    }
+
+    #[test]
+    fn nearest_chapter_breaks_a_tie_towards_the_earlier() {
+        assert_eq!(nearest_chapter(102.0, &[100.0, 104.0], 5.0), Some(100.0));
+    }
+
+    /// Out of reach, nothing to reach, and the three ways of saying "off" —
+    /// each sitting exactly on the mark, so a `<=` shows at `0.0`.
+    #[test]
+    fn nearest_chapter_is_none_out_of_reach_or_off() {
+        assert_eq!(nearest_chapter(110.0, &[100.0], 5.0), None);
+        assert_eq!(nearest_chapter(100.0, &[], 5.0), None);
+        assert_eq!(nearest_chapter(100.0, &[100.0], 0.0), None);
+        assert_eq!(nearest_chapter(100.0, &[100.0], -1.0), None);
+        assert_eq!(nearest_chapter(100.0, &[100.0], f64::NAN), None);
     }
 
     #[test]
