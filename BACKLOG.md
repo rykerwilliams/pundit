@@ -1394,6 +1394,20 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   … stalled on its way to PAUSED; loading it again`) and the second stall was reported, or the wedge was
   somewhere the bound does not cover, is not known. **Next sighting: keep the
   test's stderr** — that line is the whole discriminator.
+- **Sighted again 2026-10-13, on CI, with the stderr this time** (run
+  38457388118, PR #93 — docs only). `pundit-harness --test basket`'s
+  `a_repeat_start_writes_a_second_film` panicked at `lib.rs:164`, `timed out
+  waiting for the run's outcome`, and its stderr **does** carry `player: the
+  load of …/a.webm stalled on its way to PAUSED; loading it again (BACKLOG
+  #72)` followed by `bus: loaded …`. So **the retry fired and the reload
+  succeeded**: the stall is recovered, as designed. What failed is the wait
+  after it. The recovery's ~8 s (3 s bound + up to 5 s `LOAD_SETTLE`) is
+  spent on the bus thread, and `outcome`'s 15 s `TIMEOUT` was evidently
+  started early enough to swallow it plus a basket run on a two-core runner.
+  The rerun passed. *Why deferred:* one sighting of a recovered stall
+  outlasting one wait. *When to revisit:* a second test failing the same way,
+  after a logged retry. The fix would then be a wait that budgets for
+  recovery — not a longer `TIMEOUT` everywhere.
 
 
 73. **`,` looks stuck across a timestamp gap longer than half a frame.** A back
