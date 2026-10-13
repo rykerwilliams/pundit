@@ -7,7 +7,10 @@
 // button isn't the left one. A scrub that never releases leaves
 // `scrubbing` stuck: the readout and the scrubber stop following playback,
 // and the frame-accurate landing never comes. This TouchArea sees every end:
-// the pointer-up, and the cancel.
+// the pointer-up of any button, and the cancel. Any button, because the grab
+// a left press takes ends on *any* release: a right-click mid-drag is handed
+// to this area (the menu below never sees it), and a scrub that ignored its
+// up would never see another (BACKLOG #102).
 
 import { Palette, Slider } from "std-widgets.slint";
 
@@ -25,8 +28,9 @@ export component Scrubber {
     /// while a scrub is refused there (see `wheel.rs`).
     in property <bool> wheel-enabled;
     in property <float> maximum;
-    /// Drawn on the track, under the thumb and the pointer: a click on a
-    /// mark scrubs there like anywhere else.
+    /// Drawn on the track, under the thumb and the pointer: a click scrubs to
+    /// a mark's value like anywhere else, and with `snap-enabled` a drag
+    /// within `snap-radius` of one lands on it (Rust's half).
     in property <[Mark]> marks;
     /// The selected slate's marked range (spec S6), on the same scale as
     /// `marks`.
@@ -73,6 +77,23 @@ export component Scrubber {
     }
 
     property <length> thumb: 20px;
+
+    /// How near a mark a drag has to come to land on it. In **pixels**, so the
+    /// basin in seconds is `snap-radius × maximum ÷ travel`: it widens with
+    /// the footage and narrows as the window widens — about ±21 s on a
+    /// 90-minute match at the default window. Small on purpose: too wide and
+    /// it swallows the reel's 20 s lead-in, the stretch a coach drags to.
+    property <length> snap-radius: 6px;
+    /// Whether a drag snaps at all (the menu below; Rust stores it).
+    in property <bool> snap-enabled;
+    /// `snap-radius` in seconds on this track, or 0 — "don't snap" — when
+    /// snapping is off or there is no mark to snap to. The denominator is
+    /// `value-at`'s, so the radius and the mapping cannot disagree.
+    out property <float> snap-seconds: root.snap-enabled && root.marks.length > 0
+        ? root.snap-radius * root.maximum / max(root.width - root.thumb, 1px)
+        : 0;
+    /// The menu's item: Rust flips the stored bool and pushes it back.
+    callback toggle-snap();
 
     /// Where the value `at` is drawn: `value-at` turned round, so a mark sits
     /// exactly where a click scrubs to its value.
@@ -155,8 +176,7 @@ export component Scrubber {
                 root.scrubbing = true;
                 root.scrub-to(self.mouse-x);
             } else if (root.scrubbing
-                && ((event.kind == PointerEventKind.up && event.button == PointerEventButton.left)
-                    || event.kind == PointerEventKind.cancel)) {
+                && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel)) {
                 root.scrubbing = false;
                 root.released(root.value);
             }
@@ -164,6 +184,26 @@ export component Scrubber {
         moved => {
             if (root.scrubbing) {
                 root.scrub-to(self.mouse-x);
+            }
+        }
+    }
+
+    // **Last, above both TouchAreas**: hit-testing is last-declared-first and a
+    // TouchArea grabs a press of any button, so below either one the right
+    // press would be taken — by the drag area normally, and by the wheel area
+    // during a recording, which leaves that one enabled. **No `enabled`**: it
+    // acts on nothing playing, so it opens while a recording has disabled the
+    // drag. **`checked` is bound** to the window's property, which Rust flips
+    // on every activation, so the item and the stored bool cannot disagree.
+    snap-menu := ContextMenuArea {
+        Menu {
+            MenuItem {
+                title: "Snap to match events";
+                checkable: true;
+                checked: root.snap-enabled;
+                activated => {
+                    root.toggle-snap();
+                }
             }
         }
     }

@@ -4103,6 +4103,9 @@ export component AppWindow inherits Window {
     /// A scrub is under way, from its press to its end, however it ends
     /// (see `scrubber.slint`).
     out property <bool> scrubbing: scrubber.scrubbing;
+    /// How far, in seconds, a drag on the scrubber reaches for a match mark;
+    /// 0 is don't snap.
+    out property <float> scrub-snap-seconds: scrubber.snap-seconds;
     /// `current / total`.
     in property <string> readout: "0:00 / 0:00";
     /// Linear 0..1.
@@ -4469,6 +4472,10 @@ export component AppWindow inherits Window {
     /// A tick on the scrubber per match event (spec C1), on the concat
     /// timeline's scale.
     in property <[Mark]> match-marks;
+    /// Whether a drag on the scrubber snaps to those marks (`state.json`).
+    /// `true` here because that is what a fresh file reads, so the window and
+    /// the file agree before Rust has pushed anything.
+    in property <bool> snap-to-events: true;
     /// Every period of the format is tagged, so the bus would refuse another
     /// start/stop: the action is off and the panel says why (S5).
     in property <bool> match-at-cap;
@@ -4623,6 +4630,9 @@ export component AppWindow inherits Window {
     callback step-scan-speed(ScanStep);
     callback scrub-move(float);
     callback scrub-release(float);
+    /// The scrubber's menu item: Rust flips the stored bool and pushes
+    /// `snap-to-events` back.
+    callback toggle-snap();
     /// A wheel over the scrubber: the scroll's deltas and whether Shift was
     /// held. It skips rather than seeking — see `wheel.rs`.
     callback scrub-scroll(length, length, bool);
@@ -6761,8 +6771,10 @@ export component AppWindow inherits Window {
                         wheel-enabled: root.can-play && !root.previewing;
                         maximum: max(root.total-seconds, 0.001);
                         // The concat timeline's: a preview's scale is its
-                        // clip's, where they would mean nothing.
+                        // clip's, where they would mean nothing. The empty
+                        // list is also what switches the snap off there.
                         marks: root.previewing ? [] : root.match-marks;
+                        snap-enabled: root.snap-to-events;
                         // Dropped in a preview for the same reason the marks
                         // are: these are concat seconds and a preview's scale
                         // is its clip's.
@@ -6772,6 +6784,7 @@ export component AppWindow inherits Window {
                         moved(value) => { root.scrub-move(value); }
                         released(value) => { root.scrub-release(value); }
                         scrolled(dx, dy, shift) => { root.scrub-scroll(dx, dy, shift); }
+                        toggle-snap => { root.toggle-snap(); }
                     }
 
                     HorizontalLayout {

@@ -19,6 +19,8 @@ slint::slint! {
         in property <bool> enabled: true;
         in property <bool> wheel-enabled: true;
         in property <[Mark]> marks;
+        in property <bool> snap-enabled: true;
+        out property <float> snap-seconds: scrubber.snap-seconds;
         callback moved(float);
         callback released(float);
         callback scrolled(length, length, bool);
@@ -35,6 +37,7 @@ slint::slint! {
             wheel-enabled: root.wheel-enabled;
             maximum: 100;
             marks: root.marks;
+            snap-enabled: root.snap-enabled;
             moved(value) => { root.moved(value); }
             released(value) => { root.released(value); }
             scrolled(dx, dy, shift) => { root.scrolled(dx, dy, shift); }
@@ -236,4 +239,55 @@ fn the_wheel_keeps_out_of_a_drag_and_obeys_its_own_gate() {
     rig.window.set_enabled(false);
     rig.scroll(200.0, -60.0);
     assert_eq!(*rig.scrolled.borrow(), [(0.0, -60.0)]);
+}
+
+fn one_mark() -> slint::ModelRc<Mark> {
+    slint::ModelRc::new(slint::VecModel::from(vec![Mark {
+        at: 25.0,
+        color: slint::Color::from_rgb_u8(255, 255, 255),
+    }]))
+}
+
+/// The snap's reach is six pixels of **travel**, in seconds: the stand-in's
+/// 400px track less the 20px thumb is 380px for 100 s, so `6 × 100 / 380`.
+#[test]
+fn snap_seconds_is_six_pixels_of_track() {
+    let rig = Rig::new();
+    rig.window.set_marks(one_mark());
+    let got = rig.window.get_snap_seconds();
+    assert!((got - 6.0 * 100.0 / 380.0).abs() < 1e-4, "{got}");
+}
+
+/// 0 is Rust's "don't snap", and there are two ways to get it.
+#[test]
+fn snap_seconds_is_zero_with_nothing_to_snap_to_or_snapping_off() {
+    let rig = Rig::new();
+    assert_eq!(rig.window.get_snap_seconds(), 0.0, "no marks");
+    rig.window.set_marks(one_mark());
+    rig.window.set_snap_enabled(false);
+    assert_eq!(rig.window.get_snap_seconds(), 0.0, "snapping off");
+}
+
+/// A right-click mid-drag is handed to the drag's own area — the left press
+/// holds the grab — and its release ends the grab, so the scrub has to end
+/// there too: no later move or left release would reach it. It lands where
+/// the drag had got to.
+#[test]
+fn a_right_click_mid_drag_ends_the_scrub() {
+    let rig = Rig::new();
+    rig.press(100.0);
+    rig.drag_to(200.0);
+    rig.send(WindowEvent::PointerPressed {
+        position: LogicalPosition::new(200.0, 20.0),
+        button: PointerEventButton::Right,
+    });
+    rig.send(WindowEvent::PointerReleased {
+        position: LogicalPosition::new(200.0, 20.0),
+        button: PointerEventButton::Right,
+    });
+    assert!(!rig.window.get_scrubbing(), "the scrub is stuck");
+    let last = *rig.moved.borrow().last().unwrap();
+    assert_eq!(*rig.released.borrow(), [last]);
+    rig.release(200.0);
+    assert_eq!(rig.released.borrow().len(), 1, "the left up finds it ended");
 }

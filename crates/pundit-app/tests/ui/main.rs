@@ -77,6 +77,7 @@ mod self_view_placement;
 mod sheet_scroll;
 mod slate_fields;
 mod slate_menu;
+mod snap_menu;
 mod splitter;
 mod tag_field;
 mod text_editing;
