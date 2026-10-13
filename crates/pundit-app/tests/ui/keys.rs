@@ -120,6 +120,7 @@ fn cases() -> Vec<Case> {
         },
         fires(Action::MarkIn, "i", "mark-in"),
         fires(Action::MarkOut, "o", "mark-out"),
+        fires(Action::FirstSlate, "g", "first-slate"),
         fires(Action::TagHomeGoal, "z", "tag home-goal"),
         fires(Action::TagAwayGoal, "x", "tag away-goal"),
         fires(Action::TagPeriod, "v", "tag start-stop"),
@@ -179,6 +180,7 @@ fn window() -> (AppWindow, Rc<RefCell<Vec<String>>>) {
     w.on_clear_drawings(say("clear-drawings"));
     w.on_mark_in(say("mark-in"));
     w.on_mark_out(say("mark-out"));
+    w.on_first_slate(say("first-slate"));
     w.on_toggle_play(say("toggle-play"));
     w.on_fit_window(say("fit-window"));
     w.on_zoom_reset(say("zoom-reset"));
@@ -501,6 +503,30 @@ fn a_refused_gate_still_swallows_the_key() {
         "f fitted a window with nothing to take off: {:?}",
         fired.borrow()
     );
+}
+
+/// **`g` waits out a take and a preview** (#128): it parks the game video, which
+/// the bus refuses mid-take and which is not what is on screen behind a
+/// preview. The census above presses it in `base`'s state only, so without this
+/// the gate could be dropped and nothing would notice.
+#[test]
+fn the_first_range_key_waits_out_a_take_and_a_preview() {
+    let (w, fired) = window();
+    let pressed_while = |what: &str| {
+        fired.borrow_mut().clear();
+        press(&w, &"g".into(), false, false);
+        assert!(
+            fired.borrow().is_empty(),
+            "g fired while {what}: {:?}",
+            fired.borrow()
+        );
+    };
+    base(&w);
+    w.set_recording_phase(RecordingPhase::Recording);
+    pressed_while("recording");
+    base(&w);
+    w.set_previewing_clip("c1".into());
+    pressed_while("previewing");
 }
 
 /// **A capture swallows exactly one key and that key becomes the action's**

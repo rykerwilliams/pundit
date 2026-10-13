@@ -162,6 +162,7 @@ fn key_action(action: Option<Action>) -> KeyAction {
         Action::ClearDrawings => KeyAction::ClearDrawings,
         Action::MarkIn => KeyAction::MarkIn,
         Action::MarkOut => KeyAction::MarkOut,
+        Action::FirstSlate => KeyAction::FirstSlate,
         Action::TagHomeGoal => KeyAction::TagHomeGoal,
         Action::TagAwayGoal => KeyAction::TagAwayGoal,
         Action::TagPeriod => KeyAction::TagPeriod,

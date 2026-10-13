@@ -237,6 +237,7 @@ export enum KeyAction {
     clear-drawings,
     mark-in,
     mark-out,
+    first-slate,
     tag-home-goal,
     tag-away-goal,
     tag-period,
@@ -4685,6 +4686,11 @@ export component AppWindow inherits Window {
     /// Park the game video on a slate's first frame (BACKLOG #104), the clip
     /// row's "Jump to clip start".
     callback jump-to-slate(string);
+    /// Start a themed pass from the keyboard (BACKLOG #128): select the
+    /// first range still waiting in the Slates list as it is shown, and park
+    /// on it. Rust's, because the rule is `slate_pass::first_slate` and the
+    /// park is `jump-to-slate`'s.
+    callback first-slate();
     /// Watch the marked range: the jump, then play, then the stop at the out
     /// point (spec P2). The row's double-click, as a clip row's double-click
     /// is its jump.
@@ -5205,6 +5211,18 @@ export component AppWindow inherits Window {
         if (act == KeyAction.mark-out) {
             if (pressed && !event.repeat && root.can-tag) {
                 root.mark-out();
+            }
+            return accept;
+        }
+        // Start a themed pass (#128): select the first range still waiting
+        // and park the footage on it, as the advance does after a take. Not
+        // while recording -- the rows themselves are disabled then, and the
+        // park is a seek the bus refuses mid-take -- and not behind a
+        // preview, `next-event`'s gate for the same reason: the park moves the
+        // game video, which is not what is on screen.
+        if (act == KeyAction.first-slate) {
+            if (pressed && !event.repeat && !root.recording && !root.previewing) {
+                root.first-slate();
             }
             return accept;
         }

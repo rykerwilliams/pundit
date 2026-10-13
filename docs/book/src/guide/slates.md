@@ -36,3 +36,12 @@ Filter the list by a tag — "corners", say — and the Slates list becomes a qu
 after each take it moves on to the next range with that tag that has not been
 recorded yet, and parks the game there. Press <kbd>R</kbd>, talk, stop, and the
 next one is waiting. Cancel a take and it stays on the same range.
+
+Press <kbd>G</kbd> to start: it selects the first range in the filtered list
+still waiting to be recorded and parks the game there, so the whole pass can run
+from the keyboard. It is also the way back to a range you skipped — the pass only
+moves forwards, but <kbd>G</kbd> always starts from the top.
+
+When the last one is done the status bar says so — "All 8 'corners' ranges
+shot", or "All 8 ranges shot" with no filter. It only says it when every range
+in the list really is recorded; if you skipped one earlier, the pass just stops.
