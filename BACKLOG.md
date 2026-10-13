@@ -2866,7 +2866,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   code; that suite alone then passed 33/33.
 
 102. **Snap the scrubber to events, as an option — SHIPPED 2026-10-12** (#85,
-  #PRNUM; spec `2026-10-07-scrubber-snapping-design.md`, plan
+  #86; spec `2026-10-07-scrubber-snapping-design.md`, plan
   `2026-10-12-scrubber-snapping.md`). Match marks only, a 6px radius
   (`scrubber.slint`'s `snap-radius`), `state.json`'s `snapToEvents` default
   on, and a checkable item on the scrubber's right-click menu. **The spec's
