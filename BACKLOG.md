@@ -2861,6 +2861,9 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **Sighting, 2026-10-12, #84 task 3's gate:** `corrupted size vs. prev_size`,
   `pundit-harness --test export` (not media's), SIGABRT, in a full workspace
   run beside #72's first post-fix sighting.
+- **Sighting, 2026-10-12, #102's gate:** the same message, `pundit-media --test
+  export`, SIGABRT, in a full workspace run of a change that touches no media
+  code; that suite alone then passed 33/33.
 
 102. **Snap the scrubber to events, as an option — SHIPPED 2026-10-12** (#85,
   #PRNUM; spec `2026-10-07-scrubber-snapping-design.md`, plan
