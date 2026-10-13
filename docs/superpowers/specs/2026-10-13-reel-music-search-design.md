@@ -36,9 +36,9 @@ which `main.rs` runs on a short-lived thread, as it lists the Devices popover's
 devices. Add fetches the file into memory through `souphttpsrc`, writes it to a
 `.part`, decodes all of it to check it, writes the credit as
 `<track>.credit.txt`, and renames the track into `<musicFolder>/<genre>/` last.
-Phase 1's picker then lists the genre. When a reel's chosen track has a credit,
-the bus reads the text into the job, and `finish` writes `<film>.credits.txt`
-beside the reel, as it writes `.chapters.txt`. Nothing reaches the network until
+Phase 1's picker then lists the genre. When a reel's music has a credit beside it,
+`finish` reads it at render time and writes `<film>.credits.txt` beside the
+reel, as it writes `.chapters.txt`. Nothing reaches the network until
 the coach presses Search, no test reaches Openverse, and nothing in the project
 format changes.
 
@@ -209,10 +209,14 @@ pub fn add(candidate: &Candidate, folder: &Path, genre: &Genre,
   network. A whole layer of permission is unnecessary because no command can
   carry a URL. The only URL `add` fetches is the `url` field of a `Candidate`
   that `search` parsed.
-- **The staleness rule is a generation counter.** A `Cell<u64>` in `main.rs` is
-  bumped by each Search, and an answer that comes back under an older generation
-  is dropped. A search is never cancelled; a superseded one just finishes and is
-  ignored.
+- **The staleness rule is a generation counter.** It lives in `main.rs`'s
+  `UiState`, the `UI` thread-local (`main.rs:349`–`:352`), beside the
+  `(Genre, Vec<Candidate>)` on screen and the last genre added. Each Search bumps
+  it. Only the number crosses into the thread, and the `upgrade_in_event_loop`
+  closure compares it with `UI.with_borrow` before it shows anything. A search
+  is never cancelled; a superseded one just finishes and is ignored. An Add's
+  cancel is an `Arc<AtomicBool>`. *(Amended 2026-10-13 after the plan's review:
+  this was a `Cell<u64>` of its own.)*
 
 **S4. The query, and the parse, are core's** (`core::openverse`), as pure
 functions:
@@ -263,9 +267,12 @@ GET <base>audio/?q=<genre text>&category=music&length=medium&license=cc0,pdm,by
   joined with `pundit`, falling back to `$HOME/Music` as `films_dir` (`:651`)
   falls back to `$HOME/Videos`. `in_config_dir` (`:316`) uses a scratch path, so
   no test writes into the coach's own music folder.
-- **The window resolves and writes it.** When an Add finds no `musicFolder`
-  set, `main.rs` takes `AppFiles::default_music_folder()`, writes it with
-  `set_music_folder`, and passes it to `add`. The bus stays a reader of both
+- **The window resolves and writes it.** The folder a search and an Add use is
+  `music_folder().unwrap_or(default_music_folder())`. The genre is resolved
+  against that folder (S5), and that folder is what `add` is given. **When an
+  Add succeeds** and no `musicFolder` was set, `main.rs` writes the default
+  with `set_music_folder`; a failed Add writes nothing. *(Amended 2026-10-13
+  after the plan's review: this used to be written before the Add.)* The bus stays a reader of both
   music keys, which is phase 1's rule (§M2 there) and `CLAUDE.md`'s. A folder
   that is already set is never changed by the search. **Folder…** still chooses
   another (decision: `~/Music/pundit`).
@@ -284,17 +291,25 @@ GET <base>audio/?q=<genre text>&category=music&length=medium&license=cc0,pdm,by
    into memory.
    - **The cap is 64 MiB.** A measured 3:24 track was 4.5 MB, and a twenty-row
      page is 35–39 KB.
-   - **The bound is a stall, not a deadline:** no new bytes for 20 s fails the
-     request. A slow but moving transfer is never cut off.
-   - **The cancel is `download`'s cancel**, polled at the same interval
-     (`POLL`).
-   - **Truncation:** where `souphttpsrc` reports a byte length (the server's
-     `Content-Length`, queried as the source's duration in bytes), the bytes
-     received must equal it.
+   - **The bound is `souphttpsrc`'s own `timeout`** (20 s), with
+     `iradio-mode=false`. That bounds each read, not the whole transfer, so a
+     slow but moving transfer is never cut off. The loop is bus-driven, as
+     `download`'s `fetch_to` is (`timed_pop_filtered` for EOS or an error), and
+     it checks the cancel flag between pops.
+   - **Truncation is `souphttpsrc`'s to catch, and it does.** Measured on
+     1.24.2: a server that sends `Content-Length: 100000`, then 50,000 bytes,
+     then closes, gets a resource error *"Server does not support seeking."*
+     with `http-status-code=(uint)200`. That is because souphttpsrc tries to
+     resume with a Range request. So a short body is an error, which `add`
+     reports as *"can't read"*, and the app adds no length check of its own.
+     *(Amended 2026-10-13 after the plan's review: this was an explicit
+     Content-Length comparison.)*
    - **HTTP failures are read from the error's structured details, never from
      its text.** Measured on 1.24.2, an error from `souphttpsrc` carries
-     `details, http-status-code=(uint)401` (and `404` for a missing path). So a
-     429 is matched on that field, and gets S11's words.
+     `details, http-status-code=(uint)401` (and `404` for a missing path). A
+     code of 400 or more is an HTTP status, so a 429 is matched on that field
+     and gets S11's words. Below 400, as with the truncation's 200, it is just
+     the error.
 
    `download()` (`download.rs:82`) and its `check` are left exactly as they
    are. The model needs its exact length and sha256, and nothing here has
@@ -303,9 +318,9 @@ GET <base>audio/?q=<genre text>&category=music&length=medium&license=cc0,pdm,by
    id, so two different results can never share it, and it has no track
    extension, so `music::tracks` never lists it.
 3. **Check it by decoding it, all of it**, with `pundit-media`'s
-   `inspect_audio(path, cancel)`. That function is built on the mixer's own
-   `Reader` (`composite/audio.rs:263`, the `read_all` shape at `:554`), and it
-   counts samples to EOS.
+   `inspect_audio(path, cancel)`. That function is `read_all`'s three lines
+   (`composite/audio.rs:554`) at a low rate in mono: `Reader::start`, the
+   container walk below, then `rest`. The length is samples ÷ rate.
    - **Pass:** the decoded length is within 2 s of the candidate's `duration`.
    - **Why a full decode and not a duration query:** a parser's estimate is not
      what the mixer will get, and a full decode is. Measured on 1.24.2, with an
@@ -313,12 +328,15 @@ GET <base>audio/?q=<genre text>&category=music&length=medium&license=cc0,pdm,by
      the decode counted 4.94 s. In this case the duration query also said about
      5 s, so the Xing over-report was not reproduced. The check still does not
      rely on the query.
-   - **The same pass names the container.** `deep-element-added` on the pipeline
-     sees the first parser or demuxer that `decodebin3` plugs, and it measured:
-     `mpegaudioparse` → `mp3`, `oggdemux` → `ogg`, `wavparse` → `wav`, with
-     `flacparse` → `flac` and `qtdemux` → `m4a` by the same rule. Those
-     extensions are phase 1's `EXTENSIONS` (`music.rs:14`).
-   - **What fails:** anything else plugged, nothing plugged at all (an HTML page
+   - **The same pass names the container.** After `start` has prerolled, a walk
+     of the pipeline (`iterate_recurse`) lists what `decodebin3` plugged.
+     Measured on 1.24.2: an ID3-tagged MP3 shows `id3demux` and
+     `mpegaudioparse`, Ogg shows `oggdemux`, and WAV shows `wavparse`. The first
+     present of a **fixed precedence list** names the extension: `qtdemux` →
+     `m4a`, `oggdemux` → `ogg`, `wavparse` → `wav`, `flacparse` → `flac`,
+     `mpegaudioparse` → `mp3`. Tag demuxers, other parsers and decoders are
+     ignored. Those extensions are phase 1's `EXTENSIONS` (`music.rs:14`).
+   - **What fails:** none of the list present, nothing plugged at all (an HTML page
      served as `200` plugged nothing and decoded 0 s), or a length outside the
      2 s. Each refuses with *"not a track pundit can play"* and deletes the
      `.part`.
@@ -328,21 +346,28 @@ GET <base>audio/?q=<genre text>&category=music&length=medium&license=cc0,pdm,by
 5. **Rename the `.part` to the track's name, last.** The rename is what makes the
    track exist to `music::tracks`, so any track the picker can choose already has
    its credit. If the rename fails, the credit just written is deleted.
-   - The landing step (steps 4–5) is one function that takes a rename seam, so
-     a test can make the rename fail.
+   - `add` creates the genre folder (`create_dir_all`) before step 2.
+   - A test makes the rename fail for real, by putting a directory at the
+     track's name. The order (credit before rename) is argued here, not pinned
+     by a test.
    - A crash between steps 4 and 5 leaves an orphan `.credit.txt`, which does no
      harm, and a re-Add overwrites it.
 
-**S8. Names.** The track's stem follows the basket's film-name rule
-(`bus/basket.rs:602`, `file_stem`). The input is `<title> — <creator>`. It is
-trimmed, passed through `naming::safe_chars`, cut on a boundary at **120 bytes**,
-and replaced by `Untitled` (`metadata::UNTITLED`) when it comes out empty or
-begins with a `.`.
-- **A different file with the same stem gets `" (2)"`**, `" (3)"` and so on,
-  before the extension.
-- **"Already in rock" means that file exists**, judged by the name this
-  candidate would get. It is not a scan of the credits. So a deleted track can
-  be added again, and the orphan credit beside its name is overwritten.
+**S8. Names.** The track's stem is `<title> — <creator>` through one rule in
+`core::naming`, lifted out of the basket's private `file_stem`
+(`bus/basket.rs:602`): trim, then `naming::safe_chars`, then cut on a boundary
+to a budget, then a fallback when the result is empty or begins with a `.`. The
+helper takes the budget and the fallback, so the basket keeps 200 bytes and
+`Basket`, and music gets **120 bytes** and `Untitled` (`metadata::UNTITLED`).
+The basket's `" (2)"` stays in its own `output_path`.
+- **There is no `" (2)"` for music. The same stem means already in.**
+  "Already in rock" is `<stem>.<ext>` existing in the genre folder for any
+  extension in `music::EXTENSIONS`. It is judged on the UI thread when results
+  land, against `music_folder().unwrap_or(default)`. It is not a scan of the
+  credits, so a deleted track can be added again, and the orphan credit beside
+  its name is overwritten. Two different songs with the same title and artist
+  are the same song as far as this folder is concerned. *(Amended 2026-10-13
+  after the plan's review: a colliding stem got `" (2)"`.)*
 
 **S9. Nothing is automatic.** There is no request at startup, when the sheet
 opens or while the coach types. The first network traffic is the coach's Search,
@@ -354,8 +379,13 @@ which is transcription's rule of *"asked for, never automatic"*.
   - **Esc while not `text-editing`** closes Find music only.
   - **Esc in the genre field** leaves the field and closes nothing. That is the
     basket sheet's cascade (`:5072`–).
-  - **Every other key is swallowed**, so R cannot start a recording while the
-    sheet is open.
+  - **Every other key is rejected ahead of the shortcut lookup**, so letters
+    reach the field and R cannot start a recording while the sheet is open.
+  - **Closing is a Slint function**, in `close-basket`'s shape
+    (`app.slint:4948`): it clears the flag, calls `keys.focus()`, and fires a
+    Rust `find-music-closed()`, which cancels an Add and re-selects the genre.
+    The sheet states `preferred-height` / `max-height`, never `height`
+    (`CLAUDE.md`, #134).
 - So an Add never overlaps a take that started from the keyboard, and there is
   no recording rule to state. **Closing the sheet cancels an Add in flight.** A
   track is a few megabytes (4.5 MB measured for 3:24), so re-adding costs
@@ -384,7 +414,7 @@ an Add, which offers Add again.
 - **Its extension keeps it out of the listing by construction**: `.txt` is not
   in `EXTENSIONS`, so `music::genres` and `music::tracks` read it as nothing.
 - **A coach can write one by hand for his own tracks**, and it reaches the
-  export the same way.
+  export the same way (C3).
 
 **C2. The words** give title, author, source and licence (TASL), with links,
 ready to paste into a description:
@@ -412,35 +442,41 @@ Licensed under CC BY 3.0 — https://creativecommons.org/licenses/by/3.0/
   track, which BY asks for where reasonably practicable (4.0 §3(a)(1)(A)(v)),
   and its wording is not ours to keep stable.
 
-**C3. The bus reads the text when it builds the job; media writes it in
-`finish`.** `reel_music` (`bus/export.rs:1203`) already returns the chosen
-track's path. Beside it, the bus reads `<track>.credit.txt` into
-**`ExportJob::credits: Option<String>`**.
-- It is read at job build, so a queued job keeps the credit of the track it
-  froze (`CLAUDE.md`'s queue: *"a queued row is a snapshot"*).
-- An absent credit is `None`, which is never a refusal. The coach's own tracks
-  usually have none.
-- **When the chosen track has no credit but its genre folder holds some
-  `.credit.txt`, the bus logs it.** That pattern is what a renamed fetched
-  track looks like (Risk 3). It is logged beside the run's existing `bus:
-  exported …` line (`bus/export.rs:251`–`:265`) and not shown in the export
-  outcome. That outcome carries no per-target notes today (`TargetState::Done`
-  holds a path), and a sidecar that failed to write is not surfaced there
-  either.
-- **`finish` (`composite/export.rs:469`) gains `write_credits(job)`** after
-  `write_chapter_list` (`:555`), under the same rules:
-  - it writes `job.path.with_extension("credits.txt")`, so it inherits the run's
-    name cleaning and `" (2)"`;
+**C3. Media reads the credit at render time, beside the music it mixes.**
+`finish` (`composite/export.rs:469`) gains `write_credits(job)` after
+`write_chapter_list` (`:555`). For an encode (`Render::Encode`), it finds the
+job's music region, the `Region` whose track is `Track::Music(path)`
+(`core/src/audio.rs:87`) in `Encode::audio`. It reads `<path's file
+name>.credit.txt`, through one small sibling-name function, and writes it to
+`job.path.with_extension("credits.txt")`.
+- **No `ExportJob` field and no bus change.** The music path is already in the
+  job, and the credit sits beside it on disk.
+- **Reading at render time keeps the song and its credit one fact.** A queued
+  job whose song file was swapped before it ran mixes the new file and credits
+  the new file's credit. It can never pair a song with the credit of the one it
+  replaced.
+- **An absent credit, or no music region at all** (a copy, a clip, a reel with
+  Music: None), **removes a stale `.credits.txt`**. Like `.chapters.txt`, it is
+  a name of ours, so a reel re-exported with Music: None must not leave the old
+  song's credit beside it. A missing credit is never a refusal.
+- **The same rules as the chapter list otherwise:**
+  - it is written from `job.path`, so it inherits the run's name cleaning and
+    `" (2)"`;
   - it runs after the rename, so a cancelled or failed run neither writes nor
     removes anything;
   - a failure is logged, reported as `ExportDone::credits: None`, and never
     fatal.
+- **"A renamed track?"** When `reel_music` (`bus/export.rs:1203`) chooses a
+  track with no `.credit.txt` beside it while its genre folder holds some, it
+  logs one line. That is an `exists()` check, which is what a renamed fetched
+  track looks like (Risk 3). It is not in the export outcome, which carries no
+  per-target notes today (`TargetState::Done` holds a path).
+- **`pundit-media` learns nothing about catalogues or licences.** It copies a
+  text file named after the music it already mixes.
 
-  **Like `.chapters.txt`, it is a name of ours**, so a job carrying `None`
-  **removes** a stale file. A reel re-exported with Music: None must not leave
-  the old song's credit beside it.
-- **`pundit-media` learns nothing about catalogues or licences.** It receives a
-  string and writes it, as `cues` is all it knows of the scoreboard picker.
+*(Amended 2026-10-13 after the plan's review: this was read by the bus at job
+build into an `ExportJob::credits` field, which touched 22 literals and could
+not keep a queued song and its credit in step.)*
 
 **C4. One file per output, not one combined description.** A single
 `<film>.description.txt` with both the chapters and the credit would be one
@@ -457,10 +493,9 @@ as a file arrives without its `.credits.txt`.
 
 | Crate | Gains |
 |---|---|
-| `pundit-core` | `openverse` (the query, the parse, the licence list and check, `licence_words`, the ranking); `credits::credit_text`. Pure: no network, no clock. |
-| `pundit-media` | `download::get`; `inspect_audio` (full decode and container); `ExportJob::credits` and `write_credits`. Nothing about catalogues. `download()` unchanged. |
-| `pundit-app` | `music_search.rs` (`search`, `add`, the landing step); `AppFiles`' default music folder; the reel's credit read in `reel_music`; the Find music sheet, its `handle-key` branch and its `main.rs` wiring. **The bus gains no command.** |
-| `pundit-harness` | One end-to-end test (Testing). |
+| `pundit-core` | `openverse` (the query, the parse, the licence list and check, `licence_words`, the ranking); `credits::credit_text`; the stem rule lifted from the basket into `naming`. Pure: no network, no clock. |
+| `pundit-media` | `download::get`; `inspect_audio` (full decode and container); `write_credits` and `ExportDone::credits`. Nothing about catalogues. `download()` unchanged. |
+| `pundit-app` | `music_search.rs` (`search`, `add`, `already_in`); `AppFiles`' default music folder; the "renamed track?" log in `reel_music`; the Find music sheet, its `handle-key` branch and its `main.rs` wiring. **The bus gains no command.** |
 
 **Packaging:** nothing changes. `souphttpsrc` is already on the smoke test's
 element list (the `elements` array at `smoke-test.sh:64`), and so are the parsers
@@ -472,8 +507,9 @@ and decoders `inspect_audio` plugs, which phase 1 added. No music ships, so
 **No test reaches Openverse or Jamendo.** Every test that searches or fetches
 does it against `pundit_media::fixtures`' local server.
 
-- **The fixture server, with no router.** `Answer` (`fixtures.rs:807`) gains a
-  variant that carries its own body. A test starts **one server for the audio
+- **The fixture server, with no router.** `Answer` (`fixtures.rs:807`) derives
+  `Clone` instead of `Copy` and gains `Body(Arc<[u8]>)`, plus `Cut(Arc<[u8]>,
+  usize)` for a body short of its `Content-Length`. A test starts **one server for the audio
   file**, substitutes that server's URL into the checked-in page JSON (a trimmed
   copy of a real `/v1/audio/` answer), and serves the page from **a second
   server**. `serve` (`:823`) already answers any path with its one body, so this
@@ -491,40 +527,35 @@ does it against `pundit_media::fixtures`' local server.
   - the credit's words, including **the modification phrase for BY**, the
     licence-URL fallback, *"Unknown artist"*, and a newline in a title flattened.
 - **media:**
-  - `get` honours its byte cap, its stall bound (against `Answer::Stall`), its
-    cancel, and the Content-Length check;
-  - a 429 is recognised from `http-status-code` (sabotage: match on the message
-    text instead, against a 429 whose reason phrase is changed);
-  - `inspect_audio` names the container of the `tone_audio` fixture (Ogg) and of
-    a generated MP3 and WAV;
-  - **a truncated VBR MP3 fails the 2 s check.** The fixture is
-    `audiotestsrc ! lamemp3enc target=quality ! xingmux`, then cut to half its
-    bytes; `lamemp3enc` is in the build dependencies' plugin sets.
+  - `get` honours its byte cap, its read timeout (against `Answer::Stall`), its
+    cancel, and errors on a short body;
+  - a 429 is recognised from `http-status-code`;
+  - `inspect_audio` names the container of Ogg, an ID3-tagged MP3 and WAV;
   - an HTML body fails as not audio;
-  - `write_credits` writes, removes a stale file on `None`, and leaves the path
-    alone on a cancel.
+  - `write_credits` writes the music's credit, removes a stale file when there
+    is no music or no credit, and leaves the path alone on a cancel.
 - **app (unit, `music_search.rs`, against the fixture servers):**
   - `search` returns the fixture's rows, ranked;
   - `add` lands `<folder>/rock/<title> — <creator>.ogg` and its `.credit.txt`,
     and leaves no `.part`;
-  - with the rename seam failing, **no credit is left** (sabotage: write the
-    credit after the rename);
-  - a stem collision gets `" (2)"`;
+  - with a directory at the track's name, the rename fails and **no credit is
+    left**;
   - a re-Add after the track is deleted overwrites the orphan credit;
-  - a genre field of `" Rock"` lands in an existing `rock/`;
-  - an empty slug refuses before any request is made.
+  - a genre field of `" ROCK"` lands in an existing `Rock/`, keeping its
+    capitalisation;
+  - a short decode (more than 2 s off the catalogue's duration) is refused and
+    leaves nothing;
+  - an empty slug is refused.
 - **app (unit, `AppFiles`):** the default music folder's resolution, in
   `films_dir`'s shape.
-- **harness, one end-to-end test:** `music_search::add` into a scratch music
-  folder; the phase 1 picker (`music::genres`) lists the genre; a reel export
-  with that genre writes `.credits.txt` with C2's words.
 - **ui:**
   - the Music row's **Find music…** reaches its callback;
   - the sheet shows Openverse's attribution line and L3's line;
   - **Add** on a row reaches its callback with that row's id, and the other
     rows' Add is disabled while one row is adding;
   - **Esc typed in the genre field leaves both sheets open; a second Esc closes
-    Find music only**, and the export sheet is still open.
+    Find music only**, and the export sheet is still open;
+  - the sheet scrolls its body at twenty rows (`tests/ui/sheet_scroll.rs`).
 
 ## Risks
 
@@ -538,8 +569,8 @@ does it against `pundit_media::fixtures`' local server.
    useless, the cure is Jamendo's own API (decision 2's option B), which `search`
    is shaped to take: it is one function with a base URL.
 3. **A renamed track loses its credit and silently drops a CC BY attribution.**
-   The credit is keyed by the track's file name. C3's log line is the cheap
-   mitigation. The coach is never refused, because his own files have no credit
+   The credit is keyed by the track's file name. C3's "renamed track?" log line
+   is the cheap mitigation. The coach is never refused, because his own files have no credit
    either, and refusing would be phase 1's silent trade turned into a false
    alarm.
 4. **Content ID does not read licences.** #84's warning stands: a CC BY track

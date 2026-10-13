@@ -31,7 +31,7 @@ made things worse.
   (`2026-10-13-reel-music-search-design.md`, plan
   `2026-10-13-reel-music-search.md`): a Find music sheet off the Music row that
   searches Openverse for CC0 / CC BY music and adds it to a genre folder, and a
-  `.credits.txt` beside the reel. Two PRs, the credit first
+  `.credits.txt` beside the reel. One PR, a commit per task
 - **131.** The slate band's colour should be a setting. The coach (2026-10-05):
   *"i mean the band color should be in the settings"* — and *"the slider bar
   colour clashes a bit"*. **Specced 2026-10-13**
