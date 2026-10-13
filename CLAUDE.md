@@ -407,6 +407,9 @@ silently. If you need a media type in core, you need a different design.
 - **Every bump comes with a test that every readable version still loads**
   (`project_format.rs::v7_to_v9_files_load_under_the_current_version`, and one
   per bump beside it).
+- **A new `Clip` field goes into `tests/common/mod.rs`'s `clip_stub` and
+  `project_format.rs`'s `sample_clip`, and nowhere else in core's tests** (#106):
+  every other helper spreads `..common::clip_stub()`.
 - **v10 adds `Project.avatar` and `Clip.inset`.** `avatar` is the image's file
   name in the project folder and *is* avatar mode — `Some` means takes record
   commentary only, `None` means they record on camera, and there is no second

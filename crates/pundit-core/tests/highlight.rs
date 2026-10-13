@@ -3,6 +3,8 @@
 //!
 //! All tests here are **new**: the macOS app has no highlights.
 
+mod common;
+
 use uuid::Uuid;
 
 use pundit_core::event::{CommentaryEvent, EventKind};
@@ -12,7 +14,7 @@ use pundit_core::highlight::{
     PlayerHighlight, SINGLE_KEY_SPAN,
 };
 use pundit_core::plan::ExportTarget;
-use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize, Project, SourceRef};
+use pundit_core::project::{Clip, Project, SourceRef};
 use pundit_core::stroke::Rgba;
 use pundit_core::zoom::Zoom;
 
@@ -260,22 +262,12 @@ fn clip_with_events(events: Vec<CommentaryEvent>, recording_duration: f64) -> Cl
     Clip {
         id: Uuid::new_v4(),
         name: "c".into(),
-        notes: String::new(),
-        tags: Vec::new(),
-        source_index: 0,
         start_source_seconds: 100.0,
         recording_duration,
         recording_filename: "c.mkv".into(),
         events,
-        show_pip: true,
-        inset: Inset::Camera,
-        inset_size: InsetSize::Medium,
-        inset_corner: InsetCorner::BottomRight,
-        sort_index: 0,
         created_at: "2026-09-22T00:00:00Z".into(),
-        transcript: String::new(),
-        slate_id: None,
-        backdrop: None,
+        ..common::clip_stub()
     }
 }
 

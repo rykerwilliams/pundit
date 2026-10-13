@@ -1,11 +1,13 @@
 //! The scoreboard as a cue list (spec U): one line per stretch of output, and
 //! the `.srt` it is written as.
 
+mod common;
+
 use pundit_core::cues::{cues_to_srt, scoreboard_cues, Cue};
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::export::compilation_schedule;
 use pundit_core::plan::ExportTarget;
-use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize, Project, SourceRef};
+use pundit_core::project::{Clip, Project, SourceRef};
 use pundit_core::scoreboard::{
     MatchEventKind, MatchFormat, ScoreboardConfig, ScoreboardContext, TeamConfig,
 };
@@ -97,9 +99,6 @@ fn a_frozen_entry_holds_the_clock_in_one_cue() {
     p.clips.push(Clip {
         id: uuid::Uuid::nil(),
         name: "c".into(),
-        notes: String::new(),
-        tags: Vec::new(),
-        source_index: 0,
         start_source_seconds: 100.0,
         recording_duration: 30.0,
         recording_filename: "c.mkv".into(),
@@ -107,15 +106,8 @@ fn a_frozen_entry_holds_the_clock_in_one_cue() {
             CommentaryEvent::new(2.0, EventKind::Pause { source_time: 102.0 }),
             CommentaryEvent::new(22.0, EventKind::Play { source_time: 102.0 }),
         ],
-        show_pip: true,
-        inset: Inset::Camera,
-        inset_size: InsetSize::Medium,
-        inset_corner: InsetCorner::BottomRight,
-        sort_index: 0,
         created_at: "2026-09-20T00:00:00Z".into(),
-        transcript: String::new(),
-        slate_id: None,
-        backdrop: None,
+        ..common::clip_stub()
     });
 
     let cues = cues(&p, &ExportTarget::AllClips);

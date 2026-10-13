@@ -20,6 +20,10 @@ use pundit_core::scoreboard::{
 use pundit_core::store::{self, StoreError, CURRENT_FORMAT_VERSION, MIN_READABLE_FORMAT_VERSION};
 use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 
+/// Every field named, deliberately — not spread off `common::clip_stub()` as
+/// the other test files' helpers are (#106): this is the format's own test, and
+/// a new `Clip` field should have to be written here, next to the round trip
+/// that saves and reads it.
 fn sample_clip() -> Clip {
     Clip {
         id: Uuid::nil(),

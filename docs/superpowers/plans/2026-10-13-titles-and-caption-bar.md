@@ -15,7 +15,12 @@ Paths are from the repository root; `core`, `media`, `app` and `harness` mean
 
 ## Where this stands (update it as tasks land)
 
-- **1 — #106 first: one `clip_stub()` for `pundit-core`'s tests.** Not started.
+- **1 — #106 first: one `clip_stub()` for `pundit-core`'s tests.** Done
+  2026-10-13 on `claude/106-clip-stub`: 548 core tests pass before and after,
+  core's full `Clip` literals 14 → 3. The sabotage (stub `show_pip: false`)
+  fails `clip_order.rs`'s `set_sets_one_field_and_returns_the_old_value`, the
+  one core test that reads `show_pip` — not `plan.rs` or `export.rs`, which
+  never read it (PiP is media's).
 - **2 — the v18 format and the strip rule, in core.** Not started.
 - **3 — drawing the strip, in export and preview.** Not started.
 - **4 — the controls, the wiring, the guide and the prose.** Not started.

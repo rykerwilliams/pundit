@@ -2,34 +2,27 @@
 //! text bar's line — then the same for a basket, whose pieces come from
 //! several matches.
 
+mod common;
+
 use uuid::Uuid;
 
 use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::plan::{
     basket_plan, clip_source_duration, compilation_plan, BasketPiece, ExportTarget, PlanEntry,
 };
-use pundit_core::project::{Clip, Inset, InsetCorner, InsetSize, Project, SourceRef};
+use pundit_core::project::{Clip, Project, SourceRef};
 
 fn clip(name: &str, sort_index: i64, tags: &[&str]) -> Clip {
     Clip {
         id: Uuid::new_v4(),
         name: name.into(),
-        notes: String::new(),
         tags: tags.iter().map(|t| t.to_string()).collect(),
-        source_index: 0,
         start_source_seconds: 10.0,
         recording_duration: 5.0,
         recording_filename: format!("{name}.mkv"),
-        events: Vec::new(),
-        show_pip: true,
-        inset: Inset::Camera,
-        inset_size: InsetSize::Medium,
-        inset_corner: InsetCorner::BottomRight,
         sort_index,
         created_at: "2026-09-19T00:00:00Z".into(),
-        transcript: String::new(),
-        slate_id: None,
-        backdrop: None,
+        ..common::clip_stub()
     }
 }
 
