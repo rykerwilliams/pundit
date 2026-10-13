@@ -36,7 +36,7 @@ use pundit_app::fit::{fit_window, Fit};
 use pundit_app::format::{finish_at, format_hms, format_hms_tenths, sentence};
 use pundit_app::highlight_view::{self, LiveHighlight as Ring};
 use pundit_app::match_panel::{
-    self, parse_hex, parse_minutes, parse_overtime_periods, parse_periods,
+    self, hex, parse_hex, parse_minutes, parse_overtime_periods, parse_periods,
 };
 use pundit_app::music;
 use pundit_app::new_match::{self, Draft};
@@ -438,6 +438,7 @@ fn main() {
     wire_music(&window, &machine_state, &pickers);
     wire_folds(&window, &machine_state);
     wire_snap(&window, &machine_state);
+    wire_settings(&window, &machine_state);
     // The keymap is read here, once: the window asks `action-for` per key
     // event and that lookup is a scan over the returned table (#96). The file
     // handle is for the other direction -- the Keys sheet's *Set...* and ✕,
@@ -2768,6 +2769,23 @@ fn wire_snap(window: &AppWindow, state: &AppFiles) {
             w.set_snap_to_events(on);
         }
     });
+}
+
+/// The Settings sheet (#131): the slate band's colour, stored as the window
+/// reports it — only ever a colour or `""` for the default, never a half-typed
+/// field, which the window's `changed slate-band-hex` keeps to itself. After
+/// `wire_callbacks`, whose `valid-hex` and `hex-color` that handler and the
+/// band's colour read.
+///
+/// The handler goes in before the seed, so nothing the window reports can
+/// arrive unheard. The seed itself fires it once, with the value already
+/// stored, which writes that value back unchanged.
+fn wire_settings(window: &AppWindow, state: &AppFiles) {
+    window.on_slate_band_edited({
+        let state = state.clone();
+        move |text| state.set_slate_band_color(parse_hex(&text))
+    });
+    window.set_slate_band_hex(state.slate_band_color().map(hex).unwrap_or_default().into());
 }
 
 /// Where a scrub at `abs` lands: on the match mark the scrubber's

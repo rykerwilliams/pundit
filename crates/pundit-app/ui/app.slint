@@ -1946,9 +1946,9 @@ component Scrim inherits Rectangle {
 /// The card every modal in this app is drawn as: a fixed width, a height of
 /// whatever it holds **up to the window's**, the house chrome and the heading.
 ///
-/// There are seven of these -- export, the basket, New match, match setup, the
-/// match event editor, Keys and the error dialog -- and this is the one shape
-/// they are. A sheet sets its width and its title and lays its own body out as
+/// Every modal is one of these -- export, the basket, New match, match setup,
+/// the match event editor, Settings, Keys and the error dialog -- and this is
+/// the one shape they are. A sheet sets its width and its title and lays its own body out as
 /// children;
 /// everything else is here, once.
 ///
@@ -1958,13 +1958,12 @@ component Scrim inherits Rectangle {
 /// drawn off the bottom of the window. Measured at the declared 1100x700
 /// minimum, two of the **seven** sheets did not fit -- the export sheet
 /// reopened over a run (823px) and New match with twenty videos (704px) -- and
-/// #96's keys sheet is a row per action. (It said six until #96 added Keys and
-/// this comment's own count above it was updated without this line.)
+/// #96's keys sheet is a row per action.
 ///
 /// **A sheet's own action buttons scroll with it**, because each sheet puts
 /// its button row in `@children` like any other content. So Export can be one
 /// flick away rather than on screen, which is the trade this takes: a pinned
-/// footer would need a second child slot here and an edit to all six sheets,
+/// footer would need a second child slot here and an edit to every sheet,
 /// and "the buttons are one flick away" is strictly better than "the buttons
 /// are unreachable". The title scrolls with the body for the same kind of
 /// reason: keeping it out of the scroll means a second layout here whose
@@ -3013,7 +3012,7 @@ component MatchSetupSheet inherits Rectangle {
 
     // **This wrapper exists for the colour picker alone** -- the popup hangs
     // off it, over the card -- so it has to be as transparent to [`Scrim`]'s
-    // cap as the other five sheets, which *are* the `Sheet`. It asks for what
+    // cap as the other sheets, which *are* the `Sheet`. It asks for what
     // the card asks for and accepts less (#134), and the card takes whatever
     // the layout then gives it; `height: card.height` here would be fixed in
     // that layout and would carry the overflow straight back.
@@ -3949,6 +3948,75 @@ component KeysSheet inherits Sheet {
     }
 }
 
+/// The Settings sheet (#131; #78's design, §U4): what this computer remembers
+/// for the coach, as against what a project stores. Each value is one row --
+/// today the slate band's colour -- so the next tenant is a row beside it, with
+/// no headings, no list model and no registry.
+///
+/// **An ordinary `Sheet`**: the picker is inline and always shown, because
+/// there is one colour here and so nothing for a popup to choose between --
+/// none of `MatchSetupSheet`'s wrapper. Its 440px fits the picker's 306px.
+///
+/// **No swatch on the field and no Cancel.** In `SetupField` the swatch is the
+/// way into a popup, and there is none; the band and the slate's row behind
+/// the scrim show the colour as it changes, which is also why there is nothing
+/// to cancel -- a change applies as it is made, as the pen's and the panels' do.
+/// **Empty is the default**, and the Default button is the way back to it,
+/// because clearing a field is not a gesture a coach would find.
+component SettingsSheet inherits Sheet {
+    /// The band field's text, two-way out to the window, which decides what
+    /// of it is stored.
+    in-out property <string> band-hex;
+    in property <[KitColor]> kit-colors;
+    pure callback hex-color(string) -> color;
+    pure callback hsv-of-hex(string) -> Hsv;
+    pure callback hex-of-hsv(float, float, float) -> string;
+    pure callback valid-hex(string) -> bool;
+    callback close();
+
+    card-width: 440px;
+    title: "Settings";
+
+    HorizontalLayout {
+        spacing: 8px;
+
+        band := SetupField {
+            label: "Slate band";
+            placeholder: "Default";
+            ok: root.band-hex == "" || root.valid-hex(root.band-hex);
+            text <=> root.band-hex;
+        }
+        VerticalLayout {
+            alignment: end;
+            Button {
+                text: "Default";
+                enabled: root.band-hex != "";
+                clicked => { root.band-hex = ""; }
+            }
+        }
+    }
+
+    ColorPicker {
+        kit-colors: root.kit-colors;
+        text: root.band-hex;
+        hex-color(text) => { return root.hex-color(text); }
+        hsv-of-hex(text) => { return root.hsv-of-hex(text); }
+        hex-of-hsv(hue, sat, val) => { return root.hex-of-hsv(hue, sat, val); }
+        valid-hex(text) => { return root.valid-hex(text); }
+        pick(hex) => { root.band-hex = hex; }
+    }
+
+    HorizontalLayout {
+        alignment: end;
+
+        Button {
+            text: "Close";
+            primary: true;
+            clicked => { root.close(); }
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "pundit";
     // Every control fits at this size. The window opens at the size it last
@@ -4192,6 +4260,37 @@ export component AppWindow inherits Window {
     /// what moves it when a mark is re-set under an unchanged selection.
     in property <float> slate-span-from;
     in property <float> slate-span-to;
+    /// The Settings sheet's band field (#131): a hex, half-typed text, or
+    /// empty for the default.
+    in-out property <string> slate-band-hex;
+    /// The last value of it that was a colour or empty -- what is stored and
+    /// drawn. A half-typed field leaves the band on this.
+    property <string> slate-band-good;
+    changed slate-band-hex => {
+        if (root.slate-band-hex == "" || root.valid-hex(root.slate-band-hex)) {
+            root.slate-band-good = root.slate-band-hex;
+            root.slate-band-edited(root.slate-band-hex);
+        }
+    }
+    /// What the selected slate's band on the scrubber and its row in the
+    /// Slates list draw. **The one place the default is written**, and why
+    /// the two are one colour: the band *is* the selected slate's range (spec
+    /// S6), so the row and the band read as one thing.
+    ///
+    /// The default is the app's own selection colour rather than an invented
+    /// one. An arbitrary hue had to be picked against the three things
+    /// already on the track -- a goal's amber, a start/stop's white, the
+    /// filled rail's accent blue -- and the first guess (teal) clashed with
+    /// the rail: the coach, 2026-10-05, "the slider bar color clashes a bit".
+    /// A palette colour cannot clash with the palette, and it follows light
+    /// and dark without a second literal; a colour the coach picks is his,
+    /// and absolute.
+    out property <color> slate-band-color: root.slate-band-good == ""
+        ? Palette.selection-background : root.hex-color(root.slate-band-good);
+    /// A colour, or `""` for the default, to remember (`main.rs`'s
+    /// `wire_settings`). Only ever a value that is one: never a half-typed
+    /// field.
+    callback slate-band-edited(string);
     /// The selected slate's name and tags, two-way as the inspector's fields
     /// are: a `text:` binding breaks the first time it is typed in.
     in-out property <string> slate-name;
@@ -4643,6 +4742,14 @@ export component AppWindow inherits Window {
     /// The Keys sheet is up. UI state: `F1` and the Keys button open it, its
     /// Close button and Esc close it.
     in-out property <bool> keys-sheet-open;
+    /// The Settings sheet is up (#131): this computer's settings, the slate
+    /// band's colour first.
+    in-out property <bool> settings-sheet-open;
+    /// Whether either door may open it -- the drawing row's `Settings…` and
+    /// the scrubber's *Band colour…* -- **one gate for both**. Not over a
+    /// take, where a modal would hold the keys that stop it, and not over a
+    /// preview, as `Export…` and `Basket…` are not.
+    out property <bool> can-open-settings: !root.recording && !root.previewing;
     /// **A capture is armed for this action**, by the name `keymap.rs` stores
     /// it under; empty when none is (#96 task 5). While it is set the whole
     /// keymap is inactive and the next key the coach presses is the answer.
@@ -4959,6 +5066,23 @@ export component AppWindow inherits Window {
         keys.focus();
     }
 
+    /// Opens the Settings sheet. **Deliberately no guard:** each door's
+    /// `enabled` is the gate, and `tests/ui/snap_menu.rs` relies on that -- a
+    /// check here as well would let a broken item's gate pass unseen.
+    function open-settings() {
+        keys.focus();
+        root.settings-sheet-open = true;
+    }
+
+    /// Closes the Settings sheet, however it was closed. The field goes back
+    /// on the last good value first, so a typo left in it is not what the
+    /// sheet reopens on.
+    function close-settings() {
+        root.slate-band-hex = root.slate-band-good;
+        root.settings-sheet-open = false;
+        keys.focus();
+    }
+
     /// Closes the New match sheet, however it was closed -- Cancel, Esc or the
     /// `ProjectOpened` that says the project exists (spec C5).
     ///
@@ -5068,6 +5192,17 @@ export component AppWindow inherits Window {
                 root.keys-sheet-open = false;
             }
             return accept;
+        }
+        // The Settings sheet (#131) takes the basket's shape: Esc in its field
+        // leaves the field and the next closes, and the `reject` delivers
+        // letters and Ctrl+V to the field. Tested after the Keys sheet's
+        // because it is drawn just under it.
+        if (root.settings-sheet-open) {
+            if (pressed && event.text == Key.Escape && !root.text-editing) {
+                root.close-settings();
+                return accept;
+            }
+            return reject;
         }
         // The export sheet is modal over the window's shortcuts: Esc closes
         // it, and a run it started goes on behind it.
@@ -5757,7 +5892,7 @@ export component AppWindow inherits Window {
                                         height: 30px;
                                         border-radius: 4px;
                                         background: slate.id == root.selected-slate
-                                            ? Palette.selection-background
+                                            ? root.slate-band-color
                                             : transparent;
 
                                         TouchArea {
@@ -6893,7 +7028,10 @@ export component AppWindow inherits Window {
                         moved(value) => { root.scrub-move(value); }
                         released(value) => { root.scrub-release(value); }
                         scrolled(dx, dy, shift) => { root.scrub-scroll(dx, dy, shift); }
+                        band-color: root.slate-band-color;
                         toggle-snap => { root.toggle-snap(); }
+                        can-open-settings: root.can-open-settings;
+                        open-settings => { root.open-settings(); }
                     }
 
                     HorizontalLayout {
@@ -7282,6 +7420,19 @@ export component AppWindow inherits Window {
                                 text: @markdown("Every key this app binds, and what it does (F1)");
                             }
                         }
+                        // This computer's settings (#131), here for `Keys`'
+                        // reason: the transport row has no room. Gated where
+                        // `Keys` is not: a modal over a take would hold the
+                        // keys that stop it.
+                        Button {
+                            text: "Settings…";
+                            enabled: root.can-open-settings;
+                            clicked => { root.open-settings(); }
+
+                            Tooltip {
+                                text: @markdown("Settings for this computer");
+                            }
+                        }
                         // The H tool is a mode, so it says so (spec H3): the
                         // pen swatches beside it are what a new ring is
                         // coloured with, and the panel below lists them.
@@ -7629,6 +7780,22 @@ export component AppWindow inherits Window {
                     root.create-match();
                 }
                 cancel => { root.close-new-match(); }
+            }
+        }
+
+        // --- Settings sheet: modal over the whole window (#131) ---
+        //
+        // Just under the Keys sheet, which is the order `handle-key` tests
+        // them in.
+        if root.settings-sheet-open: Scrim {
+            SettingsSheet {
+                band-hex <=> root.slate-band-hex;
+                kit-colors: root.kit-colors;
+                hex-color(text) => { return root.hex-color(text); }
+                hsv-of-hex(text) => { return root.hsv-of-hex(text); }
+                hex-of-hsv(hue, sat, val) => { return root.hex-of-hsv(hue, sat, val); }
+                valid-hex(text) => { return root.valid-hex(text); }
+                close => { root.close-settings(); }
             }
         }
 

@@ -1,8 +1,9 @@
-//! The scrubber's right-click menu (BACKLOG #102), driven through the real
-//! window as `slate_menu.rs` drives the slate row's: right-click, find the
-//! item by its words, click it.
+//! The scrubber's right-click menu — the snap (BACKLOG #102) and the door to
+//! the Settings sheet's band colour (#131) — driven through the real window as
+//! `slate_menu.rs` drives the slate row's: right-click, find the item by its
+//! words, click it.
 //!
-//! **What it pins is that the menu is reachable at all.** It sits inside
+//! **What it pins first is that the menu is reachable at all.** It sits inside
 //! `Scrubber` above the drag's and the wheel's `TouchArea`s, either of which
 //! grabs a press of any button: declared below one, the menu never opens. The
 //! fixture therefore has something to play, so the drag area is enabled and
@@ -16,6 +17,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 const ITEM: &str = "Snap to match events";
+/// The door to the Settings sheet (U+2026, as the menu spells it).
+const BAND: &str = "Band colour…";
 
 /// The window with the scrubber enabled, and how many times `toggle-snap`
 /// fired.
@@ -94,4 +97,26 @@ fn the_menu_opens_while_recording() {
     w.set_recording_phase(RecordingPhase::Recording);
     click_the_item(&open(&w));
     assert_eq!(toggled.get(), 1);
+}
+
+#[test]
+fn the_band_colour_item_opens_the_settings() {
+    let (w, _) = window();
+    find(&open(&w), BAND)
+        .unwrap_or_else(|| panic!("no {BAND:?} in the menu"))
+        .mock_single_click(PointerEventButton::Left);
+    assert!(w.get_settings_sheet_open());
+}
+
+/// The menu opens mid-take for the snap, so the item carries the sheet's gate
+/// itself — and `open-settings()` has no guard of its own, so this is the item's
+/// `enabled` alone.
+#[test]
+fn the_band_colour_item_is_off_while_recording() {
+    let (w, _) = window();
+    w.set_recording_phase(RecordingPhase::Recording);
+    find(&open(&w), BAND)
+        .unwrap_or_else(|| panic!("no {BAND:?} in the menu"))
+        .mock_single_click(PointerEventButton::Left);
+    assert!(!w.get_settings_sheet_open());
 }

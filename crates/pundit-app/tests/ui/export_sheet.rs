@@ -316,7 +316,7 @@ fn neither_line_shows_without_the_whole_match() {
 /// 823px, and `height <= min_h` is now true by construction. What fitting
 /// *means* here is that nothing had to be scrolled to reach the buttons, so
 /// that is what is asked: is the button row on screen with the body untouched?
-/// The general rule — no sheet, of the six, is ever taller than its window —
+/// The general rule — no sheet is ever taller than its window —
 /// is `tests/ui/sheet_scroll.rs`, and this stays as the narrower claim about
 /// the one sheet two of #78's rows went into.
 ///

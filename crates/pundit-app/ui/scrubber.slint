@@ -46,6 +46,9 @@ export component Scrubber {
     /// no selection and a half-marked range alike.
     in property <float> slate-span-from;
     in property <float> slate-span-to;
+    /// What the band is drawn in: the window's `slate-band-color`, which is
+    /// where its default and its reason live (#131).
+    in property <color> band-color;
     in-out property <float> value;
     /// A scrub is under way: from the press to its end, however it ends.
     out property <bool> scrubbing;
@@ -94,6 +97,10 @@ export component Scrubber {
         : 0;
     /// The menu's item (`main.rs`'s `wire_snap`).
     callback toggle-snap();
+    /// The menu's *Band colour…*: the window's Settings sheet, under the
+    /// window's one gate for it.
+    in property <bool> can-open-settings;
+    callback open-settings();
 
     /// Where the value `at` is drawn: `value-at` turned round, so a mark sits
     /// exactly where a click scrubs to its value.
@@ -112,9 +119,7 @@ export component Scrubber {
     // Taller than a tick (16px of the 20px track against a tick's 12px), so
     // what shows above and below the opaque 4px rail brackets the ticks
     // instead of imitating them, and rounded on the rail's own 2px so the
-    // ends read as a band's rather than a tick's. Teal: the three things
-    // already on this track are a goal's amber, a start/stop's white and the
-    // filled rail's accent blue.
+    // ends read as a band's rather than a tick's.
     Rectangle {
         visible: root.slate-span-to > root.slate-span-from;
         x: root.mark-x(root.slate-span-from);
@@ -122,16 +127,10 @@ export component Scrubber {
         width: root.mark-x(root.slate-span-to) - self.x;
         height: 16px;
         border-radius: 2px;
-        // **The app's own selection colour, not an invented one** (#131). The
-        // band *is* the selected slate's range (spec S6), and the slate row it
-        // belongs to is painted with this exact colour, so the two read as one
-        // thing. An arbitrary hue also had to be picked against the three
-        // things already on this track -- a goal's amber, a start/stop's white,
-        // the filled rail's accent blue -- and the first guess (teal) clashed
-        // with the rail: the coach, 2026-10-05, "the slider bar color clashes a
-        // bit". A palette colour cannot clash with the palette, and it follows
-        // light and dark without a second literal.
-        background: Palette.selection-background.transparentize(0.25);
+        // The selected slate's row's colour, which the coach can change: the
+        // window's `slate-band-color` says why the two are one. Translucent
+        // here alone, a wash under the rail and the ticks.
+        background: root.band-color.transparentize(0.25);
     }
 
     // Before the slider, so its thumb paints over them.
@@ -195,6 +194,8 @@ export component Scrubber {
     // acts on nothing playing, so it opens while a recording has disabled the
     // drag. **`checked` is bound** to the window's property, which Rust flips
     // on every activation, so the item and the stored bool cannot disagree.
+    // Since the menu itself is ungated, *Band colour…* carries the sheet's
+    // gate on the item.
     snap-menu := ContextMenuArea {
         Menu {
             MenuItem {
@@ -204,6 +205,11 @@ export component Scrubber {
                 activated => {
                     root.toggle-snap();
                 }
+            }
+            MenuItem {
+                title: "Band colour…";
+                enabled: root.can-open-settings;
+                activated => { root.open-settings(); }
             }
         }
     }

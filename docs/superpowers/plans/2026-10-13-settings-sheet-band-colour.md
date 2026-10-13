@@ -30,7 +30,22 @@ fastest, and each task here moves the lines of the next. Paths are under
   sabotages failed their predicted assertion alone — the `5` row's pen, the
   `"teal"` row's band, the `set(None)` row, and
   `the_settings_are_independent` at its first assertion after the new setter.
-- **3 — the Settings sheet, its two doors, the band and the row.** Not started.
+- **3 — the Settings sheet, its two doors, the band and the row.** Done. All
+  ten sabotages failed where predicted; #8 failed its four tests, the typo test
+  at its "Esc, Esc closed it" assertion, one line before the reopen the plan
+  named, with the same cause. **Census drift (after #92):** the window's
+  `slate-span-from`/`-to` `:4153` → `:4193`, `keys-sheet-open` `:4590` →
+  `:4645`, `close-basket` `:4895` → `:4956`, the Keys branch in `handle-key`
+  `:5007` → `:5066`, the row's background `:5692` → `:5759`, the scrubber
+  instance `:6763` → `:6873` (`toggle-snap` `:6786` → `:6896`), the Keys
+  button `:7159` → `:7270`, the Keys `Scrim` `:7525` → `:7640`; `main.rs`'
+  `wire_snap` `:2710` → `:2760` and its call `:439` → `:440`; `CLAUDE.md`'s
+  counts `:738` → `:749` and `:845` → `:856`; `sheet_scroll.rs`' `:33`/`:45` →
+  `:34`/`:46`. `scrubber.slint` and `snap_menu.rs` had not moved. **One test more
+  than the plan lists:** `a_kit_colour_lands_in_the_settings_field`, which the
+  spec's Testing §2 names. **Not added to `sheet_scroll`'s measurement table**
+  (the sheet heights at the top of `no_sheet_outgrows_the_window`), which records
+  #134's measurement rather than every sheet.
 - **4 — the prose: CLAUDE.md, the guide, BACKLOG, #78's spec.** Not started.
 
 **Shipping: one PR, a commit per task, in order.** No commit puts a control on

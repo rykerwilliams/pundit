@@ -746,7 +746,7 @@ for `MatchSetupSheet`, the one sheet that *wraps* a `Sheet` rather than being
 one (the colour picker's popup hangs off that wrapper). **A sheet's buttons and
 its title scroll with the body**, which is the accepted trade: each sheet puts
 its own action row in `@children`, and a pinned footer would mean a second child
-slot on `Sheet` and an edit to all six. The keyboard is untouched, because
+slot on `Sheet` and an edit to every sheet. The keyboard is untouched, because
 `handle-key` is `capture-key-pressed` and a `Flickable` reads no keys at all.
 One thing it costs a test: `ElementHandle` skips anything clipped away, so a
 button at the bottom of a tall sheet has to be flicked into view before it can
@@ -853,7 +853,7 @@ is ever persisted it is `queue.json` beside `basket.json` and **never** a
   pickers. It is published on every change to the queue and **nowhere else**: a
   project open does not emit it and must never clear the list.
 - **The sheet is the only export UI, and the queue is a section in it** — no
-  eighth `Sheet`. Enqueue has to be where the choices are (a queued job freezes
+  `Sheet` of its own. Enqueue has to be where the choices are (a queued job freezes
   all six plus the ticks), the Run list is already here so a queue run's
   progress costs no new UI, and the section needs no `editing` fold because it
   has no text field. **`Add to queue` is in the action row, not in that
