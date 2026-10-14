@@ -557,8 +557,19 @@ pub(crate) fn read_all(
     channels: usize,
     cancel: &AtomicBool,
 ) -> Result<Vec<f32>, CompositeError> {
+    open_whole(path, rate, channels, cancel)?.rest(cancel)
+}
+
+/// [`Reader::start`] for a caller that wants the whole file: no sound at all
+/// is an error, and so is a file that can't be read, naming it.
+fn open_whole(
+    path: &Path,
+    rate: u32,
+    channels: usize,
+    cancel: &AtomicBool,
+) -> Result<Reader, CompositeError> {
     match Reader::start(path, rate, channels, cancel) {
-        Ok(Some(mut reader)) => reader.rest(cancel),
+        Ok(Some(reader)) => Ok(reader),
         Ok(None) => Err(CompositeError::Failed(format!(
             "{} has no sound",
             path.display()
@@ -569,6 +580,74 @@ pub(crate) fn read_all(
         ))),
         Err(cancelled) => Err(cancelled),
     }
+}
+
+/// What [`inspect_audio`] found: how long the file really is, and the
+/// extension its container calls for.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AudioFile {
+    /// Decoded samples over the rate: what the mixer will get, not what a
+    /// header claims.
+    pub seconds: f64,
+    /// One of `music`'s extensions, from [`CONTAINERS`].
+    pub extension: &'static str,
+}
+
+/// The rate [`inspect_audio`] decodes at. Only the count of samples is wanted,
+/// so it is low and mono: a ten-minute track is 4.8 M samples, about 19 MB,
+/// held for the moment it takes to count them.
+const INSPECT_RATE: u32 = 8_000;
+
+/// The element that names a file's container, and the extension it calls for,
+/// **in precedence order**: the first one `decodebin3` plugged wins. Tag
+/// demuxers (`id3demux`), other parsers and the decoders are not on it, so an
+/// ID3-tagged MP3 — `id3demux` then `mpegaudioparse` — is an `mp3`, and an M4A
+/// whose `qtdemux` feeds an `aacparse` is an `m4a`. Measured on 1.24.2 (BACKLOG
+/// #84 spec S7).
+const CONTAINERS: [(&str, &str); 5] = [
+    ("qtdemux", "m4a"),
+    ("oggdemux", "ogg"),
+    ("wavparse", "wav"),
+    ("flacparse", "flac"),
+    ("mpegaudioparse", "mp3"),
+];
+
+/// A fetched file checked the only honest way, by decoding all of it, and its
+/// container named from what decoding it plugged (BACKLOG #84 spec S7).
+///
+/// **A full decode, not a duration query**: a parser's estimate is not what the
+/// mixer will get, and this is. **The container comes from the same pass** —
+/// after [`Reader::start`] has prerolled, a walk of the pipeline lists what
+/// `decodebin3` plugged — so no separate `typefind` runs. A file with no sound,
+/// one nothing could decode (an HTML page served as `200`), or one in no
+/// container [`CONTAINERS`] names is refused.
+///
+/// **On a worker thread, never the UI's or the bus's**, as [`read_all`] is.
+pub fn inspect_audio(path: &Path, cancel: &AtomicBool) -> Result<AudioFile, CompositeError> {
+    let mut reader = open_whole(path, INSPECT_RATE, 1, cancel)?;
+    let plugged: Vec<String> = reader
+        .pipeline
+        .iterate_recurse()
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter_map(|element| element.factory())
+        .map(|factory| factory.name().to_string())
+        .collect();
+    let Some(&(_, extension)) = CONTAINERS
+        .iter()
+        .find(|(element, _)| plugged.iter().any(|p| p == element))
+    else {
+        return Err(CompositeError::Failed(format!(
+            "{} is in no container pundit reads (plugged: {})",
+            path.display(),
+            plugged.join(", ")
+        )));
+    };
+    let samples = reader.rest(cancel)?;
+    Ok(AudioFile {
+        seconds: samples.len() as f64 / f64::from(INSPECT_RATE),
+        extension,
+    })
 }
 
 /// Records `pipeline`'s first `ERROR` and its stream collection, and drops
@@ -602,6 +681,48 @@ fn install(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The three containers a fetched song most often comes in are named, and
+    /// measured to within a tenth of a second — the MP3 ID3-tagged, as a real
+    /// download is, so `id3demux` sits ahead of the parser that names it.
+    #[test]
+    fn inspect_names_ogg_mp3_and_wav() {
+        use crate::fixtures::{audio_file, AudioEncoder};
+        gst::init().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        for (encoder, extension) in [
+            (AudioEncoder::Ogg, "ogg"),
+            (AudioEncoder::Mp3, "mp3"),
+            (AudioEncoder::Wav, "wav"),
+        ] {
+            // No extension on disk, as a `.part` has none: the name proves
+            // nothing.
+            let path = audio_file(&dir.path().join(extension), encoder, 3);
+            let file = inspect_audio(&path, &AtomicBool::new(false))
+                .unwrap_or_else(|e| panic!("{encoder:?}: {e}"));
+            assert_eq!(file.extension, extension, "{encoder:?}");
+            assert!(
+                (file.seconds - 3.0).abs() < 0.1,
+                "{encoder:?} decoded to {} s",
+                file.seconds
+            );
+        }
+    }
+
+    /// A page served where a song was expected is not one.
+    #[test]
+    fn an_html_page_is_not_audio() {
+        gst::init().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".id.part");
+        std::fs::write(
+            &path,
+            "<!DOCTYPE html>\n<html><head><title>Not found</title></head>\
+             <body><p>This track is no longer available.</p></body></html>\n",
+        )
+        .unwrap();
+        inspect_audio(&path, &AtomicBool::new(false)).expect_err("an HTML page");
+    }
 
     #[test]
     fn a_block_covers_its_output_frame_less_the_priming_head() {

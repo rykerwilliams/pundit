@@ -45,8 +45,25 @@ Paths are from the repository root; `core`, `media`, `app` and `harness` mean
     on the parse they failed 2.4 too. Sabotage 4 is "`rank` does nothing":
     `rank` takes a slice, so it cannot filter.
   All eight sabotages then failed exactly the named test.
-- **3 — media: `get`, `inspect_audio` and the fixture server's body.** Not
-  started.
+- **3 — media: `get`, `inspect_audio` and the fixture server's body.** Done;
+  §A's task 3 sites unchanged at `4d43df9`, and the 11 outside `Answer::`
+  callers needed no edit under `Clone`. Measured on 1.24.2 while writing it:
+  - the walk plugs `oggdemux` (Ogg), `id3demux` + `mpegaudioparse` (the
+    ID3-tagged MP3) and `wavparse` (WAV), as spec S7 says; the 3 s fixtures
+    decode to 3.000, 3.024 and 3.000 s;
+  - **an HTML page is "has no sound"** (`Reader::start`'s `Ok(None)`), not an
+    error from `decodebin3`: refused either way;
+  - a 429 carries `http-status-code=429`; the cut body's error carries `200`;
+  - **a `Stall` ends 1.1 s in with the cut body's error**, not a timeout of
+    its own: after the 1 s read timeout `souphttpsrc` retries with a Range
+    request, which the fixture answers `200`. So 3.3 asserts the time only —
+    asserting `Failed` there made sabotage 1 fail it as well as 3.4.
+  - `GetError` is a `thiserror` enum; `read_all` and `inspect_audio` share a
+    private `open_whole` (start, refusing no sound), so `inspect_audio` is
+    that, the walk, then `rest`. Its tests are `composite::audio`'s unit
+    tests, in the lib binary, rather than a new test binary.
+  Sabotages 1–4 each failed exactly the named test (2 took 15.4 s, the
+  default timeout).
 - **4 — app: `music_search.rs` and the default folder.** Not started.
 - **5 — the Find music sheet, its keys, the wiring and the prose.** Not started.
 

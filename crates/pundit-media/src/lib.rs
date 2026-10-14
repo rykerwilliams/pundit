@@ -24,6 +24,7 @@ pub use capture::{
     Recorder, RecorderMessage, StopOutcome, LEVEL_INTERVAL_NS,
 };
 pub use chapters::ChapterOutcome;
+pub use composite::audio::{inspect_audio, AudioFile};
 pub use composite::avatar::{decode_still, drawn as avatar_drawn, Drawn, Still};
 pub use composite::copy::can_copy;
 pub use composite::decode::Picture;
@@ -33,7 +34,7 @@ pub use composite::export::{
 };
 pub use composite::preview::{Preview, PreviewJob, PreviewMessage, PreviewPosition, PreviewStats};
 pub use composite::{frame_times, Gl};
-pub use download::{download, Fetch};
+pub use download::{download, get, Fetch, GetError};
 pub use mailbox::{Frame, FrameMailbox};
 pub use overlay::{ScoreboardImage, ScoreboardRenderer};
 pub use player::{

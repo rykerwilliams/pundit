@@ -13,6 +13,9 @@
 //! path is ever less than the whole file, so "is the model there" stays one
 //! `is_file`.
 //!
+//! [`get`] is the same transport into memory, for what has no digest to check
+//! — a page of search results, a fetched song (BACKLOG #84 phase 2).
+//!
 //! **Network facts, measured for the spec and not handled here:**
 //! `souphttpsrc` gives up on a read after 15 s and retries 3 times, and the
 //! CDN's signed URL expires about an hour after issue — which only matters
@@ -27,6 +30,8 @@ use std::sync::Mutex;
 use gstreamer as gst;
 use gstreamer::glib;
 use gstreamer::prelude::*;
+use gstreamer_app as gst_app;
+use pundit_core::metadata::APP_NAME;
 
 use crate::composite::{CompositeError, Stopper};
 
@@ -163,7 +168,7 @@ fn fetch_to(
 
     let failed = |err: Option<&gst::message::Error>| {
         CompositeError::Failed(match err {
-            Some(err) => unreachable_or(fetch, err),
+            Some(err) => unreachable_or(&fetch.url, err),
             None => format!("could not download {}: it would not start", fetch.url),
         })
     };
@@ -214,18 +219,138 @@ fn fetch_to(
 /// the server or the disk causes — a 404, a 403, a full disk — is posted
 /// first, with a reason of its own, and is passed through. The raw error goes
 /// to stderr either way.
-fn unreachable_or(fetch: &Fetch, err: &gst::message::Error) -> String {
+fn unreachable_or(url: &str, err: &gst::message::Error) -> String {
     let raw = crate::error_text(err);
     if !err.error().matches(gst::StreamError::Failed) {
-        return format!("could not download {}: {raw}", fetch.url);
+        return format!("could not download {url}: {raw}");
     }
-    eprintln!("download: {}: {raw}", fetch.url);
-    let host = fetch
-        .url
+    eprintln!("download: {url}: {raw}");
+    let host = url
         .split_once("://")
         .and_then(|(_, rest)| rest.split(['/', ':']).next())
-        .unwrap_or(&fetch.url);
+        .unwrap_or(url);
     format!("could not reach {host} — check the internet connection")
+}
+
+/// How long [`get`] waits on any one read before giving up — `souphttpsrc`'s
+/// own `timeout`, which bounds each read and not the whole transfer, so a slow
+/// but moving one is never cut off. One second under test, where a stall is
+/// the thing being waited out.
+#[cfg(not(test))]
+const GET_TIMEOUT_SECONDS: u32 = 20;
+#[cfg(test)]
+const GET_TIMEOUT_SECONDS: u32 = 1;
+
+/// Why [`get`] returned no body.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum GetError {
+    /// The server answered with this HTTP status, 400 or more — read from the
+    /// error's `http-status-code` detail, never from its text.
+    #[error("the server answered {0}")]
+    Status(u16),
+    /// Anything else: offline, a refused connection, a body cut short, a body
+    /// over the limit. Worded for the coach.
+    #[error("{0}")]
+    Failed(String),
+    #[error("cancelled")]
+    Cancelled,
+}
+
+/// The body at `url`, whole, into memory — never more than `limit` bytes.
+///
+/// ```text
+/// souphttpsrc location=<url> user-agent=pundit/<version> iradio-mode=false
+///             timeout=<GET_TIMEOUT_SECONDS> ! appsink
+/// ```
+///
+/// [`download`]'s transport, for what has no length or digest to check it by:
+/// a page of search results, a fetched song. The loop is the same bus-driven
+/// one, with the cancel looked at between pulls and the bytes counted as they
+/// arrive, so `limit` holds against a server that sends for ever.
+///
+/// **There is no length check of its own.** A body short of its
+/// `Content-Length` is `souphttpsrc`'s to catch, and it does: it tries to
+/// resume with a Range request, and a server that answers that with a `200`
+/// gets *"Server does not support seeking."* (measured on 1.24.2), which is
+/// [`GetError::Failed`]. **An HTTP status is read from the error's
+/// structured details**, `http-status-code`, and only from 400 up: that short
+/// body's error carries `200`.
+pub fn get(url: &str, limit: usize, cancel: &AtomicBool) -> Result<Vec<u8>, GetError> {
+    let make = |factory: &str| {
+        gst::ElementFactory::make(factory)
+            .build()
+            .map_err(|e| GetError::Failed(format!("{factory} is missing: {e}")))
+    };
+    let src = make("souphttpsrc")?;
+    src.set_property("location", url);
+    src.set_property(
+        "user-agent",
+        format!("{APP_NAME}/{}", env!("CARGO_PKG_VERSION")),
+    );
+    src.set_property("iradio-mode", false);
+    src.set_property("timeout", GET_TIMEOUT_SECONDS);
+    let sink = gst_app::AppSink::builder()
+        .sync(false)
+        .max_buffers(16)
+        .enable_last_sample(false)
+        .build();
+    let pipeline = gst::Pipeline::new();
+    pipeline
+        .add_many([&src, sink.upcast_ref()])
+        .expect("add the fetch elements");
+    src.link(&sink).expect("link souphttpsrc to appsink");
+    let pipeline = Stopper(pipeline);
+    let bus = pipeline.bus().expect("a pipeline has a bus");
+
+    let failed = |err: &gst::message::Error| {
+        let status = err
+            .details()
+            .and_then(|d| d.get::<u32>("http-status-code").ok())
+            .and_then(|code| u16::try_from(code).ok())
+            .filter(|&code| code >= 400);
+        match status {
+            Some(code) => GetError::Status(code),
+            None => GetError::Failed(unreachable_or(url, err)),
+        }
+    };
+    let first_error = |bus: &gst::Bus| {
+        bus.pop_filtered(&[gst::MessageType::Error])
+            .and_then(|msg| match msg.view() {
+                gst::MessageView::Error(err) => Some(failed(err)),
+                _ => None,
+            })
+    };
+    if pipeline.set_state(gst::State::Playing).is_err() {
+        return Err(first_error(&bus).unwrap_or_else(|| {
+            GetError::Failed(format!("could not download {url}: it would not start"))
+        }));
+    }
+    let mut body = Vec::new();
+    loop {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(GetError::Cancelled);
+        }
+        if let Some(sample) = sink.try_pull_sample(POLL) {
+            if let Some(map) = sample.buffer().and_then(|b| b.map_readable().ok()) {
+                body.extend_from_slice(&map);
+            }
+            if body.len() > limit {
+                return Err(GetError::Failed(format!(
+                    "{url} is larger than the {limit} bytes pundit will fetch"
+                )));
+            }
+            continue;
+        }
+        // Starved for a whole poll: the end, a failure, or a slow server. An
+        // `ERROR` is posted before the source's EOS reaches the sink, so it is
+        // looked for first.
+        if let Some(error) = first_error(&bus) {
+            return Err(error);
+        }
+        if sink.is_eos() {
+            return Ok(body);
+        }
+    }
 }
 
 /// Whether `part` is the file `fetch` describes, as it will be at `dest`:
@@ -469,6 +594,97 @@ mod tests {
             "{message}"
         );
         assert!(!part_path(&dest).exists(), "the .part survived");
+    }
+
+    fn body(len: usize) -> Arc<[u8]> {
+        (0..len).map(|i| (i % 253) as u8).collect()
+    }
+
+    #[test]
+    fn get_returns_the_body() {
+        gst::init().unwrap();
+        let sent = body(300_000);
+        let got = get(
+            &server(Answer::Body(sent.clone())),
+            1 << 20,
+            &AtomicBool::new(false),
+        )
+        .expect("the body");
+        assert!(*got == *sent, "{} bytes back of {}", got.len(), sent.len());
+    }
+
+    #[test]
+    fn get_refuses_past_its_limit() {
+        gst::init().unwrap();
+        let error = get(&server(Answer::Whole), 512 << 10, &AtomicBool::new(false))
+            .expect_err("a 1 MB body under a 512 KB limit");
+        assert!(
+            matches!(&error, GetError::Failed(why) if why.contains("larger than")),
+            "{error:?}"
+        );
+    }
+
+    /// A transfer that stops mid-way is given up on at `souphttpsrc`'s own
+    /// read timeout — a second under test — and not left to hang. Measured on
+    /// 1.24.2, 1.1 s: the timeout, then a Range request this server answers
+    /// with a `200`, which is [`a_short_body_is_an_error`]'s error. Only the
+    /// time is asserted here; what the error is belongs to that test.
+    #[test]
+    fn get_gives_up_on_a_stall() {
+        gst::init().unwrap();
+        let begun = std::time::Instant::now();
+        get(&server(Answer::Stall), 4 << 20, &AtomicBool::new(false))
+            .expect_err("a stalled transfer");
+        let took = begun.elapsed();
+        assert!(took < Duration::from_secs(10), "gave up after {took:?}");
+    }
+
+    /// **A body short of its `Content-Length` is an error**, and not an HTTP
+    /// status: `souphttpsrc` tries to resume it with a Range request, gets a
+    /// `200`, and says *"Server does not support seeking"* with
+    /// `http-status-code=200` (measured on 1.24.2).
+    #[test]
+    fn a_short_body_is_an_error() {
+        gst::init().unwrap();
+        let sent = body(100_000);
+        let result = get(
+            &server(Answer::Cut(sent.clone(), sent.len() / 2)),
+            1 << 20,
+            &AtomicBool::new(false),
+        );
+        assert!(matches!(result, Err(GetError::Failed(_))), "{result:?}");
+    }
+
+    #[test]
+    fn get_reads_the_status_from_the_details() {
+        gst::init().unwrap();
+        assert_eq!(
+            get(
+                &server(Answer::Status("429 Too Many Requests")),
+                1 << 20,
+                &AtomicBool::new(false),
+            ),
+            Err(GetError::Status(429))
+        );
+    }
+
+    #[test]
+    fn get_cancels() {
+        gst::init().unwrap();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let url = server(Answer::Stall);
+        let run = std::thread::spawn({
+            let cancel = cancel.clone();
+            move || {
+                let begun = std::time::Instant::now();
+                (get(&url, 4 << 20, &cancel), begun.elapsed())
+            }
+        });
+        std::thread::sleep(Duration::from_millis(500));
+        cancel.store(true, Ordering::SeqCst);
+        let (result, took) = run.join().unwrap();
+        assert_eq!(result, Err(GetError::Cancelled));
+        assert!(took < Duration::from_secs(2), "cancelled after {took:?}");
     }
 
     /// **Downloads take turns, process-wide.** The second waits while the
