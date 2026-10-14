@@ -43,7 +43,7 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_video as gst_video;
-use pundit_core::audio::{Region, AUDIO_SAMPLE_RATE};
+use pundit_core::audio::{Region, Track, AUDIO_SAMPLE_RATE};
 use pundit_core::chapters::chapter_list;
 use pundit_core::cues::{cues_to_srt, Cue};
 use pundit_core::export::{Compilation, OUTPUT_FPS};
@@ -229,6 +229,12 @@ impl MatchMedia {
 
 /// What a running export reports, on its own thread.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "at most a hundred progress messages and one `Finished` per target, \
+              each moved once over a channel; boxing the result would buy \
+              nothing and cost every reader a deref"
+)]
 pub enum ExportMessage {
     /// Output frames pushed so far, sent each time the whole percent of them
     /// changes.
@@ -263,6 +269,10 @@ pub struct ExportDone {
     /// plan's chapters make no list YouTube would read (a stale one is then
     /// removed), or the write failed, which is reported and never fatal.
     pub chapter_list: Option<PathBuf>,
+    /// The music's credit written beside the file (BACKLOG #84 spec C3), or
+    /// `None` — no music, no credit beside it (a stale one is then removed),
+    /// or the write failed, which is reported and never fatal.
+    pub credits: Option<PathBuf>,
     /// What was left of the `moov` reserve at EOS, for the log line: see
     /// [`reserve_remaining`].
     pub reserve_remaining: f64,
@@ -464,7 +474,7 @@ fn run(
     result
 }
 
-/// The chapters, the rename, then the sidecar: what every renderer owes once
+/// The chapters, the rename, then the sidecars: what every renderer owes once
 /// its file is written.
 fn finish(job: &ExportJob, part: &Path, rendered: Rendered) -> Result<ExportDone, ExportError> {
     // A skip keeps the file whole and is only reported. An I/O error may
@@ -487,6 +497,7 @@ fn finish(job: &ExportJob, part: &Path, rendered: Rendered) -> Result<ExportDone
         chapters,
         sidecar: write_sidecar(job),
         chapter_list: write_chapter_list(job),
+        credits: write_credits(job),
         reserve_remaining: rendered.reserve_remaining,
     })
 }
@@ -569,6 +580,66 @@ fn write_chapter_list(job: &ExportJob) -> Option<PathBuf> {
         Err(e) => {
             eprintln!(
                 "export: could not write the chapter list {}: {e}",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+/// Where a track's credit lives: `<the track's file name>.credit.txt`, in the
+/// same folder — `Song — Artist.mp3.credit.txt` (BACKLOG #84 spec C1). **The one
+/// sibling-name rule**: the Find music sheet writes it and [`write_credits`]
+/// reads it. The whole file name rather than the stem, so two tracks of one
+/// name in two formats keep a credit each, and `.txt` keeps it out of the music
+/// listing by construction.
+pub fn credit_beside(music: &Path) -> PathBuf {
+    let mut name = music.file_name().unwrap_or_default().to_owned();
+    name.push(".credit.txt");
+    music.with_file_name(name)
+}
+
+/// The music's credit beside the finished file: the text of
+/// [`credit_beside`] the run's music track, at `<output>.credits.txt`
+/// (BACKLOG #84 spec C3).
+///
+/// **Read at render time**, beside the music the mixer is reading, so the song
+/// and its credit are one fact: a queued job whose song was swapped before it
+/// ran credits the song it mixes. Media knows nothing about catalogues or
+/// licences; it copies a text file named after a file it already reads.
+///
+/// **A name of ours, so no credit removes a stale one** — a copy, a target
+/// with no music, or a song with no credit beside it (a coach's own track).
+/// Otherwise a reel re-exported with Music: None would keep the old song's
+/// credit beside it. A missing credit is never a refusal.
+///
+/// **A failure is reported, never fatal**, and like the chapter list it runs
+/// only after the rename, so a cancelled or failed run neither writes nor
+/// removes anything.
+fn write_credits(job: &ExportJob) -> Option<PathBuf> {
+    let path = job.path.with_extension("credits.txt");
+    let music = match &job.render {
+        Render::Encode(encode) => encode.audio.iter().find_map(|r| match &r.track {
+            Track::Music(music) => Some(music),
+            _ => None,
+        }),
+        Render::Copy { .. } => None,
+    };
+    let Some(text) = music.and_then(|m| std::fs::read(credit_beside(m)).ok()) else {
+        match std::fs::remove_file(&path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => eprintln!(
+                "export: could not remove the old credits {}: {e}",
+                path.display()
+            ),
+            _ => {}
+        }
+        return None;
+    };
+    match std::fs::write(&path, text) {
+        Ok(()) => Some(path),
+        Err(e) => {
+            eprintln!(
+                "export: could not write the credits {}: {e}",
                 path.display()
             );
             None

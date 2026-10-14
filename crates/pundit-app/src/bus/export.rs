@@ -49,8 +49,8 @@ use pundit_core::scoreboard::ScoreboardContext;
 use pundit_core::store::{BACKDROPS_DIRNAME, EXPORTS_DIRNAME, RECORDINGS_DIRNAME};
 use pundit_core::tag::tag_summaries;
 use pundit_media::{
-    ClipMedia, Encode, EntryMedia, ExportDone, ExportError, ExportJob, ExportMessage, Exporter,
-    MatchMedia, Picture, Render,
+    credit_beside, ClipMedia, Encode, EntryMedia, ExportDone, ExportError, ExportJob,
+    ExportMessage, Exporter, MatchMedia, Picture, Render,
 };
 use uuid::Uuid;
 
@@ -251,7 +251,7 @@ impl Active {
                 eprintln!(
                     "bus: exported {}: {} frames in {seconds:.1} s ({:.1} fps), \
                      decoder {:?}, glupload caps {:?}, encoder {}, chapters {:?}, \
-                     sidecar {:?}, chapter list {:?}, moov reserve left {:.1} s",
+                     sidecar {:?}, chapter list {:?}, credits {:?}, moov reserve left {:.1} s",
                     done.path.display(),
                     target.frames,
                     target.frames as f64 / seconds,
@@ -261,6 +261,7 @@ impl Active {
                     done.chapters,
                     done.sidecar,
                     done.chapter_list,
+                    done.credits,
                     done.reserve_remaining
                 );
                 TargetState::Done(done.path)
@@ -1220,7 +1221,27 @@ fn reel_music(
         return refused(format!("there is no {genre} music in {}", folder.display()));
     }
     let seed = project.file_name().unwrap_or_default().to_string_lossy();
-    Ok(Some(tracks[music_index(&seed, side, tracks.len())].clone()))
+    let track = tracks[music_index(&seed, side, tracks.len())].clone();
+    // A fetched track's credit is keyed by its file name, so a renamed one
+    // loses it and the reel goes out without its CC BY attribution (spec C3,
+    // Risk 3). Only said, never refused: a coach's own tracks have no credit
+    // either, and refusing would turn them into a false alarm.
+    if !credit_beside(&track).exists() && holds_a_credit(&folder.join(genre)) {
+        eprintln!(
+            "bus: {} has no credit beside it, but its folder holds some — a renamed track?",
+            track.display()
+        );
+    }
+    Ok(Some(track))
+}
+
+/// Whether `dir` holds any `*.credit.txt` — the sign that Find music filled it.
+fn holds_a_credit(dir: &Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|entries| {
+        entries
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().ends_with(".credit.txt"))
+    })
 }
 
 /// The job that renders `target` as `label`, or why it can't run.

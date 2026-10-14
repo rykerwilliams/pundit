@@ -16,7 +16,14 @@ Paths are from the repository root; `core`, `media`, `app` and `harness` mean
 
 ## Where this stands (update it as tasks land)
 
-- **1 — the credit beside the reel, read at render time.** Not started.
+- **1 — the credit beside the reel, read at render time.** Done. Census
+  re-taken at `4d43df9` (after #131/#94): every task 1 site in §A still at its
+  line. **One addition:** `ExportDone` grew past clippy 1.92's
+  `large_enum_variant` threshold inside `ExportMessage::Finished` (216 bytes);
+  it takes the same reasoned `#[allow]` `Render` already carries, rather than a
+  `Box` every reader would deref. `credit_beside` is re-exported from
+  `pundit_media` for task 4 and `reel_music`. Sabotages 1–3 each failed exactly
+  the tests the plan named.
 - **2 — core: the query, the parse, the licence words, the credit and the stem
   rule.** Not started.
 - **3 — media: `get`, `inspect_audio` and the fixture server's body.** Not
