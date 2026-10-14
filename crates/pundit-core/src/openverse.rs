@@ -26,7 +26,35 @@ use crate::naming;
 /// - **BY-SA is out by the coach's decision (2026-10-13)**: ShareAlike would
 ///   make the reel itself CC BY-SA — footage of identifiable players, released
 ///   for anyone to reuse commercially. That is the club's call, not a default.
-pub const LICENCES: [&str; 3] = ["cc0", "pdm", "by"];
+pub const LICENCES: [Licence; 3] = [Licence::Cc0, Licence::Pdm, Licence::By];
+
+/// A licence a reel's music may carry: one of [`LICENCES`], and nothing else
+/// is representable — a row under any other is dropped as it is parsed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Licence {
+    /// CC0, the public-domain dedication.
+    Cc0,
+    /// The public-domain mark.
+    Pdm,
+    /// CC BY, which asks for credit.
+    By,
+}
+
+impl Licence {
+    /// Openverse's own name for it, in the query and in a result.
+    pub fn as_param(self) -> &'static str {
+        match self {
+            Licence::Cc0 => "cc0",
+            Licence::Pdm => "pdm",
+            Licence::By => "by",
+        }
+    }
+
+    /// The licence Openverse's `license` names, if it is one of [`LICENCES`].
+    fn parse(license: &str) -> Option<Licence> {
+        LICENCES.into_iter().find(|l| l.as_param() == license)
+    }
+}
 
 /// How many characters of the genre reach `q`, the API's own bound.
 pub const MAX_QUERY_CHARS: usize = 200;
@@ -50,7 +78,7 @@ pub fn search_url(base: &str, genre: &str) -> String {
     format!(
         "{base}audio/?q={}&category=music&length=medium&license={}&mature=false&page_size={PAGE_SIZE}",
         encode(&q),
-        LICENCES.join(","),
+        LICENCES.map(Licence::as_param).join(","),
     )
 }
 
@@ -79,12 +107,14 @@ pub struct Candidate {
     pub title: String,
     /// On one line, or [`UNKNOWN_ARTIST`].
     pub creator: String,
-    /// One of [`LICENCES`].
-    pub license: String,
+    pub license: Licence,
     pub license_version: Option<String>,
-    /// As the catalogue gives it; [`licence_url`] builds one when it is absent.
+    /// As the catalogue gives it, on one line; [`licence_url`] builds one when
+    /// it is absent or blank.
     pub license_url: Option<String>,
-    /// The track's page at its source, which the credit links.
+    /// The track's page at its source, which the credit links — on one line,
+    /// and `None` when the catalogue's is blank, so a credit never has an
+    /// empty line.
     pub landing_url: Option<String>,
     /// The file.
     pub url: String,
@@ -92,12 +122,6 @@ pub struct Candidate {
     pub seconds: f64,
     pub genres: Vec<String>,
 }
-
-/// Why a page could not be read at all. A row that can't be read is dropped,
-/// never this.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{0}")]
-pub struct ParseError(String);
 
 /// The fields of a result the app reads, and only those, so a field added
 /// upstream costs nothing.
@@ -126,9 +150,10 @@ struct Page {
 /// A row is **dropped** — never shown greyed — when it has no `id`, no `url` or
 /// no `duration` (an Add measures against it), a title that is blank on one
 /// line, a licence outside [`LICENCES`], or a field of the wrong type. A
-/// missing `creator` reads as [`UNKNOWN_ARTIST`].
-pub fn results(json: &str) -> Result<Vec<Candidate>, ParseError> {
-    let page: Page = serde_json::from_str(json).map_err(|e| ParseError(e.to_string()))?;
+/// missing `creator` reads as [`UNKNOWN_ARTIST`]. `Err` is a page that cannot
+/// be read at all; a row that can't be read is dropped, never this.
+pub fn results(json: &str) -> Result<Vec<Candidate>, serde_json::Error> {
+    let page: Page = serde_json::from_str(json)?;
     Ok(page
         .results
         .into_iter()
@@ -137,10 +162,7 @@ pub fn results(json: &str) -> Result<Vec<Candidate>, ParseError> {
 }
 
 fn candidate(row: Row) -> Option<Candidate> {
-    let license = row.license?;
-    if !LICENCES.contains(&license.as_str()) {
-        return None;
-    }
+    let license = Licence::parse(&row.license?)?;
     let title = naming::one_line(&row.title?);
     if title.is_empty() {
         return None;
@@ -156,12 +178,17 @@ fn candidate(row: Row) -> Option<Candidate> {
         creator,
         license,
         license_version: row.license_version,
-        license_url: row.license_url,
-        landing_url: row.foreign_landing_url,
+        license_url: one_line(row.license_url),
+        landing_url: one_line(row.foreign_landing_url),
         url: row.url?,
         seconds: row.duration? / 1000.0,
         genres: row.genres.unwrap_or_default(),
     })
+}
+
+/// A link the catalogue gave, on one line, or `None` where it is blank.
+fn one_line(text: Option<String>) -> Option<String> {
+    text.map(|t| naming::one_line(&t)).filter(|t| !t.is_empty())
 }
 
 /// Rows whose `genres` include `genre` first, then the rest, **each group in
@@ -175,16 +202,15 @@ pub fn rank(candidates: &mut [Candidate], genre: &str) {
 
 /// A licence in words, for the sheet's row and the credit alike:
 /// `CC BY 4.0`, `Public domain (CC0 1.0)`, `Public domain`.
-pub fn licence_words(license: &str, version: Option<&str>) -> String {
+pub fn licence_words(licence: Licence, version: Option<&str>) -> String {
     let versioned = |name: &str| match version {
         Some(v) => format!("{name} {v}"),
         None => name.to_owned(),
     };
-    match license {
-        "by" => versioned("CC BY"),
-        "cc0" => format!("Public domain ({})", versioned("CC0")),
-        "pdm" => "Public domain".to_owned(),
-        other => versioned(&format!("CC {}", other.to_uppercase())),
+    match licence {
+        Licence::By => versioned("CC BY"),
+        Licence::Cc0 => format!("Public domain ({})", versioned("CC0")),
+        Licence::Pdm => "Public domain".to_owned(),
     }
 }
 
@@ -193,22 +219,22 @@ pub fn licence_words(license: &str, version: Option<&str>) -> String {
 /// (`creativecommons.org/licenses/by/<v>/`, and the `publicdomain/` forms for
 /// CC0 and the mark).
 pub fn licence_url(candidate: &Candidate) -> String {
-    if let Some(url) = candidate.license_url.as_deref().filter(|u| !u.is_empty()) {
-        return url.to_owned();
+    if let Some(url) = &candidate.license_url {
+        return url.clone();
     }
     let version = candidate.license_version.as_deref();
-    match candidate.license.as_str() {
-        "cc0" => format!(
+    match candidate.license {
+        Licence::Cc0 => format!(
             "https://creativecommons.org/publicdomain/zero/{}/",
             version.unwrap_or("1.0")
         ),
-        "pdm" => format!(
+        Licence::Pdm => format!(
             "https://creativecommons.org/publicdomain/mark/{}/",
             version.unwrap_or("1.0")
         ),
-        other => match version {
-            Some(v) => format!("https://creativecommons.org/licenses/{other}/{v}/"),
-            None => format!("https://creativecommons.org/licenses/{other}/"),
+        Licence::By => match version {
+            Some(v) => format!("https://creativecommons.org/licenses/by/{v}/"),
+            None => "https://creativecommons.org/licenses/by/".to_owned(),
         },
     }
 }

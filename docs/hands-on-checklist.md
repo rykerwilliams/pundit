@@ -212,7 +212,7 @@ Needs the internet. Use a project with goals tagged, tick a goals reel in **Expo
 
 - [ ] **[must work] Search.** Press **Find music…** on the Music row, type `rock` and press **Search**. **Right:** up to twenty rows, rock-tagged ones first, every licence reading CC BY or Public domain, and the line saying the search is by Openverse.
 - [ ] **[must work] Add.** Press **Add** on one. **Right:** the row says *Adding…* and the other Add buttons grey out, then it reads *In rock*. `~/Music/pundit/rock/` holds the song and a `.credit.txt` beside it, and **Folder…** now remembers that folder.
-- [ ] **[must work] Close picks it.** Close Find music. **Right:** the Music picker reads `rock`. Export the reel. **Right:** it has the song, and `<reel>.credits.txt` beside it names the song, its page and its licence, with "(edited and mixed under the footage)".
+- [ ] **[must work] The Add picks it.** Close Find music. **Right:** the Music picker already reads `rock`. Export the reel. **Right:** it has the song, and `<reel>.credits.txt` beside it names the song, its page and its licence, with "(edited and mixed under the footage)".
 - [ ] **Two searches quickly.** Search `rock`, then straight away `jazz`. **Right:** only jazz rows show.
 - [ ] **Close in the middle of an Add.** Close while a row says *Adding…*. **Right:** nothing is left in the folder, not even a hidden `.part` (`ls -a`), and with no folder set before, none is remembered.
 - [ ] **Offline.** Turn the network off and Search. **Right:** the sheet's line says it couldn't reach `api.openverse.org`.

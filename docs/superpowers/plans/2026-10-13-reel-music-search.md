@@ -121,6 +121,26 @@ Paths are from the repository root; `core`, `media`, `app` and `harness` mean
     *Finding music*, the checklist's §15 (the plan's eight manual checks),
     BACKLOG #84 SHIPPED with the PR as `#TODO`.
 
+- **Review fixes (PR #95).** One commit after both code reviews:
+  - **No silent overwrite**: `add` refuses a song whose stem is already in the
+    genre (two rows can share `<title> — <creator>`), and a finished Add
+    recomputes every row's "In <genre>" rather than one row's.
+  - **One sidecar writer** (`beside` in `composite/export.rs`) for the `.srt`,
+    the `.chapters.txt` and the `.credits.txt`.
+  - **One HTTP source** (`http_source`, `first_error` in `download.rs`) for
+    `get` and the model download, which so gains the User-Agent and a 20 s
+    read timeout (it had souphttpsrc's 15 s default). `GetError` is
+    `Unreachable(host)` with the offline words, and `TooLarge(limit)`, which
+    an Add words as *"the track is larger than pundit takes (64 MB)"*.
+  - A successful Add writes `musicGenre` and re-lists the picker at once (spec
+    S6 amended); Close only cancels. A Search clears the last one's rows as it
+    starts. `Genre::resolve` skips hidden folders. Blank page and licence
+    links are `None`. `Licence` is an enum; `results` returns
+    `serde_json::Error`; `MusicRow` is `{id, title, detail, state}`.
+  - The container test now pins all five (FLAC and M4A added: `flacparse`,
+    `qtdemux`, both measured on 1.24.2).
+  - BACKLOG #84 records the renamed-track gap as accepted.
+
 **Shipping: one PR, a commit per task, in order.** Task 1 is now small. It adds
 no `ExportJob` field, so there is no mechanical diff to keep out of the
 feature's review. On its own it would ship a credits file that only a

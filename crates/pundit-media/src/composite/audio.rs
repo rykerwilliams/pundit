@@ -601,9 +601,9 @@ const INSPECT_RATE: u32 = 8_000;
 /// The element that names a file's container, and the extension it calls for,
 /// **in precedence order**: the first one `decodebin3` plugged wins. Tag
 /// demuxers (`id3demux`), other parsers and the decoders are not on it, so an
-/// ID3-tagged MP3 — `id3demux` then `mpegaudioparse` — is an `mp3`, and an M4A
-/// whose `qtdemux` feeds an `aacparse` is an `m4a`. Measured on 1.24.2 (BACKLOG
-/// #84 spec S7).
+/// ID3-tagged MP3 — `id3demux` then `mpegaudioparse` — is an `mp3`. Each of
+/// the five is pinned by `inspect_names_every_container`, on 1.24.2 (BACKLOG
+/// #84 spec S7); the **precedence** is not, since no file there plugs two.
 const CONTAINERS: [(&str, &str); 5] = [
     ("qtdemux", "m4a"),
     ("oggdemux", "ogg"),
@@ -682,11 +682,11 @@ fn install(
 mod tests {
     use super::*;
 
-    /// The three containers a fetched song most often comes in are named, and
-    /// measured to within a tenth of a second — the MP3 ID3-tagged, as a real
-    /// download is, so `id3demux` sits ahead of the parser that names it.
+    /// Every container a fetched song may come in is named, and measured to
+    /// within a tenth of a second — the MP3 ID3-tagged, as a real download is,
+    /// so `id3demux` sits ahead of the parser that names it.
     #[test]
-    fn inspect_names_ogg_mp3_and_wav() {
+    fn inspect_names_every_container() {
         use crate::fixtures::{audio_file, AudioEncoder};
         gst::init().unwrap();
         let dir = tempfile::tempdir().unwrap();
@@ -694,6 +694,8 @@ mod tests {
             (AudioEncoder::Ogg, "ogg"),
             (AudioEncoder::Mp3, "mp3"),
             (AudioEncoder::Wav, "wav"),
+            (AudioEncoder::Flac, "flac"),
+            (AudioEncoder::M4a, "m4a"),
         ] {
             // No extension on disk, as a `.part` has none: the name proves
             // nothing.

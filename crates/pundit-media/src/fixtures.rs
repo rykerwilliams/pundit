@@ -269,8 +269,8 @@ pub fn tone_audio(path: &Path, freq: f64, amplitude: f64, seconds: u32) -> PathB
     )
 }
 
-/// Which container an [`audio_file`] is written in: the three a fetched song
-/// most often comes as.
+/// Which container an [`audio_file`] is written in: each one a fetched song
+/// may come as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioEncoder {
     /// Vorbis in Ogg, as [`tone_audio`] writes.
@@ -280,6 +280,10 @@ pub enum AudioEncoder {
     Mp3,
     /// PCM in WAV.
     Wav,
+    /// FLAC, native.
+    Flac,
+    /// AAC in MP4, as an `.m4a` is.
+    M4a,
 }
 
 /// `seconds` of a 440 Hz tone at `path`, in `encoder`'s container: what a
@@ -292,6 +296,8 @@ pub fn audio_file(path: &Path, encoder: AudioEncoder, seconds: u32) -> PathBuf {
             "taginject tags=\"title=Song,artist=Artist\" ! lamemp3enc ! xingmux ! id3v2mux"
         }
         AudioEncoder::Wav => "wavenc",
+        AudioEncoder::Flac => "flacenc",
+        AudioEncoder::M4a => "avenc_aac ! mp4mux",
     };
     run(
         &format!(

@@ -273,19 +273,23 @@ struct UiState {
     /// The footage's zoom while a whiteboard take shows the diagram at
     /// identity (#138), put back when the take ends.
     footage_zoom: Option<Zoom>,
-    /// Find music (#84 phase 2, spec S3): bumped by each Search and by Close,
-    /// so an answer that comes back to a sheet that has moved on is dropped.
-    /// Only the number crosses into the search's thread.
-    music_generation: u64,
+    /// Find music's (#84 phase 2).
+    music: FindMusic,
+}
+
+/// What the window keeps for Find music (spec S3).
+#[derive(Default)]
+struct FindMusic {
+    /// Bumped by each Search and by Close, and kept across closes, so an
+    /// answer that comes back to a sheet that has moved on is dropped. Only
+    /// the number crosses into the search's thread.
+    generation: u64,
     /// The results on screen and the genre they were searched under, which
     /// is where an Add of one of them lands (spec S5).
-    music_rows: Option<(Genre, Vec<Candidate>)>,
-    /// The genre a track was last added to while the sheet was open, selected
-    /// on Close (spec S6).
-    music_added: Option<String>,
+    rows: Option<(Genre, Vec<Candidate>)>,
     /// The Add in flight's cancel, which Close sets. Also its identity: an
     /// Add's answer touches the sheet only while this is still its own flag.
-    music_cancel: Option<Arc<AtomicBool>>,
+    cancel: Option<Arc<AtomicBool>>,
 }
 
 /// Which file the avatar thumbnail stands for. Not the path: it is always
@@ -359,10 +363,7 @@ impl Default for UiState {
             avatar_shown: None,
             avatar_image: None,
             footage_zoom: None,
-            music_generation: 0,
-            music_rows: None,
-            music_added: None,
-            music_cancel: None,
+            music: FindMusic::default(),
         }
     }
 }
@@ -1449,16 +1450,20 @@ fn wire_find_music(window: &AppWindow, state: &AppFiles) {
                 Ok(genre) => genre,
                 Err(why) => return w.set_find_music_message(why.into()),
             };
+            // The last search's rows go now, not when this one answers: a
+            // search that fails must not leave another genre's Adds live.
             let generation = UI.with_borrow_mut(|ui| {
-                ui.music_generation += 1;
-                ui.music_generation
+                ui.music.generation += 1;
+                ui.music.rows = None;
+                ui.music.generation
             });
+            w.set_find_music_rows(ModelRc::default());
             w.set_find_music_message("Searching…".into());
             let weak = weak.clone();
             std::thread::spawn(move || {
                 let answer = music_search::search(OPENVERSE, &genre);
                 let _ = weak.upgrade_in_event_loop(move |w| {
-                    if UI.with_borrow(|ui| ui.music_generation != generation) {
+                    if UI.with_borrow(|ui| ui.music.generation != generation) {
                         return;
                     }
                     match answer {
@@ -1469,7 +1474,7 @@ fn wire_find_music(window: &AppWindow, state: &AppFiles) {
                                 SharedString::default()
                             });
                             show_music_rows(&w, &folder, &genre, &rows);
-                            UI.with_borrow_mut(|ui| ui.music_rows = Some((genre, rows)));
+                            UI.with_borrow_mut(|ui| ui.music.rows = Some((genre, rows)));
                         }
                         Err(why) => w.set_find_music_message(why.into()),
                     }
@@ -1482,7 +1487,7 @@ fn wire_find_music(window: &AppWindow, state: &AppFiles) {
         move |id| {
             let Some(w) = weak.upgrade() else { return };
             let Some((genre, candidate)) = UI.with_borrow(|ui| {
-                let (genre, rows) = ui.music_rows.as_ref()?;
+                let (genre, rows) = ui.music.rows.as_ref()?;
                 let candidate = rows.iter().find(|c| c.id == id.as_str())?;
                 Some((genre.clone(), candidate.clone()))
             }) else {
@@ -1490,7 +1495,7 @@ fn wire_find_music(window: &AppWindow, state: &AppFiles) {
             };
             let folder = music_folder(&state);
             let cancel = Arc::new(AtomicBool::new(false));
-            UI.with_borrow_mut(|ui| ui.music_cancel = Some(cancel.clone()));
+            UI.with_borrow_mut(|ui| ui.music.cancel = Some(cancel.clone()));
             set_music_row_state(&w, &candidate.id, "Adding…");
             w.set_find_music_adding(true);
             w.set_find_music_message(SharedString::default());
@@ -1499,95 +1504,96 @@ fn wire_find_music(window: &AppWindow, state: &AppFiles) {
                 let landed = music_search::add(&candidate, &folder, &genre, &cancel);
                 let _ = weak.upgrade_in_event_loop(move |w| {
                     if landed.is_ok() {
-                        // Written on success and never before it: a failed
-                        // Add remembers nothing (spec S6).
+                        // On success and never before it: a failed Add
+                        // remembers nothing. The genre is picked at once —
+                        // **needed, not cosmetic**: the bus reads `musicGenre`
+                        // at job build, so an export with the picker untouched
+                        // would otherwise have no music (spec S6).
                         if state.music_folder().is_none() {
                             state.set_music_folder(Some(&folder));
                         }
-                        UI.with_borrow_mut(|ui| ui.music_added = Some(genre.name.clone()));
+                        state.set_music_genre(Some(&genre.name));
+                        show_music(&w, &state);
                     }
                     let mine = UI.with_borrow(|ui| {
-                        ui.music_cancel
+                        ui.music
+                            .cancel
                             .as_ref()
                             .is_some_and(|c| Arc::ptr_eq(c, &cancel))
                     });
                     if !mine {
-                        // The sheet was closed under it. A track that landed
-                        // anyway is selected now, as Close would have.
-                        if landed.is_ok() && !w.get_find_music_open() {
-                            select_added_genre(&w, &state);
-                        }
+                        // Closed under it: the sheet is not this Add's any more.
                         return;
                     }
-                    UI.with_borrow_mut(|ui| ui.music_cancel = None);
+                    UI.with_borrow_mut(|ui| ui.music.cancel = None);
                     w.set_find_music_adding(false);
-                    match landed {
-                        Ok(_) => {
-                            set_music_row_state(&w, &candidate.id, &format!("In {}", genre.name))
-                        }
-                        Err(why) => {
-                            set_music_row_state(&w, &candidate.id, "");
-                            w.set_find_music_message(
-                                format!("Couldn't add \"{}\": {why}", candidate.title).into(),
-                            );
-                        }
+                    if let Err(why) = &landed {
+                        w.set_find_music_message(
+                            format!("Couldn't add \"{}\": {why}", candidate.title).into(),
+                        );
+                    }
+                    // Every row, not the one: another result with the same
+                    // stem is "in" the genre now too.
+                    if let Some((genre, rows)) = UI.with_borrow(|ui| ui.music.rows.clone()) {
+                        show_music_rows(&w, &folder, &genre, &rows);
                     }
                 });
             });
         }
     });
     window.on_find_music_closed({
-        let (weak, state) = (window.as_weak(), state.clone());
+        let weak = window.as_weak();
         move || {
             let Some(w) = weak.upgrade() else { return };
             UI.with_borrow_mut(|ui| {
-                if let Some(cancel) = ui.music_cancel.take() {
+                if let Some(cancel) = ui.music.cancel.take() {
                     cancel.store(true, Ordering::SeqCst);
                 }
-                ui.music_generation += 1;
-                ui.music_rows = None;
+                ui.music.generation += 1;
+                ui.music.rows = None;
             });
             w.set_find_music_adding(false);
             w.set_find_music_rows(ModelRc::default());
-            select_added_genre(&w, &state);
         }
     });
 }
 
-/// The genre a track was last added to, selected in the Music picker (spec
-/// S6) — **needed, not cosmetic**: the bus reads `musicGenre` at job build, so
-/// a coach who added a song and exported without touching the picker would
-/// otherwise get no music. Nothing when nothing was added.
-fn select_added_genre(w: &AppWindow, state: &AppFiles) {
-    if let Some(genre) = UI.with_borrow_mut(|ui| ui.music_added.take()) {
-        state.set_music_genre(Some(&genre));
-        show_music(w, state);
-    }
+/// "In rock": a result already in its genre folder.
+fn in_genre(genre: &Genre) -> SharedString {
+    format!("In {}", genre.name).into()
 }
 
-/// The results as the sheet's rows, each one "In <genre>" from the start if
+/// The results as the sheet's rows, each one [`in_genre`] from the start if
 /// its file is already in the genre folder (spec S8).
 fn show_music_rows(w: &AppWindow, folder: &Path, genre: &Genre, rows: &[Candidate]) {
     let rows: Vec<MusicRow> = rows
         .iter()
-        .map(|c| MusicRow {
-            id: c.id.as_str().into(),
-            title: c.title.as_str().into(),
-            artist: c.creator.as_str().into(),
-            length: format_hms(c.seconds).into(),
-            licence: licence_words(&c.license, c.license_version.as_deref()).into(),
-            genres: c.genres.join(", ").into(),
-            state: if music_search::already_in(folder, genre, &music_search::stem(c)) {
-                format!("In {}", genre.name).into()
-            } else {
-                SharedString::default()
-            },
+        .map(|c| {
+            let mut detail = format!(
+                "{} · {} · {}",
+                c.creator,
+                format_hms(c.seconds),
+                licence_words(c.license, c.license_version.as_deref())
+            );
+            if !c.genres.is_empty() {
+                detail = format!("{detail} · {}", c.genres.join(", "));
+            }
+            MusicRow {
+                id: c.id.as_str().into(),
+                title: c.title.as_str().into(),
+                detail: detail.into(),
+                state: if music_search::already_in(folder, genre, &music_search::stem(c)) {
+                    in_genre(genre)
+                } else {
+                    SharedString::default()
+                },
+            }
         })
         .collect();
     w.set_find_music_rows(ModelRc::new(VecModel::from(rows)));
 }
 
-/// One result's state on screen, found by its id.
+/// One result's state on screen, found by its id: "Adding…" while it is.
 fn set_music_row_state(w: &AppWindow, id: &str, state: &str) {
     let rows = w.get_find_music_rows();
     for i in 0..rows.row_count() {

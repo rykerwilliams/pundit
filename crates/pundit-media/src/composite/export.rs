@@ -516,24 +516,30 @@ fn finish(job: &ExportJob, part: &Path, rendered: Rendered) -> Result<ExportDone
 /// cancelled or failed run neither writes nor removes anything.
 fn write_sidecar(job: &ExportJob) -> Option<PathBuf> {
     let cues = job.cues.as_ref()?;
-    let path = job.path.with_extension("srt");
-    if cues.is_empty() {
+    let text = (!cues.is_empty()).then(|| cues_to_srt(cues));
+    beside(job.path.with_extension("srt"), text, "scoreboard")
+}
+
+/// **The one way a sidecar is written**: `text` at `path`, or — with nothing
+/// to write — any file already there removed, because every sidecar is a name
+/// of ours and a stale one would describe a film that no longer exists. A
+/// failure either way is logged, naming `what`, and never fatal: a good film
+/// is never thrown away over a text file.
+fn beside(path: PathBuf, text: Option<String>, what: &str) -> Option<PathBuf> {
+    let Some(text) = text else {
         match std::fs::remove_file(&path) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => eprintln!(
-                "export: could not remove the old scoreboard {}: {e}",
+                "export: could not remove the old {what} {}: {e}",
                 path.display()
             ),
             _ => {}
         }
         return None;
-    }
-    match std::fs::write(&path, cues_to_srt(cues)) {
+    };
+    match std::fs::write(&path, text) {
         Ok(()) => Some(path),
         Err(e) => {
-            eprintln!(
-                "export: could not write the scoreboard {}: {e}",
-                path.display()
-            );
+            eprintln!("export: could not write the {what} {}: {e}", path.display());
             None
         }
     }
@@ -564,27 +570,11 @@ fn write_sidecar(job: &ExportJob) -> Option<PathBuf> {
 /// after the rename, so a cancelled or failed run neither writes nor removes
 /// anything.
 fn write_chapter_list(job: &ExportJob) -> Option<PathBuf> {
-    let path = job.path.with_extension("chapters.txt");
-    let Some(text) = chapter_list(&job.compilation.plan.chapters) else {
-        match std::fs::remove_file(&path) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => eprintln!(
-                "export: could not remove the old chapter list {}: {e}",
-                path.display()
-            ),
-            _ => {}
-        }
-        return None;
-    };
-    match std::fs::write(&path, text) {
-        Ok(()) => Some(path),
-        Err(e) => {
-            eprintln!(
-                "export: could not write the chapter list {}: {e}",
-                path.display()
-            );
-            None
-        }
-    }
+    beside(
+        job.path.with_extension("chapters.txt"),
+        chapter_list(&job.compilation.plan.chapters),
+        "chapter list",
+    )
 }
 
 /// Where a track's credit lives: `<the track's file name>.credit.txt`, in the
@@ -617,7 +607,6 @@ pub fn credit_beside(music: &Path) -> PathBuf {
 /// only after the rename, so a cancelled or failed run neither writes nor
 /// removes anything.
 fn write_credits(job: &ExportJob) -> Option<PathBuf> {
-    let path = job.path.with_extension("credits.txt");
     let music = match &job.render {
         Render::Encode(encode) => encode.audio.iter().find_map(|r| match &r.track {
             Track::Music(music) => Some(music),
@@ -625,26 +614,8 @@ fn write_credits(job: &ExportJob) -> Option<PathBuf> {
         }),
         Render::Copy { .. } => None,
     };
-    let Some(text) = music.and_then(|m| std::fs::read(credit_beside(m)).ok()) else {
-        match std::fs::remove_file(&path) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => eprintln!(
-                "export: could not remove the old credits {}: {e}",
-                path.display()
-            ),
-            _ => {}
-        }
-        return None;
-    };
-    match std::fs::write(&path, text) {
-        Ok(()) => Some(path),
-        Err(e) => {
-            eprintln!(
-                "export: could not write the credits {}: {e}",
-                path.display()
-            );
-            None
-        }
-    }
+    let text = music.and_then(|m| std::fs::read_to_string(credit_beside(m)).ok());
+    beside(job.path.with_extension("credits.txt"), text, "credits")
 }
 
 fn export(

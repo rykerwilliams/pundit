@@ -1080,7 +1080,7 @@ field and in its paste box alike, both read by `core::match_entry`
   short-lived threads, with each track's credit written beside it before the
   rename that makes the track exist. With no `musicFolder` set, the first
   successful Add writes `~/Music/pundit` (`AppFiles::default_music_folder`);
-  closing the sheet after an Add selects that genre. A fetched track is checked
+  each successful Add selects its genre at once. A fetched track is checked
   by decoding all of it (`media::inspect_audio`) against the catalogue's length,
   and errors are `music_search`'s own words, never GStreamer's.
 - **It holds confirmed goals only** (every goal match event), in match order.

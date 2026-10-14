@@ -393,10 +393,7 @@ fn music_rows(n: usize) -> ModelRc<MusicRow> {
             .map(|i| MusicRow {
                 id: format!("id-{i}").into(),
                 title: format!("Free (rock instrumental) {i}").into(),
-                artist: "Starfish Stories :: The Band".into(),
-                length: "4:25".into(),
-                licence: "CC BY 3.0".into(),
-                genres: "rock, instrumental".into(),
+                detail: "Starfish Stories :: The Band · 4:25 · CC BY 3.0 · rock".into(),
                 state: if i == 0 { "In rock".into() } else { "".into() },
             })
             .collect::<Vec<_>>(),

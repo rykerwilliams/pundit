@@ -3,7 +3,7 @@
 //! real `/v1/audio/` answer. No test here reaches the network.
 
 use pundit_core::openverse::{
-    licence_url, licence_words, rank, results, search_url, Candidate, UNKNOWN_ARTIST,
+    licence_url, licence_words, rank, results, search_url, Candidate, Licence, UNKNOWN_ARTIST,
 };
 
 /// Seven rows from one real answer to `q=rock` (2026-10-13). Four are allowed;
@@ -71,7 +71,7 @@ fn genre_matches_rank_first_in_their_own_order() {
     let row = |id: &str, genres: &[&str]| Candidate {
         id: id.into(),
         genres: genres.iter().map(|g| (*g).to_owned()).collect(),
-        ..candidate("by", Some("3.0"))
+        ..candidate(Licence::By, Some("3.0"))
     };
     let mut rows = vec![
         row(BY_NONE, &[]),
@@ -85,17 +85,20 @@ fn genre_matches_rank_first_in_their_own_order() {
 
 #[test]
 fn licence_words_for_by_cc0_and_pdm() {
-    assert_eq!(licence_words("by", Some("4.0")), "CC BY 4.0");
-    assert_eq!(licence_words("cc0", Some("1.0")), "Public domain (CC0 1.0)");
-    assert_eq!(licence_words("pdm", Some("1.0")), "Public domain");
+    assert_eq!(licence_words(Licence::By, Some("4.0")), "CC BY 4.0");
+    assert_eq!(
+        licence_words(Licence::Cc0, Some("1.0")),
+        "Public domain (CC0 1.0)"
+    );
+    assert_eq!(licence_words(Licence::Pdm, Some("1.0")), "Public domain");
 }
 
-fn candidate(license: &str, version: Option<&str>) -> Candidate {
+fn candidate(license: Licence, version: Option<&str>) -> Candidate {
     Candidate {
         id: "id".into(),
         title: "Song".into(),
         creator: "Artist".into(),
-        license: license.into(),
+        license,
         license_version: version.map(Into::into),
         license_url: None,
         landing_url: None,
@@ -108,21 +111,21 @@ fn candidate(license: &str, version: Option<&str>) -> Candidate {
 #[test]
 fn a_missing_licence_url_is_built_from_licence_and_version() {
     assert_eq!(
-        licence_url(&candidate("by", Some("3.0"))),
+        licence_url(&candidate(Licence::By, Some("3.0"))),
         "https://creativecommons.org/licenses/by/3.0/"
     );
     assert_eq!(
-        licence_url(&candidate("cc0", Some("1.0"))),
+        licence_url(&candidate(Licence::Cc0, Some("1.0"))),
         "https://creativecommons.org/publicdomain/zero/1.0/"
     );
     assert_eq!(
-        licence_url(&candidate("pdm", Some("1.0"))),
+        licence_url(&candidate(Licence::Pdm, Some("1.0"))),
         "https://creativecommons.org/publicdomain/mark/1.0/"
     );
     // The catalogue's own, ported licence included, wins where there is one.
     let ported = Candidate {
         license_url: Some("https://creativecommons.org/licenses/by/2.5/it/".into()),
-        ..candidate("by", Some("2.5"))
+        ..candidate(Licence::By, Some("2.5"))
     };
     assert_eq!(
         licence_url(&ported),
@@ -143,4 +146,22 @@ fn a_title_with_a_newline_is_one_line_and_no_creator_is_unknown_artist() {
     assert_eq!(ids(&rows), ["a"]);
     assert_eq!(rows[0].title, "Line one line two");
     assert_eq!(rows[0].creator, UNKNOWN_ARTIST);
+}
+
+/// A blank link is no link: the credit would otherwise carry an empty line,
+/// or a licence URL of nothing where one could have been built.
+#[test]
+fn a_blank_page_or_licence_link_is_none() {
+    let page = r#"{"results": [
+        {"id": "a", "title": "Song", "license": "by", "license_version": "4.0",
+         "license_url": "  ", "foreign_landing_url": " \n ",
+         "url": "http://x/a", "duration": 150000}
+    ]}"#;
+    let rows = results(page).unwrap();
+    assert_eq!(rows[0].landing_url, None);
+    assert_eq!(rows[0].license_url, None);
+    assert_eq!(
+        licence_url(&rows[0]),
+        "https://creativecommons.org/licenses/by/4.0/"
+    );
 }

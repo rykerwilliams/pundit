@@ -22,15 +22,20 @@ use pundit_core::metadata::UNTITLED;
 use pundit_core::naming;
 use pundit_core::openverse::{rank, results, search_url, Candidate};
 use pundit_media::composite::CompositeError;
-use pundit_media::{credit_beside, get, host, inspect_audio, GetError};
+use pundit_media::{credit_beside, get, inspect_audio, GetError};
 
 /// A page of twenty rows is 35–39 KB (measured); a page past a mebibyte is
 /// not one.
 const PAGE_LIMIT: usize = 1 << 20;
 
-/// A measured 3:24 track was 4.5 MB, and a `length=medium` song is ten
-/// minutes at most.
+/// **Sized for MP3, which is what the catalogue serves**: a measured 3:24
+/// Jamendo track was 4.5 MB, so a ten-minute `length=medium` song is about
+/// 13 MB. A ten-minute WAV (about 106 MB) would not fit, and is refused in
+/// [`TOO_LARGE`]'s words rather than half-fetched.
 const TRACK_LIMIT: usize = 64 << 20;
+
+/// What a track over [`TRACK_LIMIT`] is told.
+const TOO_LARGE: &str = "the track is larger than pundit takes (64 MB)";
 
 /// How far the decoded length may be from the catalogue's before the file is
 /// not the song it claims to be (spec S7).
@@ -41,11 +46,11 @@ const LENGTH_SLACK_SECONDS: f64 = 2.0;
 const STEM_BYTES: usize = 120;
 
 /// What Openverse says when the anonymous quota is spent (spec S11, §O3).
-pub const RATE_LIMITED: &str =
+const RATE_LIMITED: &str =
     "Openverse allows 20 searches a minute and 200 a day without an account — try again shortly.";
 
 /// What a file that fails its check is called on its row.
-pub const NOT_A_TRACK: &str = "not a track pundit can play";
+const NOT_A_TRACK: &str = "not a track pundit can play";
 
 /// Where a search lands: the folder name under the music folder, decided when
 /// Search is pressed, and the words searched for. **An Add lands in the genre
@@ -74,6 +79,9 @@ impl Genre {
                 .flatten()
                 .filter(|e| e.path().is_dir())
                 .filter_map(|e| e.file_name().into_string().ok())
+                // Not a hidden one, which `music::genres` never lists: its
+                // slug drops the dot, so `.rock/` would otherwise be "rock".
+                .filter(|name| !name.starts_with('.'))
                 .find(|name| naming::folder_slug(name) == slug)
         });
         Ok(Genre {
@@ -93,7 +101,8 @@ pub fn search(base: &str, genre: &Genre) -> Result<Vec<Candidate>, String> {
     let body = get(&url, PAGE_LIMIT, &AtomicBool::new(false)).map_err(|e| match e {
         GetError::Status(429) => RATE_LIMITED.to_owned(),
         GetError::Status(code) => cant_read(&format!("HTTP {code}")),
-        GetError::Unreachable => unreachable(&url),
+        GetError::Unreachable(_) => e.to_string(),
+        GetError::TooLarge(_) => cant_read("an answer too long to be a page"),
         GetError::Failed(_) => cant_read("the answer broke off"),
         GetError::Cancelled => "Cancelled".to_owned(),
     })?;
@@ -101,13 +110,6 @@ pub fn search(base: &str, genre: &Genre) -> Result<Vec<Candidate>, String> {
     let mut candidates = results(&text).map_err(|e| cant_read(&e.to_string()))?;
     rank(&mut candidates, &genre.query);
     Ok(candidates)
-}
-
-fn unreachable(url: &str) -> String {
-    format!(
-        "could not reach {} — check the internet connection",
-        host(url)
-    )
 }
 
 /// The file stem `candidate` lands under: `<title> — <creator>`, cleaned by
@@ -159,7 +161,7 @@ pub fn add(
     // becomes one, so it cannot name a path outside the genre folder.
     let id = naming::safe_chars(&candidate.id);
     let part = dir.join(format!(".{id}.part"));
-    let landed = fetch_check_and_land(candidate, &dir, &id, &part, cancel);
+    let landed = fetch_check_and_land(candidate, folder, genre, &id, &part, cancel);
     if landed.is_err() {
         let _ = std::fs::remove_file(&part);
     }
@@ -168,16 +170,19 @@ pub fn add(
 
 fn fetch_check_and_land(
     candidate: &Candidate,
-    dir: &Path,
+    folder: &Path,
+    genre: &Genre,
     id: &str,
     part: &Path,
     cancel: &AtomicBool,
 ) -> Result<PathBuf, String> {
+    let dir = folder.join(&genre.name);
     let url = &candidate.url;
     let bytes = get(url, TRACK_LIMIT, cancel).map_err(|e| match e {
-        GetError::Status(code) => format!("{} answered HTTP {code}", host(url)),
-        GetError::Unreachable => unreachable(url),
-        GetError::Failed(_) => format!("could not fetch the track from {}", host(url)),
+        GetError::Status(code) => format!("the track's server answered HTTP {code}"),
+        GetError::Unreachable(_) => e.to_string(),
+        GetError::TooLarge(_) => TOO_LARGE.to_owned(),
+        GetError::Failed(_) => "the track's download broke off".to_owned(),
         GetError::Cancelled => "Cancelled".to_owned(),
     })?;
     std::fs::write(part, bytes).map_err(|e| format!("could not write {}: {e}", part.display()))?;
@@ -195,7 +200,14 @@ fn fetch_check_and_land(
         );
         return Err(NOT_A_TRACK.to_owned());
     }
-    let dest = dir.join(format!("{}.{}", stem(candidate), file.extension));
+    // **Never over another song**: two rows can share a stem, and the rename
+    // below would replace the first one's file — and its credit just before
+    // it. The same stem is the same song as far as the folder is concerned.
+    let stem = stem(candidate);
+    if already_in(folder, genre, &stem) {
+        return Err(format!("\"{stem}\" is already in {}", genre.name));
+    }
+    let dest = dir.join(format!("{stem}.{}", file.extension));
     let credit = credit_beside(&dest);
     let credit_part = dir.join(format!(".{id}.credit.part"));
     std::fs::write(&credit_part, credit_text(candidate))
@@ -384,25 +396,53 @@ mod tests {
     #[test]
     fn a_genre_matches_an_existing_folder_by_slug() {
         let dir = tempfile::tempdir().unwrap();
-        let base = servers(dir.path());
-        let folder = dir.path().join("music");
-        std::fs::create_dir_all(folder.join("Rock")).unwrap();
-        let genre = Genre::resolve(&folder, " ROCK").unwrap();
+        std::fs::create_dir_all(dir.path().join("Rock")).unwrap();
         assert_eq!(
-            genre,
+            Genre::resolve(dir.path(), " ROCK").unwrap(),
             Genre {
                 name: "Rock".into(),
                 query: "ROCK".into()
             }
         );
-        let track = add(
-            &by_rock(&base, &folder),
-            &folder,
-            &genre,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
-        assert_eq!(track.parent(), Some(folder.join("Rock").as_path()));
+    }
+
+    /// A hidden folder is no genre, as `music::genres` never lists one — and
+    /// its slug drops the dot, so without the rule `.rock/` would be "rock".
+    #[test]
+    fn a_hidden_folder_is_not_a_genre() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".rock")).unwrap();
+        assert_eq!(Genre::resolve(dir.path(), "rock").unwrap().name, "rock");
+    }
+
+    /// **Two rows with one stem are one song to the folder**, and the second
+    /// Add is refused rather than renamed over the first — whose file and
+    /// credit are left exactly as they were.
+    #[test]
+    fn a_second_song_with_the_same_stem_is_refused_and_the_first_is_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = servers(dir.path());
+        let folder = dir.path().join("music");
+        let genre = rock(&folder);
+        let first = by_rock(&base, &folder);
+        let second = Candidate {
+            id: "another-id".into(),
+            landing_url: Some("https://example.org/another-song".into()),
+            ..first.clone()
+        };
+        assert_eq!(stem(&first), stem(&second));
+        let track = add(&first, &folder, &genre, &AtomicBool::new(false)).unwrap();
+        let bytes = std::fs::read(&track).unwrap();
+
+        let refused = add(&second, &folder, &genre, &AtomicBool::new(false))
+            .expect_err("a second song under the first one's name");
+        assert!(refused.contains("already in rock"), "{refused}");
+        assert_eq!(std::fs::read(&track).unwrap(), bytes);
+        assert_eq!(
+            std::fs::read_to_string(credit_beside(&track)).unwrap(),
+            credit_text(&first)
+        );
+        no_part_in(&folder.join("rock"));
     }
 
     #[test]

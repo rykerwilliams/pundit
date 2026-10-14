@@ -1907,6 +1907,12 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   app never shows GStreamer's words, and an Add's failure is on the sheet's
   line, naming the song, rather than on its row. The hands-on checklist's §15
   is the manual half; the `main.rs` wiring has no test (plan Risk 1).
+- **Accepted gap: a renamed CC BY track exports with no `.credits.txt`**, and
+  the only signal is stderr's *"a renamed track?"* line from `reel_music`.
+  Surfacing it in the export outcome would need new plumbing: a run's
+  `TargetState::Done` carries a path and no per-target notes. *When to
+  revisit:* the coach asks whether a reel is credited, or a reel is published
+  without one.
 - **When to revisit:** if the coach finds Openverse's genre search useless
   (spec Risk 2) — the cure is Jamendo's own API, which `music_search::search`
   is shaped to take — or if a credit goes missing from a renamed track often

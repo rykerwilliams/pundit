@@ -4,7 +4,7 @@
 //!
 //! **What is not reached**, and the plan says so: `main.rs`'s
 //! `wire_find_music` — the search and Add threads, the generation counter, the
-//! default folder written on success and the genre selected on Close. Those are
+//! default folder and the genre written on a successful Add. Those are
 //! manual checks 1–5; what they map over is `music_search`'s own tests.
 
 use crate::key_action;
@@ -50,10 +50,7 @@ fn row(id: &str, title: &str) -> MusicRow {
     MusicRow {
         id: id.into(),
         title: title.into(),
-        artist: "Artist".into(),
-        length: "3:24".into(),
-        licence: "CC BY 4.0".into(),
-        genres: "rock".into(),
+        detail: "Artist · 3:24 · CC BY 4.0".into(),
         state: SharedString::new(),
     }
 }

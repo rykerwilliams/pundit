@@ -107,27 +107,22 @@ export struct RunRow {
     status: string,
 }
 
-/// One piece of the basket, as its sheet lists it (basket spec C4). The bus
-/// resolves all four against the piece's own project every time it publishes
-/// the basket, so nothing here is the window's to keep.
 /// One result of a Find music search (#84 phase 2, spec S2): what the row
 /// shows, already formatted, and where it stands.
 export struct MusicRow {
     /// Openverse's id, which Add hands back.
     id: string,
     title: string,
-    artist: string,
-    /// "3:24".
-    length: string,
-    /// "CC BY 4.0", "Public domain (CC0 1.0)", "Public domain".
-    licence: string,
-    /// The catalogue's genres for it, comma-separated; often empty.
-    genres: string,
+    /// "Artist · 3:24 · CC BY 4.0 · rock, pop", built in `src/main.rs`.
+    detail: string,
     /// Empty while it may be added; "Adding…" while it is; "In rock" once it
     /// is in the genre folder, from the start if it already was.
     state: string,
 }
 
+/// One piece of the basket, as its sheet lists it (basket spec C4). The bus
+/// resolves all four against the piece's own project every time it publishes
+/// the basket, so nothing here is the window's to keep.
 export struct BasketPieceRow {
     /// "Rovers v Athletic", or the project's own name — what changes between
     /// two adjacent corners from two different games (basket spec T2).
@@ -2723,9 +2718,7 @@ component FindMusicSheet inherits Sheet {
                 overflow: elide;
             }
             Text {
-                text: row.genres == ""
-                    ? row.artist + " · " + row.length + " · " + row.licence
-                    : row.artist + " · " + row.length + " · " + row.licence + " · " + row.genres;
+                text: row.detail;
                 color: Palette.alternate-foreground;
                 font-size: 11px;
                 overflow: elide;
@@ -4653,8 +4646,7 @@ export component AppWindow inherits Window {
     callback find-music();
     callback search-music(string);
     callback add-music(string);
-    /// The sheet closed, however: cancel an Add in flight, and select the
-    /// genre added last (spec S6).
+    /// The sheet closed, however: cancel an Add in flight (spec S10).
     callback find-music-closed();
     /// The run in progress, and when it finishes; both from the bus's events,
     /// so a closed sheet reopens on the run it left.
@@ -5228,7 +5220,7 @@ export component AppWindow inherits Window {
     }
 
     /// Closes Find music, however it was closed, and tells `src/main.rs`,
-    /// which cancels an Add in flight and selects the genre added (spec S10).
+    /// which cancels an Add in flight (spec S10).
     /// The export sheet under it stays open.
     function close-find-music() {
         root.find-music-open = false;

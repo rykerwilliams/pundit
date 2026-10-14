@@ -16,8 +16,12 @@
 //! [`get`] is the same transport into memory, for what has no digest to check
 //! — a page of search results, a fetched song (BACKLOG #84 phase 2).
 //!
+//! **Both are one source**, [`http_source`]: `souphttpsrc` with this app's
+//! User-Agent, ICY off, and a read timeout.
+//!
 //! **Network facts, measured for the spec and not handled here:**
-//! `souphttpsrc` gives up on a read after 15 s and retries 3 times, and the
+//! `souphttpsrc` gives up on a read after its timeout (15 s by default, 20 s
+//! as [`http_source`] sets it) and retries 3 times, and the
 //! CDN's signed URL expires about an hour after issue — which only matters
 //! below roughly 135 kB/s for `small.en`.
 
@@ -151,11 +155,7 @@ fn fetch_to(
             .build()
             .map_err(|e| CompositeError::Failed(format!("{factory} is missing: {e}")))
     };
-    let src = make("souphttpsrc")?;
-    src.set_property("location", &fetch.url);
-    // Off, so a server that happens to send ICY headers can't turn this into
-    // a radio stream with caps of its own.
-    src.set_property("iradio-mode", false);
+    let src = http_source(&fetch.url, READ_TIMEOUT_SECONDS).map_err(CompositeError::Failed)?;
     let sink = make("filesink")?;
     sink.set_property("location", part);
     let pipeline = gst::Pipeline::new();
@@ -174,11 +174,7 @@ fn fetch_to(
     };
     if pipeline.set_state(gst::State::Playing).is_err() {
         // The element's own reason, if it posted one before refusing.
-        let msg = bus.pop_filtered(&[gst::MessageType::Error]);
-        return Err(failed(msg.as_ref().and_then(|msg| match msg.view() {
-            gst::MessageView::Error(err) => Some(err),
-            _ => None,
-        })));
+        return Err(first_error(&bus, |err| failed(Some(err))).unwrap_or_else(|| failed(None)));
     }
     let mut reported = 0;
     loop {
@@ -225,10 +221,7 @@ fn unreachable_or(url: &str, err: &gst::message::Error) -> String {
         return format!("could not download {url}: {raw}");
     }
     eprintln!("download: {url}: {raw}");
-    format!(
-        "could not reach {} — check the internet connection",
-        host(url)
-    )
+    GetError::Unreachable(host(url).to_owned()).to_string()
 }
 
 /// Whether `err` is the generic stream error a connection that never happened
@@ -240,20 +233,53 @@ fn unreachable(err: &gst::message::Error) -> bool {
 
 /// The host part of `url` — `api.openverse.org` — for a message that names
 /// where the app was trying to reach; the whole `url` when it has none.
-pub fn host(url: &str) -> &str {
+fn host(url: &str) -> &str {
     url.split_once("://")
         .and_then(|(_, rest)| rest.split(['/', ':']).next())
         .unwrap_or(url)
 }
 
-/// How long [`get`] waits on any one read before giving up — `souphttpsrc`'s
-/// own `timeout`, which bounds each read and not the whole transfer, so a slow
-/// but moving one is never cut off. One second under test, where a stall is
-/// the thing being waited out.
+/// How long a transfer waits on any one read before giving up —
+/// `souphttpsrc`'s own `timeout`, which bounds each read and not the whole
+/// transfer, so a slow but moving one is never cut off.
+const READ_TIMEOUT_SECONDS: u32 = 20;
+
+/// [`get`]'s: [`READ_TIMEOUT_SECONDS`], and one second under test, where a
+/// stall is the thing being waited out. The model download keeps the whole
+/// 20 s under test too, because its tests hold a stalled transfer open on
+/// purpose while they cancel it.
 #[cfg(not(test))]
-const GET_TIMEOUT_SECONDS: u32 = 20;
+const GET_TIMEOUT_SECONDS: u32 = READ_TIMEOUT_SECONDS;
 #[cfg(test)]
 const GET_TIMEOUT_SECONDS: u32 = 1;
+
+/// The one HTTP source both transfers use: `url`, this app's User-Agent
+/// (`pundit/<version>`), ICY off — so a server that happens to send ICY
+/// headers can't turn the transfer into a radio stream with caps of its own —
+/// and a read timeout of `timeout` seconds. `Err` names the missing element.
+fn http_source(url: &str, timeout: u32) -> Result<gst::Element, String> {
+    let src = gst::ElementFactory::make("souphttpsrc")
+        .property("location", url)
+        .property(
+            "user-agent",
+            format!("{APP_NAME}/{}", env!("CARGO_PKG_VERSION")),
+        )
+        .property("iradio-mode", false)
+        .property("timeout", timeout)
+        .build()
+        .map_err(|e| format!("souphttpsrc is missing: {e}"))?;
+    Ok(src)
+}
+
+/// The first `ERROR` waiting on `bus`, through `map`: the element's own
+/// reason, where a transfer has one to give.
+fn first_error<T>(bus: &gst::Bus, map: impl Fn(&gst::message::Error) -> T) -> Option<T> {
+    let msg = bus.pop_filtered(&[gst::MessageType::Error])?;
+    match msg.view() {
+        gst::MessageView::Error(err) => Some(map(err)),
+        _ => None,
+    }
+}
 
 /// Why [`get`] returned no body.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -263,11 +289,14 @@ pub enum GetError {
     #[error("the server answered {0}")]
     Status(u16),
     /// Offline, a name that won't resolve, a refused connection: nothing
-    /// answered at all. The caller names the host ([`host`]).
-    #[error("the server could not be reached")]
-    Unreachable,
-    /// Anything else — a body cut short, a body over the limit, a server that
-    /// broke off. **GStreamer's own words, for stderr**: a caller shows the
+    /// answered at all, at this host. The coach's words, and the model
+    /// download's too.
+    #[error("could not reach {0} — check the internet connection")]
+    Unreachable(String),
+    /// More than the caller's limit arrived; the limit, in bytes.
+    #[error("more than {0} bytes")]
+    TooLarge(usize),
+    /// Anything else — a body cut short, a server that broke off. **GStreamer's own words, for stderr**: a caller shows the
     /// coach words of its own, never these.
     #[error("{0}")]
     Failed(String),
@@ -295,19 +324,7 @@ pub enum GetError {
 /// structured details**, `http-status-code`, and only from 400 up: that short
 /// body's error carries `200`.
 pub fn get(url: &str, limit: usize, cancel: &AtomicBool) -> Result<Vec<u8>, GetError> {
-    let make = |factory: &str| {
-        gst::ElementFactory::make(factory)
-            .build()
-            .map_err(|e| GetError::Failed(format!("{factory} is missing: {e}")))
-    };
-    let src = make("souphttpsrc")?;
-    src.set_property("location", url);
-    src.set_property(
-        "user-agent",
-        format!("{APP_NAME}/{}", env!("CARGO_PKG_VERSION")),
-    );
-    src.set_property("iradio-mode", false);
-    src.set_property("timeout", GET_TIMEOUT_SECONDS);
+    let src = http_source(url, GET_TIMEOUT_SECONDS).map_err(GetError::Failed)?;
     let sink = gst_app::AppSink::builder()
         .sync(false)
         .max_buffers(16)
@@ -331,19 +348,12 @@ pub fn get(url: &str, limit: usize, cancel: &AtomicBool) -> Result<Vec<u8>, GetE
         eprintln!("get: {url}: {raw}");
         match status {
             Some(code) => GetError::Status(code),
-            None if unreachable(err) => GetError::Unreachable,
+            None if unreachable(err) => GetError::Unreachable(host(url).to_owned()),
             None => GetError::Failed(raw),
         }
     };
-    let first_error = |bus: &gst::Bus| {
-        bus.pop_filtered(&[gst::MessageType::Error])
-            .and_then(|msg| match msg.view() {
-                gst::MessageView::Error(err) => Some(failed(err)),
-                _ => None,
-            })
-    };
     if pipeline.set_state(gst::State::Playing).is_err() {
-        return Err(first_error(&bus).unwrap_or_else(|| {
+        return Err(first_error(&bus, failed).unwrap_or_else(|| {
             GetError::Failed(format!("could not download {url}: it would not start"))
         }));
     }
@@ -357,16 +367,14 @@ pub fn get(url: &str, limit: usize, cancel: &AtomicBool) -> Result<Vec<u8>, GetE
                 body.extend_from_slice(&map);
             }
             if body.len() > limit {
-                return Err(GetError::Failed(format!(
-                    "{url} is larger than the {limit} bytes pundit will fetch"
-                )));
+                return Err(GetError::TooLarge(limit));
             }
             continue;
         }
         // Starved for a whole poll: the end, a failure, or a slow server. An
         // `ERROR` is posted before the source's EOS reaches the sink, so it is
         // looked for first.
-        if let Some(error) = first_error(&bus) {
+        if let Some(error) = first_error(&bus, failed) {
             return Err(error);
         }
         if sink.is_eos() {
@@ -638,11 +646,9 @@ mod tests {
     #[test]
     fn get_refuses_past_its_limit() {
         gst::init().unwrap();
-        let error = get(&server(Answer::Whole), 512 << 10, &AtomicBool::new(false))
-            .expect_err("a 1 MB body under a 512 KB limit");
-        assert!(
-            matches!(&error, GetError::Failed(why) if why.contains("larger than")),
-            "{error:?}"
+        assert_eq!(
+            get(&server(Answer::Whole), 512 << 10, &AtomicBool::new(false)),
+            Err(GetError::TooLarge(512 << 10))
         );
     }
 
@@ -707,7 +713,7 @@ mod tests {
                 1 << 20,
                 &AtomicBool::new(false),
             ),
-            Err(GetError::Unreachable)
+            Err(GetError::Unreachable("127.0.0.1".into()))
         );
     }
 

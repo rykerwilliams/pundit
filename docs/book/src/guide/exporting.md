@@ -87,7 +87,7 @@ No songs yet? Press **Find music…** beside **Folder…**, type a genre and pre
 use in a video — public domain, or CC BY, which only asks you to credit it — and
 lists up to twenty songs, those tagged with your genre first. **Add** fetches
 one into your music folder under that genre (`~/Music/pundit/` if you have not
-chosen one), and closing the sheet picks that genre for the reel. Nothing goes
+chosen one) and picks that genre for the reel. Nothing goes
 over the network until you press Search.
 
 Each song arrives with a `.credit.txt` beside it, and a reel exported with that
