@@ -43,6 +43,9 @@ slint-build.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# The local HTTP server and the synthetic songs `music_search`'s tests fetch
+# (BACKLOG #84): no test reaches Openverse or Jamendo.
+pundit-media = { path = "../pundit-media", features = ["fixtures"] }
 # Slint's headless backend, for the scrubber's pointer tests. Pinned with
 # Slint: it is one of Slint's own internal crates.
 i-slint-backend-testing = "=1.18.0"

@@ -16,14 +16,8 @@ made things worse.
 
 ### Next, in order
 
-- **84.** Music under a goals reel — **phase 1 shipped 2026-10-12** (#80, #82,
-  #83): a Music row on the export sheet (a genre picker and a Folder… button), a
-  stable song per match, ducked and faded; **no Settings sheet** (spec §M6).
-  **Phase 2 specced and planned 2026-10-13**
-  (`2026-10-13-reel-music-search-design.md`, plan
-  `2026-10-13-reel-music-search.md`): a Find music sheet off the Music row that
-  searches Openverse for CC0 / CC BY music and adds it to a genre folder, and a
-  `.credits.txt` beside the reel. One PR, a commit per task
+Nothing queued: #84, the last entry here, shipped its phase 2 on 2026-10-13
+(#95).
 
 ### Watch, rather than pick up
 
@@ -1764,7 +1758,8 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   diagnosed** — its message was not kept — and the race's own assertions
   already print the state and both positions. So this moves to *Watch*.
 
-84. **Music under a goals reel.** The coach (2026-09-24): "pull in soundtrack
+84. **Music under a goals reel — SHIPPED** (phase 1 2026-10-12, #80, #82, #83;
+  phase 2 2026-10-13, #95). The coach (2026-09-24): "pull in soundtrack
   files that are licensed for use, e.g. rock, edm, etc. for the goals clips." A
   reel is the one export with no commentary — it is game sound alone — and a
   highlights reel is the one thing people expect music under.
@@ -1903,8 +1898,25 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   FMA is not one of them. There is no checksum to be had for a catalogue track,
   so a full decode stands in for it. And the network is reached from a function
   no command can call, not through a permission carried on a job.
-- **When to revisit:** any time. Nothing further is needed from the coach, and
-  nothing is owed by #78 beyond the sheet's design, which is written down.
+- **Phase 2 shipped 2026-10-13** (#95, five commits, one per plan task):
+  `.credits.txt` beside a reel, read at render time beside the music; core's
+  Openverse query, parse, licence words and credit; media's `get` and
+  `inspect_audio`; `music_search.rs` and the default `~/Music/pundit`; and the
+  Find music sheet. Where the build left the plan is in the plan's "Where this
+  stands": among it, `get` tells offline apart (`GetError::Unreachable`) so the
+  app never shows GStreamer's words, and an Add's failure is on the sheet's
+  line, naming the song, rather than on its row. The hands-on checklist's §15
+  is the manual half; the `main.rs` wiring has no test (plan Risk 1).
+- **Accepted gap: a renamed CC BY track exports with no `.credits.txt`**, and
+  the only signal is stderr's *"a renamed track?"* line from `reel_music`.
+  Surfacing it in the export outcome would need new plumbing: a run's
+  `TargetState::Done` carries a path and no per-target notes. *When to
+  revisit:* the coach asks whether a reel is credited, or a reel is published
+  without one.
+- **When to revisit:** if the coach finds Openverse's genre search useless
+  (spec Risk 2) — the cure is Jamendo's own API, which `music_search::search`
+  is shaped to take — or if a credit goes missing from a renamed track often
+  enough that the log line is not enough (Risk 3).
 
 85. **Recent projects, and a drawer to switch between them — RESOLVED**
   (2026-10-02, five tasks across PRs #11-#14). The coach (2026-09-24):

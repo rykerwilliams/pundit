@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 /// The extensions a track may have, lower-cased. They filter the listing, so a
 /// `cover.jpg` is never chosen; they are not the decoder's gate, which is
 /// `decodebin3`'s.
-const EXTENSIONS: [&str; 7] = ["mp3", "ogg", "oga", "opus", "flac", "wav", "m4a"];
+pub(crate) const EXTENSIONS: [&str; 7] = ["mp3", "ogg", "oga", "opus", "flac", "wav", "m4a"];
 
 /// The genres in `folder`: its immediate, non-hidden subfolders that hold at
 /// least one track, sorted. Files at the folder's top level are not a genre —

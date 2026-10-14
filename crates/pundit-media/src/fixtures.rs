@@ -16,6 +16,7 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use gstreamer as gst;
@@ -263,6 +264,46 @@ pub fn tone_audio(path: &Path, freq: f64, amplitude: f64, seconds: u32) -> PathB
                samplesperbuffer={AUDIO_RATE} \
            ! audio/x-raw,rate={AUDIO_RATE},channels=2 \
            ! audioconvert ! vorbisenc ! oggmux ! filesink name=out"
+        ),
+        path,
+    )
+}
+
+/// Which container an [`audio_file`] is written in: each one a fetched song
+/// may come as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudioEncoder {
+    /// Vorbis in Ogg, as [`tone_audio`] writes.
+    Ogg,
+    /// VBR MP3 with a Xing header and an ID3v2 tag, so `id3demux` is in the
+    /// decode graph as it is for a real download.
+    Mp3,
+    /// PCM in WAV.
+    Wav,
+    /// FLAC, native.
+    Flac,
+    /// AAC in MP4, as an `.m4a` is.
+    M4a,
+}
+
+/// `seconds` of a 440 Hz tone at `path`, in `encoder`'s container: what a
+/// fetched song is checked as (BACKLOG #84 spec S7). [`tone_audio`]'s sibling,
+/// which is always Ogg.
+pub fn audio_file(path: &Path, encoder: AudioEncoder, seconds: u32) -> PathBuf {
+    let encode = match encoder {
+        AudioEncoder::Ogg => "vorbisenc ! oggmux",
+        AudioEncoder::Mp3 => {
+            "taginject tags=\"title=Song,artist=Artist\" ! lamemp3enc ! xingmux ! id3v2mux"
+        }
+        AudioEncoder::Wav => "wavenc",
+        AudioEncoder::Flac => "flacenc",
+        AudioEncoder::M4a => "avenc_aac ! mp4mux",
+    };
+    run(
+        &format!(
+            "audiotestsrc wave=sine freq=440 num-buffers={seconds} samplesperbuffer={AUDIO_RATE} \
+           ! audio/x-raw,rate={AUDIO_RATE},channels=2 \
+           ! audioconvert ! {encode} ! filesink name=out"
         ),
         path,
     )
@@ -803,7 +844,7 @@ pub fn served_body() -> Vec<u8> {
 pub const SERVED_SHA256: &str = "2c030d49ec131bfbbb446ad21e7a2f12cdb4f2f4f3fda3ac709dd2e68a4646c7";
 
 /// What [`serve`] does with each request.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Answer {
     /// `200 OK` and the whole [`served_body`].
     Whole,
@@ -812,6 +853,13 @@ pub enum Answer {
     Stall,
     /// This status line and no body.
     Status(&'static str),
+    /// `200 OK` and this body: a page of search results, a song.
+    Body(Arc<[u8]>),
+    /// `200 OK` with the headers for this whole body, then only its first
+    /// `n` bytes, then the connection closed — a body cut short. Not a
+    /// [`Answer::Stall`], which holds the connection open and so reaches the
+    /// read timeout rather than a short body.
+    Cut(Arc<[u8]>, usize),
 }
 
 /// A local HTTP server answering every request with `answer`, `delay` after
@@ -830,6 +878,7 @@ pub fn serve(answer: Answer, delay: Duration) -> String {
     );
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
+            let answer = answer.clone();
             std::thread::spawn(move || respond(stream, answer, delay));
         }
     });
@@ -865,6 +914,13 @@ fn respond(mut stream: TcpStream, answer: Answer, delay: Duration) {
             Ok(())
         }
         Answer::Status(status) => stream.write_all(head(status, 0).as_bytes()),
+        Answer::Body(body) => stream
+            .write_all(head("200 OK", body.len()).as_bytes())
+            .and_then(|()| stream.write_all(&body)),
+        Answer::Cut(body, n) => stream
+            .write_all(head("200 OK", body.len()).as_bytes())
+            .and_then(|()| stream.write_all(&body[..n]))
+            .and_then(|()| stream.flush()),
     };
 }
 

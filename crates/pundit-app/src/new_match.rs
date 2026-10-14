@@ -6,7 +6,7 @@
 //! module at all — `fit`, `match_panel`, `drawing` and `zoom_input` are this
 //! crate's pattern of "a testable rule is a `pub mod` with its tests beside
 //! it". **And the environment is passed in**, exactly as `bus::state`'s
-//! `films_dir(videos, home)` and `config_dir(xdg, home)` take theirs: a home
+//! `user_dir(special, home, …)` and `config_dir(xdg, home)` take theirs: a home
 //! directory, a last project and a year bound are arguments, so every rule
 //! below is a test with no `$HOME`, no `state.json` and no clock in it.
 //!

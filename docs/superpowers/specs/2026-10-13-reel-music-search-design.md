@@ -276,8 +276,9 @@ GET <base>audio/?q=<genre text>&category=music&length=medium&license=cc0,pdm,by
   music keys, which is phase 1's rule (§M2 there) and `CLAUDE.md`'s. A folder
   that is already set is never changed by the search. **Folder…** still chooses
   another (decision: `~/Music/pundit`).
-- **When the sheet closes after an Add, the picker re-lists and selects the
-  genre added last**, written to `musicGenre` through the same `set_music_genre`
+- *(Amended 2026-10-13 after the code review: at each successful Add, not
+  when the sheet closes.)* **When the sheet closes after an Add, the picker
+  re-lists and selects the genre added last**, written to `musicGenre` through the same `set_music_genre`
   the picker uses (`main.rs:1369`). This is needed, not cosmetic. The bus reads
   `musicGenre` at job build (`bus/export.rs:393`–`:394`), so a coach who picks
   nothing on Find music, searches, adds, closes and exports would otherwise get

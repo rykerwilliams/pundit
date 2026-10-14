@@ -107,6 +107,19 @@ export struct RunRow {
     status: string,
 }
 
+/// One result of a Find music search (#84 phase 2, spec S2): what the row
+/// shows, already formatted, and where it stands.
+export struct MusicRow {
+    /// Openverse's id, which Add hands back.
+    id: string,
+    title: string,
+    /// "Artist · 3:24 · CC BY 4.0 · rock, pop", built in `src/main.rs`.
+    detail: string,
+    /// Empty while it may be added; "Adding…" while it is; "In rock" once it
+    /// is in the genre folder, from the start if it already was.
+    state: string,
+}
+
 /// One piece of the basket, as its sheet lists it (basket spec C4). The bus
 /// resolves all four against the piece's own project every time it publishes
 /// the basket, so nothing here is the window's to keep.
@@ -1946,9 +1959,9 @@ component Scrim inherits Rectangle {
 /// The card every modal in this app is drawn as: a fixed width, a height of
 /// whatever it holds **up to the window's**, the house chrome and the heading.
 ///
-/// Every modal is one of these -- export, the basket, New match, match setup,
-/// the match event editor, Settings, Keys and the error dialog -- and this is
-/// the one shape they are. A sheet sets its width and its title and lays its own body out as
+/// Every modal is one of these -- export, Find music, the basket, New match,
+/// match setup, the match event editor, Settings, Keys and the error dialog --
+/// and this is the one shape they are. A sheet sets its width and its title and lays its own body out as
 /// children;
 /// everything else is here, once.
 ///
@@ -2068,6 +2081,8 @@ component ExportSheet inherits Sheet {
     callback music-picked(int);
     /// Folder…: choose the music folder and re-list its genres.
     callback choose-music-folder();
+    /// Find music…: open the search that fills the folder (#84 phase 2).
+    callback find-music();
     /// **This run would copy rather than re-encode**, which both lines under
     /// the picker are about. Only the whole match is ever copied, so its tick
     /// is the first term; the board then has to be going anywhere but into the
@@ -2197,6 +2212,13 @@ component ExportSheet inherits Sheet {
                 wrap: word-wrap;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
+            }
+            // Beside Folder… and not on a sheet of its own, for Folder…'s
+            // reason: the search fills the very folder this picker reads
+            // (spec S1).
+            Button {
+                text: "Find music…";
+                clicked => { root.find-music(); }
             }
             Button {
                 text: "Folder…";
@@ -2641,6 +2663,112 @@ component BasketSheet inherits Sheet {
             primary: true;
             enabled: root.pieces.length > 0;
             clicked => { root.start(); }
+        }
+    }
+}
+
+/// Find music (#84 phase 2, spec S2): a genre, Search, a page of results each
+/// with Add, and Close. Drawn over the export sheet it is opened from.
+///
+/// **Nothing here reaches the network by itself** (spec S9): Search and Add are
+/// the window's callbacks, which `src/main.rs` runs off the UI thread, and
+/// nothing is asked for as the sheet opens or as the coach types.
+component FindMusicSheet inherits Sheet {
+    /// The words to search for. Two-way out to the window, as every field in
+    /// this app is.
+    in-out property <string> genre;
+    in property <[MusicRow]> rows;
+    /// One Add is in flight: every other row's Add waits (spec S2).
+    in property <bool> adding;
+    /// The sheet's own line, because the status bar renders behind the scrim.
+    in property <string> message;
+    callback search(string);
+    callback add(string);
+    callback close();
+
+    card-width: 600px;
+    title: "Find music";
+
+    HorizontalLayout {
+        spacing: 8px;
+
+        // Named for `tests/ui/text_editing.rs`, which types into it.
+        genre-edit := LineEdit {
+            placeholder-text: "A genre: rock, electronic, dance…";
+            text <=> root.genre;
+            accepted => { root.search(root.genre); }
+        }
+        Button {
+            text: "Search";
+            primary: true;
+            clicked => { root.search(root.genre); }
+        }
+    }
+
+    // No `ListView` of its own: twenty rows scroll in the sheet's body like
+    // every sheet's (#134), rather than in a second place inside it.
+    for row in root.rows: HorizontalLayout {
+        spacing: 8px;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            Text {
+                text: row.title;
+                color: Palette.foreground;
+                overflow: elide;
+            }
+            Text {
+                text: row.detail;
+                color: Palette.alternate-foreground;
+                font-size: 11px;
+                overflow: elide;
+            }
+        }
+        if row.state != "": Text {
+            text: row.state;
+            color: Palette.alternate-foreground;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+        VerticalLayout {
+            alignment: center;
+            Button {
+                text: "Add";
+                enabled: row.state == "" && !root.adding;
+                clicked => { root.add(row.id); }
+            }
+        }
+    }
+
+    if root.message != "": Text {
+        text: root.message;
+        color: Palette.alternate-foreground;
+        font-size: 11px;
+        wrap: word-wrap;
+    }
+    // What Openverse's terms require shown, always (spec §O9), and what the
+    // app does not promise (spec L3).
+    Text {
+        text: "Search by Openverse. pundit is not endorsed or certified by Openverse.";
+        color: Palette.alternate-foreground;
+        font-size: 11px;
+        wrap: word-wrap;
+    }
+    Text {
+        text: "Licences are as the catalogue reports them — check the track's page before you publish.";
+        color: Palette.alternate-foreground;
+        font-size: 11px;
+        wrap: word-wrap;
+    }
+
+    HorizontalLayout {
+        alignment: end;
+
+        // No Cancel: an added track stays added. Close does cancel an Add
+        // still in flight (spec S10).
+        Button {
+            text: "Close";
+            clicked => { root.close(); }
         }
     }
 }
@@ -4504,6 +4632,22 @@ export component AppWindow inherits Window {
     in-out property <int> export-music-index;
     callback music-picked(int);
     callback choose-music-folder();
+
+    // --- Find music (#84 phase 2): see `FindMusicSheet` ---
+
+    /// The sheet is up, over the export sheet. `src/main.rs` opens it (it
+    /// prefills the genre); `close-find-music` is the one way it closes.
+    in-out property <bool> find-music-open;
+    in-out property <string> find-music-genre;
+    in property <[MusicRow]> find-music-rows;
+    in property <bool> find-music-adding;
+    in property <string> find-music-message;
+    /// The Music row's Find music…: the window prefills and opens the sheet.
+    callback find-music();
+    callback search-music(string);
+    callback add-music(string);
+    /// The sheet closed, however: cancel an Add in flight (spec S10).
+    callback find-music-closed();
     /// The run in progress, and when it finishes; both from the bus's events,
     /// so a closed sheet reopens on the run it left.
     in property <[RunRow]> export-run;
@@ -5075,6 +5219,15 @@ export component AppWindow inherits Window {
         keys.focus();
     }
 
+    /// Closes Find music, however it was closed, and tells `src/main.rs`,
+    /// which cancels an Add in flight (spec S10).
+    /// The export sheet under it stays open.
+    function close-find-music() {
+        root.find-music-open = false;
+        keys.focus();
+        root.find-music-closed();
+    }
+
     /// Closes the New match sheet, however it was closed -- Cancel, Esc or the
     /// `ProjectOpened` that says the project exists (spec C5).
     ///
@@ -5192,6 +5345,18 @@ export component AppWindow inherits Window {
         if (root.settings-sheet-open) {
             if (pressed && event.text == Key.Escape && !root.text-editing) {
                 root.close-settings();
+                return accept;
+            }
+            return reject;
+        }
+        // Find music (#84) is drawn over the export sheet, so it is tested
+        // first: Esc closes it alone. It takes the basket's shape -- Esc in
+        // the genre field leaves the field and the next closes, and the
+        // `reject` delivers letters to the field ahead of the shortcut lookup,
+        // so R types an "r" and never starts a take behind the sheet.
+        if (root.find-music-open) {
+            if (pressed && event.text == Key.Escape && !root.text-editing) {
+                root.close-find-music();
                 return accept;
             }
             return reject;
@@ -7608,6 +7773,7 @@ export component AppWindow inherits Window {
                 music-index <=> root.export-music-index;
                 music-picked(index) => { root.music-picked(index); }
                 choose-music-folder => { root.choose-music-folder(); }
+                find-music => { root.find-music(); }
                 queue: root.export-queue;
                 tick(index, ticked) => { root.tick-target(index, ticked); }
                 start => { root.start-export(); }
@@ -7619,6 +7785,19 @@ export component AppWindow inherits Window {
                     root.export-sheet-open = false;
                     keys.focus();
                 }
+            }
+        }
+
+        // --- Find music: over the export sheet it is opened from (#84) ---
+        if root.find-music-open: Scrim {
+            FindMusicSheet {
+                genre <=> root.find-music-genre;
+                rows: root.find-music-rows;
+                adding: root.find-music-adding;
+                message: root.find-music-message;
+                search(text) => { root.search-music(text); }
+                add(id) => { root.add-music(id); }
+                close => { root.close-find-music(); }
             }
         }
 

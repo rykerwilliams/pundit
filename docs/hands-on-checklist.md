@@ -206,6 +206,20 @@ New in 0.5.0. **Do this on a copy of a tagged project the first time**: edits ap
 - [ ] **[must work] Team colours.** In **Set up teams…**, click a colour swatch. **Right:** a picker opens under it with a row of kit colours, a hue strip and a shade area. Picking writes the hex box, typing a hex moves the picker, and **Esc** closes the picker before it closes the sheet. Save, then preview a clip: the scoreboard is the colour you picked.
 - [ ] **Your call:** whether the 14 kit colours cover the clubs you film, and whether the editor's list should be sorted any other way.
 
+## 15. Finding music for a goals reel
+
+Needs the internet. Use a project with goals tagged, tick a goals reel in **Export…**, and start with **no music folder set**.
+
+- [ ] **[must work] Search.** Press **Find music…** on the Music row, type `rock` and press **Search**. **Right:** up to twenty rows, rock-tagged ones first, every licence reading CC BY or Public domain, and the line saying the search is by Openverse.
+- [ ] **[must work] Add.** Press **Add** on one. **Right:** the row says *Adding…* and the other Add buttons grey out, then it reads *In rock*. `~/Music/pundit/rock/` holds the song and a `.credit.txt` beside it, and **Folder…** now remembers that folder.
+- [ ] **[must work] The Add picks it.** Close Find music. **Right:** the Music picker already reads `rock`. Export the reel. **Right:** it has the song, and `<reel>.credits.txt` beside it names the song, its page and its licence, with "(edited and mixed under the footage)".
+- [ ] **Two searches quickly.** Search `rock`, then straight away `jazz`. **Right:** only jazz rows show.
+- [ ] **Close in the middle of an Add.** Close while a row says *Adding…*. **Right:** nothing is left in the folder, not even a hidden `.part` (`ls -a`), and with no folder set before, none is remembered.
+- [ ] **Offline.** Turn the network off and Search. **Right:** the sheet's line says it couldn't reach `api.openverse.org`.
+- [ ] **Keys.** In the genre field, **r** types an `r` and starts no recording. **Esc** leaves the field, a second **Esc** closes Find music, and the export sheet is still open.
+- [ ] **A renamed song.** Rename the song you added and export the reel again. **Right:** no `.credits.txt` beside it, and the terminal shows a line asking "a renamed track?".
+- [ ] **Your call:** whether a genre search finds music you'd use — Openverse matches titles, not genres, so about a third of a page is the genre asked for.
+
 ---
 
 **Reporting back:** for anything that fails or feels wrong, note the item's heading, what you did, what you expected, and what happened. Include the last few lines of `~/.xsession-errors` if the app misbehaved.

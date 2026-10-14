@@ -2285,6 +2285,8 @@ fn cancel_leaves_nothing_and_keeps_an_existing_file() {
     let sidecar = dir.path().join("out.srt");
     std::fs::write(&path, b"the previous export").unwrap();
     std::fs::write(&sidecar, b"the previous scoreboard").unwrap();
+    let credits = dir.path().join("out.credits.txt");
+    std::fs::write(&credits, b"the previous credits").unwrap();
     let frames = (0..60)
         .map(|n| FrameSpec {
             entry: 0,
@@ -2328,6 +2330,9 @@ fn cancel_leaves_nothing_and_keeps_an_existing_file() {
     // The sidecar is written after the rename, so a cancel neither writes one
     // nor takes the last good export's away.
     assert_eq!(std::fs::read(&sidecar).unwrap(), b"the previous scoreboard");
+    // So are the credits (BACKLOG #84 spec C3): this run has no music, and a
+    // finished one would have removed them.
+    assert_eq!(std::fs::read(&credits).unwrap(), b"the previous credits");
 }
 
 /// `path`'s chapters as `ffprobe` reads them: `(start in seconds, title)`.
@@ -2387,6 +2392,10 @@ fn a_compilation_gets_a_chapter_per_entry() {
     // none is written and the one left by an earlier run goes.
     let chapter_list = dir.path().join("out.chapters.txt");
     std::fs::write(&chapter_list, "0:00 an older cut\n").unwrap();
+    // No music in this run, so the credits an earlier reel left go too
+    // (BACKLOG #84 spec C3).
+    let credits = dir.path().join("out.credits.txt");
+    std::fs::write(&credits, "Music: an older song\n").unwrap();
     let done = export(ExportJob {
         tags: FileTags::default(),
         compilation,
@@ -2415,6 +2424,11 @@ fn a_compilation_gets_a_chapter_per_entry() {
     assert!(
         !chapter_list.exists(),
         "an export with no pasteable list left the old one beside it"
+    );
+    assert_eq!(done.credits, None);
+    assert!(
+        !credits.exists(),
+        "an export with no music left the old song's credits beside it"
     );
 
     let got = ffprobe_chapters(&path);
@@ -2528,6 +2542,48 @@ fn a_chapter_list_lands_beside_the_encode() {
     // Beside the video it belongs to, and nowhere near the `.srt`'s name.
     assert!(path.exists());
     assert!(!dir.path().join("out.srt").exists());
+}
+
+/// A reel's music credit lands beside the film (BACKLOG #84 spec C3): the text
+/// beside the track the mixer reads, copied to `<output>.credits.txt`.
+///
+/// **One second of a plain picture with a music region over it.** What is under
+/// test is that media finds the music in the audio edit and copies the file
+/// beside it; the mix itself is `a_reel_carries_its_music_under_the_ducked_game`'s.
+#[test]
+fn a_reels_music_credit_lands_beside_the_film() {
+    use pundit_core::audio::{Region, Track};
+    let dir = tempfile::tempdir().unwrap();
+    let src = source(dir.path(), CounterKind::H264Mp4BFrames);
+    let music = fixtures::tone_audio(&dir.path().join("Song — Artist.ogg"), 440.0, 0.5, 2);
+    let credit = "Music (edited and mixed under the footage): \"Song\" by Artist\n\
+                  https://example.org/track/1\n\
+                  Licensed under CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/\n";
+    std::fs::write(pundit_media::credit_beside(&music), credit).unwrap();
+    assert!(dir.path().join("Song — Artist.ogg.credit.txt").exists());
+    let path = dir.path().join("out.mp4");
+    let frames = (0..30)
+        .map(|n| FrameSpec {
+            entry: 0,
+            source_time: f64::from(n) / 30.0,
+            zoom: Zoom::IDENTITY,
+        })
+        .collect();
+    let mut job = job(src.path.clone(), frames, path.clone());
+    let Render::Encode(encode) = &mut job.render else {
+        unreachable!("job encodes")
+    };
+    encode.audio = vec![Region {
+        track: Track::Music(music.clone()),
+        out_samples: 0..48_000,
+        source_offset: 0.0,
+        gain: 0.5,
+    }];
+    let done = export(job).unwrap();
+
+    let credits = dir.path().join("out.credits.txt");
+    assert_eq!(done.credits, Some(credits.clone()));
+    assert_eq!(std::fs::read_to_string(&credits).unwrap(), credit);
 }
 
 /// A pitch diagram's colour: green, so a board burned over it is visible as

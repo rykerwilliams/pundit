@@ -16,13 +16,130 @@ Paths are from the repository root; `core`, `media`, `app` and `harness` mean
 
 ## Where this stands (update it as tasks land)
 
-- **1 — the credit beside the reel, read at render time.** Not started.
+- **1 — the credit beside the reel, read at render time.** Done. Census
+  re-taken at `4d43df9` (after #131/#94): every task 1 site in §A still at its
+  line. **One addition:** `ExportDone` grew past clippy 1.92's
+  `large_enum_variant` threshold inside `ExportMessage::Finished` (216 bytes);
+  it takes the same reasoned `#[allow]` `Render` already carries, rather than a
+  `Box` every reader would deref. `credit_beside` is re-exported from
+  `pundit_media` for task 4 and `reel_music`. Sabotages 1–3 each failed exactly
+  the tests the plan named.
 - **2 — core: the query, the parse, the licence words, the credit and the stem
-  rule.** Not started.
-- **3 — media: `get`, `inspect_audio` and the fixture server's body.** Not
-  started.
-- **4 — app: `music_search.rs` and the default folder.** Not started.
-- **5 — the Find music sheet, its keys, the wiring and the prose.** Not started.
+  rule.** Done; §A's task 2 sites unchanged at `4d43df9`. Deviations:
+  - **The fixture page is `core/tests/data/openverse_page.json`**, not
+    `tests/fixtures/`: the root `.gitignore`'s `fixtures/` (for local video)
+    ignores any directory of that name. Built from one live `q=rock` answer
+    fetched while writing it (2026-10-13; the test reads only the file). Every
+    real row was CC BY, so the CC0 and PDM rows are real rows relabelled, as
+    the NC and BY-SA ones are.
+  - **`Candidate` carries `seconds: f64` and `landing_url`, and no
+    `creator_url`**: nothing reads the creator's page (the credit links the
+    track's, spec C2), so the parse reads ten fields, not eleven. A row is
+    parsed on its own (`serde_json::Value` per row), so a field of the wrong
+    type drops that row, not the page.
+  - **The credit's first line carries the modification phrase for every
+    licence**, not only BY: one rule, true of every reel, and owed only by BY.
+    A missing `foreign_landing_url` drops the page line (two lines).
+  - **2.4 ranks four hand-built rows** rather than 2.3's parse, so that
+    sabotages 1 and 3 (a dropped row kept) fail 2.3 alone, as the plan says;
+    on the parse they failed 2.4 too. Sabotage 4 is "`rank` does nothing":
+    `rank` takes a slice, so it cannot filter.
+  All eight sabotages then failed exactly the named test.
+- **3 — media: `get`, `inspect_audio` and the fixture server's body.** Done;
+  §A's task 3 sites unchanged at `4d43df9`, and the 11 outside `Answer::`
+  callers needed no edit under `Clone`. Measured on 1.24.2 while writing it:
+  - the walk plugs `oggdemux` (Ogg), `id3demux` + `mpegaudioparse` (the
+    ID3-tagged MP3) and `wavparse` (WAV), as spec S7 says; the 3 s fixtures
+    decode to 3.000, 3.024 and 3.000 s;
+  - **an HTML page is "has no sound"** (`Reader::start`'s `Ok(None)`), not an
+    error from `decodebin3`: refused either way;
+  - a 429 carries `http-status-code=429`; the cut body's error carries `200`;
+  - **a `Stall` ends 1.1 s in with the cut body's error**, not a timeout of
+    its own: after the 1 s read timeout `souphttpsrc` retries with a Range
+    request, which the fixture answers `200`. So 3.3 asserts the time only —
+    asserting `Failed` there made sabotage 1 fail it as well as 3.4.
+  - `GetError` is a `thiserror` enum; `read_all` and `inspect_audio` share a
+    private `open_whole` (start, refusing no sound), so `inspect_audio` is
+    that, the walk, then `rest`. Its tests are `composite::audio`'s unit
+    tests, in the lib binary, rather than a new test binary.
+  Sabotages 1–4 each failed exactly the named test (2 took 15.4 s, the
+  default timeout).
+- **4 — app: `music_search.rs` and the default folder.** Done. Drift at
+  `f7ef7f6`: `state.rs` moved by #94 — `AppFiles` `:297`, `default_location`
+  `:305`, `in_config_dir` `:322`, `films_dir` `:671`, tests `:789` / `:806`.
+  Deviations:
+  - **`GetError` gains `Unreachable`, and `Failed` is GStreamer's words for
+    stderr only**, with `pundit_media::host` public: task 3's `Failed` carried
+    `unreachable_or`'s text, which is raw GStreamer for anything but offline,
+    so no row or line could have shown it. `music_search` words every error
+    itself (S11's 429 line; *"Openverse answered with something pundit can't
+    read (…)"* for any other status, a broken-off answer or a bad page; the
+    host for offline; *"<host> answered HTTP <n>"* / *"could not fetch the
+    track from <host>"* on a row). New media test
+    `get_says_when_nothing_answers`.
+  - **`films_dir` became `user_dir(special, home, under_home)`**, read twice
+    (Videos, Music), rather than a second function of the same shape;
+    `new_match.rs`'s module doc named it and follows.
+  - **The `.part` and the credit's temp name use `naming::safe_chars(id)`**:
+    the id comes off the network, and a `/` in it would name a path outside
+    the genre folder.
+  - **`stem(&Candidate)` is public** beside `already_in`, so the window and
+    `add` derive the name once.
+  - The page is the core test's file, `include_str!`-ed from
+    `pundit-core/tests/data/`; the served track is a 3 s Ogg and each test
+    sets the candidate's `seconds` to 3 (13 in 4.5).
+  Sabotages 1–5 and the new media one each failed exactly the named test.
+- **5 — the Find music sheet, its keys, the wiring and the prose.** Done.
+  Census re-taken at `aa3b0b0`, after #94: `app.slint` is 7,847 lines before
+  this task — the ExportSheet Music properties `:2062`–`:2070`, the Music row
+  `:2179`–`:2207`, the window's `export-music-*` `:4501`–`:4506`,
+  `close-basket` `:5058`, `close-settings` `:5073`; in `handle-key` the
+  **Keys, then Settings, then export** branches, so Find music's goes between
+  Settings and export; the export `Scrim` `:7592`, Settings `:7785`, Keys
+  `:7801`, error `:7822`. `main.rs`: `wire_music` called `:440`, `show_music`
+  `:1345`, `wire_music` `:1362`, `wire_devices` `:2295` (spawn `:2304`).
+  `tests/ui`: the `mod` list gained `settings_sheet`; `sheet_scroll`'s
+  `sheets()` has eight entries (Settings among them), now nine;
+  `text_editing.rs` already said *"three sheets"* with four, and now lists
+  them without a count. Deviations:
+  - **The window callback is `find-music()` and `main.rs` opens the sheet**,
+    because it prefills the genre from `state.json`.
+  - **An Add's failure goes on the sheet's line**, naming the song, and its
+    row goes back to Add: S11's "on the row" would need a third row field for
+    one line of text.
+  - **Close clears the rows and bumps the generation**, so a search still in
+    flight cannot repaint a closed sheet. An Add that lands after Close
+    selects its genre at once, as Close would have.
+  - The rows are a plain `for` in the sheet's body, not a `ListView`, so
+    twenty scroll with the body (#134).
+  - **Sabotage 1 also fails 5.6**: `text_editing` opens Find music over the
+    export sheet, whose branch accepts every key. **Sabotage 2 fails 5.4
+    only**: 5.6's probe presses no Esc, so the plan's "and 5.6" was wrong.
+    3, 4 and 5 failed exactly 5.3, 5.1 and 5.5.
+  - Prose: `CLAUDE.md` (*"Hugging Face, Openverse or Jamendo"*, a
+    `.credits.txt` bullet, the goals reel's Find music sentence), the guide's
+    *Finding music*, the checklist's §15 (the plan's eight manual checks),
+    BACKLOG #84 SHIPPED with the PR as `#TODO`.
+
+- **Review fixes (PR #95).** One commit after both code reviews:
+  - **No silent overwrite**: `add` refuses a song whose stem is already in the
+    genre (two rows can share `<title> — <creator>`), and a finished Add
+    recomputes every row's "In <genre>" rather than one row's.
+  - **One sidecar writer** (`beside` in `composite/export.rs`) for the `.srt`,
+    the `.chapters.txt` and the `.credits.txt`.
+  - **One HTTP source** (`http_source`, `first_error` in `download.rs`) for
+    `get` and the model download, which so gains the User-Agent and a 20 s
+    read timeout (it had souphttpsrc's 15 s default). `GetError` is
+    `Unreachable(host)` with the offline words, and `TooLarge(limit)`, which
+    an Add words as *"the track is larger than pundit takes (64 MB)"*.
+  - A successful Add writes `musicGenre` and re-lists the picker at once (spec
+    S6 amended); Close only cancels. A Search clears the last one's rows as it
+    starts. `Genre::resolve` skips hidden folders. Blank page and licence
+    links are `None`. `Licence` is an enum; `results` returns
+    `serde_json::Error`; `MusicRow` is `{id, title, detail, state}`.
+  - The container test now pins all five (FLAC and M4A added: `flacparse`,
+    `qtdemux`, both measured on 1.24.2).
+  - BACKLOG #84 records the renamed-track gap as accepted.
 
 **Shipping: one PR, a commit per task, in order.** Task 1 is now small. It adds
 no `ExportJob` field, so there is no mechanical diff to keep out of the
