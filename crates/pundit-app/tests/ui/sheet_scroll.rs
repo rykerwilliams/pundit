@@ -1,19 +1,18 @@
 //! **No sheet is taller than the window, and its buttons can be reached**
 //! (BACKLOG #134).
 //!
-//! All six modals are one `Sheet`, and until this change that component was
+//! Every modal is one `Sheet`, and until this change that component was
 //! `height: body.preferred-height` with no scroll: a card that outgrew the
 //! window had its bottom — the action buttons — simply off the screen, with no
-//! way to reach them. Measured at the declared 1100x700 minimum, two of the six
-//! were over it: the export sheet reopened over a run (**823px**) and New match
-//! with twenty videos (**704px**).
+//! way to reach them. Measured at the declared 1100x700 minimum, two of the
+//! sheets then shipped were over it: the export sheet reopened over a run
+//! (**823px**) and New match with twenty videos (**704px**).
 //!
 //! **What this file pins is the rule, not those two cases.** `Scrim`'s column
 //! caps every sheet at the window and the body scrolls the rest, so the
-//! assertion below is over all six sheets at once, in the worst state each is
-//! configured in — which is what makes it a tripwire for the seventh (#96's
-//! keys sheet, a list taller than the window) rather than a measurement of
-//! today's tallest.
+//! assertion below is over every sheet at once, in the worst state each is
+//! configured in — which is what makes it a tripwire for the next one rather
+//! than a measurement of today's tallest. A new sheet joins `sheets()`.
 //!
 //! **The buttons scroll with the body**, because each sheet puts its own button
 //! row in `@children`. That is the accepted trade, so the reachability test
@@ -31,7 +30,7 @@ use std::ops::ControlFlow;
 use std::rc::Rc;
 use std::time::Duration;
 
-/// One of the six modals: how a test opens it, the element type name its card
+/// One of the modals: how a test opens it, the element type name its card
 /// is found by, and the worst state it is configured in. Paired here so a sheet
 /// that scrolls and a sheet that overflows are two different failures, named.
 struct Sheet {
@@ -43,7 +42,7 @@ struct Sheet {
     shut: fn(&AppWindow) -> bool,
 }
 
-/// All six, in the order `app.slint` declares them. The error dialog is the one
+/// Every modal, in the order `app.slint` draws them. The error dialog is the one
 /// with no component of its own, so its card is the bare `Sheet`.
 fn sheets() -> Vec<Sheet> {
     vec![
@@ -93,6 +92,16 @@ fn sheets() -> Vec<Sheet> {
                 w.set_new_match_sheet_open(true);
             },
             shut: |w| !w.get_new_match_sheet_open(),
+        },
+        Sheet {
+            card: "SettingsSheet",
+            open: |w| w.set_settings_sheet_open(true),
+            shut: |w| !w.get_settings_sheet_open(),
+        },
+        Sheet {
+            card: "KeysSheet",
+            open: |w| w.set_keys_sheet_open(true),
+            shut: |w| !w.get_keys_sheet_open(),
         },
         Sheet {
             card: "Sheet",

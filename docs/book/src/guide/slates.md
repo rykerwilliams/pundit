@@ -16,7 +16,9 @@ finished is a row with an open end, there for you to finish or delete.
 
 To move a mark, put the playhead where it belongs and press **Set in** or
 **Set out** on the selected slate. The selected slate's range is drawn on the
-scrubber. To watch it, double-click the row or choose **Preview slate** from its
+scrubber, in the slate colour its row is selected in. To change that colour,
+for the band and the row alike, open **Settings…** (or right-click the
+scrubber and choose **Band colour…**). To watch it, double-click the row or choose **Preview slate** from its
 menu: the game plays from the start of the range and stops at its end.
 
 ## Recording over one

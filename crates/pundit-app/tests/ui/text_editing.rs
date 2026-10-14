@@ -23,7 +23,7 @@
 //! in even before this change — layer 5 of `handle-key` returns `reject` for
 //! every non-Esc key ahead of the shortcuts, so they were already protected —
 //! and the `SetupField::edit` they share is reached here through the New match
-//! sheet's four.
+//! sheet's four and the Settings sheet's one.
 //!
 //! **Each field is driven by a click where a coach would click it**, not by a
 //! `focus()` helper: what is under test includes the field being reachable at
@@ -328,6 +328,29 @@ fn a_letter_typed_in_a_sheet_field_reaches_the_field() {
         );
         assert_eq!(text(&w), TYPED, "{sheet_id}: the letters never arrived");
     }
+    w.set_new_match_sheet_open(false);
+
+    // The Settings sheet's band field (#131), a `SetupField` too.
+    w.set_settings_sheet_open(true);
+    let edit = one(&w, "SettingsSheet::band")
+        .query_descendants()
+        .match_id("SetupField::edit")
+        .find_first()
+        .expect("no field inside the Settings sheet's band");
+    edit.mock_single_click(PointerEventButton::Left);
+    for key in PROBE {
+        press(&w, key);
+    }
+    assert!(
+        fired.borrow().is_empty(),
+        "the band field: typing fired {:?}",
+        fired.borrow()
+    );
+    assert_eq!(
+        edit.accessible_value().as_deref(),
+        Some(TYPED),
+        "the band field: the letters never arrived"
+    );
 }
 
 /// **Esc leaves the field before it closes the sheet** (spec C6, basket spec

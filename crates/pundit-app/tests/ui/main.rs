@@ -47,6 +47,12 @@ slint::include_modules!();
 #[path = "../../src/key_action.rs"]
 mod key_action;
 
+/// **The production colour wiring, shared with the binary** (#131), for
+/// `key_action`'s reason: a fixture's own copy of the `ColorMaths` handlers
+/// would be what the colour tests tested.
+#[path = "../../src/color_wiring.rs"]
+mod color_wiring;
+
 /// The app's state file under a temporary directory, for the six fixtures that
 /// wire the keys.
 ///
@@ -74,6 +80,7 @@ mod keys_sheet;
 mod panel_widths;
 mod scrubber;
 mod self_view_placement;
+mod settings_sheet;
 mod sheet_scroll;
 mod slate_fields;
 mod slate_menu;

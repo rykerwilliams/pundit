@@ -27,11 +27,13 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use gstreamer::glib;
+use pundit_core::stroke::Rgba;
 use pundit_media::WhisperModel;
 use serde::{Deserialize, Serialize};
 
 use crate::drawing::{Pen, PenWidth};
 use crate::keymap::Keymap;
+use crate::match_panel::{hex, parse_hex};
 
 /// The app's own directory under whichever XDG base directory is in play.
 pub(super) const APP_DIR: &str = "pundit";
@@ -156,6 +158,10 @@ struct State {
     /// on.
     #[serde(deserialize_with = "lenient")]
     snap_to_events: Option<bool>,
+    /// The slate band's colour (BACKLOG #131), `#rrggbb`. `None` is the palette's
+    /// selection colour — what the band was before this field existed.
+    #[serde(deserialize_with = "lenient")]
+    slate_band_color: Option<String>,
 }
 
 /// Any value this build can't read falls back to the field's default, so one
@@ -532,6 +538,20 @@ impl AppFiles {
     pub fn set_snap_to_events(&self, on: bool) {
         let mut state = self.read();
         state.snap_to_events = Some(on);
+        self.save(&state);
+    }
+
+    /// The slate band's colour, if the coach chose one. `None` — absent, a
+    /// type error, or text that is not `#rrggbb` — is the palette's colour.
+    pub fn slate_band_color(&self) -> Option<Rgba> {
+        self.read().slate_band_color.as_deref().and_then(parse_hex)
+    }
+
+    /// Remembers the slate band's colour for every project on this machine;
+    /// `None` goes back to the palette's.
+    pub fn set_slate_band_color(&self, color: Option<Rgba>) {
+        let mut state = self.read();
+        state.slate_band_color = color.map(hex);
         self.save(&state);
     }
 
@@ -1019,6 +1039,8 @@ mod tests {
         state.set_panel_widths(widths);
         // Off, not the default on: a clobbered snap must be visible below.
         state.set_snap_to_events(false);
+        let red = parse_hex("#ff0000");
+        state.set_slate_band_color(red);
         assert_eq!(state.last_project(), Some(PathBuf::from("/p/game")));
         assert_eq!(state.whisper_model(), WhisperModel::Base);
         // (Base, not the default Small: a clobbered model must be visible.)
@@ -1039,6 +1061,11 @@ mod tests {
         assert!(
             !state.snap_to_events(),
             "and the snap survives the later setters"
+        );
+        assert_eq!(
+            state.slate_band_color(),
+            red,
+            "and the band survives the later setters"
         );
     }
 
@@ -1108,6 +1135,37 @@ mod tests {
         .unwrap();
         assert!(state.snap_to_events());
         assert_eq!(state.pen(), Pen::Blue);
+    }
+
+    /// The band is the palette's until the coach picks a colour, and anything
+    /// this build can't read as one — a JSON type error (`lenient`'s) or a
+    /// string that is no colour (the accessor's) — reads as the palette's,
+    /// costing nothing else (BACKLOG #100).
+    #[test]
+    fn remembers_the_slate_band_and_defaults_to_the_palette() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppFiles::in_config_dir(dir.path());
+        assert_eq!(state.slate_band_color(), None);
+
+        let red = parse_hex("#ff0000");
+        state.set_slate_band_color(red);
+        assert_eq!(
+            AppFiles::in_config_dir(dir.path()).slate_band_color(),
+            red,
+            "what a relaunch sees"
+        );
+
+        state.set_slate_band_color(None);
+        assert_eq!(state.slate_band_color(), None, "Default");
+
+        for text in [
+            r#"{"pen":"blue","slateBandColor":5}"#,
+            r#"{"pen":"blue","slateBandColor":"teal"}"#,
+        ] {
+            std::fs::write(dir.path().join(APP_DIR).join(FILE), text).unwrap();
+            assert_eq!(state.slate_band_color(), None, "{text}");
+            assert_eq!(state.pen(), Pen::Blue, "{text}");
+        }
     }
 
     /// Folds are machine-wide like the widths, and a file from before them

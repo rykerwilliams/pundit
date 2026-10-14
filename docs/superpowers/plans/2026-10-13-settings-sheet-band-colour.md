@@ -13,10 +13,79 @@ fastest, and each task here moves the lines of the next. Paths are under
 
 ## Where this stands (update it as tasks land)
 
-- **1 — `ColorPicker` holds its own position.** Not started.
-- **2 — the `state.json` field.** Not started.
-- **3 — the Settings sheet, its two doors, the band and the row.** Not started.
-- **4 — the prose: CLAUDE.md, the guide, BACKLOG, #78's spec.** Not started.
+- **1 — `ColorPicker` holds its own position.** Done. The labels went on
+  first and both tests in `tests/ui/settings_sheet.rs` ran green against the
+  old code, then again after the move; all three sabotages failed their own
+  test alone (`#804040`, `#0000ff`, `""`). **Census redone after #92**, which
+  moved this task's `app.slint` lines by +32 to +37 (the swatch `:2738` →
+  `:2772`, the chrome `:2721`–`:2730` → `:2753`–`:2762`, the sheet's held
+  position `:2943`–`:2970` → `:2975`–`:3002`, the popup `:3152` → `:3189`) and
+  `main.rs`' colour wiring `:1690`–`:1725` → `:1727`–`:1763`. **One more stale
+  comment than §0.7 lists:** `color_picker.rs`' `hsv_of_hex` doc pointed at
+  `MatchSetupSheet::sync-from-text`; it now names `ColorPicker`'s. The setup
+  sheet's `changed picker-field` handler went without a replacement: the
+  picker is created per open, so `init` covers it.
+- **2 — the `state.json` field.** Done, as written; `bus/state.rs` had not
+  drifted under #92 (its two-line diff is elsewhere in the file). All four
+  sabotages failed their predicted assertion alone — the `5` row's pen, the
+  `"teal"` row's band, the `set(None)` row, and
+  `the_settings_are_independent` at its first assertion after the new setter.
+- **3 — the Settings sheet, its two doors, the band and the row.** Done. All
+  ten sabotages failed where predicted; #8 failed its four tests, the typo test
+  at its "Esc, Esc closed it" assertion, one line before the reopen the plan
+  named, with the same cause. **Census drift (after #92):** the window's
+  `slate-span-from`/`-to` `:4153` → `:4193`, `keys-sheet-open` `:4590` →
+  `:4645`, `close-basket` `:4895` → `:4956`, the Keys branch in `handle-key`
+  `:5007` → `:5066`, the row's background `:5692` → `:5759`, the scrubber
+  instance `:6763` → `:6873` (`toggle-snap` `:6786` → `:6896`), the Keys
+  button `:7159` → `:7270`, the Keys `Scrim` `:7525` → `:7640`; `main.rs`'
+  `wire_snap` `:2710` → `:2760` and its call `:439` → `:440`; `CLAUDE.md`'s
+  counts `:738` → `:749` and `:845` → `:856`; `sheet_scroll.rs`' `:33`/`:45` →
+  `:34`/`:46`. `scrubber.slint` and `snap_menu.rs` had not moved. **One test more
+  than the plan lists:** `a_kit_colour_lands_in_the_settings_field`, which the
+  spec's Testing §2 names. **Not added to `sheet_scroll`'s measurement table**
+  (the sheet heights at the top of `no_sheet_outgrows_the_window`), which records
+  #134's measurement rather than every sheet.
+- **4 — the prose: CLAUDE.md, the guide, BACKLOG, #78's spec.** Done; the PR
+  number is a `#TODO` in BACKLOG's #131, #78 and the Closed index, for whoever
+  opens the PR. **Drift:** CLAUDE.md's `state.json` list `:249`–`:255` →
+  `:249`–`:255` (no move), the Keys paragraph `:691` → `:702` (the Settings
+  paragraph went after it, before the snap's); BACKLOG's #78 index `:19`–`:26` →
+  `:19`–`:26`, #131's `:34`–`:39` → `:31`–`:36`, #78's first-tenant paragraph
+  `:1620`–`:1627` → `:1615`–`:1622`, #84's *"unspent"* `:1875` → `:1870`, #102's
+  `:2946` → `:2941`, #129's trigger `:4347` → `:4374`, #131's entry `:4381` →
+  `:4408`; #78's spec callout `:320`–`:325` (no move). **#78 is marked
+  SHIPPED**, not only closed: its two export switches had already shipped
+  2026-10-07 (#57) while its entry still said *"next"*. Both #78 and #131 went
+  to "Closed, kept for the reasoning", which is where this file's shipped index
+  lines live.
+- **Review fixes (PR #94).** Six changes:
+  - The selected slate row's words take `ColorMaths.band-ink` (black or white,
+    `highlight::label_ink`), because the opaque row in a pale or dark band
+    colour hid them; spec Risk 1, cured as the spec said it would be.
+  - `ColorPicker`'s saturation and brightness start at 1, so the strip from
+    the default gives a hue rather than black.
+  - `SettingsSheet` owns its text: a private `field`, seeded in `init` from
+    `stored`, reporting through `edited` only when it is a colour or empty.
+    The window keeps one `slate-band`; `slate-band-good`, the window's
+    `changed` handler, `close-settings()`'s reseed and the startup write-back
+    are gone. The plan's task 3 sabotage 4 (the reseed) no longer has a target;
+    its replacement is `init` removed.
+  - One `export global ColorMaths` replaces the colour callbacks forwarded
+    through the window, both sheets and the picker, wired by
+    `src/color_wiring.rs`, a module of the binary and of `tests/ui` like
+    `key_action.rs`; the fixture's hand copy is gone.
+  - Prose trimmed (CLAUDE.md's Settings paragraph, the `Sheet` doc's count,
+    `sheet_scroll.rs`' history).
+  - `esc_in_the_field…` lost its letter assertion (`text_editing.rs` has it).
+
+  Three tests are new: `the_hue_strip_from_the_default_gives_a_colour`,
+  `the_band_ink_reads_over_white_and_black`, and an "opening reports nothing"
+  assertion in `the_settings_button_opens_the_sheet_and_close_shuts_it`.
+  **What the row's ink reaches is still not testable** — a `Text` exposes no
+  colour — so the binding is manual check 8. A `field != stored` guard tried
+  on `changed field` was dead (a sabotage removing it passed everything),
+  because an assignment in `init` runs no `changed`, and was taken out.
 
 **Shipping: one PR, a commit per task, in order.** No commit puts a control on
 `main` that does nothing:

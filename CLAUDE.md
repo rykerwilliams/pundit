@@ -250,7 +250,8 @@ reference laptop it reads `vah265dec` / `memory:DMABuf` / `egl`.
 coach has had open** (newest first, capped at 8), the chosen speech model, the
 pen, the window's size, **the two side columns' widths**, **the keys the
 coach rebound**, the whiteboard's armed diagram, a goals reel's music folder
-and genre, and whether a drag on the scrubber snaps live in
+and genre, whether a drag on the scrubber snaps, and the slate band's colour
+live in
 `$XDG_CONFIG_HOME/pundit/state.json` — every one of them a property of this
 machine and none of the project's;
 point `XDG_CONFIG_HOME` elsewhere when testing so the real one isn't
@@ -701,6 +702,18 @@ fix is argued from.
 
 **The Keys sheet is the seventh `Sheet`, and it is a list** (#96 task 4). `F1` opens it — that is `Action::ShowKeys`' own default, listed in the table like every other key — and so does the **Keys** button, which sits in the *drawing* row beside `Fit` and for `Fit`'s reason: the transport row is full at the window's 1100px minimum (measured, `Devices…` ends at x=1199, 99px past the right edge). Its rows are `Keymap::listing()` set on `key-rows` in `wire_keys`, **beside `action-for` and nowhere else**, so the list and the lookup are one map read twice and the list cannot go stale. **The six reserved rows — Escape, Tab, Shift+Tab, Return, Home, End — are written in `app.slint`, not in the table:** they are not `Action` variants, so `Binding`, `overrides()` and a rebind would each have to filter them back out of a table whose whole point is that every row in it is rebindable, and their words belong beside their behaviour — for the three the window handles, `handle-key`'s own reserved block in the same file. The list is taller than the 700px minimum window, and it scrolls in the sheet's own body like every sheet's (#134, below), which retired the `ScrollView` cap it first had of its own.
 
+**The Settings sheet has two doors and one gate** (#131): the drawing row's
+**Settings…** and the scrubber's *Band colour…* are both `enabled:
+can-open-settings`, and the gate is on the doors, never in `open-settings()`.
+The slate band's colour is stored only when the field holds a colour (or is
+empty, the default) — never half-typed.
+
+**`ColorMaths` is the app's first Slint global** (#131): the colour maths — hex
+to colour, the picker's HSV both ways, the kit colours, a label's ink — wired
+once by `color_wiring.rs`, which both the binary and `tests/ui` `mod`, as
+`key_action.rs` is. It replaced the kit colours and four callbacks declared and
+forwarded through the window, both sheets and the picker.
+
 **A drag on the scrubber snaps to the match marks** (#102; right-click it to turn that off, remembered in `state.json`), and **only the drag does** — never the wheel, the arrows, `,`/`.` or `[`/`]`. The radius is one constant in pixels, `snap-radius` in `scrubber.slint`; the landing is `match_panel::nearest_chapter` over `match_abs`, so a snapped release and `]` seek to the same value.
 
 **Stepping one frame is `Command::StepFrame`** (`,` and `.` by default, the arrows skip), and it is refused while playing, recording or previewing. A step works from the shown frame's *end*, which a seek never clips: forward seeks to it, back to half a nominal frame before the frame's nominal start, or its own start where that is earlier (a frame held long). The readout shows tenths while paused, whole seconds while playing.
@@ -746,7 +759,7 @@ for `MatchSetupSheet`, the one sheet that *wraps* a `Sheet` rather than being
 one (the colour picker's popup hangs off that wrapper). **A sheet's buttons and
 its title scroll with the body**, which is the accepted trade: each sheet puts
 its own action row in `@children`, and a pinned footer would mean a second child
-slot on `Sheet` and an edit to all six. The keyboard is untouched, because
+slot on `Sheet` and an edit to every sheet. The keyboard is untouched, because
 `handle-key` is `capture-key-pressed` and a `Flickable` reads no keys at all.
 One thing it costs a test: `ElementHandle` skips anything clipped away, so a
 button at the bottom of a tall sheet has to be flicked into view before it can
@@ -853,7 +866,7 @@ is ever persisted it is `queue.json` beside `basket.json` and **never** a
   pickers. It is published on every change to the queue and **nowhere else**: a
   project open does not emit it and must never clear the list.
 - **The sheet is the only export UI, and the queue is a section in it** — no
-  eighth `Sheet`. Enqueue has to be where the choices are (a queued job freezes
+  `Sheet` of its own. Enqueue has to be where the choices are (a queued job freezes
   all six plus the ticks), the Run list is already here so a queue run's
   progress costs no new UI, and the section needs no `editing` fold because it
   has no text field. **`Add to queue` is in the action row, not in that

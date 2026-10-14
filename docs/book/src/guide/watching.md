@@ -20,7 +20,8 @@ them as one game, and playback carries straight on across the join.
   within a few pixels of it, and lets go when you drag on past — so letting go
   on a mark lands exactly where <kbd>]</kbd> would. Right-click the scrubber to
   turn **Snap to match events** off or on; the choice is remembered on this
-  computer.
+  computer. The same menu's **Band colour…** opens the settings, where the
+  selected slate's band is coloured.
 
 ## Scanning fast
 

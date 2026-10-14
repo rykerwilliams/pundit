@@ -16,14 +16,6 @@ made things worse.
 
 ### Next, in order
 
-- **78.** App settings for the things an export writes. The coach (2026-09-24):
-  "the srt file gen, the other chapter track" — and (2026-10-03) *"I think all of
-  them should be settings?"*, with **fully independent** switches. **Specced
-  2026-10-05, planned 2026-10-06**: two on the export sheet (Chapters,
-  Scoreboard subtitles), and a settings sheet designed but not built — and
-  still unbuilt: #102 declined it (2026-10-07) and #84 put its folder on the
-  export sheet instead (2026-10-12). **#131 builds it** (specced 2026-10-13),
-  which closes this entry
 - **84.** Music under a goals reel — **phase 1 shipped 2026-10-12** (#80, #82,
   #83): a Music row on the export sheet (a genre picker and a Folder… button), a
   stable song per match, ducked and faded; **no Settings sheet** (spec §M6).
@@ -32,12 +24,6 @@ made things worse.
   `2026-10-13-reel-music-search.md`): a Find music sheet off the Music row that
   searches Openverse for CC0 / CC BY music and adds it to a genre folder, and a
   `.credits.txt` beside the reel. One PR, a commit per task
-- **131.** The slate band's colour should be a setting. The coach (2026-10-05):
-  *"i mean the band color should be in the settings"* — and *"the slider bar
-  colour clashes a bit"*. **Specced 2026-10-13**
-  (`2026-10-13-settings-sheet-band-colour-design.md`): a full colour picker in
-  a new Settings sheet — #78's §U4, built at last — which the selected slate's
-  row follows too, also reached from the scrubber's right-click menu
 
 ### Watch, rather than pick up
 
@@ -182,6 +168,13 @@ problem — which is the entry, not an excuse for it.
 - **115.** The caption bar, switchable per clip — shipped 2026-10-13 with #133:
   Whole clip / First 3 seconds / Off, sticky. **Still open:** the lighter
   variant, dropping the `1 / 1` from a one-entry export (see the entry)
+
+- **131.** The slate band's colour, a setting — shipped 2026-10-13 (PR #94): a
+  full colour picker in a new Settings sheet, which the selected slate's row
+  follows too, also reached from the scrubber's right-click menu
+- **78.** App settings for the things an export writes — closed 2026-10-13: the
+  two export-sheet switches shipped 2026-10-07 (#57), and the Settings sheet it
+  designed was built by #131
 
 - 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 92, 94
 
@@ -1576,7 +1569,8 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** as soon as P3's measurement is done, or sooner if the
   coach asks.
 
-78. **App settings for the things an export writes.** The coach (2026-09-24):
+78. **App settings for the things an export writes — SHIPPED 2026-10-13**: the
+  switches 2026-10-07 (#57), the Settings sheet with #131 (PR #94). The coach (2026-09-24):
   "add to the backlog an appsettings? we don't need a screen for it yet. maybe we
   already have it. e.g. the srt file gen, the other chapter track, etc. these are
   general app config settings to be turned off or on."
@@ -1637,7 +1631,10 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   checkable `MenuItem` already make cheap — so §U4's "two options with nothing to
   sit beside" was half wrong, and the half that stands is #84's music folder
   **path**: a field and a file-chooser button need a surface, which a menu item
-  cannot be. §U4's design is unchanged and unspent.
+  cannot be. §U4's design is unchanged and unspent. **Spent by #131
+  (2026-10-13):** neither #102 nor #84 built the sheet in the end, and the slate
+  band's colour — a picker, which no menu item can hold — is its first tenant
+  (`docs/superpowers/specs/2026-10-13-settings-sheet-band-colour-design.md`).
 - **Seven, not six** (found while planning, 2026-10-06): **#131** was filed the
   same day the spec was written and waits on the settings sheet too. **#129 is
   deliberately not one** — its own words are "with *any* settings surface",
@@ -1649,7 +1646,9 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   `ExportDone::chapters` never reaches the harness, that no fixture in the tree
   can produce a `.chapters.txt`, and that two more bools take `Bus::export` past
   clippy's `too_many_arguments`, so the command's payload becomes one struct.
-- **When to revisit:** next — it is specced and planned, waiting on execution.
+- **When to revisit:** closed. The switches shipped 2026-10-07 (#57) and the
+  sheet 2026-10-13 with #131; a new machine-wide setting with nothing to sit
+  beside is the sheet's next row.
 
 79. **What the app does over a forwarded X11 display, and saying so.** The coach
   asked (2026-09-24) whether it runs over remote X11. Expected answer: **no, by
@@ -1885,7 +1884,8 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **Confirmed 2026-10-07 (#102's spec, §H):** this entry **is** the sheet's first
   tenant, because #102 found a cheaper home (a checkable item on the scrubber's
   own right-click menu) and a menu item cannot hold a path or a file-chooser
-  button. So building the sheet is #84's, and §U4's design is unspent.
+  button. So building the sheet is #84's, and §U4's design is unspent. (In the
+  end #84 did not build it either, below; it was spent by #131, 2026-10-13.)
 - **Specced 2026-10-12, phase 1** (`docs/superpowers/specs/2026-10-12-reel-music-design.md`):
   a Music row on the export sheet for a reel — a genre picker and a **Folder…**
   button — and the track mixed under the reel, ducked and faded. **It does not
@@ -2967,7 +2967,8 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   build #78's settings sheet** (§H): the option is a checkable item on the
   **scrubber's own right-click menu**, which is #78's §U1 rule applied to a
   control rather than a row, and is the licence §D1 wrote for this entry. So #84
-  is the sheet's first tenant and #78's §U4 design is unspent. The rest: **match
+  is the sheet's first tenant and #78's §U4 design is unspent (it was spent by
+  #131, 2026-10-13). The rest: **match
   marks only** — with "you can only snap to a mark you can see" as the rule, which
   is why the *selected slate's span*, drawn since #127's week, is the one open
   question and highlights and clip starts are not; a **6px** radius living in
@@ -4401,7 +4402,10 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   for a coach who records on camera. It is filed so it is not lost, not because
   it is urgent.
 - **When to revisit:** with any settings surface, or the first time a coach wants
-  takes without an inset by default and finds they cannot say so.
+  takes without an inset by default and finds they cannot say so. **The first
+  half fired 2026-10-13 and is answered:** #131's Settings sheet holds this
+  machine's values, from `state.json`, and `pip_for_new_recordings` is the
+  project's, so that sheet is not its home. The second half stands.
 
 130. **Every letter typed into the slate tag filter fired its shortcut — FIXED
   2026-10-05.** The coach, testing the themed pass: *"i can't type i or o into
@@ -4434,7 +4438,9 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   reaches the field". #105's new `tag_field.rs` tests are the first of that kind
   in the repo, and they only cover the two fields they were written for.
 
-131. **The slate band's colour should be a setting.** The coach (2026-10-05):
+131. **The slate band's colour should be a setting — SHIPPED 2026-10-13** (PR
+  #94; spec `2026-10-13-settings-sheet-band-colour-design.md`, plan
+  `2026-10-13-settings-sheet-band-colour.md`). The coach (2026-10-05):
   *"slate bands look dope tho"* and then *"i mean the band color should be in the
   settings"*.
 - **What it is today:** one literal in `ui/scrubber.slint` —
@@ -4471,6 +4477,17 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   (`scrubber.slint`'s `snap-menu`), which is where a coach would look for the
   band's colour. Whether a
   picker is wanted at all is still this entry's own question.
+- **Answered by the coach, 2026-10-13, and built:** a full colour picker, in a
+  new Settings sheet — #78's §U4, built at last — reached from **Settings…** in
+  the drawing row and from **Band colour…** on the scrubber's menu. The selected
+  slate's row takes the colour too, so the band and its row still match; the
+  track's other three marks are untouched (no palette). It is `state.json`'s
+  `slateBandColor`, a `#rrggbb` string read leniently, absent meaning the
+  palette's selection colour, and Default is the way back. The picker's held
+  position moved into `ColorPicker`, so the match setup sheet's popup and this
+  sheet share the grey-hue logic. **Not automated:** that the band and the row
+  actually draw the colour (two `Rectangle.background`s with no accessible
+  property) — the plan's manual checks.
 
 132. **Two clicks silently renamed the wrong slate — FIXED 2026-10-06.** Found
   by #127's agent while reading the slate row's click path, not by a failure.

@@ -11,6 +11,7 @@
 //! project and the player, takes [`Command`]s and answers with [`Event`]s,
 //! which are handed to the UI thread with `upgrade_in_event_loop`.
 
+mod color_wiring;
 mod key_action;
 mod pickers;
 mod video;
@@ -29,14 +30,13 @@ use pundit_app::bus::{
     PanelWidths, RecordingStatus, Snapshot, Stage, Take, TargetState, TranscriptionState,
     WindowSize,
 };
-use pundit_app::color_picker;
 use pundit_app::drawing::{arrow_commands, path_commands, InProgress, Pen, PenWidth};
 use pundit_app::export_outcome::{self, RunKind};
 use pundit_app::fit::{fit_window, Fit};
 use pundit_app::format::{finish_at, format_hms, format_hms_tenths, sentence};
 use pundit_app::highlight_view::{self, LiveHighlight as Ring};
 use pundit_app::match_panel::{
-    self, parse_hex, parse_minutes, parse_overtime_periods, parse_periods,
+    self, hex, parse_hex, parse_minutes, parse_overtime_periods, parse_periods,
 };
 use pundit_app::music;
 use pundit_app::new_match::{self, Draft};
@@ -366,6 +366,8 @@ fn main() {
     slint::set_xdg_app_id("pundit").expect("set the application ID");
 
     let window = AppWindow::new().expect("create the window");
+    // Before anything reads a colour: an unwired `valid-hex` answers `false`.
+    color_wiring::wire_colors(&window);
 
     // The app was called coach-cuts until 0.8.0; its config and cache
     // directories are taken over here, before the first read of either.
@@ -438,6 +440,7 @@ fn main() {
     wire_music(&window, &machine_state, &pickers);
     wire_folds(&window, &machine_state);
     wire_snap(&window, &machine_state);
+    wire_settings(&window, &machine_state);
     // The keymap is read here, once: the window asks `action-for` per key
     // event and that lookup is a scan over the returned table (#96). The file
     // handle is for the other direction -- the Keys sheet's *Set...* and ✕,
@@ -1724,43 +1727,12 @@ fn wire_match(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
         }
     });
     // The sheet's validators. Each takes the text it judges, so the bindings
-    // that call it re-evaluate as it's typed.
-    window.on_hex_color(|text| match parse_hex(&text) {
-        Some(c) => slint::Color::from_rgb_f32(c.r as f32, c.g as f32, c.b as f32),
-        None => slint::Color::from_argb_u8(0, 0, 0, 0),
-    });
+    // that call it re-evaluate as it's typed; a colour's is `ColorMaths`'
+    // (`color_wiring`).
+    //
     // The name the command sees: `match_setup` trims it, so spaces alone are
     // no name.
     window.on_valid_name(|text| !text.trim().is_empty());
-    window.on_valid_hex(|text| parse_hex(&text).is_some());
-    // The colour picker: its row of ready-made colours, and the two
-    // conversions it is drawn and read with. Both are `color_picker`'s, so
-    // the picker lands on exactly the bytes the field stores and the
-    // scoreboard draws — see that module's header.
-    window.set_kit_colors(ModelRc::new(VecModel::from(
-        color_picker::KIT_COLORS
-            .iter()
-            .map(|kit| KitColor {
-                name: kit.name.into(),
-                hex: kit.hex.into(),
-            })
-            .collect::<Vec<_>>(),
-    )));
-    window.on_hsv_of_hex(|text| {
-        // Half-typed text has no position; the sheet gates on `valid-hex`
-        // before it moves the picker, so this is never what it stands on.
-        let hsv = color_picker::hsv_of_hex(&text).unwrap_or(color_picker::Hsv {
-            hue: 0.0,
-            sat: 0.0,
-            val: 0.0,
-        });
-        Hsv {
-            hue: hsv.hue,
-            sat: hsv.sat,
-            val: hsv.val,
-        }
-    });
-    window.on_hex_of_hsv(|hue, sat, val| color_picker::hex_of_hsv(hue, sat, val).into());
     // One validator per field, sharing its range with the parse that builds
     // the config, so a field can't read good and then fail to save.
     window.on_valid_periods(|text| parse_periods(&text).is_some());
@@ -2767,6 +2739,16 @@ fn wire_snap(window: &AppWindow, state: &AppFiles) {
             state.set_snap_to_events(on);
             w.set_snap_to_events(on);
         }
+    });
+}
+
+/// The Settings sheet (#131): the slate band's colour, seeded from `state.json`
+/// and stored as the sheet reports it — a colour, or `""` for the default.
+fn wire_settings(window: &AppWindow, state: &AppFiles) {
+    window.set_slate_band(state.slate_band_color().map(hex).unwrap_or_default().into());
+    window.on_slate_band_edited({
+        let state = state.clone();
+        move |text| state.set_slate_band_color(parse_hex(&text))
     });
 }
 
