@@ -293,15 +293,20 @@ pub struct Folds {
 /// - the folder a basket's film is written into
 ///   ([`AppFiles::basket_dir`]), which is under the **user's videos**
 ///   directory: neither state nor configuration, and nobody's project.
+/// - the music folder Find music fills when none is set
+///   ([`AppFiles::default_music_folder`]), under the **user's music**
+///   directory for the same reason (BACKLOG #84 spec S6).
 #[derive(Debug, Clone)]
 pub struct AppFiles {
     path: Option<PathBuf>,
     films: PathBuf,
+    music: PathBuf,
 }
 
 impl AppFiles {
     /// `$XDG_CONFIG_HOME/pundit/state.json`, falling back to
-    /// `~/.config/pundit/state.json`; films in `<XDG Videos>/pundit`.
+    /// `~/.config/pundit/state.json`; films in `<XDG Videos>/pundit`, music in
+    /// `<XDG Music>/pundit`.
     pub fn default_location() -> Self {
         AppFiles {
             path: config_dir(
@@ -309,20 +314,27 @@ impl AppFiles {
                 std::env::var_os("HOME"),
             )
             .map(|dir| dir.join(APP_DIR).join(FILE)),
-            films: films_dir(
+            films: user_dir(
                 glib::user_special_dir(glib::UserDirectory::Videos),
                 std::env::var_os("HOME"),
+                "Videos",
+            ),
+            music: user_dir(
+                glib::user_special_dir(glib::UserDirectory::Music),
+                std::env::var_os("HOME"),
+                "Music",
             ),
         }
     }
 
     /// The app's files under `config_dir` instead of the user's, for tests —
-    /// **films included**, so no test writes a film into the coach's own
-    /// videos folder.
+    /// **films and music included**, so no test writes into the coach's own
+    /// videos or music folder.
     pub fn in_config_dir(config_dir: &Path) -> Self {
         AppFiles {
             path: Some(config_dir.join(APP_DIR).join(FILE)),
             films: config_dir.join("videos"),
+            music: config_dir.join("music"),
         }
     }
 
@@ -337,6 +349,14 @@ impl AppFiles {
     /// demand by the run that writes one.
     pub fn basket_dir(&self) -> PathBuf {
         self.films.clone()
+    }
+
+    /// The music folder Find music fills when no `musicFolder` is set (spec
+    /// S6). **Read here, written by the window**: the first successful Add
+    /// stores it with [`AppFiles::set_music_folder`], so the bus stays a reader
+    /// of both music keys.
+    pub fn default_music_folder(&self) -> PathBuf {
+        self.music.clone()
     }
 
     /// The projects the coach has had open, newest first (spec S1). An
@@ -661,19 +681,21 @@ fn config_dir(xdg: Option<OsString>, home: Option<OsString>) -> Option<PathBuf> 
     base_dir(xdg, home, ".config")
 }
 
-/// Where a basket's film is written (basket spec O1): `<videos>/`[`APP_DIR`],
+/// `<special>/`[`APP_DIR`]: where a basket's film is written (basket spec O1,
 /// under the user's **videos** folder, because a film whose pieces come from
-/// several matches belongs to no project and so can't go in one's `exports/`.
-/// `videos` is that folder as glib reports it — `$HOME/Videos/pundit` when it
-/// reports none (a machine whose `user-dirs.dirs` has no entry), and a relative
-/// `pundit`, in the working directory, when there is no home either. The rule is
-/// worth a test, and the environment is passed in as [`config_dir`] takes it.
-fn films_dir(videos: Option<PathBuf>, home: Option<OsString>) -> PathBuf {
-    videos
+/// several matches belongs to no project and so can't go in one's `exports/`)
+/// and where Find music lands songs by default (BACKLOG #84 spec S6, under the
+/// user's **music** folder). `special` is that folder as glib reports it —
+/// `$HOME/<under_home>/pundit` when it reports none (a machine whose
+/// `user-dirs.dirs` has no entry), and a relative `pundit`, in the working
+/// directory, when there is no home either. The rule is worth a test, and the
+/// environment is passed in as [`config_dir`] takes it.
+fn user_dir(special: Option<PathBuf>, home: Option<OsString>, under_home: &str) -> PathBuf {
+    special
         .or_else(|| {
             home.map(PathBuf::from)
                 .filter(|p| p.is_absolute())
-                .map(|h| h.join("Videos"))
+                .map(|h| h.join(under_home))
         })
         .unwrap_or_default()
         .join(APP_DIR)
@@ -784,20 +806,29 @@ mod tests {
         assert_eq!(cache_dir(None, None), None);
     }
 
-    /// Where the films go, and the fallbacks for a machine that doesn't say.
+    /// Where the films go, and the fallbacks for a machine that doesn't say —
+    /// and the music, by the same rule under its own folder.
     #[test]
     fn the_films_folder_follows_the_videos_directory() {
         assert_eq!(
-            films_dir(Some("/v".into()), Some("/home/u".into())),
+            user_dir(Some("/v".into()), Some("/home/u".into()), "Videos"),
             PathBuf::from("/v/pundit")
         );
         assert_eq!(
-            films_dir(None, Some("/home/u".into())),
+            user_dir(None, Some("/home/u".into()), "Videos"),
             PathBuf::from("/home/u/Videos/pundit")
         );
         // No home at all: a relative folder in the working directory, which is
         // at least somewhere the run can name.
-        assert_eq!(films_dir(None, None), PathBuf::from("pundit"));
+        assert_eq!(user_dir(None, None, "Videos"), PathBuf::from("pundit"));
+        assert_eq!(
+            user_dir(Some("/m".into()), Some("/home/u".into()), "Music"),
+            PathBuf::from("/m/pundit")
+        );
+        assert_eq!(
+            user_dir(None, Some("/home/u".into()), "Music"),
+            PathBuf::from("/home/u/Music/pundit")
+        );
     }
 
     /// A test's films land under its own config directory, never in the
@@ -812,6 +843,10 @@ mod tests {
         assert_eq!(
             AppFiles::in_config_dir(dir).sibling("basket.json"),
             Some(PathBuf::from("/x/cfg/pundit/basket.json"))
+        );
+        assert_eq!(
+            AppFiles::in_config_dir(dir).default_music_folder(),
+            PathBuf::from("/x/cfg/music")
         );
     }
 

@@ -64,7 +64,31 @@ Paths are from the repository root; `core`, `media`, `app` and `harness` mean
     tests, in the lib binary, rather than a new test binary.
   Sabotages 1–4 each failed exactly the named test (2 took 15.4 s, the
   default timeout).
-- **4 — app: `music_search.rs` and the default folder.** Not started.
+- **4 — app: `music_search.rs` and the default folder.** Done. Drift at
+  `f7ef7f6`: `state.rs` moved by #94 — `AppFiles` `:297`, `default_location`
+  `:305`, `in_config_dir` `:322`, `films_dir` `:671`, tests `:789` / `:806`.
+  Deviations:
+  - **`GetError` gains `Unreachable`, and `Failed` is GStreamer's words for
+    stderr only**, with `pundit_media::host` public: task 3's `Failed` carried
+    `unreachable_or`'s text, which is raw GStreamer for anything but offline,
+    so no row or line could have shown it. `music_search` words every error
+    itself (S11's 429 line; *"Openverse answered with something pundit can't
+    read (…)"* for any other status, a broken-off answer or a bad page; the
+    host for offline; *"<host> answered HTTP <n>"* / *"could not fetch the
+    track from <host>"* on a row). New media test
+    `get_says_when_nothing_answers`.
+  - **`films_dir` became `user_dir(special, home, under_home)`**, read twice
+    (Videos, Music), rather than a second function of the same shape;
+    `new_match.rs`'s module doc named it and follows.
+  - **The `.part` and the credit's temp name use `naming::safe_chars(id)`**:
+    the id comes off the network, and a `/` in it would name a path outside
+    the genre folder.
+  - **`stem(&Candidate)` is public** beside `already_in`, so the window and
+    `add` derive the name once.
+  - The page is the core test's file, `include_str!`-ed from
+    `pundit-core/tests/data/`; the served track is a 3 s Ogg and each test
+    sets the candidate's `seconds` to 3 (13 in 4.5).
+  Sabotages 1–5 and the new media one each failed exactly the named test.
 - **5 — the Find music sheet, its keys, the wiring and the prose.** Not started.
 
 **Shipping: one PR, a commit per task, in order.** Task 1 is now small. It adds

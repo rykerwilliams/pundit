@@ -34,7 +34,7 @@ pub use composite::export::{
 };
 pub use composite::preview::{Preview, PreviewJob, PreviewMessage, PreviewPosition, PreviewStats};
 pub use composite::{frame_times, Gl};
-pub use download::{download, get, Fetch, GetError};
+pub use download::{download, get, host, Fetch, GetError};
 pub use mailbox::{Frame, FrameMailbox};
 pub use overlay::{ScoreboardImage, ScoreboardRenderer};
 pub use player::{

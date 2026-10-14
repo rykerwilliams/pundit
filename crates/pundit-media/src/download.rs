@@ -221,15 +221,29 @@ fn fetch_to(
 /// to stderr either way.
 fn unreachable_or(url: &str, err: &gst::message::Error) -> String {
     let raw = crate::error_text(err);
-    if !err.error().matches(gst::StreamError::Failed) {
+    if !unreachable(err) {
         return format!("could not download {url}: {raw}");
     }
     eprintln!("download: {url}: {raw}");
-    let host = url
-        .split_once("://")
+    format!(
+        "could not reach {} — check the internet connection",
+        host(url)
+    )
+}
+
+/// Whether `err` is the generic stream error a connection that never happened
+/// gets — offline, a name that won't resolve, a refused port — rather than an
+/// error with a reason of its own (see [`unreachable_or`]).
+fn unreachable(err: &gst::message::Error) -> bool {
+    err.error().matches(gst::StreamError::Failed)
+}
+
+/// The host part of `url` — `api.openverse.org` — for a message that names
+/// where the app was trying to reach; the whole `url` when it has none.
+pub fn host(url: &str) -> &str {
+    url.split_once("://")
         .and_then(|(_, rest)| rest.split(['/', ':']).next())
-        .unwrap_or(url);
-    format!("could not reach {host} — check the internet connection")
+        .unwrap_or(url)
 }
 
 /// How long [`get`] waits on any one read before giving up — `souphttpsrc`'s
@@ -248,8 +262,13 @@ pub enum GetError {
     /// error's `http-status-code` detail, never from its text.
     #[error("the server answered {0}")]
     Status(u16),
-    /// Anything else: offline, a refused connection, a body cut short, a body
-    /// over the limit. Worded for the coach.
+    /// Offline, a name that won't resolve, a refused connection: nothing
+    /// answered at all. The caller names the host ([`host`]).
+    #[error("the server could not be reached")]
+    Unreachable,
+    /// Anything else — a body cut short, a body over the limit, a server that
+    /// broke off. **GStreamer's own words, for stderr**: a caller shows the
+    /// coach words of its own, never these.
     #[error("{0}")]
     Failed(String),
     #[error("cancelled")]
@@ -308,9 +327,12 @@ pub fn get(url: &str, limit: usize, cancel: &AtomicBool) -> Result<Vec<u8>, GetE
             .and_then(|d| d.get::<u32>("http-status-code").ok())
             .and_then(|code| u16::try_from(code).ok())
             .filter(|&code| code >= 400);
+        let raw = crate::error_text(err);
+        eprintln!("get: {url}: {raw}");
         match status {
             Some(code) => GetError::Status(code),
-            None => GetError::Failed(unreachable_or(url, err)),
+            None if unreachable(err) => GetError::Unreachable,
+            None => GetError::Failed(raw),
         }
     };
     let first_error = |bus: &gst::Bus| {
@@ -665,6 +687,27 @@ mod tests {
                 &AtomicBool::new(false),
             ),
             Err(GetError::Status(429))
+        );
+    }
+
+    /// Offline is told apart from every other failure, so the caller can say
+    /// so in its own words — as [`an_unreachable_server_says_so`] does for a
+    /// model download.
+    #[test]
+    fn get_says_when_nothing_answers() {
+        gst::init().unwrap();
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        assert_eq!(
+            get(
+                &format!("http://127.0.0.1:{port}/audio/"),
+                1 << 20,
+                &AtomicBool::new(false),
+            ),
+            Err(GetError::Unreachable)
         );
     }
 
