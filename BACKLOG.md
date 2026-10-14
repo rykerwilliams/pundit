@@ -17,7 +17,7 @@ made things worse.
 ### Next, in order
 
 Nothing queued: #84, the last entry here, shipped its phase 2 on 2026-10-13
-(#TODO).
+(#95).
 
 ### Watch, rather than pick up
 
@@ -1759,7 +1759,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   already print the state and both positions. So this moves to *Watch*.
 
 84. **Music under a goals reel — SHIPPED** (phase 1 2026-10-12, #80, #82, #83;
-  phase 2 2026-10-13, #TODO). The coach (2026-09-24): "pull in soundtrack
+  phase 2 2026-10-13, #95). The coach (2026-09-24): "pull in soundtrack
   files that are licensed for use, e.g. rock, edm, etc. for the goals clips." A
   reel is the one export with no commentary — it is game sound alone — and a
   highlights reel is the one thing people expect music under.
@@ -1898,7 +1898,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   FMA is not one of them. There is no checksum to be had for a catalogue track,
   so a full decode stands in for it. And the network is reached from a function
   no command can call, not through a permission carried on a job.
-- **Phase 2 shipped 2026-10-13** (#TODO, five commits, one per plan task):
+- **Phase 2 shipped 2026-10-13** (#95, five commits, one per plan task):
   `.credits.txt` beside a reel, read at render time beside the music; core's
   Openverse query, parse, licence words and credit; media's `get` and
   `inspect_audio`; `music_search.rs` and the default `~/Music/pundit`; and the
