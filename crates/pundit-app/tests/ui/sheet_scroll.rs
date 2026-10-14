@@ -20,7 +20,7 @@
 //! view first, which would stand in the way of ever pinning the row.
 
 use crate::key_action;
-use crate::{AppWindow, BasketPieceRow, MatchEditorRow, RunRow, TargetRow};
+use crate::{AppWindow, BasketPieceRow, MatchEditorRow, MusicRow, RunRow, TargetRow};
 use i_slint_backend_testing::{AccessibleRole, ElementHandle};
 use pundit_app::keymap::Keymap;
 use slint::platform::{Key, WindowEvent};
@@ -58,6 +58,17 @@ fn sheets() -> Vec<Sheet> {
                 w.set_export_sheet_open(true);
             },
             shut: |w| !w.get_export_sheet_open(),
+        },
+        Sheet {
+            card: "FindMusicSheet",
+            open: |w| {
+                w.set_find_music_rows(music_rows(20));
+                w.set_find_music_message(
+                    "Couldn't add \"Rock song\": not a track pundit can play".into(),
+                );
+                w.set_find_music_open(true);
+            },
+            shut: |w| !w.get_find_music_open(),
         },
         Sheet {
             card: "BasketSheet",
@@ -371,6 +382,22 @@ fn run(n: usize) -> ModelRc<RunRow> {
                 rendering: i == 0,
                 progress: 0.5,
                 status: "45%".into(),
+            })
+            .collect::<Vec<_>>(),
+    ))
+}
+
+fn music_rows(n: usize) -> ModelRc<MusicRow> {
+    ModelRc::new(VecModel::from(
+        (0..n)
+            .map(|i| MusicRow {
+                id: format!("id-{i}").into(),
+                title: format!("Free (rock instrumental) {i}").into(),
+                artist: "Starfish Stories :: The Band".into(),
+                length: "4:25".into(),
+                licence: "CC BY 3.0".into(),
+                genres: "rock, instrumental".into(),
+                state: if i == 0 { "In rock".into() } else { "".into() },
             })
             .collect::<Vec<_>>(),
     ))

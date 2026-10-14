@@ -246,9 +246,9 @@ fn a_letter_typed_in_a_window_field_fires_no_shortcut() {
     }
 }
 
-/// The same for the three sheets that hold fields, one at a time: the basket's
-/// name, the match-event editor's row field and paste box, and the New match
-/// sheet's four.
+/// The same for every sheet that holds a field, one at a time: the basket's
+/// name, the match-event editor's row field and paste box, the New match
+/// sheet's four, the Settings sheet's band and Find music's genre.
 ///
 /// **A sheet rejects every non-Esc key ahead of the shortcut layer**, so what
 /// this adds over the test above is the other half — the letters reach the
@@ -350,6 +350,20 @@ fn a_letter_typed_in_a_sheet_field_reaches_the_field() {
         edit.accessible_value().as_deref(),
         Some(TYPED),
         "the band field: the letters never arrived"
+    );
+    w.set_settings_sheet_open(false);
+
+    // Find music's genre (#84), over the export sheet it is opened from: `r`
+    // is the record key, and here it has to be the first letter of "rock".
+    w.set_export_sheet_open(true);
+    w.set_find_music_open(true);
+    probe(
+        &w,
+        &fired,
+        &Field {
+            id: "FindMusicSheet::genre-edit",
+            text: AppWindow::get_find_music_genre,
+        },
     );
 }
 

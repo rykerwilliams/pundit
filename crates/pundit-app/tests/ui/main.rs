@@ -74,6 +74,7 @@ pub fn scratch_state() -> pundit_app::bus::AppFiles {
 }
 
 mod export_sheet;
+mod find_music;
 mod fit_window;
 mod keys;
 mod keys_sheet;

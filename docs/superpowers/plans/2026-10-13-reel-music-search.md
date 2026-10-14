@@ -89,7 +89,37 @@ Paths are from the repository root; `core`, `media`, `app` and `harness` mean
     `pundit-core/tests/data/`; the served track is a 3 s Ogg and each test
     sets the candidate's `seconds` to 3 (13 in 4.5).
   Sabotages 1–5 and the new media one each failed exactly the named test.
-- **5 — the Find music sheet, its keys, the wiring and the prose.** Not started.
+- **5 — the Find music sheet, its keys, the wiring and the prose.** Done.
+  Census re-taken at `aa3b0b0`, after #94: `app.slint` is 7,847 lines before
+  this task — the ExportSheet Music properties `:2062`–`:2070`, the Music row
+  `:2179`–`:2207`, the window's `export-music-*` `:4501`–`:4506`,
+  `close-basket` `:5058`, `close-settings` `:5073`; in `handle-key` the
+  **Keys, then Settings, then export** branches, so Find music's goes between
+  Settings and export; the export `Scrim` `:7592`, Settings `:7785`, Keys
+  `:7801`, error `:7822`. `main.rs`: `wire_music` called `:440`, `show_music`
+  `:1345`, `wire_music` `:1362`, `wire_devices` `:2295` (spawn `:2304`).
+  `tests/ui`: the `mod` list gained `settings_sheet`; `sheet_scroll`'s
+  `sheets()` has eight entries (Settings among them), now nine;
+  `text_editing.rs` already said *"three sheets"* with four, and now lists
+  them without a count. Deviations:
+  - **The window callback is `find-music()` and `main.rs` opens the sheet**,
+    because it prefills the genre from `state.json`.
+  - **An Add's failure goes on the sheet's line**, naming the song, and its
+    row goes back to Add: S11's "on the row" would need a third row field for
+    one line of text.
+  - **Close clears the rows and bumps the generation**, so a search still in
+    flight cannot repaint a closed sheet. An Add that lands after Close
+    selects its genre at once, as Close would have.
+  - The rows are a plain `for` in the sheet's body, not a `ListView`, so
+    twenty scroll with the body (#134).
+  - **Sabotage 1 also fails 5.6**: `text_editing` opens Find music over the
+    export sheet, whose branch accepts every key. **Sabotage 2 fails 5.4
+    only**: 5.6's probe presses no Esc, so the plan's "and 5.6" was wrong.
+    3, 4 and 5 failed exactly 5.3, 5.1 and 5.5.
+  - Prose: `CLAUDE.md` (*"Hugging Face, Openverse or Jamendo"*, a
+    `.credits.txt` bullet, the goals reel's Find music sentence), the guide's
+    *Finding music*, the checklist's §15 (the plan's eight manual checks),
+    BACKLOG #84 SHIPPED with the PR as `#TODO`.
 
 **Shipping: one PR, a commit per task, in order.** Task 1 is now small. It adds
 no `ExportJob` field, so there is no mechanical diff to keep out of the

@@ -80,6 +80,22 @@ genre, and exporting the same match again keeps it as long as the genre's songs
 and the project's folder name stay the same. A song shorter than the reel simply
 ends, and the rest is the game's sound, still turned down.
 
+### Finding music
+
+No songs yet? Press **Find music…** beside **Folder…**, type a genre and press
+**Search**. pundit asks Openverse for music of two to ten minutes that you may
+use in a video — public domain, or CC BY, which only asks you to credit it — and
+lists up to twenty songs, those tagged with your genre first. **Add** fetches
+one into your music folder under that genre (`~/Music/pundit/` if you have not
+chosen one), and closing the sheet picks that genre for the reel. Nothing goes
+over the network until you press Search.
+
+Each song arrives with a `.credit.txt` beside it, and a reel exported with that
+song gets `<reel>.credits.txt` beside the film: the song, its page and its
+licence, ready to paste into a video's description. Keep a song's file name as
+it arrived — the credit is matched to it by name. Licences are as Openverse
+reports them, so check a song's page before you publish.
+
 If the genre you picked has no songs left in it when you export, the reel is
 refused with a message saying so, rather than made without music. The genre and
 the folder are remembered on this computer, not in the project.
