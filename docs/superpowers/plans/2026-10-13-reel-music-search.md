@@ -25,7 +25,26 @@ Paths are from the repository root; `core`, `media`, `app` and `harness` mean
   `pundit_media` for task 4 and `reel_music`. Sabotages 1–3 each failed exactly
   the tests the plan named.
 - **2 — core: the query, the parse, the licence words, the credit and the stem
-  rule.** Not started.
+  rule.** Done; §A's task 2 sites unchanged at `4d43df9`. Deviations:
+  - **The fixture page is `core/tests/data/openverse_page.json`**, not
+    `tests/fixtures/`: the root `.gitignore`'s `fixtures/` (for local video)
+    ignores any directory of that name. Built from one live `q=rock` answer
+    fetched while writing it (2026-10-13; the test reads only the file). Every
+    real row was CC BY, so the CC0 and PDM rows are real rows relabelled, as
+    the NC and BY-SA ones are.
+  - **`Candidate` carries `seconds: f64` and `landing_url`, and no
+    `creator_url`**: nothing reads the creator's page (the credit links the
+    track's, spec C2), so the parse reads ten fields, not eleven. A row is
+    parsed on its own (`serde_json::Value` per row), so a field of the wrong
+    type drops that row, not the page.
+  - **The credit's first line carries the modification phrase for every
+    licence**, not only BY: one rule, true of every reel, and owed only by BY.
+    A missing `foreign_landing_url` drops the page line (two lines).
+  - **2.4 ranks four hand-built rows** rather than 2.3's parse, so that
+    sabotages 1 and 3 (a dropped row kept) fail 2.3 alone, as the plan says;
+    on the parse they failed 2.4 too. Sabotage 4 is "`rank` does nothing":
+    `rank` takes a slice, so it cannot filter.
+  All eight sabotages then failed exactly the named test.
 - **3 — media: `get`, `inspect_audio` and the fixture server's body.** Not
   started.
 - **4 — app: `music_search.rs` and the default folder.** Not started.

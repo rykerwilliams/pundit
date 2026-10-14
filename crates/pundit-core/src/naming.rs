@@ -130,10 +130,11 @@ pub fn one_line(text: &str) -> String {
 /// character panics, which is the whole reason this is a function and not a
 /// range.
 ///
-/// Two callers at two budgets: a film's typed name at 200 bytes (leaving room
-/// for `.mp4`, a ` (10)` suffix and a straddling character inside the 255-byte
-/// cap every filesystem here imposes) and [`folder_slug`] at 64. The mechanism
-/// is shared and the budgets deliberately are not.
+/// Two callers at their own budgets: [`file_stem`] — a film's typed name at 200
+/// bytes (leaving room for `.mp4`, a ` (10)` suffix and a straddling character
+/// inside the 255-byte cap every filesystem here imposes), a fetched track's at
+/// 120 — and [`folder_slug`] at 64. The mechanism is shared and the budgets
+/// deliberately are not.
 pub fn truncate_on_boundary(text: &str, bytes: usize) -> &str {
     if text.len() <= bytes {
         return text;
@@ -144,6 +145,28 @@ pub fn truncate_on_boundary(text: &str, bytes: usize) -> &str {
         cut -= 1;
     }
     &text[..cut]
+}
+
+/// A typed name as a file's stem: trimmed, [`safe_chars`], cut to `budget`
+/// bytes on a boundary, and `fallback` where what is left would not make a
+/// file the coach can find — empty, or starting with a `.`.
+///
+/// **A leading dot is a fallback too, not just an empty name.** `"."` survives
+/// [`safe_chars`] whole, and `..mp4` — or `.mp4` from `""` — is a hidden file
+/// with no stem, written without complaint and then invisible in the folder.
+///
+/// **The budget and the fallback are each caller's own**: a basket's film keeps
+/// 200 bytes and `Basket`, a fetched track 120 and [`crate::metadata::UNTITLED`].
+/// What is shared is the rule, and a ` (2)` is not part of it — the basket
+/// suffixes in its own `output_path`, and music has none (the same stem is the
+/// same song).
+pub fn file_stem(name: &str, budget: usize, fallback: &str) -> String {
+    let cleaned = safe_chars(name.trim());
+    let stem = truncate_on_boundary(&cleaned, budget).trim_end();
+    match stem.is_empty() || stem.starts_with('.') {
+        true => fallback.to_owned(),
+        false => stem.to_owned(),
+    }
 }
 
 /// How many bytes of a folder name are kept. A project folder sits inside a

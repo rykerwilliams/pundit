@@ -575,15 +575,10 @@ fn label_of(path: &Path) -> String {
 /// "Corners, second half, away at City" is 34.
 const MAX_STEM_BYTES: usize = 200;
 
-/// The basket's typed name as a file's stem: trimmed, `/` and `:` replaced,
-/// cut to [`MAX_STEM_BYTES`], and defaulted where what is left would not make a
-/// file the coach can find.
-///
-/// **A leading dot is defaulted too, not just an empty name.** `"."` survives
-/// the replacement whole, and `..mp4` — or `.mp4` from `""`, were it not
-/// defaulted — is a hidden file with no stem, written without complaint and
-/// then invisible in the folder the sheet has just named. `".."` and `"..."`
-/// are the same trap.
+/// The basket's typed name as a file's stem: [`naming::file_stem`] at
+/// [`MAX_STEM_BYTES`], defaulted to [`DEFAULT_NAME`] where what is left would
+/// not make a file the coach can find — `".."` and `"..."` included, which
+/// would be a hidden film in the folder the sheet has just named.
 ///
 /// Cut and defaulted **here**, rather than at [`std::fs::File::create`]: Start
 /// is the "walk away" button, and a name that fails after twenty pieces have
@@ -600,12 +595,7 @@ const MAX_STEM_BYTES: usize = 200;
 /// the stem is recomputed from the typed name at every Start, and there is no
 /// sidecar beside a film to orphan.
 fn file_stem(name: &str) -> String {
-    let cleaned = naming::safe_chars(name.trim());
-    let stem = naming::truncate_on_boundary(&cleaned, MAX_STEM_BYTES).trim_end();
-    match stem.is_empty() || stem.starts_with('.') {
-        true => DEFAULT_NAME.to_owned(),
-        false => stem.to_owned(),
-    }
+    naming::file_stem(name, MAX_STEM_BYTES, DEFAULT_NAME)
 }
 
 /// `<dir>/<stem>.mp4`, with ` (2)`, ` (3)` … rather than overwriting a film

@@ -1,0 +1,230 @@
+{
+  "result_count": 7,
+  "page_count": 1,
+  "page_size": 20,
+  "page": 1,
+  "results": [
+    {
+      "id": "22a0cd91-ad66-4c36-ac70-c6d7a3b5c47d",
+      "title": "Jingle bell rock",
+      "foreign_landing_url": "https://www.jamendo.com/track/1170300",
+      "url": "{AUDIO}",
+      "creator": "MonacoLorenzo",
+      "creator_url": "https://www.jamendo.com/artist/455488/MonacoLorenzo",
+      "license": "by",
+      "license_version": "3.0",
+      "license_url": "https://creativecommons.org/licenses/by/3.0/",
+      "provider": "jamendo",
+      "source": "jamendo",
+      "category": "music",
+      "genres": [],
+      "filesize": null,
+      "filetype": "mp32",
+      "tags": [
+        {
+          "name": "male",
+          "accuracy": null,
+          "unstable__provider": "jamendo"
+        }
+      ],
+      "attribution": "\"Jingle bell rock\" by MonacoLorenzo is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.",
+      "fields_matched": [
+        "title"
+      ],
+      "mature": false,
+      "duration": 131000
+    },
+    {
+      "id": "eb4a753d-b8d0-454c-a677-d838dcc2de1c",
+      "title": "Free (rock instrumental)",
+      "foreign_landing_url": "https://www.jamendo.com/track/810513",
+      "url": "{AUDIO}",
+      "creator": "Starfish Stories :: The Band",
+      "creator_url": "https://www.jamendo.com/artist/345806/Starfish_Stories_The_Band",
+      "license": "by",
+      "license_version": "3.0",
+      "license_url": "https://creativecommons.org/licenses/by/3.0/",
+      "provider": "jamendo",
+      "source": "jamendo",
+      "category": "music",
+      "genres": [
+        "rock"
+      ],
+      "filesize": null,
+      "filetype": "mp32",
+      "tags": [
+        {
+          "name": "instrumental",
+          "accuracy": null,
+          "unstable__provider": "jamendo"
+        }
+      ],
+      "attribution": "\"Free (rock instrumental)\" by Starfish Stories :: The Band is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.",
+      "fields_matched": [
+        "title"
+      ],
+      "mature": false,
+      "duration": 265000
+    },
+    {
+      "id": "3c6bb63f-e8ca-4c66-917c-900368bb63df",
+      "title": "rock and roll",
+      "foreign_landing_url": "https://www.jamendo.com/track/944553",
+      "url": "{AUDIO}",
+      "creator": "GOLDEN LAMB",
+      "creator_url": "https://www.jamendo.com/artist/421797/GOLDEN_LAMB",
+      "license": "by-nc",
+      "license_version": "3.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc/3.0/",
+      "provider": "jamendo",
+      "source": "jamendo",
+      "category": "music",
+      "genres": [
+        "rock"
+      ],
+      "filesize": null,
+      "filetype": "mp32",
+      "tags": [
+        {
+          "name": "male",
+          "accuracy": null,
+          "unstable__provider": "jamendo"
+        }
+      ],
+      "attribution": null,
+      "fields_matched": [
+        "title"
+      ],
+      "mature": false,
+      "duration": 217000
+    },
+    {
+      "id": "4bc3acc8-248b-429c-b707-9db9fd3965de",
+      "title": "Love On the Rocks",
+      "foreign_landing_url": "https://www.jamendo.com/track/250770",
+      "url": "{AUDIO}",
+      "creator": "Mark Elliot Cullen",
+      "creator_url": "https://www.jamendo.com/artist/342663/Mark_Elliot_Cullen",
+      "license": "cc0",
+      "license_version": "1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "provider": "jamendo",
+      "source": "jamendo",
+      "category": "music",
+      "genres": [
+        "pop"
+      ],
+      "filesize": null,
+      "filetype": "mp32",
+      "tags": [
+        {
+          "name": "male",
+          "accuracy": null,
+          "unstable__provider": "jamendo"
+        }
+      ],
+      "attribution": null,
+      "fields_matched": [
+        "title"
+      ],
+      "mature": false,
+      "duration": 219000
+    },
+    {
+      "id": "8fe7ca76-e066-4fd2-8cc3-b74a7a7fa456",
+      "title": "ROCK DEL METRO",
+      "foreign_landing_url": "https://www.jamendo.com/track/253117",
+      "url": "{AUDIO}",
+      "creator": "EL MURMULLO DE LAS CUCARACHAS",
+      "creator_url": "https://www.jamendo.com/artist/345024/EL_MURMULLO_DE_LAS_CUCARACHAS",
+      "license": "by-sa",
+      "license_version": "3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
+      "provider": "jamendo",
+      "source": "jamendo",
+      "category": "music",
+      "genres": [
+        "rock"
+      ],
+      "filesize": null,
+      "filetype": "mp32",
+      "tags": [
+        {
+          "name": "instrumental",
+          "accuracy": null,
+          "unstable__provider": "jamendo"
+        }
+      ],
+      "attribution": null,
+      "fields_matched": [
+        "title"
+      ],
+      "mature": false,
+      "duration": 223000
+    },
+    {
+      "id": "600f138f-0c8d-4299-995c-ba2ab98b4b04",
+      "title": "Rock song",
+      "foreign_landing_url": "https://www.jamendo.com/track/645161",
+      "url": "{AUDIO}",
+      "creator": "The Shooters",
+      "creator_url": "https://www.jamendo.com/artist/362874/the_shooters_(2)",
+      "license": "pdm",
+      "license_version": "1.0",
+      "license_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "provider": "jamendo",
+      "source": "jamendo",
+      "category": "music",
+      "genres": [
+        "rock"
+      ],
+      "filesize": null,
+      "filetype": "mp32",
+      "tags": [
+        {
+          "name": "instrumental",
+          "accuracy": null,
+          "unstable__provider": "jamendo"
+        }
+      ],
+      "attribution": null,
+      "fields_matched": [
+        "title"
+      ],
+      "mature": false,
+      "duration": 280000
+    },
+    {
+      "id": "9ac627bf-51aa-4ee5-beb3-92de5d546c23",
+      "title": "Heart And Soul (In Rock and Roll)",
+      "foreign_landing_url": "https://www.jamendo.com/track/1295769",
+      "url": "{AUDIO}",
+      "creator": "Mia Blixt",
+      "creator_url": "https://www.jamendo.com/artist/485188/Mia_Blixt_(2)",
+      "license": "by",
+      "license_version": "3.0",
+      "license_url": "https://creativecommons.org/licenses/by/3.0/",
+      "provider": "jamendo",
+      "source": "jamendo",
+      "category": "music",
+      "genres": [
+        "rock"
+      ],
+      "filesize": null,
+      "filetype": "mp32",
+      "tags": [
+        {
+          "name": "energetic",
+          "accuracy": null,
+          "unstable__provider": "jamendo"
+        }
+      ],
+      "attribution": "\"Heart And Soul (In Rock and Roll)\" by Mia Blixt is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.",
+      "fields_matched": [
+        "title"
+      ],
+      "mature": false,
+      "duration": null
+    }
+  ]
+}
