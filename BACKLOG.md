@@ -16,8 +16,17 @@ made things worse.
 
 ### Next, in order
 
-Nothing queued: #84, the last entry here, shipped its phase 2 on 2026-10-13
-(#95).
+Set with the coach on 2026-10-17, in this order:
+
+- **101.** Work around the `decodebin3` keyframe-waiter write in our own code —
+  the coach's choice of route, after more sightings this week. Never build the
+  video output the probe hangs off, rather than deselecting it afterwards
+- **115.** Drop the `1 / 1` from a one-entry export's caption bar — the entry's
+  lighter variant, which the coach took
+- **93.** Delete the 0.8.0 rename shims — the coach confirms every machine has
+  run 0.8.0, and 0.9.0 has shipped, so both halves of the trigger have fired
+- **97.** Typing slates in, as match events can be typed — the coach asked for
+  it; needs its spec first
 
 ### Watch, rather than pick up
 
@@ -39,10 +48,6 @@ observation that should promote it, and none is worth doing before that.
   Pre-existing; #77's queue widens the window from seconds to minutes.
   *Trigger:* a film comes back with a missing face, or the asymmetry with the
   clip-delete rule is being argued anyway
-- **101.** glibc heap corruption in `decodebin3`'s keyframe-waiter probe —
-  **solved and deliberately unfixed**, waiting on a GStreamer newer than Ubuntu
-  24.04's 1.24.2. *Trigger:* the coach's own decision to take one of the three
-  routes
 
 ### Waiting on the coach
 
@@ -120,8 +125,6 @@ problem — which is the entry, not an excuse for it.
 - **74.** A reel trim can be a silent no-op. A goal merged into the…
 - **75.** A skip burst's replay margin failed once, by 54 ms. One…
 - **76.** a_cancelled_copy_leaves_nothing's fixtures sit on the 30…
-- **93.** Delete the 0.8.0 rename shims. Three things exist only to…
-- **97.** Typing slates in, as match events can be typed
 - **98.** Export the slates as a silent breakdown film
 
 ### Closed, kept for the reasoning
@@ -2206,6 +2209,8 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   replaces the copy you have".
 - **Why deferred:** a 0.7.x install that has not upgraded yet still needs all of
   it, and the coach's own laptop is the population.
+- **Both halves fired 2026-10-17:** 0.9.0 shipped (the tree is at 0.11.0) and
+  the coach confirms every machine has run 0.8.0. Promoted to "Next, in order".
 - **When to revisit:** once 0.9.0 has shipped and the coach confirms every
   machine they use has run 0.8.0. The whole removal is one commit and should
   leave no `coach-cuts` string in `crates/` at all.
@@ -2477,6 +2482,12 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 
 101. **The export test binaries abort with `corrupted size vs. prev_size` under
 
+- **RE-DECIDED 2026-10-17, by the coach: work around it in our code.** Asked
+  after further sightings during #84's and #131's gates (2026-10-13 and -14:
+  `corrupted size vs. prev_size`, `malloc(): mismatching next->prev_size
+  (unsorted)`, `corrupted size vs. prev_size in fastbins` — each in
+  `pundit-media --test export`, each green alone), he chose the workaround over
+  a GStreamer floor or more watching. Promoted to the head of "Next, in order".
 - **DECIDED 2026-10-07, by the coach: document and watch. No fix, no version
   floor, for now.** Offered four routes — raise the GStreamer floor, work around
   it in our code, both, or neither — he chose **neither yet**, on the grounds
@@ -2927,6 +2938,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   seconds were the minimum window's**: the transport bar spans the whole
   window, so at the default 1600px the travel is 1564px and 6px is ±20.7 s on
   a 90-minute match (the plan's §0.1 has the table).
+- **Asked 2026-10-17: leave 6px and revisit after a real drag** (the coach).
 - **Open: the radius against the reel's lead-in — the coach's call.** The spec
   sized 6px so that it would *not* swallow `REEL_LEAD_IN`'s 20 s (a coach
   dragging to a goal's build-up must not be pulled onto the goal). On the
