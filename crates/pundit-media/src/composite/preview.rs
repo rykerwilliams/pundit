@@ -20,7 +20,7 @@
 //!
 //! **The bar is export's own** (spec E7). Preview runs the clip's one-entry
 //! compilation, so its overlay carries the same strip the file gets — the
-//! clip's caption, `1 / 1 | <name> | tags`, as its caption-bar mode says, or a
+//! clip's caption, `<name> | tags`, as its caption-bar mode says, or a
 //! slate's title over that slate's range — with the board and the rings, from
 //! the same per-frame `match_layer` the export calls (BACKLOG #115, #133).
 //! What the coach checks here is what the export shows.
@@ -142,8 +142,8 @@ pub struct PreviewJob {
     /// The clip as a **one-entry compilation**
     /// (`pundit_core::export::compilation_schedule` on
     /// `ExportTarget::Clip`): the frames to pump, and the entry whose caption
-    /// the strip draws — `1 / 1 | <name> | tags`, since the target is this one
-    /// clip (spec E7). One schedule builds preview and export, so the picture
+    /// the strip draws — `<name> | tags`, with no `1 / 1` since the target is
+    /// this one clip (spec E7, BACKLOG #115). One schedule builds preview and export, so the picture
     /// the coach checks is the picture the file gets.
     pub compilation: Compilation,
     /// The commentary's volume, the project's `preview_commentary_volume`, in

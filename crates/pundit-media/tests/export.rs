@@ -2733,7 +2733,7 @@ fn a_whiteboard_entry_draws_no_title() {
         ..MatchMedia::default()
     });
     // A real line on the entry, so `Off` is what keeps the caption away.
-    job.compilation = fixtures::one_entry(&clip, job.compilation.frames.clone(), "1 / 1 | c");
+    job.compilation = fixtures::one_entry(&clip, job.compilation.frames.clone(), "c");
 
     export(job).unwrap();
 

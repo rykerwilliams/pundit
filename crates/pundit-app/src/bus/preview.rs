@@ -87,7 +87,8 @@ impl Bus {
             return refused("the clip's commentary recording is missing");
         }
         // The clip as a one-entry compilation: the same schedule export runs,
-        // down to the bar's `1 / 1 | ...` line (spec E1, E7).
+        // down to the bar's line, which one entry carries without a position
+        // (spec E1, E7; #115).
         let compilation = compilation_schedule(&open.project, &ExportTarget::Clip(id));
         if compilation.frames.is_empty() {
             return refused("the clip has nothing to preview");

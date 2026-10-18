@@ -11,7 +11,7 @@
 //! captions are the same rules, and the burned-in score is still the match's.
 
 use crate::export::{frame_count, OUTPUT_FPS};
-use crate::plan::{CompilationPlan, PlanEntry};
+use crate::plan::{line, position, CompilationPlan, PlanEntry};
 use crate::project::Project;
 use crate::scoreboard::{team_name, MatchEventKind, MatchEventRecord, ScoreboardContext};
 use crate::timeline::{PlaybackSegment, SegmentKind};
@@ -244,7 +244,8 @@ pub(crate) fn reel_plan(project: &Project, side: ReelSide) -> CompilationPlan {
 }
 
 /// `"<n> / <total> | <team> goal | <home>-<away>"`, the score being the one
-/// after `goal`. The score part is dropped where the scoreboard has no state
+/// after `goal`, and the position dropped from a reel of one goal
+/// ([`position`]). The score part is dropped where the scoreboard has no state
 /// (no kick-off tagged by then), and with no scoreboard the team is "Home" or
 /// "Away". A goal the scoreboard doesn't count shows the score unchanged.
 fn entry_text(
@@ -255,12 +256,14 @@ fn entry_text(
 ) -> String {
     let home = goal.kind == MatchEventKind::HomeGoal;
     let team = team_name(scoreboard.map(|s| s.config()), home);
-    let mut text = format!("{n} / {total} | {team} goal");
-    if let Some(state) = scoreboard.and_then(|s| s.state_at(goal.source_index, goal.source_seconds))
-    {
-        text += &format!(" | {}-{}", state.home_score, state.away_score);
-    }
-    text
+    let score = scoreboard
+        .and_then(|s| s.state_at(goal.source_index, goal.source_seconds))
+        .map(|state| format!("{}-{}", state.home_score, state.away_score));
+    line([
+        position(n, total),
+        format!("{team} goal"),
+        score.unwrap_or_default(),
+    ])
 }
 
 /// `"Goal 3 — Rovers 2-1"`: how a reel's chapters name the same goal.
