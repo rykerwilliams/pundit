@@ -18,9 +18,6 @@ made things worse.
 
 Set with the coach on 2026-10-17, in this order:
 
-- **101.** Work around the `decodebin3` keyframe-waiter write in our own code —
-  the coach's choice of route, after more sightings this week. Never build the
-  video output the probe hangs off, rather than deselecting it afterwards
 - **97.** Typing slates in, as match events can be typed — the coach asked for
   it; specced and planned (`docs/superpowers/specs/2026-10-17-typed-slates-design.md`,
   `docs/superpowers/plans/2026-10-17-typed-slates.md`)
@@ -2487,6 +2484,41 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 
 101. **The export test binaries abort with `corrupted size vs. prev_size` under
 
+- **WORKED AROUND 2026-10-17: the audio reader never builds a video output.**
+  `composite::audio::Reader::start` now answers `decodebin3`'s
+  **`select-stream` signal** — 1 for the collection's first audio stream, 0 for
+  everything else — and sends no `SelectStreams` event at all. The signal is
+  asked once per stream, synchronously, before `decodebin3` builds an output,
+  so no video output, decoder or keyframe probe ever exists to be freed. The
+  no-audio detection off the posted collection, the deadline and the cancel
+  are unchanged. **It can go once the GStreamer floor passes 1.24.3** (it is
+  harmless after that, so going is optional). Measured on this machine's
+  1.24.2 before choosing:
+  - **the signal**: 0 video decoders and no `video_` pad (`deep-element-added`),
+    and still present and undeprecated on upstream `main`;
+  - **`caps=audio/x-raw(ANY)`**: still builds the video output and decodes it
+    (1.48 s against 0.19 s for 10 s of 720p) — no use;
+  - **the old event**: built the video output in **20 of 100** opens of a
+    Python replica, and in the export suite under
+    `GST_DEBUG=GST_ELEMENT_FACTORY:4` **53 `vavp8dec` before, 36 after** — the 17
+    the readers made and threw away are gone.
+  - **The reproduction has an amplifier now**:
+    `GLIBC_TUNABLES=glibc.malloc.tcache_count=0:glibc.malloc.mxfast=0` turns off
+    the tcache and the fastbins, so the freed 96-byte chunk goes straight to the
+    unsorted bin with its footer at exactly offset 80 of the 88-byte payload —
+    the stray zero then hits the footer every time instead of rarely. Under it,
+    the recipe below (3 × `--test-threads=4`, `taskset -c 0-3`, two busy loops)
+    aborted **6 of 6** runs before (`malloc(): mismatching next->prev_size
+    (unsorted)`) and **0 of 18** after, every one passing 37/37; a Python
+    replica of the reader, 4 threads × 25 opens a process, aborted **10 of 10**
+    processes with the event and **0 of 10** with the signal.
+  - **Without the amplifier, the recipe as written**: **1 abort in 48** runs
+    before (`corrupted size vs. prev_size`), **0 in 48** after — the entry's
+    "a few percent", and too rare on its own to tell the two apart.
+  - Pinned by `composite::audio::tests::the_reader_never_builds_a_video_decoder`
+    (twenty opens of a file with video, every element counted as it is added),
+    which fails on its first open with the old event put back, and with no
+    selection at all.
 - **RE-DECIDED 2026-10-17, by the coach: work around it in our code.** Asked
   after further sightings during #84's and #131's gates (2026-10-13 and -14:
   `corrupted size vs. prev_size`, `malloc(): mismatching next->prev_size
