@@ -8,7 +8,7 @@ Work down the list in order. It follows a normal session: install, open a projec
 
 ## 1. Install
 
-- [ ] **Install the package.** Run `sudo apt install ~/Downloads/pundit_0.8.0_amd64.deb`. **Right:** apt finishes without errors, and its plan says it is *removing* `coach-cuts` and installing `pundit` — that is the rename, and one command does both. **Right:** the project you last had open, your pen and your basket are all still there when you launch it, and transcription does not re-download the speech model. (To build the package yourself instead, run `packaging/build-deb.sh` in the checkout; the result lands in `target/debian/`.)
+- [ ] **Install the package.** Run `sudo apt install ~/Downloads/pundit_<version>_amd64.deb`. It replaces the copy you have. **Right:** apt finishes without errors. **Right:** the project you last had open, your pen and your basket are all still there when you launch it, and transcription does not re-download the speech model. (To build the package yourself instead, run `packaging/build-deb.sh` in the checkout; the result lands in `target/debian/`.)
 - [ ] **[must work] In the menu.** Open the Mint menu and type "pundit". **Right:** it's listed with its own icon, not a blank or generic one. Launch it. **Right:** the running window shows the same icon in the panel. If you pin the launcher to the panel, the open window groups onto that pin instead of appearing as a second, separate button.
 
 ## 2. First launch and your project

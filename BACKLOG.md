@@ -23,8 +23,6 @@ Set with the coach on 2026-10-17, in this order:
   video output the probe hangs off, rather than deselecting it afterwards
 - **115.** Drop the `1 / 1` from a one-entry export's caption bar — the entry's
   lighter variant, which the coach took
-- **93.** Delete the 0.8.0 rename shims — the coach confirms every machine has
-  run 0.8.0, and 0.9.0 has shipped, so both halves of the trigger have fired
 - **97.** Typing slates in, as match events can be typed — the coach asked for
   it; needs its spec first
 
@@ -2120,8 +2118,9 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   site, different goods. `varvet/pundit`, the Rails authorization gem, owns the
   name in code search; the coach accepted that. `pundit.app`, `pundit.dev` and
   `getpundit.com` are registered but parked.
-- **What carries an existing installation over:** `state::adopt_old_name` and
-  the `.deb`'s `conflicts = "coach-cuts"` — two shims, both dated by #93.
+- **What carried an existing installation over:** `state::adopt_old_name` and
+  the `.deb`'s `conflicts = "coach-cuts"` — two shims, both dated by #93 and
+  deleted by it on 2026-10-17.
   `$PUNDIT_WHISPER_MODEL` is **not** one of them: nothing reads the old variable,
   which is a clean break and is what the CHANGELOG's breaking note says.
 
@@ -2197,7 +2196,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** next, ahead of #88 (the per-clip inset) and #77 (the
   export queue). Starts with a spec, per the workflow in `CLAUDE.md`.
 
-93. **Delete the 0.8.0 rename shims.** Three things exist only to carry a
+93. **Delete the 0.8.0 rename shims — SHIPPED (2026-10-17).** Three things exist only to carry a
   `coach-cuts` installation onto `pundit`, and they do nothing on a machine that
   has ever run 0.8.0: `state::adopt_old_name` / `adopt_in` / `OLD_APP_DIR` and
   their three tests (`crates/pundit-app/src/bus/state.rs`), the call at
@@ -2214,6 +2213,13 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **When to revisit:** once 0.9.0 has shipped and the coach confirms every
   machine they use has run 0.8.0. The whole removal is one commit and should
   leave no `coach-cuts` string in `crates/` at all.
+- **Shipped 2026-10-17** in one commit: `adopt_old_name`, `adopt_in`,
+  `OLD_APP_DIR` and their three tests, the `main.rs` call and its re-export from
+  `bus/mod.rs`, and `conflicts = "coach-cuts"` with its comment. The checklist's
+  install step is generic again, and the README's paragraph promising a Coach
+  Cuts install would be carried over went with them. No `coach-cuts` string is
+  left in `crates/`; the CHANGELOG, the README's history and the dated specs
+  and plans keep theirs as records.
 
 94. **Zoom and pan are undiscoverable — RESOLVED (2026-10-09).** Two halves,
   closed six weeks apart. The drag that does nothing became the moment the app
@@ -3309,7 +3315,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   version of this entry said "no restore at launch — one folder-pick", which
   understated it.) Nothing else is unrecoverable.
 - **When to revisit:** once no installation predating the recents list is left to
-  upgrade — `state::adopt_old_name`'s pattern, which #93 dates the same way. Delete
+  upgrade — the pattern #93 dated (and has since deleted) the rename shims by. Delete
   the field, the attribute, the seeding block in `read` and that one test; nothing
   else reads it.
 

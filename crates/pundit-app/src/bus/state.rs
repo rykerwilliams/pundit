@@ -88,8 +88,8 @@ struct State {
     /// is unrecoverable, and this file's header already prices a lost field at a
     /// re-open and a re-pick.
     ///
-    /// Dated on `adopt_old_name`'s pattern: BACKLOG #109 deletes it once no
-    /// installation predating this version is left to upgrade.
+    /// Dated: BACKLOG #109 deletes it once no installation predating this
+    /// version is left to upgrade.
     #[serde(skip_serializing, deserialize_with = "lenient")]
     last_project: Option<PathBuf>,
     /// [`WhisperModel::label`], not the enum: the file is hand-readable, and
@@ -706,58 +706,6 @@ fn user_dir(special: Option<PathBuf>, home: Option<OsString>, under_home: &str) 
 /// megabytes of downloaded weights are a cache, not configuration.
 pub(super) fn cache_dir(xdg: Option<OsString>, home: Option<OsString>) -> Option<PathBuf> {
     base_dir(xdg, home, ".cache")
-}
-
-/// The name the app went by before 0.8.0, and so the name on the directories
-/// an existing installation left behind. Delete this and everything that reads
-/// it once no 0.7.x installation is left to upgrade (`BACKLOG.md` #93).
-const OLD_APP_DIR: &str = "coach-cuts";
-
-/// Take over the directories the old name left behind, before anything reads
-/// them. The cache directory holds a speech model that costs hundreds of
-/// megabytes to fetch again, and the config directory holds the project the
-/// coach last had open, the basket they filled and the pen they draw with — all
-/// of it still theirs after a rename.
-///
-/// A rename, never a copy: the two names sit in the same base directory, so
-/// this is one syscall and no chance of half a copy. Every failure is logged and
-/// ignored, which costs the coach a re-open and (only if it was the cache) a
-/// re-download, rather than a start that fails.
-pub fn adopt_old_name() {
-    let bases = [
-        config_dir(
-            std::env::var_os("XDG_CONFIG_HOME"),
-            std::env::var_os("HOME"),
-        ),
-        cache_dir(std::env::var_os("XDG_CACHE_HOME"), std::env::var_os("HOME")),
-    ];
-    for base in bases.into_iter().flatten() {
-        adopt_in(&base);
-    }
-}
-
-/// [`adopt_old_name`] under one base directory, which is what a test can call.
-///
-/// **What stops it is a new directory with something in it, not a new directory**
-/// — an empty one is adopted into. `mkdir` costs nothing and happens by
-/// accident: a build run before this function existed, a write that created the
-/// directory and then failed. Guarding on mere existence would forfeit the whole
-/// carry-over, permanently and in silence, for an empty directory nobody meant
-/// to create.
-fn adopt_in(base: &Path) {
-    let (old, new) = (base.join(OLD_APP_DIR), base.join(APP_DIR));
-    let occupied = std::fs::read_dir(&new).is_ok_and(|mut dir| dir.next().is_some());
-    if occupied || !old.is_dir() {
-        return;
-    }
-    match std::fs::rename(&old, &new) {
-        Ok(()) => eprintln!("state: adopted {} as {}", old.display(), new.display()),
-        Err(err) => eprintln!(
-            "state: could not adopt {} as {}: {err}",
-            old.display(),
-            new.display()
-        ),
-    }
 }
 
 #[cfg(test)]
@@ -1452,65 +1400,5 @@ mod tests {
         std::fs::create_dir_all(dir.path().join(APP_DIR)).unwrap();
         std::fs::write(dir.path().join(APP_DIR).join(FILE), "{not json").unwrap();
         assert_eq!(state.last_project(), None);
-    }
-
-    /// The 0.8.0 rename: what the old name left behind is carried over, once.
-    #[test]
-    fn the_old_names_directory_is_adopted_with_what_is_in_it() {
-        let base = tempfile::tempdir().unwrap();
-        let old = base.path().join(OLD_APP_DIR);
-        std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(old.join(FILE), r#"{"lastProject":"/p/game"}"#).unwrap();
-
-        adopt_in(base.path());
-
-        assert!(!old.exists(), "the old directory is gone, not copied");
-        assert_eq!(
-            AppFiles::in_config_dir(base.path()).last_project(),
-            Some(PathBuf::from("/p/game"))
-        );
-    }
-
-    /// An **empty** directory under the new name does not forfeit the
-    /// carry-over: `mkdir` happens by accident, and the coach's speech model
-    /// and last project must not depend on one. Without the emptiness test
-    /// this fails — `rename(2)` itself would happily do it, so the guard is
-    /// what this pins.
-    #[test]
-    fn an_empty_new_directory_is_adopted_into() {
-        let base = tempfile::tempdir().unwrap();
-        let old = base.path().join(OLD_APP_DIR);
-        std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(old.join(FILE), r#"{"lastProject":"/p/game"}"#).unwrap();
-        std::fs::create_dir_all(base.path().join(APP_DIR)).unwrap();
-
-        adopt_in(base.path());
-
-        assert_eq!(
-            AppFiles::in_config_dir(base.path()).last_project(),
-            Some(PathBuf::from("/p/game"))
-        );
-    }
-
-    /// The other side of it: a new directory that **holds** something is this
-    /// version's own, so it is left exactly as it is — which is what makes
-    /// every run after the first a no-op — and nothing is invented where the
-    /// old name never was.
-    #[test]
-    fn adopting_leaves_an_occupied_new_name_alone_and_invents_nothing() {
-        let base = tempfile::tempdir().unwrap();
-        adopt_in(base.path());
-        assert!(!base.path().join(APP_DIR).exists());
-
-        let (old, new) = (base.path().join(OLD_APP_DIR), base.path().join(APP_DIR));
-        std::fs::create_dir_all(&old).unwrap();
-        std::fs::create_dir_all(&new).unwrap();
-        std::fs::write(old.join(FILE), "old").unwrap();
-        std::fs::write(new.join(FILE), "new").unwrap();
-
-        adopt_in(base.path());
-
-        assert_eq!(std::fs::read_to_string(new.join(FILE)).unwrap(), "new");
-        assert!(old.is_dir(), "the old one is left for the coach to delete");
     }
 }

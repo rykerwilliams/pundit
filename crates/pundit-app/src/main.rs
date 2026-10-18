@@ -391,10 +391,6 @@ fn main() {
     // Before anything reads a colour: an unwired `valid-hex` answers `false`.
     color_wiring::wire_colors(&window);
 
-    // The app was called coach-cuts until 0.8.0; its config and cache
-    // directories are taken over here, before the first read of either.
-    bus::adopt_old_name();
-
     // The last project, the chosen speech model and pen and the window's
     // size, all this machine's and none the project's.
     let state = AppFiles::default_location();

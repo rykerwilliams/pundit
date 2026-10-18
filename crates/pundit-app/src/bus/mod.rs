@@ -62,7 +62,7 @@ pub use export::{
     export_targets, ExportChoices, ExportRun, ExportTargetRow, ExportTargetRun, TargetState,
 };
 pub use recording::{CaptureKind, RecordingStatus};
-pub use state::{adopt_old_name, AppFiles, Folds, PanelWidths, WindowSize};
+pub use state::{AppFiles, Folds, PanelWidths, WindowSize};
 pub use transcribe::{whisper, whisper_model_override, Finish, Stage, TranscriptionState};
 
 /// Which way [`Command::ScanSpeed`] moves through the speeds (spec S1).
