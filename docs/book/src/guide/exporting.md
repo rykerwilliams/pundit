@@ -15,7 +15,8 @@ the same target again replaces the earlier file.
 | **The whole match** | The game with the clock and score, and no commentary. |
 
 Every clip carries a caption bar along the bottom with its number, name and
-tags, your inset in its corner, your drawings, any player highlights it crosses,
+tags — the number as `2 / 5`, and left off a video of one clip, where it would
+only say `1 / 1` — your inset in its corner, your drawings, any player highlights it crosses,
 and the scoreboard in the top left. A slate's title, where the clip crosses its
 range, takes the caption bar's place while that stretch is on screen (see
 [Slates](slates.md)).

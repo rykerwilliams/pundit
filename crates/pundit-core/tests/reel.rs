@@ -126,11 +126,7 @@ fn a_goal_inside_the_previous_entry_extends_it() {
 
     let plan = reel(&p);
     assert_eq!(spans(&plan), [(0, 80.0, 109.0)]);
-    assert_eq!(
-        texts(&plan),
-        ["1 / 1 | Home goal"],
-        "numbering counts entries"
-    );
+    assert_eq!(texts(&plan), ["Home goal"], "numbering counts entries");
 }
 
 /// A goal inside the previous entry whose own tail ends sooner leaves the
@@ -190,7 +186,7 @@ fn a_goal_at_or_past_its_sources_end() {
     p.append_match_event(AWAY, 0, 100.0);
     let plan = reel(&p);
     assert_eq!(spans(&plan), [(0, 80.0, 100.0)]);
-    assert_eq!(texts(&plan), ["1 / 1 | Away goal"]);
+    assert_eq!(texts(&plan), ["Away goal"]);
 }
 
 #[test]
@@ -235,7 +231,7 @@ fn the_text_drops_the_score_when_there_is_none() {
     let mut p = with_scoreboard(project(&[1000.0]));
     p.append_match_event(AWAY, 0, 100.0);
 
-    assert_eq!(texts(&reel(&p)), ["1 / 1 | United goal"]);
+    assert_eq!(texts(&reel(&p)), ["United goal"]);
 }
 
 #[test]
@@ -318,10 +314,7 @@ fn a_sides_reel_numbers_its_own_goals() {
         texts(&home),
         ["1 / 2 | Rovers goal | 1-0", "2 / 2 | Rovers goal | 2-1"]
     );
-    assert_eq!(
-        texts(&side(&p, ReelSide::Away)),
-        ["1 / 1 | United goal | 1-1"]
-    );
+    assert_eq!(texts(&side(&p, ReelSide::Away)), ["United goal | 1-1"]);
 }
 
 /// Only a goal in the same reel merges into its entry: with the two sides

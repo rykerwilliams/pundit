@@ -361,7 +361,7 @@ fn the_composite_places_the_pip_and_the_overlay_on_the_picture() {
     let bar_top = bar.y as usize;
     picture.assert_rgb("the bar's tint", (bar_x, bar_top + 40), 0x000066);
     picture.assert_rgb("one row above the bar", (bar_x, bar_top - 4), BLUE);
-    // ... with the line `1 / 1 | c` drawn in it, from the bar's own left edge.
+    // ... with the line `c` drawn in it, from the bar's own left edge.
     // White glyphs are the only thing in this frame with a red channel that
     // high.
     let glyphs = (bar_top..OUT_H)
