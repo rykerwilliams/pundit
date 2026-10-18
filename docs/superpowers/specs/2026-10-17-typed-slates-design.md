@@ -1,7 +1,7 @@
 # Design — typing slates in as lines, as match events can be typed
 
 **BACKLOG #97.** The coach asked for it on 2026-10-17, which meets the entry's
-own "when to revisit" (`BACKLOG.md:2396`–`:2397`): *"if a coach arrives with
+own "when to revisit" (`BACKLOG.md:2397`–`:2398`): *"if a coach arrives with
 times already written down — which is exactly how `kickoffs.txt` came about"*.
 
 **Status: decided with the coach (2026-10-17); both spec reviews applied.**
@@ -37,7 +37,7 @@ step, and nothing new is stored: **no format bump**.
 moments on paper should not have to scrub to each one and press `i` and `o`.
 
 **W2. §S6's two objections, and how each is met** (slates spec §S6;
-`BACKLOG.md:2381`–`:2388`):
+`BACKLOG.md:2382`–`:2389`):
 
 - **`#` is a comment to end of line in `match_entry`** — `body()` is
   `line.split('#').next()` (`crates/pundit-core/src/match_entry.rs:294`–`:296`).
@@ -49,7 +49,7 @@ moments on paper should not have to scrub to each one and press `i` and `o`.
   and a slate's tail is free text. → Nothing of `parse_kind`, `tokens`,
   `REFUSED_WORDS` or the team matching is reused (S1).
 
-**W3. What the entry said *is* reusable** (`BACKLOG.md:2389`–`:2391`):
+**W3. What the entry said *is* reusable** (`BACKLOG.md:2390`–`:2392`):
 `parse_time`, `format_time` and the video-number rule, "in a new
 `core::slate_entry`, not a second mode bolted onto `match_entry`". That is a
 rule about the **line grammar**, and this spec keeps it. It is not a rule about

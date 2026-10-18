@@ -24,7 +24,8 @@ Set with the coach on 2026-10-17, in this order:
 - **115.** Drop the `1 / 1` from a one-entry export's caption bar — the entry's
   lighter variant, which the coach took
 - **97.** Typing slates in, as match events can be typed — the coach asked for
-  it; needs its spec first
+  it; specced and planned (`docs/superpowers/specs/2026-10-17-typed-slates-design.md`,
+  `docs/superpowers/plans/2026-10-17-typed-slates.md`)
 
 ### Watch, rather than pick up
 
