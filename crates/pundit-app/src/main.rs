@@ -37,6 +37,7 @@ use pundit_app::export_outcome::{self, RunKind};
 use pundit_app::fit::{fit_window, Fit};
 use pundit_app::format::{finish_at, format_hms, format_hms_tenths, sentence};
 use pundit_app::highlight_view::{self, LiveHighlight as Ring};
+use pundit_app::line_editor;
 use pundit_app::match_panel::{
     self, hex, parse_hex, parse_minutes, parse_overtime_periods, parse_periods,
 };
@@ -2045,7 +2046,8 @@ fn wire_match_editor(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
                 return PasteEcho::default();
             };
             let batch = match_entry::parse_batch(&s.project, default_source.max(0) as usize, &text);
-            let echo = match_panel::paste_echo(&batch);
+            let echo =
+                line_editor::paste_echo(&batch, "event", "already tagged", match_panel::reads_as);
             let lines: Vec<PasteLine> = echo
                 .lines
                 .into_iter()
@@ -2057,7 +2059,7 @@ fn wire_match_editor(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             PasteEcho {
                 lines: ModelRc::new(VecModel::from(lines)),
                 summary: echo.summary.into(),
-                adding: batch.events.len() as i32,
+                adding: batch.items.len() as i32,
                 button: echo.button.into(),
             }
         })

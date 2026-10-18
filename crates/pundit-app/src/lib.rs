@@ -12,6 +12,7 @@ pub mod fit;
 pub mod format;
 pub mod highlight_view;
 pub mod keymap;
+pub mod line_editor;
 pub mod match_panel;
 pub mod music;
 pub mod music_search;

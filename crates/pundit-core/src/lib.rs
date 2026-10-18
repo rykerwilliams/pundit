@@ -17,6 +17,7 @@ pub mod export;
 pub mod highlight;
 pub mod kickoff;
 pub mod layout;
+pub mod line_batch;
 pub mod match_entry;
 pub mod metadata;
 pub mod motion;

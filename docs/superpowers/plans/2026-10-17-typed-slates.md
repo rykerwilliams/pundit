@@ -25,7 +25,13 @@ and nothing else.**
 
 ## Where this stands (update it as tasks land)
 
-- **1 — `core::line_batch`, and match events onto it.** Not started.
+- **1 — `core::line_batch`, and match events onto it.** Done. §A re-derived
+  at `484f70f` (`main` after #93, #115 and this plan): every core and app
+  citation in task 1's rows held except `main.rs`, four lines up after #93
+  (`on_check_paste` `:2040`–`:2062`). `paste_echo` takes its `reads_as` as
+  `impl Fn(&T) -> String`, so `match_panel::reads_as` is passed by name;
+  `main.rs` imports `pundit_app::line_editor`. Sabotage 1–4 as listed (1 also
+  fails `a_pasted_block_echoes_every_line_in_input_order`, as predicted).
 - **2 — `core::slate_entry`, `add_slate` and `retype_slate`.** Not started.
 - **3 — the bus: `EditSlateLine`, `AddSlates`, `SlatePasteLeftover`.** Not
   started.

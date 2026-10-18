@@ -20,6 +20,7 @@
 //! coach, and this grammar's whole job is to be exactly the number the coach
 //! meant.
 
+use crate::line_batch::{self, Batch, BatchVerdict};
 use crate::project::Project;
 use crate::scoreboard::{MatchEventKind, ScoreboardConfig, START_STOP_CAP_REFUSAL};
 
@@ -373,73 +374,34 @@ fn refuse_video(number: &str) -> LineVerdict {
 
 // ----------------------------------------------------------------- batches
 
-/// What one line of a pasted block came to.
-#[derive(Debug, Clone, PartialEq)]
-pub enum BatchVerdict {
-    Added(PendingMatchEvent),
-    /// The same kind, on the same source, within [`SAME_EVENT_SECONDS`] of an
-    /// event already in the project or already accepted from this block.
-    AlreadyTagged(PendingMatchEvent),
-    Refused(String),
-}
-
-/// One echoed line, in input order.
-#[derive(Debug, Clone, PartialEq)]
-pub struct BatchLine {
-    /// 1-based, counting every line of the block, so it names the line the
-    /// coach can see.
-    pub number: usize,
-    /// The line as typed, trimmed — what a refusal quotes back.
-    pub text: String,
-    pub verdict: BatchVerdict,
-}
-
-/// A pasted block, parsed.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Batch {
-    /// Every line that will add, in input order: the command's payload.
-    pub events: Vec<PendingMatchEvent>,
-    /// One echo record per line that has anything to say. Blank and
-    /// comment-only lines are not here.
-    pub lines: Vec<BatchLine>,
-    /// The **refused** lines, joined back into a block — what the box keeps
-    /// after Add, so the coach fixes them in place and presses Add again.
-    ///
-    /// Only the refusals: a line that was added is done with, and one skipped
-    /// as [`BatchVerdict::AlreadyTagged`] is not something editing can fix —
-    /// the event it names is in the project already, so keeping it would ask
-    /// the coach to clear a line whose only fault is being right. Blank and
-    /// comment-only lines go with them, so a block that nothing refuses
-    /// leaves the box empty.
-    pub leftover: String,
-}
-
-/// A whole pasted block, against `project`.
+/// A whole pasted block, against `project`, read by [`line_batch::read_batch`].
 ///
 /// The duplicate rule and the start/stop cap both count **existing +
 /// accepted-so-far**: a block containing the same line twice adds it once, and
 /// a block that would push past the format's last period has its excess lines
 /// refused and the rest added. Best-effort, not all-or-nothing — a list of
 /// twelve goals and one stray period line should add the twelve.
-pub fn parse_batch(project: &Project, default_source: usize, text: &str) -> Batch {
+///
+/// A [`BatchVerdict::Duplicate`] here is the same kind, on the same source,
+/// within [`SAME_EVENT_SECONDS`] of an event already in the project or already
+/// accepted from this block.
+pub fn parse_batch(
+    project: &Project,
+    default_source: usize,
+    text: &str,
+) -> Batch<PendingMatchEvent> {
     let cap = project
         .scoreboard
         .as_ref()
         .map(|s| s.format.expected_start_stop_events());
     let mut start_stops = project.start_stop_count();
 
-    let mut batch = Batch {
-        events: Vec::new(),
-        lines: Vec::new(),
-        leftover: String::new(),
-    };
-    let mut leftover: Vec<&str> = Vec::new();
-    for (i, line) in text.lines().enumerate() {
-        let verdict = match parse_line(project, default_source, line) {
-            LineVerdict::Nothing => continue,
+    line_batch::read_batch(text, |line, accepted| {
+        Some(match parse_line(project, default_source, line) {
+            LineVerdict::Nothing => return None,
             LineVerdict::Refused(reason) => BatchVerdict::Refused(reason),
-            LineVerdict::Event(event) if already_tagged(project, &batch.events, &event) => {
-                BatchVerdict::AlreadyTagged(event)
+            LineVerdict::Event(event) if already_tagged(project, accepted, &event) => {
+                BatchVerdict::Duplicate(event)
             }
             LineVerdict::Event(event) => {
                 let capped = event.kind == MatchEventKind::StartStop
@@ -450,22 +412,11 @@ pub fn parse_batch(project: &Project, default_source: usize, text: &str) -> Batc
                     if event.kind == MatchEventKind::StartStop {
                         start_stops += 1;
                     }
-                    batch.events.push(event);
                     BatchVerdict::Added(event)
                 }
             }
-        };
-        if matches!(verdict, BatchVerdict::Refused(_)) {
-            leftover.push(line.trim_end());
-        }
-        batch.lines.push(BatchLine {
-            number: i + 1,
-            text: line.trim().to_string(),
-            verdict,
-        });
-    }
-    batch.leftover = leftover.join("\n");
-    batch
+        })
+    })
 }
 
 /// Is `event` the same event as one already stored, or as one this block has

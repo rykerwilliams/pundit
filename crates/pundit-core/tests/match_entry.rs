@@ -1,8 +1,9 @@
 //! The one grammar behind the editor row's field and the paste box.
 
+use pundit_core::line_batch::{Batch, BatchVerdict};
 use pundit_core::match_entry::{
-    edit_from_line, format_line, format_time, parse_batch, parse_line, parse_time, BatchVerdict,
-    LineVerdict, PendingMatchEvent,
+    edit_from_line, format_line, format_time, parse_batch, parse_line, parse_time, LineVerdict,
+    PendingMatchEvent,
 };
 use pundit_core::project::{Project, SourceRef};
 use pundit_core::scoreboard::{
@@ -370,8 +371,8 @@ fn moving_a_row_to_another_video_carries_the_stored_seconds() {
 // ------------------------------------------------------------------ the batch
 
 /// The kinds a batch added, in order.
-fn added(batch: &pundit_core::match_entry::Batch) -> Vec<f64> {
-    batch.events.iter().map(|e| e.source_seconds).collect()
+fn added(batch: &Batch<PendingMatchEvent>) -> Vec<f64> {
+    batch.items.iter().map(|e| e.source_seconds).collect()
 }
 
 #[test]
@@ -407,10 +408,10 @@ fn a_line_already_tagged_is_skipped_within_a_second_either_side() {
     for line in ["3:19 home goal", "3:21 home goal", "3:20 home goal"] {
         let batch = parse_batch(&p, 0, line);
         assert!(
-            matches!(batch.lines[0].verdict, BatchVerdict::AlreadyTagged(_)),
+            matches!(batch.lines[0].verdict, BatchVerdict::Duplicate(_)),
             "{line:?} is the same event"
         );
-        assert!(batch.events.is_empty());
+        assert!(batch.items.is_empty());
         // And it does not come back in the box: the event it names is in
         // the project already, so there is nothing to fix by editing it.
         assert_eq!(batch.leftover, "");
@@ -432,10 +433,7 @@ fn the_same_line_twice_in_one_block_adds_once() {
     // project yet: the count is existing + accepted-so-far.
     let batch = parse_batch(&p, 0, "3:20 home goal\n3:20 home goal\n");
     assert_eq!(added(&batch), vec![200.0]);
-    assert!(matches!(
-        batch.lines[1].verdict,
-        BatchVerdict::AlreadyTagged(_)
-    ));
+    assert!(matches!(batch.lines[1].verdict, BatchVerdict::Duplicate(_)));
     assert_eq!(batch.leftover, "", "the block landed; nothing to fix");
 }
 

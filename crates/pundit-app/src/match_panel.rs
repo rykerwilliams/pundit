@@ -6,7 +6,7 @@
 //! anchor. Nothing here decides anything — tagging, deleting and the setup all
 //! go through the bus.
 
-use pundit_core::match_entry::{format_line, format_time, Batch, BatchVerdict, PendingMatchEvent};
+use pundit_core::match_entry::{format_line, format_time, PendingMatchEvent};
 use pundit_core::project::Project;
 use pundit_core::scoreboard::{
     format_clock, labelled_events, MatchEventKind, MatchEventRecord, MatchFormat, ScoreboardConfig,
@@ -119,88 +119,10 @@ fn where_text(source_index: usize, source_seconds: f64) -> String {
     format!("{} · {}", source_index + 1, format_time(source_seconds))
 }
 
-/// One echoed line of the paste box (spec B3).
-pub struct PasteLineText {
-    /// `✓` it will add, `•` it is already tagged, `✗` it is refused.
-    pub glyph: &'static str,
-    pub text: String,
-}
-
-/// Everything the paste box says about the block it holds: a line each, the
-/// summary above the button, and the button's own label.
-pub struct PasteEcho {
-    pub lines: Vec<PasteLineText>,
-    pub summary: String,
-    pub button: String,
-}
-
-/// Reads a parsed block back to the coach, line by line, before Add is pressed
-/// (spec B3).
-///
-/// Blank and comment-only lines say nothing, so they are not in `batch.lines`
-/// and get no row here. A refusal quotes its line back with its number, which
-/// is how the coach finds it in a block of twenty.
-pub fn paste_echo(batch: &Batch) -> PasteEcho {
-    let (mut adding, mut tagged, mut refused) = (0, 0, 0);
-    let lines = batch
-        .lines
-        .iter()
-        .map(|line| match &line.verdict {
-            BatchVerdict::Added(event) => {
-                adding += 1;
-                PasteLineText {
-                    glyph: "✓",
-                    text: reads_as(event),
-                }
-            }
-            BatchVerdict::AlreadyTagged(event) => {
-                tagged += 1;
-                PasteLineText {
-                    glyph: "•",
-                    text: format!("{} — already tagged, skipped", reads_as(event)),
-                }
-            }
-            BatchVerdict::Refused(reason) => {
-                refused += 1;
-                PasteLineText {
-                    glyph: "✗",
-                    text: format!("line {}: \"{}\" — {reason}", line.number, line.text),
-                }
-            }
-        })
-        .collect();
-
-    let mut parts: Vec<String> = Vec::new();
-    if adding > 0 {
-        parts.push(format!("{adding} {} to add", plural(adding, "event")));
-    }
-    if tagged > 0 {
-        parts.push(format!("{tagged} already tagged"));
-    }
-    if refused > 0 {
-        parts.push(format!("{refused} {} refused", plural(refused, "line")));
-    }
-    PasteEcho {
-        lines,
-        summary: parts.join(" · "),
-        // Nothing to add is a disabled button, which says nothing but its name.
-        button: match adding {
-            0 => "Add".to_string(),
-            n => format!("Add {n} {}", plural(n, "event")),
-        },
-    }
-}
-
-fn plural(count: usize, noun: &str) -> String {
-    match count {
-        1 => noun.to_string(),
-        _ => format!("{noun}s"),
-    }
-}
-
-/// A line that will add, or one already tagged, as the echo reads it back:
-/// where it lands and what it is.
-fn reads_as(event: &PendingMatchEvent) -> String {
+/// A line that will add, or one already tagged, as the paste echo
+/// ([`crate::line_editor::paste_echo`]) reads it back: where it lands and what
+/// it is.
+pub fn reads_as(event: &PendingMatchEvent) -> String {
     format!(
         "{} · {}",
         where_text(event.source_index, event.source_seconds),
@@ -429,6 +351,7 @@ fn parse_count(text: &str, min: u32, max: u32) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::line_editor::paste_echo;
     use pundit_core::match_entry::parse_batch;
     use pundit_core::project::SourceRef;
     use pundit_core::scoreboard::{ReelEnd, ScoreboardContext};
@@ -698,7 +621,7 @@ mod tests {
              \n\
              1 14:05 kick-off\n",
         );
-        let echo = paste_echo(&batch);
+        let echo = paste_echo(&batch, "event", "already tagged", reads_as);
 
         // Blanks and comments say nothing at all.
         assert_eq!(echo.lines.len(), 4);
@@ -738,12 +661,17 @@ mod tests {
 
         // And the plural, from a block that lands whole.
         let batch = parse_batch(&p, 0, "2 5:05 away goal\n2 6:05 away goal\n");
-        let echo = paste_echo(&batch);
+        let echo = paste_echo(&batch, "event", "already tagged", reads_as);
         assert_eq!(echo.summary, "2 events to add");
         assert_eq!(echo.button, "Add 2 events");
 
         // Nothing typed: nothing to say, and nothing to press.
-        let echo = paste_echo(&parse_batch(&p, 0, "  \n# just a note\n"));
+        let echo = paste_echo(
+            &parse_batch(&p, 0, "  \n# just a note\n"),
+            "event",
+            "already tagged",
+            reads_as,
+        );
         assert!(echo.lines.is_empty());
         assert_eq!(echo.summary, "");
         assert_eq!(echo.button, "Add");
