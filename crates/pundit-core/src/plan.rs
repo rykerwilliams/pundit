@@ -170,14 +170,26 @@ fn entry_chapters(entries: &[PlanEntry]) -> Vec<(f64, String)> {
 /// The bar's line for the `n`th of `total` clips, empty parts collapsed.
 fn entry_text(clip: &Clip, n: usize, total: usize) -> String {
     line([
-        format!("{n} / {total}"),
+        position(n, total),
         clip.name.trim().to_string(),
         clip.tags.join(", "),
     ])
 }
 
+/// The bar's `n / total` part, and nothing at all for an export of one entry
+/// (#115): `1 / 1` tells the viewer nothing the picture doesn't. Empty, so
+/// [`line`] drops it with its separator. Shared by every bar that counts its
+/// entries — a clip compilation's and a reel's — so the rule is written once.
+pub(crate) fn position(n: usize, total: usize) -> String {
+    if total == 1 {
+        String::new()
+    } else {
+        format!("{n} / {total}")
+    }
+}
+
 /// The bar's parts joined, an empty one dropped along with its separator.
-fn line(parts: [String; 3]) -> String {
+pub(crate) fn line(parts: [String; 3]) -> String {
     parts
         .into_iter()
         .filter(|part| !part.is_empty())

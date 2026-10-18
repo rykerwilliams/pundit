@@ -405,7 +405,8 @@ pub fn block_centre(bit: u32) -> (f64, f64) {
 /// [`one_entry`] can't stand in here: its frame lists are synthetic, so it
 /// leaves the entry's play/freeze segments empty, and those segments **are**
 /// the game track's audio edit. Its entry's text is the real one too —
-/// `1 / 1 | <name> | tags`, which is what preview's bar draws (spec E7).
+/// `<name> | tags` — one entry, so no position (#115) — which is what
+/// preview's bar draws (spec E7).
 pub fn one_clip(clip: &Clip, source_duration: f64) -> Compilation {
     let mut project = Project::new("p");
     project.source_videos.push(SourceRef {

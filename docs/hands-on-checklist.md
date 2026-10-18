@@ -102,7 +102,7 @@ Drawing only works while recording, so record a take for these.
 - [ ] **During the run.** **Right:** each row shows its progress, and a finish time appears after a few seconds and turns out roughly right. Record, Preview and Export video… are greyed out, and the rest of the app still responds.
 - [ ] **Cancel.** Click **Cancel export** mid-run. **Right:** videos that already finished are kept, and no half-written file (ending in `.part`) is left in `exports/`. Running the same export again replaces the files without complaint.
 - [ ] **Watch it.** Play an export in a video player. **Right:**
-  - The caption bar reads `n / total | name | tags`.
+  - The caption bar reads `n / total | name | tags` — and just `name | tags` in the single clip's file, with no `1 / 1`.
   - Pauses freeze on the frame you paused on, skips jump, and a slow zoom pan is smooth.
   - The drawings appear at the same moments and in the same places as when you drew them.
 - [ ] **[must work] Listen to it.** **Right:**

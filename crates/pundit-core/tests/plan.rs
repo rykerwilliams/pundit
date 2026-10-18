@@ -218,7 +218,25 @@ fn the_text_line_collapses_an_empty_name_and_empty_tags() {
     assert_eq!(plan.entries[1].text, "2 / 2");
 }
 
-/// `<total>` is the **target's** clip count, not the project's.
+/// The position is for telling entries apart: an export of one drops it
+/// (#115), while two carry `n / 2` each — the one rule, over one count.
+#[test]
+fn the_text_line_drops_the_position_from_a_one_entry_export() {
+    let a = clip("Overlap", 0, &["wide"]);
+    let b = clip("Press", 1, &[]);
+    let id = a.id;
+    let p = project_with(vec![a, b]);
+
+    let one = compilation_plan(&p, &ExportTarget::Clip(id));
+    assert_eq!(one.entries[0].text, "Overlap | wide");
+
+    let two = compilation_plan(&p, &ExportTarget::AllClips);
+    assert_eq!(two.entries[0].text, "1 / 2 | Overlap | wide");
+    assert_eq!(two.entries[1].text, "2 / 2 | Press");
+}
+
+/// `<total>` is the **target's** clip count, not the project's — which a
+/// one-clip target shows by carrying no position at all.
 #[test]
 fn the_text_line_counts_only_the_targets_clips() {
     let a = clip("a", 0, &["shot"]);
@@ -227,11 +245,11 @@ fn the_text_line_counts_only_the_targets_clips() {
     let p = project_with(vec![a, b]);
 
     let tag = compilation_plan(&p, &ExportTarget::Tag("shot".into()));
-    assert_eq!(tag.entries[0].text, "1 / 1 | a | shot");
+    assert_eq!(tag.entries[0].text, "a | shot");
 
     let one = compilation_plan(&p, &ExportTarget::Clip(id));
     assert_eq!(one.entries.len(), 1);
-    assert_eq!(one.entries[0].text, "1 / 1 | b");
+    assert_eq!(one.entries[0].text, "b");
 }
 
 /// A chapter starts on its entry's first output frame, not at a sum of

@@ -21,8 +21,6 @@ Set with the coach on 2026-10-17, in this order:
 - **101.** Work around the `decodebin3` keyframe-waiter write in our own code —
   the coach's choice of route, after more sightings this week. Never build the
   video output the probe hangs off, rather than deselecting it afterwards
-- **115.** Drop the `1 / 1` from a one-entry export's caption bar — the entry's
-  lighter variant, which the coach took
 - **97.** Typing slates in, as match events can be typed — the coach asked for
   it; needs its spec first
 
@@ -161,8 +159,8 @@ problem — which is the entry, not an excuse for it.
 - **133.** Titles over the footage — shipped 2026-10-13 with #115, in v18: an
   optional title on a slate, burned in place of the caption bar over its range
 - **115.** The caption bar, switchable per clip — shipped 2026-10-13 with #133:
-  Whole clip / First 3 seconds / Off, sticky. **Still open:** the lighter
-  variant, dropping the `1 / 1` from a one-entry export (see the entry)
+  Whole clip / First 3 seconds / Off, sticky; and on 2026-10-17 the lighter
+  variant, a one-entry export's bar dropping its `1 / 1`
 
 - **131.** The slate band's colour, a setting — shipped 2026-10-13 (PR #94): a
   full colour picker in a new Settings sheet, which the selected slate's row
@@ -3508,9 +3506,15 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   alike. A reel keeps its bar (its entries have no clip); **a basket piece
   follows its own clip's setting**, which answers the entry's one open
   sub-question.
-  **Still open: the lighter variant** below — drop the `1 / 1` when an export
-  has one entry. Nothing shipped touches it; revisit if the coach still finds
-  the position noise on single-clip exports with the bar on.
+  **The lighter variant below SHIPPED 2026-10-17**, the coach's pick: an
+  export of one entry drops its `1 / 1`, so the bar reads `name | tags`, and
+  two or more keep `n / total`. One rule, `plan::position`, read by both bars
+  that count entries — a clip compilation's and a goals reel's, so a one-goal
+  reel reads `Rovers goal | 1-0`. A basket's bar has no position to drop
+  (`<match> | <clip> | tags`), and chapters are untouched: a one-entry plan
+  has none, and a reel's are worded separately. A one-clip export whose clip
+  has no name and no tags now has an empty line, and `caption::strip_at`
+  already draws no strip for that.
 
   The entry as filed: The coach
   (2026-10-02), over a screenshot of an exported clip whose bar reads
