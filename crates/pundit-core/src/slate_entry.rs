@@ -40,6 +40,19 @@ pub struct PendingSlate {
     pub tags: Vec<String>,
 }
 
+impl From<&Slate> for PendingSlate {
+    /// A stored slate's five typed fields: what a line of it means.
+    fn from(slate: &Slate) -> Self {
+        Self {
+            source_index: slate.source_index,
+            in_seconds: slate.in_seconds,
+            out_seconds: slate.out_seconds,
+            name: slate.name.clone(),
+            tags: slate.tags.clone(),
+        }
+    }
+}
+
 const NOT_A_RANGE: &str = "a slate is a range: 14:05-14:40, or 14:05- to leave its end open";
 
 // ------------------------------------------------------------------ lines
@@ -52,7 +65,7 @@ pub fn parse_line(
     default_source: usize,
     line: &str,
 ) -> Option<Result<PendingSlate, String>> {
-    parse_line_with(project, default_source, line, (None, None))
+    parse_line_with(project, default_source, line, None)
 }
 
 /// The canonical rendering of a slate as a line: what the row's field is
@@ -91,11 +104,11 @@ pub fn format_line(slate: &Slate) -> String {
 /// **A line byte-identical to the seed is the slate as it stands**, which is
 /// what keeps a row nobody edited from being rewritten when focus leaves it
 /// even where its line does not round-trip (a tag holding a `[`). Otherwise
-/// **each end whose time token is unchanged keeps its stored seconds** — a
-/// captured `845.06` is not re-rounded to the `14:05.0` the line displays
-/// because the coach renamed the slate. The tokens compared are the range
-/// scanner's own, so `14:05.0 - 14:40.0` and `14:05.0-14:40.0` hold the same
-/// two times and a name with a dash in it is not a range.
+/// **an end typed as the time it displays keeps its stored seconds** — a
+/// captured `845.06` is not re-rounded to the `14:05.0` the line shows because
+/// the coach renamed the slate. "As it displays" is [`format_time`] of what was
+/// typed against [`format_time`] of what is stored, so `14:05`, `14:05.0` and
+/// either dash spacing all leave it alone, and a name is never in question.
 pub fn edit_from_line(
     project: &Project,
     slate: &Slate,
@@ -103,29 +116,10 @@ pub fn edit_from_line(
 ) -> Result<PendingSlate, String> {
     let seed = format_line(slate);
     if typed == seed {
-        return Ok(PendingSlate {
-            source_index: slate.source_index,
-            in_seconds: slate.in_seconds,
-            out_seconds: slate.out_seconds,
-            name: slate.name.clone(),
-            tags: slate.tags.clone(),
-        });
+        return Ok(PendingSlate::from(slate));
     }
-    let (seed_in, seed_out) = time_tokens(&seed).unwrap_or_default();
-    let (typed_in, typed_out) = time_tokens(typed).unwrap_or_default();
-    let keep_in = (!typed_in.is_empty() && typed_in == seed_in).then_some(slate.in_seconds);
-    let keep_out = (typed_out.is_some() && typed_out == seed_out)
-        .then_some(slate.out_seconds)
-        .flatten();
-    parse_line_with(project, slate.source_index, typed, (keep_in, keep_out))
+    parse_line_with(project, slate.source_index, typed, Some(slate))
         .unwrap_or_else(|| Err(format!("nothing on that line — a row reads \"{seed}\"")))
-}
-
-/// The in and out time tokens of `line` as the range scanner finds them, or
-/// `None` when it has no range to find.
-fn time_tokens(line: &str) -> Option<(&str, Option<&str>)> {
-    let range = scan_range(after_video(line.trim()).1).ok()?;
-    Some((range.in_text, range.out_text))
 }
 
 /// `line` split into its leading video number, if it has one, and the rest.
@@ -240,29 +234,37 @@ fn name_and_tags(rest: &str) -> Result<(String, Vec<String>), &'static str> {
     Ok((rest[..open].trim().to_owned(), normalize_tags(inside)))
 }
 
-/// [`parse_line`], optionally keeping stored seconds for either end (see
-/// [`edit_from_line`]). An end is kept only when the line has a time for it,
-/// and **the order and the bound are checked on the seconds that will be
-/// stored**, after the keep, so nothing can carry a stored time past the end
-/// of a video or behind its own in point.
+/// [`parse_line`], retyping `stored` when there is one (see
+/// [`edit_from_line`]): each end that displays as the stored one keeps the
+/// stored seconds, and **the order and the bound are checked on the seconds
+/// that will be stored**, after that, so nothing can carry a stored time past
+/// the end of a video or behind its own in point.
 fn parse_line_with(
     project: &Project,
     default_source: usize,
     line: &str,
-    keep: (Option<f64>, Option<f64>),
+    stored: Option<&Slate>,
 ) -> Option<Result<PendingSlate, String>> {
     let line = line.trim();
     if line.is_empty() || line.starts_with('#') {
         return None;
     }
-    Some(parse_body(project, default_source, line, keep))
+    Some(parse_body(project, default_source, line, stored))
+}
+
+/// `typed`, unless it displays as `stored`: then `stored`, to the last decimal.
+fn kept(typed: f64, stored: Option<f64>) -> f64 {
+    match stored {
+        Some(stored) if format_time(typed) == format_time(stored) => stored,
+        _ => typed,
+    }
 }
 
 fn parse_body(
     project: &Project,
     default_source: usize,
     line: &str,
-    keep: (Option<f64>, Option<f64>),
+    stored: Option<&Slate>,
 ) -> Result<PendingSlate, String> {
     let (video, rest) = after_video(line);
     let source_index = match video {
@@ -286,8 +288,8 @@ fn parse_body(
     };
     let (name, tags) = name_and_tags(range.rest)?;
 
-    let in_seconds = keep.0.unwrap_or(in_seconds);
-    let out_seconds = out_seconds.map(|out| keep.1.unwrap_or(out));
+    let in_seconds = kept(in_seconds, stored.map(|s| s.in_seconds));
+    let out_seconds = out_seconds.map(|out| kept(out, stored.and_then(|s| s.out_seconds)));
 
     // `mark_slate_out`'s `<=`: a zero-length range is not a range.
     if out_seconds.is_some_and(|out| out <= in_seconds) {
@@ -328,22 +330,14 @@ pub fn parse_batch(project: &Project, default_source: usize, text: &str) -> Batc
     let stored: Vec<Key> = project
         .slates
         .iter()
-        .map(|s| key(s.source_index, s.in_seconds, s.out_seconds, &s.name))
+        .map(|s| key(&PendingSlate::from(s)))
         .collect();
     line_batch::read_batch(text, |line, accepted: &[PendingSlate]| {
         Some(match parse_line(project, default_source, line)? {
             Err(reason) => BatchVerdict::Refused(reason),
             Ok(slate) => {
-                let k = key(
-                    slate.source_index,
-                    slate.in_seconds,
-                    slate.out_seconds,
-                    &slate.name,
-                );
-                let seen = stored.contains(&k)
-                    || accepted
-                        .iter()
-                        .any(|a| key(a.source_index, a.in_seconds, a.out_seconds, &a.name) == k);
+                let k = key(&slate);
+                let seen = stored.contains(&k) || accepted.iter().any(|a| key(a) == k);
                 if seen {
                     BatchVerdict::Duplicate(slate)
                 } else {
@@ -356,11 +350,11 @@ pub fn parse_batch(project: &Project, default_source: usize, text: &str) -> Batc
 
 type Key = (usize, String, Option<String>, String);
 
-fn key(source_index: usize, in_seconds: f64, out_seconds: Option<f64>, name: &str) -> Key {
+fn key(slate: &PendingSlate) -> Key {
     (
-        source_index,
-        format_time(in_seconds),
-        out_seconds.map(format_time),
-        name.to_owned(),
+        slate.source_index,
+        format_time(slate.in_seconds),
+        slate.out_seconds.map(format_time),
+        slate.name.clone(),
     )
 }

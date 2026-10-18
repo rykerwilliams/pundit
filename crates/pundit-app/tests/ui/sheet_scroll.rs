@@ -421,6 +421,7 @@ fn editor_rows(n: usize) -> ModelRc<LineEditorRow> {
                 where_text: "2 · 14:05.0".into(),
                 label: "Home goal".into(),
                 role_less: false,
+                line: "2 14:05.0 home goal".into(),
             })
             .collect::<Vec<_>>(),
     ))

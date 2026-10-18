@@ -36,6 +36,7 @@ use pundit_media::LEVEL_INTERVAL_NS;
 use uuid::Uuid;
 
 use super::{Bus, Event, UserError};
+use crate::line_editor::SLATE_WORDS;
 
 /// How often the bus wakes to see whether the armed slate's out point has
 /// passed, when nothing else would wake it.
@@ -319,10 +320,9 @@ impl Bus {
             Ok(typed) => typed,
             Err(reason) => return self.emit(Event::Error(UserError::Slate(reason))),
         };
+        // Found just above, on the same thread: it is still there.
         self.edit_slates(|project| {
-            if !project.retype_slate(id, typed) {
-                eprintln!("bus: EditSlateLine on a slate that isn't there: {id}");
-            }
+            let _ = project.retype_slate(id, typed);
         });
     }
 
@@ -346,7 +346,7 @@ impl Bus {
             }
         });
         self.emit(Event::SlatePasteLeftover(batch.leftover));
-        if let Some(notice) = super::scoreboard::batch_notice(&batch.lines, "already marked") {
+        if let Some(notice) = super::scoreboard::batch_notice(&batch.lines, SLATE_WORDS.duplicate) {
             self.emit(Event::Error(UserError::Slate(notice)));
         }
     }

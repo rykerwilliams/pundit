@@ -39,6 +39,7 @@ use pundit_core::undo::UndoAction;
 use uuid::Uuid;
 
 use super::{Bus, Event, UserError};
+use crate::line_editor::EVENT_WORDS;
 
 /// One line of the editor's row field, read against the record it names:
 /// the whole verdict, **the cap included**.
@@ -157,7 +158,7 @@ impl Bus {
             }
         });
         self.emit(Event::MatchPasteLeftover(batch.leftover));
-        if let Some(notice) = batch_notice(&batch.lines, "already tagged") {
+        if let Some(notice) = batch_notice(&batch.lines, EVENT_WORDS.duplicate) {
             self.refuse(notice);
         }
     }

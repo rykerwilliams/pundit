@@ -276,6 +276,7 @@ fn a_letter_typed_in_a_sheet_field_reaches_the_field() {
         where_text: "1 · 14:05.0".into(),
         label: "Home goal".into(),
         role_less: false,
+        line: "1 14:05.0 home goal".into(),
     }])));
     w.set_line_editor_selected("e1".into());
     w.set_line_editor_open(true);

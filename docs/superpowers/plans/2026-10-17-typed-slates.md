@@ -75,6 +75,20 @@ and nothing else.**
   #97 reads SHIPPED (#TODO) and is off "Next, in order" — at the
   coordinator's word, ahead of the merge. **Manual check 3 (the column cost)
   is not measured yet**: it needs a display, and is §16's third item.
+- **Review fixes (PR #101's code reviews, 2026-10-18).** Neither review found
+  a correctness bug; one commit applies the simplifications. A row carries its
+  `line`, so selecting a row and Esc's reseed are Slint's alone (a
+  `line-editor-seed` holds the selected row's line; four Rust callbacks and the
+  second event-line formatter are gone). `paste-leftover(kind, text)` is a
+  Slint function, `show_line_editor` one function over `EditorRow`s from
+  `line_editor::event_rows` / `slate_rows`, `PasteEcho` carries `adding`, and
+  the per-kind words are `line_editor::{EVENT,SLATE}_WORDS`, shared with the
+  bus's notices. **`edit_from_line` now keeps an end that *displays* as the
+  stored one** (`format_time` of each), which retired the token scan and the
+  `keep` tuple and also keeps `845.06` under a typed `14:05` (spec S9 amended).
+  `PendingSlate: From<&Slate>`; `key(&PendingSlate)`. The two harness retype
+  tests keep only what the bus adds (the clip untouched; the in point's trip to
+  the file).
 
 **Shipping: one PR, a commit per task, in order.** Tasks 1 and 4 are refactors
 that change no behaviour — the match editor before and after each reads and
@@ -233,20 +247,20 @@ the spec does not say.
    Option<Result<PendingSlate, String>>`**, in S2's order: comment and blank →
    `None`; the video number; the range, by a small scanner over `char`s (the in
    time is the run of digits, `:` and `.`; then the dash and its spacing decide
-   closed, open or lopsided), which **returns the two time tokens as it found
-   them**; the tags as the last `[` to the end; the name as the trimmed text
+   closed, open or lopsided); the tags as the last `[` to the end; the name as the trimmed text
    between. The refusal sentences are written inline, as `match_entry`'s are;
    only the video refusal is shared (§0.3).
-2. **One body, `parse_line_with(…, keep: (Option<f64>, Option<f64>))`**: an
-   end is overridden only when the parse produced a time for it, and the
-   override is applied **before** the order and the bound (spec S3, S9), as
-   `match_entry::parse_line_with` does (`:333`–`:353`).
+2. **One body, `parse_line_with(…, stored: Option<&Slate>)`**: an end that
+   displays as the stored one keeps the stored seconds, applied **before** the
+   order and the bound (spec S3, S9), as `match_entry::parse_line_with` does
+   (`:333`–`:353`). *Amended 2026-10-18 after code review* (this and step 4):
+   it was a `keep` tuple built from the scanner's time tokens.
 3. **`format_line(&Slate)`**: S9's shapes, `[]` when there are no tags and the
    name contains `[`.
 4. **`edit_from_line(project, &Slate, typed) -> Result<PendingSlate, String>`**:
    byte-identical to `format_line(slate)` → the slate's own fields; else the
-   scanner's in and out tokens of the seed and the typed line compared, each
-   equal one kept as stored; `None` → the emptied-row sentence.
+   body parse with the slate, each end whose `format_time` matches the
+   stored one's kept as stored; `None` → the emptied-row sentence.
 5. **`parse_batch(project, default_source, text) -> Batch<PendingSlate>`** over
    `read_batch`, the judge keying on canonical text (spec S12) against the
    stored slates and `accepted`.
@@ -291,6 +305,8 @@ the spec does not say.
    `a [b] c`) only.
 2. The identity compares whitespace tokens → 2.9 (the spaced case) only.
 3. The identity splits the line on its first dash → 2.9 (`corner-kick`) only.
+   (Both were the token comparison's; after code review the identity is
+   displayed times, and its sabotage is in "Where this stands".)
 4. The order check reads the parsed in, not the effective one → 2.10 only.
 5. The byte-identical early return removed → 2.8 only.
 6. A lone time read as an open range → 2.2 (`2 14:05 corner`) and 2.3.

@@ -341,6 +341,20 @@ fn an_unchanged_end_keeps_its_stored_seconds() {
     assert_eq!((got.in_seconds, got.out_seconds), (845.06, Some(880.04)));
 }
 
+/// The rule is "typed as it displays", not "typed as it was seeded": `14:05`
+/// is the 14:05.0 a stored 845.06 shows, so retyping a line by hand without
+/// the tenths keeps the captured seconds too.
+#[test]
+fn a_time_typed_as_it_displays_keeps_the_stored_seconds() {
+    let p = project();
+    let s = slate(0, 845.06, Some(880.04), "corner", &[]);
+    let got = edit_from_line(&p, &s, "1 14:05-14:40 corner kick").unwrap();
+    assert_eq!((got.in_seconds, got.out_seconds), (845.06, Some(880.04)));
+    // A time that displays differently is the time typed.
+    let got = edit_from_line(&p, &s, "1 14:05.1-14:40 corner").unwrap();
+    assert_eq!((got.in_seconds, got.out_seconds), (845.1, Some(880.04)));
+}
+
 /// The order is a property of what is stored: an out typed at 14:05.05 is
 /// after the 14:05.0 the in point's text reads, and still *behind* the kept
 /// in point of 845.06.

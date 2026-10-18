@@ -1053,8 +1053,8 @@ its module doc holds the rest.
   definition a list of *restarts*, and pasting it must add nothing.
 - **The sheet's rows are rebuilt by `show_project` on every project change,
   except while the row's field has focus** (`main.rs`, the
-  `line_editor_line_focused` test before `show_match_editor` or
-  `show_slate_editor`, whichever kind is open). A `LineEdit`
+  `line_editor_line_focused` test before `show_line_editor`, with the open
+  kind's rows). A `LineEdit`
   inside a `for` can only be bound one way, so a rebuild under it would
   overwrite what is being typed — and a transcript landing
   (`bus/transcribe.rs`) or a source found missing (`bus/transport.rs`)

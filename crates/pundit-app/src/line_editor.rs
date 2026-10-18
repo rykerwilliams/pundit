@@ -9,8 +9,29 @@
 use pundit_core::line_batch::{Batch, BatchVerdict};
 use pundit_core::match_entry::format_time;
 use pundit_core::project::Project;
-use pundit_core::slate_entry::PendingSlate;
+use pundit_core::slate_entry::{self, PendingSlate};
 use uuid::Uuid;
+
+use crate::match_panel;
+
+/// What one kind's records are called, in the echo and in the bus's notice
+/// alike, so the two cannot drift apart.
+pub struct KindWords {
+    /// One record: `"event"`. The plural is this plus `s`.
+    pub noun: &'static str,
+    /// A line skipped because its record is there already.
+    pub duplicate: &'static str,
+}
+
+pub const EVENT_WORDS: KindWords = KindWords {
+    noun: "event",
+    duplicate: "already tagged",
+};
+
+pub const SLATE_WORDS: KindWords = KindWords {
+    noun: "slate",
+    duplicate: "already marked",
+};
 
 /// One echoed line of the paste box (spec B3).
 pub struct PasteLineText {
@@ -25,22 +46,23 @@ pub struct PasteEcho {
     pub lines: Vec<PasteLineText>,
     pub summary: String,
     pub button: String,
+    /// How many lines will add: what Add is enabled on.
+    pub adding: usize,
 }
 
 /// Reads a parsed block back to the coach, line by line, before Add is pressed
-/// (spec B3). `noun` is what one record is called (`"event"`), `duplicate`
-/// what a skipped one is (`"already tagged"`), and `reads_as` how a record
-/// that will add, or is skipped, reads.
+/// (spec B3), in `words`; `reads_as` is how a record that will add, or is
+/// skipped, reads.
 ///
 /// Blank and comment-only lines say nothing, so they are not in `batch.lines`
 /// and get no row here. A refusal quotes its line back with its number, which
 /// is how the coach finds it in a block of twenty.
 pub fn paste_echo<T>(
     batch: &Batch<T>,
-    noun: &str,
-    duplicate: &str,
+    words: &KindWords,
     reads_as: impl Fn(&T) -> String,
 ) -> PasteEcho {
+    let KindWords { noun, duplicate } = words;
     let (mut adding, mut skipped, mut refused) = (0, 0, 0);
     let lines = batch
         .lines
@@ -88,6 +110,7 @@ pub fn paste_echo<T>(
             0 => "Add".to_string(),
             n => format!("Add {n} {}", plural(n, noun)),
         },
+        adding,
     }
 }
 
@@ -98,32 +121,51 @@ fn plural(count: usize, noun: &str) -> String {
     }
 }
 
-/// One row of the line editor's slates list.
+/// One row of the line editor's list, whichever kind: what the sheet shows of
+/// a record, and the line its field is seeded with when the row is selected.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SlateEditorRow {
+pub struct EditorRow {
     pub id: Uuid,
-    /// "2 · 14:05.0–14:40.0", or "2 · 14:05.0–" for an open range: the
-    /// grammar's own numbering, as an event row's "where" is.
+    /// "2 · 14:05.0", or "2 · 14:05.0–14:40.0" for a slate ("2 · 14:05.0–"
+    /// open): the grammar's own numbering.
     pub where_text: String,
-    /// The name, or "Untitled", as the Slates list says.
+    /// What `interpret` calls an event; a slate's name, or "Untitled".
     pub label: String,
-    /// An open range: stored, and not yet doing anything — the job
-    /// `role_less` does for an event row, and what the Slates list's `timed`
-    /// says the other way round.
+    /// Greyed: a start/stop the format has no period for, or an open range —
+    /// stored, and not yet doing anything.
     pub role_less: bool,
+    /// The record as a line of its grammar: what the row's field is seeded
+    /// with, and what its edit is read against.
+    pub line: String,
+}
+
+/// The match events as the line editor lists them: the Match panel's rows,
+/// from the same builder, said the editor's way (spec T1).
+pub fn event_rows(project: &Project) -> Vec<EditorRow> {
+    match_panel::match_rows(project)
+        .iter()
+        .map(|row| EditorRow {
+            id: row.id,
+            where_text: match_panel::editor_row_where(row),
+            label: row.label.clone(),
+            role_less: row.role_less,
+            line: match_panel::editor_row_line(row),
+        })
+        .collect()
 }
 
 /// The slates as the line editor lists them, in [`Project::slates_sorted`]'s
 /// reading order.
-pub fn slate_rows(project: &Project) -> Vec<SlateEditorRow> {
+pub fn slate_rows(project: &Project) -> Vec<EditorRow> {
     project
         .slates_sorted()
         .into_iter()
-        .map(|slate| SlateEditorRow {
+        .map(|slate| EditorRow {
             id: slate.id,
             where_text: slate_where(slate.source_index, slate.in_seconds, slate.out_seconds),
             label: label(&slate.name).to_owned(),
             role_less: slate.out_seconds.is_none(),
+            line: slate_entry::format_line(slate),
         })
         .collect()
 }
@@ -193,7 +235,7 @@ mod tests {
              1 3:20-\n\
              2 14:05 home goal\n",
         );
-        let echo = paste_echo(&batch, "slate", "already marked", slate_reads_as);
+        let echo = paste_echo(&batch, &SLATE_WORDS, slate_reads_as);
 
         assert_eq!(
             echo.lines.iter().map(|l| l.glyph).collect::<Vec<_>>(),
@@ -230,17 +272,19 @@ mod tests {
         assert_eq!(
             rows,
             [
-                SlateEditorRow {
+                EditorRow {
                     id: closed,
                     where_text: "1 · 14:05.0–14:40.0".into(),
                     label: "Untitled".into(),
                     role_less: false,
+                    line: "1 14:05.0-14:40.0".into(),
                 },
-                SlateEditorRow {
+                EditorRow {
                     id: open,
                     where_text: "2 · 0:30.0–".into(),
                     label: "Untitled".into(),
                     role_less: true,
+                    line: "2 0:30.0-".into(),
                 },
             ],
             "in reading order, the open range greyed"

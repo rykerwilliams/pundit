@@ -1120,11 +1120,12 @@ fn a_partly_refused_block_of_slates_adds_the_rest() {
     assert_eq!(p.saved().slates, after.slates);
 }
 
-/// A shot slate edits like any other (spec S11): its range and name move, its
-/// title stays, and the clip shot from it is untouched — the link runs from
-/// the clip, and the inheritance was at the take only.
+/// A shot slate edits like any other (spec S11), and the clip shot from it is
+/// untouched: the link runs from the clip, and the inheritance was at the take
+/// only. What a retype keeps of the slate itself — id, title, place — is
+/// core's `a_retype_keeps_the_id_the_title_and_the_place`.
 #[test]
-fn retyping_a_shot_titled_slate_leaves_its_clip_and_its_title_alone() {
+fn retyping_a_shot_slate_leaves_its_clip_alone() {
     let (mut h, p) = Proj::open(&["a.webm", "b.webm"]);
     h.wait_settled();
     h.send(mark_in(1, 1.2));
@@ -1136,45 +1137,30 @@ fn retyping_a_shot_titled_slate_leaves_its_clip_and_its_title_alone() {
         edit: SlateEdit::Name("corner".into()),
     });
     h.wait_changed();
-    h.send(Command::EditSlate {
-        id,
-        edit: SlateEdit::Title("The near post".into()),
-    });
-    h.wait_changed();
-
     shoot(&mut h, id);
     let clip = stop(&mut h);
-    assert_eq!(clip.slate_id, Some(id));
 
     h.send(Command::EditSlateLine {
         id,
-        line: "1 0:00.5-0:01.5 corner routine [corners]".into(),
+        line: "1 0:00.5-0:01.5 corner routine".into(),
     });
-    let after = h.wait_changed().project;
+    let slate = h.wait_changed().project.slates[0].clone();
     h.shutdown();
-
-    let slate = &after.slates[0];
-    assert_eq!(slate.id, id);
     assert_eq!(
         (slate.source_index, slate.in_seconds, slate.out_seconds),
         (0, 0.5, Some(1.5)),
-        "retyped onto another video"
+        "the retype landed"
     );
-    assert_eq!(slate.name, "corner routine");
-    assert_eq!(slate.tags, ["corners"]);
-    assert_eq!(slate.title.as_deref(), Some("The near post"));
 
-    let saved = p.saved();
-    assert_eq!(saved.slates, after.slates);
-    let shot = &saved.clips[0];
+    let shot = &p.saved().clips[0];
     assert_eq!(shot.slate_id, Some(id));
     assert_eq!(shot.source_index, clip.source_index);
     assert_eq!(shot.start_source_seconds, clip.start_source_seconds);
     assert_eq!(shot.name, "corner");
 }
 
-/// A captured in point is the frame's own time, not the tenth the line
-/// shows: renaming the slate must not re-round it (spec S9).
+/// The bus reads a retype with `edit_from_line`, so a captured in point
+/// survives the trip to the file when only the name is retyped (spec S9).
 #[test]
 fn a_name_only_retype_keeps_a_captured_in_point() {
     let (mut h, p) = Proj::open(&["a.webm"]);
@@ -1186,10 +1172,7 @@ fn a_name_only_retype_keeps_a_captured_in_point() {
         id,
         line: "1 0:00.5- renamed".into(),
     });
-    let slate = h.wait_changed().project.slates[0].clone();
-    assert_eq!(slate.name, "renamed");
-    assert_eq!(slate.in_seconds, 0.53);
-
+    h.wait_changed();
     h.shutdown();
     assert_eq!(p.saved().slates[0].in_seconds, 0.53);
 }

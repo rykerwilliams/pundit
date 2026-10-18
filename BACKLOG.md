@@ -16,8 +16,8 @@ made things worse.
 
 ### Next, in order
 
-Nothing queued: the four the coach set on 2026-10-17 — #101, #115, #93 and
-#97 — have all shipped.
+Nothing queued: the four entries the coach set on 2026-10-17 — entries 101,
+115, 93 and 97 — have all shipped.
 
 ### Watch, rather than pick up
 
@@ -2379,7 +2379,9 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   with a default badly enough to be worth the detour. Related: #35 (physical
   keys), #94 (nothing says what the keys are), #78 (where the screen goes).
 
-97. **Typing slates in, as match events can be typed — SHIPPED (#101).** Dropped from the slates
+97. **Typing slates in, as match events can be typed — SHIPPED 2026-10-18** (PR
+  #101; spec `2026-10-17-typed-slates-design.md`, plan
+  `2026-10-17-typed-slates.md`). Dropped from the slates
   spec during review (§S6) rather than built: the grammar reuse it rested on
   does not exist. `match_entry`'s `#` is a **comment to end of line**, so the
   obvious `2 14:05-14:40 corner routine #corners` would have had its tag
@@ -2392,12 +2394,12 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   in a new `core::slate_entry`, not a second mode bolted onto `match_entry`.
   The editor sheet itself is ~300 lines of Slint plus its `editing` fold, the
   rebuild discipline and the focus-drop-on-commit rule.
-- **Why deferred:** the coach asked to mark ranges while watching, which is
-  what shipped. Nobody has asked to type them.
+- **Why deferred** *(history — the coach asked on 2026-10-17)*: the coach
+  asked to mark ranges while watching, which is what shipped. Nobody had asked
+  to type them.
 - **When to revisit:** if a coach arrives with times already written down —
   which is exactly how `kickoffs.txt` came about, so it is not far-fetched.
-- **Shipped (#101)**, the coach having asked on 2026-10-17: spec
-  `2026-10-17-typed-slates-design.md`, plan `2026-10-17-typed-slates.md`. The
+- **Shipped 2026-10-18 in PR #101**, the coach having asked on 2026-10-17. The
   grammar is `core::slate_entry` — `2 14:05-14:40 corner routine [corners]`,
   tags as a bracketed group and `#` a comment only at a line's start, which is
   what answers §S6's two objections — and the paste loop both grammars share

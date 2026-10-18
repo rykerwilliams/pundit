@@ -178,6 +178,9 @@ export struct LineEditorRow {
     /// A start/stop the format has no period for, greyed as the panel's is;
     /// for a slate, an open range — stored, and not yet doing anything.
     role-less: bool,
+    /// The record as a line of its grammar: what the row's field is seeded
+    /// with when the row is selected, and what Esc puts back.
+    line: string,
 }
 
 /// One echoed line of the paste box (spec B3): what the parser made of it,
@@ -3426,7 +3429,8 @@ component LineEditorSheet inherits Sheet {
     pure callback check-paste(string, int, int) -> PasteEcho;
     /// The project changed, so every echo above has to be read again.
     in property <int> revision;
-    callback select(string);
+    /// A row was clicked: its id and its line, which seeds the field.
+    callback select(string, string);
     /// A row's line committed: nothing is sent until it parses.
     callback commit(string, string);
     callback seek(string);
@@ -3481,7 +3485,7 @@ component LineEditorSheet inherits Sheet {
                 // own clicks.
                 TouchArea {
                     mouse-cursor: pointer;
-                    clicked => { root.select(row.id); }
+                    clicked => { root.select(row.id, row.line); }
                 }
 
                 HorizontalLayout {
@@ -4396,8 +4400,9 @@ export component AppWindow inherits Window {
     in property <[ClipRow]> clips;
     /// All the project's clips, filtered or not.
     in property <int> clip-count;
-    /// The Slates list, in `(video, in point)` order — empty for every project
-    /// that has never marked one, which is what hides the section.
+    /// The Slates list, in `(video, in point)` order. Empty, it hides the list;
+    /// the section's header, with its **Type…**, shows once the project has a
+    /// video (#97).
     in property <[SlateRow]> slates;
     /// The selected slate's id, empty for none. UI state only, cleared on
     /// project open and when its slate leaves the project.
@@ -4842,6 +4847,9 @@ export component AppWindow inherits Window {
     /// field, and re-seeded from the record on every rebuild.
     in-out property <string> line-editor-selected;
     in-out property <string> line-editor-line;
+    /// The selected row's line as it was seeded — set by a click on the row
+    /// and by `src/main.rs`'s rebuild — which Esc in the field puts back.
+    in-out property <string> line-editor-seed;
     /// The paste box's block and its default-video picker. The block lives
     /// here rather than in the sheet so it survives Go and closing (spec F2);
     /// the picker resets to the first video on every open.
@@ -5086,11 +5094,6 @@ export component AppWindow inherits Window {
     /// Seed the editor's rows, picker and selection from the project for the
     /// match events. `open-line-editor` opens the sheet after it.
     callback open-match-editor();
-    /// A row was clicked: seed its field with that event as a line.
-    callback select-match-event(string);
-    /// Esc in the row's field: put the selected event's line back in it,
-    /// undoing whatever was typed (spec P3).
-    callback reseed-match-line();
     /// A row's field committed: the event's id and the line typed into it.
     callback edit-match-event(string, string);
     /// Add every line of the paste box that will add, as one undo step, and
@@ -5108,8 +5111,6 @@ export component AppWindow inherits Window {
     /// `core::slate_entry` (BACKLOG #97). A row's Go is `park-on-slate` and its
     /// × is `delete-slate`, which the Slates list has already.
     callback open-slate-editor();
-    callback select-slate-line(string);
-    callback reseed-slate-line();
     callback edit-slate-line(string, string);
     callback add-slates();
     pure callback valid-slate-line(string, string) -> bool;
@@ -5253,6 +5254,19 @@ export component AppWindow inherits Window {
             root.open-slate-editor();
         }
         root.line-editor-open = true;
+    }
+
+    /// What the bus's own parse left of a `kind` paste (spec B5): into the
+    /// box when that kind is open, and into the kind's own block otherwise,
+    /// which the next open copies in.
+    public function paste-leftover(kind: LineEditorKind, text: string) {
+        if (root.line-editor-open && root.line-editor-kind == kind) {
+            root.line-editor-paste = text;
+        } else if (kind == LineEditorKind.events) {
+            root.events-paste = text;
+        } else {
+            root.slates-paste = text;
+        }
     }
 
     /// Selects slate `id` and parks the footage on it — **select, then
@@ -5504,11 +5518,7 @@ export component AppWindow inherits Window {
                 // the row was seeded with *first*; the commit that follows
                 // then edits nothing.
                 if (root.line-editor-line-focused) {
-                    if (root.line-editor-kind == LineEditorKind.events) {
-                        root.reseed-match-line();
-                    } else {
-                        root.reseed-slate-line();
-                    }
+                    root.line-editor-line = root.line-editor-seed;
                     keys.focus();
                     return accept;
                 }
@@ -8001,12 +8011,10 @@ export component AppWindow inherits Window {
                         ? root.check-paste(text, source, revision)
                         : root.check-slate-paste(text, source, revision);
                 }
-                select(id) => {
-                    if (events) {
-                        root.select-match-event(id);
-                    } else {
-                        root.select-slate-line(id);
-                    }
+                select(id, line) => {
+                    root.line-editor-selected = id;
+                    root.line-editor-seed = line;
+                    root.line-editor-line = line;
                 }
                 // **Every commit drops focus** (spec T4), unconditionally
                 // rather than only when the order changed: Slint's `for`

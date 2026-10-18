@@ -351,7 +351,7 @@ fn parse_count(text: &str, min: u32, max: u32) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::line_editor::paste_echo;
+    use crate::line_editor::{paste_echo, EVENT_WORDS};
     use pundit_core::match_entry::parse_batch;
     use pundit_core::project::SourceRef;
     use pundit_core::scoreboard::{ReelEnd, ScoreboardContext};
@@ -621,7 +621,7 @@ mod tests {
              \n\
              1 14:05 kick-off\n",
         );
-        let echo = paste_echo(&batch, "event", "already tagged", reads_as);
+        let echo = paste_echo(&batch, &EVENT_WORDS, reads_as);
 
         // Blanks and comments say nothing at all.
         assert_eq!(echo.lines.len(), 4);
@@ -661,15 +661,14 @@ mod tests {
 
         // And the plural, from a block that lands whole.
         let batch = parse_batch(&p, 0, "2 5:05 away goal\n2 6:05 away goal\n");
-        let echo = paste_echo(&batch, "event", "already tagged", reads_as);
+        let echo = paste_echo(&batch, &EVENT_WORDS, reads_as);
         assert_eq!(echo.summary, "2 events to add");
         assert_eq!(echo.button, "Add 2 events");
 
         // Nothing typed: nothing to say, and nothing to press.
         let echo = paste_echo(
             &parse_batch(&p, 0, "  \n# just a note\n"),
-            "event",
-            "already tagged",
+            &EVENT_WORDS,
             reads_as,
         );
         assert!(echo.lines.is_empty());
