@@ -20,7 +20,7 @@
 //! view first, which would stand in the way of ever pinning the row.
 
 use crate::key_action;
-use crate::{AppWindow, BasketPieceRow, MatchEditorRow, MusicRow, RunRow, TargetRow};
+use crate::{AppWindow, BasketPieceRow, LineEditorRow, MusicRow, RunRow, TargetRow};
 use i_slint_backend_testing::{AccessibleRole, ElementHandle};
 use pundit_app::keymap::Keymap;
 use slint::platform::{Key, WindowEvent};
@@ -87,13 +87,13 @@ fn sheets() -> Vec<Sheet> {
             shut: |w| !w.get_match_sheet_open(),
         },
         Sheet {
-            card: "MatchEditorSheet",
+            card: "LineEditorSheet",
             open: |w| {
-                w.set_match_editor_rows(editor_rows(40));
-                w.set_match_editor_message("There is no video 900.".into());
-                w.set_match_editor_open(true);
+                w.set_line_editor_rows(editor_rows(40));
+                w.set_line_editor_message("There is no video 900.".into());
+                w.set_line_editor_open(true);
             },
-            shut: |w| !w.get_match_editor_open(),
+            shut: |w| !w.get_line_editor_open(),
         },
         Sheet {
             card: "NewMatchSheet",
@@ -413,10 +413,10 @@ fn pieces(n: usize) -> ModelRc<BasketPieceRow> {
     ))
 }
 
-fn editor_rows(n: usize) -> ModelRc<MatchEditorRow> {
+fn editor_rows(n: usize) -> ModelRc<LineEditorRow> {
     ModelRc::new(VecModel::from(
         (0..n)
-            .map(|i| MatchEditorRow {
+            .map(|i| LineEditorRow {
                 id: format!("id-{i}").into(),
                 where_text: "2 · 14:05.0".into(),
                 label: "Home goal".into(),

@@ -47,7 +47,13 @@ and nothing else.**
   (`SlateEdit`s and an empty `Title`) trips 3.3 at its video assertion first,
   so a second mutant — `retype_slate`, then `Title(String::new())` — was run
   and fails 3.3 alone, on the title.
-- **4 — `MatchEditorSheet` → `LineEditorSheet`, a rename.** Not started.
+- **4 — `MatchEditorSheet` → `LineEditorSheet`, a rename.** Done. §A's
+  task-4 rows held at `de7cad0` except the sheet itself, which starts at
+  `app.slint:3367` (ten lines below the census) and `main.rs`, four up
+  (`wire_match_editor` `:1974`, `open_match_editor` `:2264`,
+  `show_match_editor` `:2305`, the rebuild gate `:3984`). The grep for
+  `match-editor-`, `match_editor_` and `MatchEditor` is empty at this head.
+  Sabotage 1 fails 4.3 alone.
 - **5 — the slates kind: the words, the dispatch, the door, Go.** Not started.
 - **6 — prose and the backlog.** Not started.
 

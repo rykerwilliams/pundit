@@ -157,7 +157,7 @@ export struct MatchRow {
 /// One row of the match event editor's list (spec T2). The same events in the
 /// same order as `MatchRow`, from the same builder, said the editor's way: the
 /// time into a video, which is what its grammar names.
-export struct MatchEditorRow {
+export struct LineEditorRow {
     /// The event's UUID.
     id: string,
     /// "2 · 14:05.0": the 1-based video number and the time into that video,
@@ -3364,8 +3364,8 @@ component MatchSetupSheet inherits Rectangle {
 /// a table. Nothing is staged -- each committed row and each Add is a bus
 /// command and an undo step -- so its one button is Done, and there is no
 /// Cancel (spec P5) and no add control (T7).
-component MatchEditorSheet inherits Sheet {
-    in property <[MatchEditorRow]> rows;
+component LineEditorSheet inherits Sheet {
+    in property <[LineEditorRow]> rows;
     /// The selected row's id, empty for none. The window owns it, so an event
     /// that goes takes the selection with it.
     in property <string> selected;
@@ -3390,7 +3390,7 @@ component MatchEditorSheet inherits Sheet {
     in property <string> message;
     /// The **row's** field has focus: the one state in which the rows above
     /// must not be rebuilt (spec T3, `src/main.rs`). Out and up, and cleared
-    /// by `close-match-editor()`: this element is destroyed when the sheet
+    /// by `close-line-editor()`: this element is destroyed when the sheet
     /// closes, and Slint promises no focus-change callback from an item it
     /// has destroyed.
     in-out property <bool> line-focused;
@@ -4813,29 +4813,29 @@ export component AppWindow inherits Window {
 
     /// The editor sheet is up. UI state: the panel's button opens it, Done
     /// and Esc close it.
-    in-out property <bool> match-editor-open;
+    in-out property <bool> line-editor-open;
     /// Its rows, seeded when it opens and rebuilt on every project change
     /// except while the row's field has focus (spec T3) -- `src/main.rs`
     /// owns that rule.
-    in property <[MatchEditorRow]> match-editor-rows;
+    in property <[LineEditorRow]> line-editor-rows;
     /// The selected row, and that row's event as a line. Two-way down to the
     /// field, and re-seeded from the record on every rebuild.
-    in-out property <string> match-editor-selected;
-    in-out property <string> match-editor-line;
+    in-out property <string> line-editor-selected;
+    in-out property <string> line-editor-line;
     /// The paste box's block and its default-video picker. The block lives
     /// here rather than in the sheet so it survives Go and closing (spec F2);
     /// the picker resets to the first video on every open.
-    in-out property <string> match-editor-paste;
-    in-out property <int> match-editor-source;
-    in property <[string]> match-editor-sources;
+    in-out property <string> line-editor-paste;
+    in-out property <int> line-editor-source;
+    in property <[string]> line-editor-sources;
     /// The sheet's own notice line (spec C5), which the status bar's can't
     /// stand in for: that one renders behind the scrim. Cleared when the
     /// sheet closes and when the next command goes out.
-    in-out property <string> match-editor-message;
+    in-out property <string> line-editor-message;
     /// The **row's** field has focus (see the sheet): the one state in which
     /// `src/main.rs` must not rebuild the rows. Set by the sheet and cleared
     /// when it closes, since the binding goes with the element.
-    in-out property <bool> match-editor-line-focused;
+    in-out property <bool> line-editor-line-focused;
     /// Bumped by `src/main.rs` on every project change: the sheet's echoes
     /// are read from the project through `pure` callbacks, and this is what
     /// tells their bindings to ask again.
@@ -5190,10 +5190,10 @@ export component AppWindow inherits Window {
     /// rows must not be rebuilt. (Nothing clears `text-editing` here: it is
     /// Slint's own, and `keys.focus()` below takes the focus off the field.)
     /// The message goes with it (spec C5); the paste box's text stays.
-    function close-match-editor() {
-        root.match-editor-line-focused = false;
-        root.match-editor-message = "";
-        root.match-editor-open = false;
+    function close-line-editor() {
+        root.line-editor-line-focused = false;
+        root.line-editor-message = "";
+        root.line-editor-open = false;
         keys.focus();
     }
 
@@ -5427,20 +5427,20 @@ export component AppWindow inherits Window {
         // closes (spec P3). The `reject` is also what delivers Ctrl+V to the
         // paste box, since the Ctrl branch below is never reached from in
         // here.
-        if (root.match-editor-open) {
+        if (root.line-editor-open) {
             if (pressed && event.text == Key.Escape) {
                 // **Esc in a row's field cancels**, which everywhere else in
                 // this app is what Esc means. Leaving the field commits it
                 // (the cascade below), so the line has to go back to what
                 // the row was seeded with *first*; the commit that follows
                 // then edits nothing.
-                if (root.match-editor-line-focused) {
+                if (root.line-editor-line-focused) {
                     root.reseed-match-line();
                     keys.focus();
                     return accept;
                 }
                 if (!root.text-editing) {
-                    root.close-match-editor();
+                    root.close-line-editor();
                     return accept;
                 }
             }
@@ -7871,17 +7871,17 @@ export component AppWindow inherits Window {
         }
 
         // --- Match event editor: modal over the whole window (spec P1) ---
-        if root.match-editor-open: Scrim {
-            MatchEditorSheet {
-                rows: root.match-editor-rows;
-                selected: root.match-editor-selected;
-                line <=> root.match-editor-line;
-                paste <=> root.match-editor-paste;
-                sources: root.match-editor-sources;
-                default-source <=> root.match-editor-source;
-                message: root.match-editor-message;
+        if root.line-editor-open: Scrim {
+            LineEditorSheet {
+                rows: root.line-editor-rows;
+                selected: root.line-editor-selected;
+                line <=> root.line-editor-line;
+                paste <=> root.line-editor-paste;
+                sources: root.line-editor-sources;
+                default-source <=> root.line-editor-source;
+                message: root.line-editor-message;
                 revision: root.project-revision;
-                line-focused <=> root.match-editor-line-focused;
+                line-focused <=> root.line-editor-line-focused;
                 valid-line(id, text) => { return root.valid-match-line(id, text); }
                 check-paste(text, source, revision) => {
                     return root.check-paste(text, source, revision);
@@ -7901,7 +7901,7 @@ export component AppWindow inherits Window {
                 // (spec T10). It leaves the paste box's text alone.
                 seek(id) => {
                     root.seek-match-event(id);
-                    root.close-match-editor();
+                    root.close-line-editor();
                 }
                 // Off the row's field first, as every other button in this
                 // app does -- a click doesn't take focus from a field by
@@ -7917,7 +7917,7 @@ export component AppWindow inherits Window {
                     keys.focus();
                     root.add-match-events();
                 }
-                close => { root.close-match-editor(); }
+                close => { root.close-line-editor(); }
             }
         }
 
