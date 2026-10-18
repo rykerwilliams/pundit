@@ -2379,7 +2379,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   with a default badly enough to be worth the detour. Related: #35 (physical
   keys), #94 (nothing says what the keys are), #78 (where the screen goes).
 
-97. **Typing slates in, as match events can be typed — SHIPPED (#TODO).** Dropped from the slates
+97. **Typing slates in, as match events can be typed — SHIPPED (#101).** Dropped from the slates
   spec during review (§S6) rather than built: the grammar reuse it rested on
   does not exist. `match_entry`'s `#` is a **comment to end of line**, so the
   obvious `2 14:05-14:40 corner routine #corners` would have had its tag
@@ -2396,7 +2396,7 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   what shipped. Nobody has asked to type them.
 - **When to revisit:** if a coach arrives with times already written down —
   which is exactly how `kickoffs.txt` came about, so it is not far-fetched.
-- **Shipped (#TODO)**, the coach having asked on 2026-10-17: spec
+- **Shipped (#101)**, the coach having asked on 2026-10-17: spec
   `2026-10-17-typed-slates-design.md`, plan `2026-10-17-typed-slates.md`. The
   grammar is `core::slate_entry` — `2 14:05-14:40 corner routine [corners]`,
   tags as a bracketed group and `#` a comment only at a line's start, which is
