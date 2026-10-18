@@ -40,8 +40,13 @@ and nothing else.**
   could not fail under sabotage 4. **Sabotage 2 also fails 2.10** — that test
   needs the in kept too, so it rightly fails with the identity broken. The
   other eight sabotages failed exactly the test listed.
-- **3 — the bus: `EditSlateLine`, `AddSlates`, `SlatePasteLeftover`.** Not
-  started.
+- **3 — the bus: `EditSlateLine`, `AddSlates`, `SlatePasteLeftover`.** Done.
+  §A's bus row held at `e5b4bbe` to the line; `main.rs`'s leftover arm is
+  `:3750` (four up, #93). `Event::SlatePasteLeftover(_) => {}` is the arm task
+  5 fills. The five sabotages failed exactly the test listed; 3's
+  (`SlateEdit`s and an empty `Title`) trips 3.3 at its video assertion first,
+  so a second mutant — `retype_slate`, then `Title(String::new())` — was run
+  and fails 3.3 alone, on the title.
 - **4 — `MatchEditorSheet` → `LineEditorSheet`, a rename.** Not started.
 - **5 — the slates kind: the words, the dispatch, the door, Go.** Not started.
 - **6 — prose and the backlog.** Not started.

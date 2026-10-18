@@ -3748,6 +3748,9 @@ fn on_event(w: &AppWindow, event: Event) {
         // What the bus's own parse left in the paste box (spec B5): the
         // refused lines, for the coach to fix in place and add again.
         Event::MatchPasteLeftover(text) => w.set_match_editor_paste(text.into()),
+        // Nothing in the window sends `AddSlates` yet, so there is no slates
+        // box for a leftover to go back to.
+        Event::SlatePasteLeftover(_) => {}
         // Never the modal dialog: it would swallow a recording's transport
         // keys.
         Event::Error(e) if e.is_notice() => {

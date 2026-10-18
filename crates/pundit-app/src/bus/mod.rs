@@ -256,6 +256,32 @@ pub enum Command {
         id: Uuid,
         edit: SlateEdit,
     },
+    /// Retype slate `id` from one line of `core::slate_entry`'s grammar
+    /// (BACKLOG #97), read by `slate_entry::edit_from_line` — the call the
+    /// row field's mark makes too, so a line marked good is never refused
+    /// here. It keeps the slate's id, title and place in the stored order.
+    ///
+    /// **The times are typed, not captured**, as `EditMatchEvent`'s is: the
+    /// sheet never reads the playhead, so there is no position for a queue
+    /// delay to stale.
+    EditSlateLine {
+        id: Uuid,
+        line: String,
+    },
+    /// A pasted block of slates, added as one undo step. `text` is the box's
+    /// own text and `default_source` the picker's choice for a line with no
+    /// video number, exactly as `core::slate_entry::parse_batch` takes them:
+    /// **the bus parses, rather than being handed slates to trust**, so the
+    /// bound and the duplicate rule are read once, from core, against the
+    /// project as it is when the command lands. The lines that don't land are
+    /// named in one notice, and the refused ones come back as
+    /// [`Event::SlatePasteLeftover`] — what the box keeps.
+    ///
+    /// Typed times, as `EditSlateLine`'s are.
+    AddSlates {
+        text: String,
+        default_source: usize,
+    },
     DeleteSlate(Uuid),
     /// Record the commentary for a slate: the player goes to its in point and
     /// a take starts, and the clip inherits the slate's name and tags. It
@@ -589,6 +615,10 @@ pub enum Event {
     /// lines it thought had been added would lose any the bus read
     /// differently — they would be in neither the box nor the project.
     MatchPasteLeftover(String),
+    /// [`Event::MatchPasteLeftover`] for the slates box, after a
+    /// [`Command::AddSlates`]: the block's refused lines, by the bus's own
+    /// parse, for the same reason.
+    SlatePasteLeftover(String),
     /// A failure, or a notice (see [`UserError::is_notice`]).
     Error(UserError),
 }
@@ -1205,6 +1235,11 @@ impl Bus {
                 source_seconds,
             } => self.mark_slate_out(source_index, source_seconds),
             Command::EditSlate { id, edit } => self.edit_slate(id, edit),
+            Command::EditSlateLine { id, line } => self.edit_slate_line(id, &line),
+            Command::AddSlates {
+                text,
+                default_source,
+            } => self.add_slates(&text, default_source),
             Command::DeleteSlate(id) => self.delete_slate(id),
             Command::ShootSlate { id, zoom } => self.start_recording(zoom, Take::Slate(id)),
             Command::JumpToSlate(id) => {
