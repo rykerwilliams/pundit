@@ -4,7 +4,7 @@
 own "when to revisit" (`BACKLOG.md:2396`–`:2397`): *"if a coach arrives with
 times already written down — which is exactly how `kickoffs.txt` came about"*.
 
-**Status: draft, before review.** Read `CLAUDE.md` first — its *"Match events
+**Status: decided with the coach (2026-10-17), before review.** Read `CLAUDE.md` first — its *"Match events
 are tagged at the playhead or typed, in one grammar"* and *"Slates"* sections —
 and the two specs this one builds on:
 `2026-09-25-slates-design.md` (§S6 is why this was dropped, §S9 what stayed out)
@@ -102,8 +102,8 @@ So: `2 14:05-14:40 corner routine [corners, set piece]` is video 2, 845.0 to
 likely to arrive by mistake — every match event line has exactly one time, so a
 block of `2 14:05 home goal` pasted into the wrong box would otherwise add a
 column of open slates named *home goal*. An open range is still one keystroke
-away (`14:05-`), and it is the Slates list's own rendering of one. **Q3** asks
-the coach whether that is right.
+away (`14:05-`), and it is the Slates list's own rendering of one. The coach
+chose this (Q3, below).
 
 **The kick-off words are not refused here.** `match_entry` refuses them because
 a spurious start/stop shifts every later period (`match_entry.rs:128`–`:143`);
@@ -122,8 +122,8 @@ name.
   what lets a *name* contain brackets (`[draft] corner [corners]` is named
   `[draft] corner`), and S8 says how a name that *ends* in `]` round-trips.
 
-`#corners` and a `|` separator are the alternatives; **Q1** puts them to the
-coach.
+`#corners` and a `|` separator are the alternatives; the coach chose
+the brackets (Q1, below).
 
 **S5. `#` is a comment only as a line's first non-blank character.** A line that
 is blank or a comment is `Nothing` — no echo row, as `match_entry`'s. A `#`
@@ -137,7 +137,8 @@ the footage (`project.rs:521`–`:530`); it is edited in the Slates panel's
 *Title in exports* field (`app.slint:6297`–`:6315`) and **a line edit leaves it
 exactly as it was** (S9). A third part of the line would need a third
 delimiter, and the title is the one field a coach composes rather than copies
-from notes. **Q2** asks whether that is right.
+from notes. That is the
+default the coach accepted (Q2, below).
 
 ### Where it lives
 
@@ -168,8 +169,8 @@ the title, the empty-list text, the placeholder, the hint line. So:
 A copy would be ~300 lines of Slint to keep in step by hand. A *section* of the
 events sheet would make one sheet with two paste boxes and two echoes, and put
 slates behind a button labelled "Edit events…". A *shared* paste box that
-dispatched each line by whether its time is a range is tempting — and it is
-**Q4**'s option C — but it couples two undo lists into one Add and two comment
+dispatched each line by whether its time is a range is tempting — and it was
+Q4's option C, which the coach did not choose — but it couples two undo lists into one Add and two comment
 rules into one box.
 
 **S8. The door is a "Type…" button in the Slates header — and the header shows
@@ -188,7 +189,7 @@ house rule (`keys.focus()` first) and is enabled on `can-play && !recording &&
 events editor has none either, and the keymap's `showRecents` shows how one is
 added later at no cost (CLAUDE.md, *every action has a `handle-key` branch*).
 
-**Q4** asks the coach where he would look for it.
+The coach chose this door (Q4, below).
 
 ### Round trip
 
@@ -269,8 +270,8 @@ to one (both enabled on `!recording && !previewing` with no `shot` test,
 inheritance is at the take only (slates spec §S5). The row keeps reading
 *shot* because "has it been shot?" is a scan of the clips. The one visible
 effect is v18's: a titled slate's words burn over **its** range, so moving the
-range moves them — as a Set-in does today. **Q5** asks whether the row should
-say so.
+range moves them — as a Set-in does today. The coach chose no
+note on the row (Q5, below).
 
 **S12. The paste box takes the match editor's rules, re-worded for ranges.**
 
@@ -418,7 +419,7 @@ match editor's F2.
    field.
 3. **`o` closes a typed open range.** S10 says why that is the rule working;
    a coach who pastes open ranges and then marks by key may still be surprised.
-   Q3's answer may remove most of this by keeping open ranges rare.
+   Q3's answer (a lone time is refused) keeps open ranges rare.
 4. **Generalizing a shipped sheet** risks the match editor. The UI test that it
    still reads its own words, plus the existing `text_editing.rs` probes over
    both, is the guard.
@@ -435,45 +436,35 @@ match editor's F2.
   cross-reference between the boxes is a coupling to add only if it bites.
 - **Loading from a file**, multi-select, a whole session as one undo step —
   out for the events editor's reasons.
-- **Typing a title** — Q2.
+- **Typing a title** — Q2, below.
 
-## Open questions for the coach
+## Decided with the coach (2026-10-17)
 
-**Q1. How are tags written on a line?**
-- **A. A bracket group at the end: `corner routine [corners, set piece]`** —
-  *recommended.* It can't be confused with a comment, it carries a tag with a
-  space in it, and the inside is exactly what the tag field takes.
-- B. `#corners #set-piece`, with `#` no longer a comment — what social media
-  taught everyone, but a tag can't hold a space and `corner #3` can't be a
-  name.
-- C. A bar: `corner routine | corners, set piece` — no brackets, but a `|` is
-  harder to find on a keyboard than to read.
+The coach took the recommended answer to every question. The options he was
+shown are kept so the record says what was turned down.
 
-**Q2. Should a line carry the title burned into exports?**
-- **A. No — the title stays the panel's field, and a line edit never touches
-  it** — *recommended.* Notes have names and times; a title is composed later,
-  and it would need a third delimiter.
-- B. Yes, in quotes at the end: `corner routine [corners] "Watch the near post"`.
+**Q1. How are tags written on a line? — A, a bracket group at the end:
+`corner routine [corners, set piece]`.** It can't be confused with a comment,
+it carries a tag with a space in it, and the inside is exactly what the tag
+field takes (S4). Turned down: B, `#corners` with `#` no longer a comment (no
+spaces in a tag, and `corner #3` couldn't be a name); C, a `|` separator.
 
-**Q3. What does a line with only a start time mean?**
-- **A. Refused — write `14:05-` to leave the end open** — *recommended.* It is
-  what stops a pasted list of goals becoming open slates, and `14:05-` is how
-  the Slates list already shows an open range.
-- B. An open range, as if `14:05-` had been typed.
-- C. A range of a fixed length (say 20 s) — but that invents an end the notes
-  never gave.
+**Q2. Should a line carry the title burned into exports? — A, no: the title
+stays the panel's field, and a line edit never touches it (S6).** *Taken as the
+default and not put to the coach.* Turned down: B, a quoted title at the end of
+the line.
 
-**Q4. Where do you go to type slates in?**
-- **A. A "Type…" button in the Slates header, which then shows even before the
-  first slate** — *recommended.* It sits beside the list it fills.
-- B. A button beside "Edit events…" in the Match panel.
-- C. The events editor takes both: one paste box, where a line with a range
-  becomes a slate and a line with one time becomes an event.
+**Q3. What does a line with only a start time mean? — A, it is refused; `14:05-`
+leaves the end open (S3).** That is what stops a pasted list of goals becoming
+open slates, and `14:05-` is how the Slates list already shows an open range.
+Turned down: B, a lone time read as an open range; C, a fixed default length.
 
-**Q5. When you retype a slate that has already been recorded, should its row
-say anything?**
-- **A. No — it edits like any other; the recorded clip is untouched** —
-  *recommended.* It is what Set in / Set out already do to a recorded slate.
-- B. A one-line note under the row: "already recorded — the clip keeps the take
-  as it was".
-- C. Refuse range changes on a recorded slate (name and tags only).
+**Q4. Where do you go to type slates in? — A, a "Type…" button in the Slates
+header, which shows whenever the project has a video (S8).** It sits beside the
+list it fills. Turned down: B, a button beside "Edit events…" in the Match
+panel; C, one paste box in the events editor taking both kinds.
+
+**Q5. When a slate that has already been recorded is retyped, does its row say
+anything? — A, no: it edits like any other, and the recorded clip is untouched
+(S11).** That is what Set in / Set out already do to a recorded slate. Turned
+down: B, a note under the row; C, refusing range changes on a recorded slate.
