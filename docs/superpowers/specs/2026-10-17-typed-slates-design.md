@@ -182,17 +182,22 @@ event-specific is words, and one callback's doc. So:
   be open at a time, so a second set would be state that is never live.
 - **Two paste strings, so each box keeps its own block** for the session
   (editor spec F2): `events-paste` and `slates-paste`. The sheet's box binds
-  `line-editor-paste`; opening copies the kind's string in, and
+  `line-editor-paste`. *Amended 2026-10-17 after the plan's review.* **Both halves of the swap are Slint's**:
+  `open-line-editor(kind)` is a Slint function that sets the kind, copies the
+  kind's string in, calls the kind's Rust callback to seed the rows, the
+  picker and the selection, and only then sets the sheet open;
   `close-line-editor()` copies it back. A project open clears both, as it
   clears the one today (`crates/pundit-app/src/main.rs:3545`–`:3548`).
-- **The words.** One `noun` property (`"event"` / `"slate"`) for the three
-  strings that differ by a noun alone, and one whole-sentence property per
-  string that differs in more — all set in `app.slint` from the kind, so Rust
+- **The words.** One `noun` property (`"event"` / `"slate"`) for the
+  strings that differ by a noun alone, one whole-sentence property per string
+  that differs in more, and **`title`, which is `Sheet`'s own** (`app.slint:1992`)
+  and is bound, not redeclared — *Amended 2026-10-17 after the plan's review.* The new properties are `noun`,
+  `empty-text`, `go-tooltip`, `placeholder` and `hint` — all set in `app.slint` from the kind, so Rust
   sets no UI text. The census of the sheet's event-specific text:
 
   | Line | Today | Slates | Property |
   |---|---|---|---|
-  | `:3441` | title `"Match events"` | `"Slates"` | `title` (sentence) |
+  | `:3441` | title `"Match events"` | `"Slates"` | `Sheet`'s `title`, bound |
   | `:3444` | empty text, *"Nothing tagged yet. Paste a block below, or tag with Z, X and V while the game video plays."* | *"No slates yet. Paste a block below, or mark one with I and O while the game video plays."* | `empty-text` (sentence) |
   | `:3498` | `→` tooltip, *"Play the game video from here. The picture is behind this sheet, so it closes."* | *"Show this slate's first frame. The picture is behind this sheet, so it closes."* — it **parks**, it does not play (S17) | `go-tooltip` (sentence) |
   | `:3510` | `×` tooltip, *"Delete this event (undoable)"* | *"Delete this slate (undoable)"* | from `noun` |
@@ -207,12 +212,17 @@ event-specific is words, and one callback's doc. So:
 - **`role-less`** greys a row; for a slate it marks an **open** range, the same
   job (a row that is stored but not yet doing anything), and what the Slates
   list's `timed` flag already says (`app.slint:40`–`:44`).
-- **The window's callbacks become kind-free** — `line-editor-select`,
-  `-reseed`, `-commit`, `-go`, `-remove`, `-add`, and the pure `valid-line` and
-  `check-paste` — and **branch on `line-editor-kind` in Rust**. The Match
-  panel's own `seek-match-event` and `delete-match-event` stay (they are the
-  panel's); the events arms of `-go` and `-remove` call the same Rust as they
-  do.
+- **One dispatch rule: the instance branches on the kind, for every
+  callback.** *Amended 2026-10-17 after the plan's review.* Each of the sheet's callbacks is bound in the
+  instance as `if (root.line-editor-kind == LineEditorKind.events) { … } else
+  { … }` (a ternary for the two pure ones), calling the window callbacks the
+  match editor has today (`select-match-event`, `edit-match-event`,
+  `add-match-events`, `valid-match-line`, `check-paste`, `seek-match-event`,
+  `delete-match-event`, …) or their slate siblings. So `main.rs`'s
+  `wire_match_editor` keeps its shape with renames, the slates get a
+  `wire_slate_editor` of their own, and **no Rust callback matches on a kind**.
+  The first draft branched in Rust, which put a placeholder arm in every
+  callback and the dispatch out of reach of the UI tests.
 - **One `handle-key` branch** (`app.slint:5430`–`:5448`, renamed), **one close
   function** (`close-match-editor`, `:5193`–`:5198`), **one notice arm** that
   routes by kind (S15), **one rebuild gate** (S17).
@@ -273,9 +283,10 @@ was not asked to change.**
   line. One `if`, pinned by round-trip tests on `a [b`, `a [b] c` and `[x]`.
 - **`edit_from_line(project, &Slate, typed)` keeps the stored seconds per
   end** — `match_entry::edit_from_line`'s discipline (`match_entry.rs:268`–`:278`).
-  **The identity test compares the in time and the out time as text**, split
-  on the dash and trimmed — not whitespace tokens, because `14:05.0 - 14:40.0`
-  and `14:05.0-14:40.0` hold the same two times. An unchanged in keeps a
+  **The identity test compares the in and out time tokens that S2's range
+  scanner extracts** — not whitespace tokens, because `14:05.0 - 14:40.0` and
+  `14:05.0-14:40.0` hold the same two times, and not a split on the dash,
+  because a name may contain one (`corner-kick`). *Amended 2026-10-17 after the plan's review.* An unchanged in keeps a
   captured `845.06` rather than re-rounding it to `845.0`; an unchanged out
   likewise; a changed one takes what was typed. S3's order and bound are then
   checked on those effective seconds.
@@ -352,26 +363,25 @@ parsed line against what is stored and what the block has accepted. So:
 pub enum BatchVerdict<T> { Added(T), Duplicate(T), Refused(String) }
 pub struct BatchLine<T> { pub number: usize, pub text: String, pub verdict: BatchVerdict<T> }
 pub struct Batch<T> { pub items: Vec<T>, pub lines: Vec<BatchLine<T>>, pub leftover: String }
-pub enum Admit { Add, Duplicate, Refuse(String) }
-
-/// `parse`: `None` for a blank or comment line, else the line's verdict.
-/// `admit`: judges a parsed line against the items this block has accepted.
+/// `judge`: one line and the items this block has accepted so far; `None`
+/// for a blank or comment line, else its verdict.
 pub fn read_batch<T: Clone>(
     text: &str,
-    parse: impl Fn(&str) -> Option<Result<T, String>>,
-    admit: impl Fn(&T, &[T]) -> Admit,
+    judge: impl FnMut(&str, &[T]) -> Option<BatchVerdict<T>>,
 ) -> Batch<T>
 ```
 
 - **The loop moves whole**: 1-based numbering over every line, blank and
   comment lines skipped with no echo, the leftover as the refused lines alone
   joined by `\n` (editor spec B5).
+- **One closure, not two.** *Amended 2026-10-17 after the plan's review.* The first draft split it into
+  `parse` and `admit` with an `Admit` enum; one `FnMut` judge is today's loop
+  body as it stands, and it may keep state.
 - **Match events move onto it with their behaviour unchanged.**
   `match_entry::parse_batch` keeps its signature and becomes a call: its
-  `admit` is today's duplicate test (`already_tagged`, `:475`–`:490`, within
-  `SAME_EVENT_SECONDS`) and today's start/stop cap, **counted from `accepted`**
-  — `project.start_stop_count()` plus the accepted start/stops — rather than a
-  counter mutated in the loop, which is the same number. Its existing tests
+  `judge` is today's loop body — `parse_line`, the duplicate test
+  (`already_tagged`, `:475`–`:490`, within `SAME_EVENT_SECONDS`) and the
+  start/stop cap with its existing counter, captured by the closure. Its existing tests
   (`crates/pundit-core/tests/match_entry.rs:378`–`:464`) pin that, changed only
   where they name a renamed item: `AlreadyTagged` → `Duplicate`, `events` →
   `items`.
@@ -388,7 +398,8 @@ pub fn read_batch<T: Clone>(
   `match_panel::paste_echo` (`crates/pundit-app/src/match_panel.rs:143`) becomes
   generic over `T`, taking the noun (`"event"` / `"slate"`), the duplicate's
   words (`"already tagged"` / `"already marked"`) and a `reads_as` closure; it
-  moves, with its tests (`:688`ff.), into a new `line_editor.rs`.
+  moves into a new `line_editor.rs`; its test (`:688`ff.) stays in
+  `match_panel.rs`, calling it.
   `bus::scoreboard::batch_notice` (`bus/scoreboard.rs:245`) takes the
   duplicate's words likewise and becomes `pub(super)` for `bus/slates.rs`.
 - **The slate echo** reads `✓ 2 · 14:05.0–14:40.0 · corner routine · corners,
@@ -398,11 +409,13 @@ pub fn read_batch<T: Clone>(
 - **Default video** — the same picker, reset to the first video on every open
   (editor spec F2, `main.rs:2283`–`:2285`).
 - **Best-effort, not all-or-nothing; the box keeps the refused lines alone**,
-  handed back by the bus's own parse (editor spec B5). `Event::MatchPasteLeftover`
-  (`crates/pundit-app/src/bus/mod.rs:584`–`:591`) **folds into
-  `Event::PasteLeftover { kind, text }`**, `kind` a bus enum `PasteKind {
-  MatchEvents, Slates }`; `main.rs` writes it to the sheet when that kind is
-  open and to the kind's paste string otherwise.
+  handed back by the bus's own parse (editor spec B5) as
+  **`Event::SlatePasteLeftover(String)`, beside `Event::MatchPasteLeftover`**
+  (`crates/pundit-app/src/bus/mod.rs:584`–`:591`), which is left as it is.
+  *Amended 2026-10-17 after the plan's review.* The first draft folded both into a `PasteLeftover { kind, text }`,
+  which renamed a shipped variant to save one enum arm. `main.rs` writes each
+  to the sheet when that kind is open and to the kind's paste string
+  otherwise.
 - **No overlap rule.** Overlapping ranges are legal today (`i` twice).
 
 ### Commands, undo, the bus
@@ -450,8 +463,10 @@ and Go parks.**
   rebuilds the open editor's rows on every `ProjectChanged` unless its row
   field has focus, now for whichever kind is open. Every commit drops focus
   (editor spec T4).
-- **A slate's Go is `park_on_slate`** (`main.rs:4249`–`:4256`) — **select, then
-  jump** — and the sheet closes, because the picture is behind it. Selecting
+- **A slate's Go is `park-on-slate`** — **select, then jump** — and the sheet
+  closes. *Amended 2026-10-17 after the plan's review.* It was `main.rs`'s `park_on_slate` (`main.rs:4249`–`:4256`),
+  which no test can reach; its two lines move into `app.slint` as a `public
+  function`, which the pass's two Rust callers invoke and the sheet calls, because the picture is behind it. Selecting
   first is what makes `R` then shoot the slate on screen
   (`ToggleRecording { slate }` carries the selection) and what moves the
   scrubber's span to it, which a bare `JumpToSlate` (`bus/slates.rs:88`–`:99`)
@@ -481,16 +496,16 @@ editor's F2.
 
 | Crate | Contents |
 |---|---|
-| `pundit-core` | `line_batch.rs` (new): `Batch<T>`, `BatchLine<T>`, `BatchVerdict<T>`, `Admit`, `read_batch`. `match_entry.rs`: `parse_batch` a call to it, its own `Batch` types gone; `is_video_number` and `refuse_video` `pub(crate)`. `slate_entry.rs` (new): `PendingSlate`, `parse_line`, `format_line(&Slate)`, `edit_from_line`, `parse_batch`. `project.rs`: `add_slate` (which `mark_slate_in` calls), `retype_slate`. No new dependency. |
+| `pundit-core` | `line_batch.rs` (new): `Batch<T>`, `BatchLine<T>`, `BatchVerdict<T>`, `read_batch`. `match_entry.rs`: `parse_batch` a call to it, its own `Batch` types gone; `is_video_number` and `refuse_video` `pub(crate)`. `slate_entry.rs` (new): `PendingSlate`, `parse_line`, `format_line(&Slate)`, `edit_from_line`, `parse_batch`. `project.rs`: `add_slate` (which `mark_slate_in` calls), `retype_slate`. No new dependency. |
 | `pundit-media` | Nothing. |
-| `pundit-app` | Bus: `EditSlateLine`, `AddSlates` in `bus/slates.rs` through `edit_slates`; `Event::PasteLeftover { kind, text }` replacing `MatchPasteLeftover`; `batch_notice` generic in its words. `line_editor.rs` (new): the generic `paste_echo` (moved from `match_panel.rs`) and the slate rows and `reads_as`. `main.rs`: the window's `line-editor-*` callbacks branching on kind, `open_line_editor(kind)` / `show_line_editor`, the notice arm, the rebuild gate, Go through `park_on_slate`. UI: `LineEditorSheet` + `LineEditorKind`, the renamed properties and the two paste strings, the per-kind words, the Slates header's restructure and **Type…**. |
-| `pundit-harness` | The batch, the retype and their undo, over the bus; `match_events.rs`'s `MatchPasteLeftover` reader renamed. |
+| `pundit-app` | Bus: `EditSlateLine`, `AddSlates` in `bus/slates.rs` through `edit_slates`; `Event::SlatePasteLeftover`; `batch_notice` generic in its words. `line_editor.rs` (new): the generic `paste_echo` (moved from `match_panel.rs`) and the slate rows and `reads_as`. `main.rs`: `wire_match_editor` renamed in place, a `wire_slate_editor`, the notice arm, the rebuild gate. UI: `LineEditorSheet` + `LineEditorKind`, the instance's per-kind dispatch, `open-line-editor` and `park-on-slate` as Slint functions, the renamed properties and the two paste strings, the per-kind words, the Slates header's restructure and **Type…**. |
+| `pundit-harness` | The batch, the retype and their undo, over the bus. |
 
 ## Testing
 
 - **Core — `tests/line_batch.rs` (new):** a stub grammar (one integer per line)
-  shows the numbering over blank and comment lines, a duplicate judged against
-  the accepted items, a refusal in the leftover and a duplicate not.
+  shows the numbering over blank and comment lines. The duplicate and the
+  leftover are pinned by `match_entry`'s own batch tests. *Amended 2026-10-17 after the plan's review.*
 - **Core — `tests/match_entry.rs`:** every existing batch test still passes
   with only the two renames — that is the proof the lift changed nothing.
 - **Core — `tests/slate_entry.rs` (new):**
@@ -509,7 +524,8 @@ editor's F2.
   - `edit_from_line`: an untouched line changes nothing, **including a slate
     with a tag containing `[`**; an untouched **in** keeps a stored `845.06`
     while the out moves, **both when typed `14:05.0-14:45.0` and
-    `14:05.0 - 14:45.0`**; a changed video number under unchanged times keeps
+    `14:05.0 - 14:45.0`**; **a stored out of `880.04` kept when only a
+    hyphenated name (`corner-kick`) is edited**; a changed video number under unchanged times keeps
     both stored seconds; **an order check on the effective seconds** (stored
     in `845.06`, out typed `14:05.0` = 845.0 is refused); an emptied line
     refused;
@@ -527,19 +543,20 @@ editor's F2.
 - **UI — `tests/ui/`:**
   - `text_editing.rs`'s sheet probe (`a_letter_typed_in_a_sheet_field_reaches_the_field`,
     `:258`; ids `"MatchEditorSheet::line-edit"` `:284` and `::paste-edit`
-    `:292`, renamed) runs **once per kind**;
-  - **Esc, per kind**: Esc in the row field puts the seeded line back and
-    leaves the sheet open; a second Esc closes it (a new test, beside
+    `:292`, renamed), **once** — *Amended 2026-10-17 after the plan's review.* Code that does not know the kind
+    is tested once, not once per kind: the field, the box, the Esc branch and
+    the card's scrolling are the same elements whichever kind is open;
+  - **Esc**: Esc in the row field puts the seeded line back and leaves the
+    sheet open; a second Esc closes it (a new test, beside
     `esc_in_a_sheet_field_leaves_the_field_before_it_closes_the_sheet`);
-  - `sheet_scroll.rs`'s list (`:90`, `card: "MatchEditorSheet"`, renamed)
-    gains the slates kind as an entry of its own;
+  - `sheet_scroll.rs`'s entry (`:90`, `card: "MatchEditorSheet"`) renamed;
   - a new `slate_editor.rs`: **Type…** is found by its label **with zero
     slates** and opens the sheet on the slates kind; the sheet reads *"Slates"*
     and the events kind still reads *"Match events"*; a slate's Go selects it
     (`selected-slate`) before it jumps.
 - **Harness — `tests/slates.rs`:** an `AddSlates` of N publishes one
   `ProjectChanged` and one `Undo` removes all N; a partly refused block adds
-  the rest, emits one `UserError::Slate` and one `PasteLeftover { Slates, … }`
+  the rest, emits one `UserError::Slate` and one `SlatePasteLeftover`
   holding the refused lines alone; `EditSlateLine` moves a **shot** slate's
   range and the clip's `slate_id`, anchor and name are unchanged; a retype of a
   titled slate keeps its title; the same line sent twice records one undo step.
