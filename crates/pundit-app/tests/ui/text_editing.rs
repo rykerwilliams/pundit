@@ -31,7 +31,7 @@
 //! or behind a modal scrim.
 
 use crate::key_action;
-use crate::{AppWindow, HighlightRow, MatchEditorRow, SlateRow};
+use crate::{AppWindow, HighlightRow, LineEditorRow, SlateRow};
 use i_slint_backend_testing::ElementHandle;
 use pundit_app::keymap::Keymap;
 use slint::platform::{Key, PointerEventButton, WindowEvent};
@@ -164,6 +164,8 @@ fn window() -> (AppWindow, Rc<RefCell<Vec<&'static str>>>) {
         label: SharedString::new(),
     }])));
     w.set_selected_highlight("h1".into());
+    // The Slates section shows once the project has a video (#97).
+    crate::one_source(&w);
     w.set_slates(ModelRc::new(VecModel::from(vec![slate("s1")])));
     w.set_selected_slate("s1".into());
     w.show().unwrap();
@@ -247,7 +249,7 @@ fn a_letter_typed_in_a_window_field_fires_no_shortcut() {
 }
 
 /// The same for every sheet that holds a field, one at a time: the basket's
-/// name, the match-event editor's row field and paste box, the New match
+/// name, the line editor's row field and paste box, the New match
 /// sheet's four, the Settings sheet's band and Find music's genre.
 ///
 /// **A sheet rejects every non-Esc key ahead of the shortcut layer**, so what
@@ -269,31 +271,32 @@ fn a_letter_typed_in_a_sheet_field_reaches_the_field() {
     );
     w.set_basket_sheet_open(false);
 
-    w.set_match_editor_rows(ModelRc::new(VecModel::from(vec![MatchEditorRow {
+    w.set_line_editor_rows(ModelRc::new(VecModel::from(vec![LineEditorRow {
         id: "e1".into(),
         where_text: "1 · 14:05.0".into(),
         label: "Home goal".into(),
         role_less: false,
+        line: "1 14:05.0 home goal".into(),
     }])));
-    w.set_match_editor_selected("e1".into());
-    w.set_match_editor_open(true);
+    w.set_line_editor_selected("e1".into());
+    w.set_line_editor_open(true);
     probe(
         &w,
         &fired,
         &Field {
-            id: "MatchEditorSheet::line-edit",
-            text: AppWindow::get_match_editor_line,
+            id: "LineEditorSheet::line-edit",
+            text: AppWindow::get_line_editor_line,
         },
     );
     probe(
         &w,
         &fired,
         &Field {
-            id: "MatchEditorSheet::paste-edit",
-            text: AppWindow::get_match_editor_paste,
+            id: "LineEditorSheet::paste-edit",
+            text: AppWindow::get_line_editor_paste,
         },
     );
-    w.set_match_editor_open(false);
+    w.set_line_editor_open(false);
 
     // The New match sheet's four are `SetupField`s, so the field is the
     // `edit` inside each — and the sheet's own ids are how they are told

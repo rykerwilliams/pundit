@@ -37,6 +37,7 @@ use pundit_app::export_outcome::{self, RunKind};
 use pundit_app::fit::{fit_window, Fit};
 use pundit_app::format::{finish_at, format_hms, format_hms_tenths, sentence};
 use pundit_app::highlight_view::{self, LiveHighlight as Ring};
+use pundit_app::line_editor;
 use pundit_app::match_panel::{
     self, hex, parse_hex, parse_minutes, parse_overtime_periods, parse_periods,
 };
@@ -56,6 +57,7 @@ use pundit_core::match_entry::{self, PendingMatchEvent};
 use pundit_core::metadata;
 use pundit_core::openverse::{licence_words, Candidate};
 use pundit_core::plan::{ExportTarget, ScoreboardMode};
+use pundit_core::slate_entry;
 use pundit_core::stroke::StrokeEnd;
 // `project::` qualified for the two enums the window declares under the same
 // names (`bus::ScanStep`'s precedent): the bare `InsetSize` and `InsetCorner`
@@ -869,6 +871,7 @@ fn wire_callbacks(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, pickers: &Pi
     wire_preview(window, bus);
     wire_match(window, bus);
     wire_match_editor(window, bus);
+    wire_slate_editor(window, bus);
     // Drag-to-reorder carries the list's name and the dragged row's index,
     // so a source dropped on the clip list (or back) is refused.
     window.on_drag_payload(|list, index| {
@@ -1975,29 +1978,7 @@ fn wire_match_editor(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
         let weak = window.as_weak();
         move || {
             if let Some(w) = weak.upgrade() {
-                open_match_editor(&w);
-            }
-        }
-    });
-    // A row was clicked: its field is seeded with that event as a line, which
-    // is the only thing the selection carries.
-    window.on_select_match_event({
-        let weak = window.as_weak();
-        move |id| {
-            let Some(w) = weak.upgrade() else { return };
-            w.set_match_editor_selected(id.clone());
-            seed_match_line(&w, &id);
-        }
-    });
-    // Esc in the row's field cancels rather than commits (spec P3): the field
-    // goes back to the line it was seeded with, and the window then drops
-    // focus, which commits that same line — an edit of nothing.
-    window.on_reseed_match_line({
-        let weak = window.as_weak();
-        move || {
-            if let Some(w) = weak.upgrade() {
-                let id = w.get_match_editor_selected();
-                seed_match_line(&w, &id);
+                seed_line_editor(&w, line_editor::event_rows);
             }
         }
     });
@@ -2010,7 +1991,7 @@ fn wire_match_editor(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
         move |id, line| {
             let Some(w) = weak.upgrade() else { return };
             let Some(id) = parse_id(&id) else { return };
-            w.set_match_editor_message(SharedString::new());
+            w.set_line_editor_message(SharedString::new());
             bus.borrow().send(Command::EditMatchEvent {
                 id,
                 line: line.to_string(),
@@ -2026,10 +2007,10 @@ fn wire_match_editor(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
             // lines this side thought had been added would lose any the bus
             // read differently: they would be in neither the box nor the
             // project.
-            w.set_match_editor_message(SharedString::new());
+            w.set_line_editor_message(SharedString::new());
             bus.borrow().send(Command::AddMatchEvents {
-                text: w.get_match_editor_paste().to_string(),
-                default_source: w.get_match_editor_source().max(0) as usize,
+                text: w.get_line_editor_paste().to_string(),
+                default_source: w.get_line_editor_source().max(0) as usize,
             });
         }
     });
@@ -2045,21 +2026,100 @@ fn wire_match_editor(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
                 return PasteEcho::default();
             };
             let batch = match_entry::parse_batch(&s.project, default_source.max(0) as usize, &text);
-            let echo = match_panel::paste_echo(&batch);
-            let lines: Vec<PasteLine> = echo
-                .lines
-                .into_iter()
-                .map(|line| PasteLine {
-                    glyph: line.glyph.into(),
-                    text: line.text.into(),
-                })
-                .collect();
-            PasteEcho {
-                lines: ModelRc::new(VecModel::from(lines)),
-                summary: echo.summary.into(),
-                adding: batch.events.len() as i32,
-                button: echo.button.into(),
+            show_paste_echo(line_editor::paste_echo(
+                &batch,
+                &line_editor::EVENT_WORDS,
+                match_panel::reads_as,
+            ))
+        })
+    });
+}
+
+/// The paste box's echo as the sheet takes it.
+fn show_paste_echo(echo: line_editor::PasteEcho) -> PasteEcho {
+    let lines: Vec<PasteLine> = echo
+        .lines
+        .into_iter()
+        .map(|line| PasteLine {
+            glyph: line.glyph.into(),
+            text: line.text.into(),
+        })
+        .collect();
+    PasteEcho {
+        lines: ModelRc::new(VecModel::from(lines)),
+        summary: echo.summary.into(),
+        adding: echo.adding as i32,
+        button: echo.button.into(),
+    }
+}
+
+/// The line editor's slates kind (BACKLOG #97): `wire_match_editor`'s shape,
+/// over `core::slate_entry`. The sheet dispatches to these on its kind, so
+/// none of them asks which kind is open.
+///
+/// There is no `bus::editor_line` here: a slate has no cap and no rule across
+/// records, so the field's ✕ and the bus both call
+/// `slate_entry::edit_from_line` — one call, two callers.
+fn wire_slate_editor(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>) {
+    window.on_open_slate_editor({
+        let weak = window.as_weak();
+        move || {
+            if let Some(w) = weak.upgrade() {
+                seed_line_editor(&w, line_editor::slate_rows);
             }
+        }
+    });
+    window.on_valid_slate_line(|id, line| {
+        let Some(id) = parse_id(&id) else {
+            return false;
+        };
+        UI.with_borrow(|ui| {
+            let Some(project) = ui.snapshot.as_ref().map(|s| &s.project) else {
+                return false;
+            };
+            project
+                .slates
+                .iter()
+                .find(|s| s.id == id)
+                .is_some_and(|slate| slate_entry::edit_from_line(project, slate, &line).is_ok())
+        })
+    });
+    window.on_edit_slate_line({
+        let (weak, bus) = (window.as_weak(), bus.clone());
+        move |id, line| {
+            let Some(w) = weak.upgrade() else { return };
+            let Some(id) = parse_id(&id) else { return };
+            w.set_line_editor_message(SharedString::new());
+            bus.borrow().send(Command::EditSlateLine {
+                id,
+                line: line.to_string(),
+            });
+        }
+    });
+    window.on_add_slates({
+        let (weak, bus) = (window.as_weak(), bus.clone());
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            // The box is left as the bus's own parse leaves it, which arrives
+            // as `Event::SlatePasteLeftover` — the events box's rule (spec B5).
+            w.set_line_editor_message(SharedString::new());
+            bus.borrow().send(Command::AddSlates {
+                text: w.get_line_editor_paste().to_string(),
+                default_source: w.get_line_editor_source().max(0) as usize,
+            });
+        }
+    });
+    window.on_check_slate_paste(|text, default_source, _revision| {
+        UI.with_borrow(|ui| {
+            let Some(s) = ui.snapshot.as_ref() else {
+                return PasteEcho::default();
+            };
+            let batch = slate_entry::parse_batch(&s.project, default_source.max(0) as usize, &text);
+            show_paste_echo(line_editor::paste_echo(
+                &batch,
+                &line_editor::SLATE_WORDS,
+                line_editor::slate_reads_as,
+            ))
         })
     });
 }
@@ -2074,30 +2134,6 @@ fn editor_verdict(id: &str, line: &str) -> Option<Result<PendingMatchEvent, Stri
         let record = project.match_events.iter().find(|m| m.id == id)?;
         Some(bus::editor_line(project, record, line))
     })
-}
-
-/// Fills the row field with the selected event as a line — core's own
-/// rendering, which `bus::editor_line` rebuilds as the seed when the line
-/// comes back, so an edit that leaves the time alone keeps the stored seconds
-/// to the last decimal. Empty for an id with no event behind it.
-fn seed_match_line(w: &AppWindow, id: &str) {
-    let line = parse_id(id).and_then(|id| {
-        UI.with_borrow(|ui| {
-            let record = ui
-                .snapshot
-                .as_ref()?
-                .project
-                .match_events
-                .iter()
-                .find(|m| m.id == id)?;
-            Some(match_entry::format_line(
-                record.kind,
-                record.source_index,
-                record.source_seconds,
-            ))
-        })
-    });
-    w.set_match_editor_line(line.unwrap_or_default().into());
 }
 
 /// Where the game video is, as the source and offset a command that places
@@ -2254,43 +2290,36 @@ fn show_match(w: &AppWindow, project: &Project) {
     w.set_match_at_cap(project.start_stops_at_cap());
 }
 
-/// Seeds the editor from the project and opens it, as `open_match_setup`
-/// seeds the setup sheet: the rows, the picker's videos and nothing selected.
+/// Seeds the line editor from the project, as `open_match_setup` seeds the
+/// setup sheet: the rows (`rows`, the kind's builder), the picker's videos and
+/// nothing selected. The window's `open-line-editor` opens it after; both of
+/// its doors are greyed until the project has a video (`can-play`).
 ///
 /// **The paste box's text is not touched.** It is the session's, so a coach
 /// who pasted a block, pressed a row's Go and came back finds it (spec F2).
-fn open_match_editor(w: &AppWindow) {
-    let Some(sources) = UI.with_borrow(|ui| {
-        let project = &ui.snapshot.as_ref()?.project;
-        Some(
-            project
-                .source_videos
-                .iter()
-                .enumerate()
-                .map(|(i, s)| SharedString::from(format!("{} · {}", i + 1, s.display_name)))
-                .collect::<Vec<_>>(),
-        )
-    }) else {
-        return;
-    };
-    if sources.is_empty() {
-        return;
-    }
-    w.set_match_editor_sources(ModelRc::new(VecModel::from(sources)));
-    // The picker resets to the first video on every open (spec F2).
-    w.set_match_editor_source(0);
-    w.set_match_editor_selected(SharedString::new());
-    w.set_match_editor_line(SharedString::new());
-    w.set_match_editor_message(SharedString::new());
+fn seed_line_editor(w: &AppWindow, rows: fn(&Project) -> Vec<line_editor::EditorRow>) {
     UI.with_borrow(|ui| {
-        if let Some(s) = ui.snapshot.as_ref() {
-            show_match_editor(w, &s.project);
-        }
+        let Some(s) = ui.snapshot.as_ref() else {
+            return;
+        };
+        let sources: Vec<SharedString> = s
+            .project
+            .source_videos
+            .iter()
+            .enumerate()
+            .map(|(i, v)| format!("{} · {}", i + 1, v.display_name).into())
+            .collect();
+        w.set_line_editor_sources(ModelRc::new(VecModel::from(sources)));
+        // The picker resets to the first video on every open (spec F2).
+        w.set_line_editor_source(0);
+        w.set_line_editor_selected(SharedString::new());
+        w.set_line_editor_message(SharedString::new());
+        show_line_editor(w, rows(&s.project));
     });
-    w.set_match_editor_open(true);
 }
 
-/// The editor's rows, and the selected row's line re-seeded from its record.
+/// The editor's rows, and the selected row's line re-seeded from its record —
+/// whichever kind `rows` is.
 ///
 /// **The one thing that must not happen is a rebuild under the row's field
 /// while it is being typed in** (spec T3): a `LineEdit` inside a `for` can
@@ -2300,29 +2329,29 @@ fn open_match_editor(w: &AppWindow) {
 /// else, since every commit drops focus (spec T4). Not "only after the
 /// editor's own command": the sheet can have two commands in flight, and a
 /// command the bus refuses publishes nothing at all.
-fn show_match_editor(w: &AppWindow, project: &Project) {
-    let rows = match_panel::match_rows(project);
-    let model: Vec<MatchEditorRow> = rows
-        .iter()
-        .map(|row| MatchEditorRow {
+fn show_line_editor(w: &AppWindow, rows: Vec<line_editor::EditorRow>) {
+    // A selection whose record is gone — deleted, or undone away — is
+    // dropped, as the clip list's is.
+    let selected = parse_id(&w.get_line_editor_selected())
+        .and_then(|id| rows.iter().find(|row| row.id == id))
+        .map(|row| row.line.clone());
+    let model: Vec<LineEditorRow> = rows
+        .into_iter()
+        .map(|row| LineEditorRow {
             id: row.id.to_string().into(),
-            where_text: match_panel::editor_row_where(row).into(),
-            label: row.label.as_str().into(),
+            where_text: row.where_text.into(),
+            label: row.label.into(),
             role_less: row.role_less,
+            line: row.line.into(),
         })
         .collect();
-    w.set_match_editor_rows(ModelRc::new(VecModel::from(model)));
-    // A selection whose event is gone — deleted, or undone away — is dropped,
-    // as the clip list's is.
-    let selected = parse_id(&w.get_match_editor_selected())
-        .and_then(|id| rows.iter().find(|row| row.id == id));
-    match selected {
-        Some(row) => w.set_match_editor_line(match_panel::editor_row_line(row).into()),
-        None => {
-            w.set_match_editor_selected(SharedString::new());
-            w.set_match_editor_line(SharedString::new());
-        }
+    w.set_line_editor_rows(ModelRc::new(VecModel::from(model)));
+    if selected.is_none() {
+        w.set_line_editor_selected(SharedString::new());
     }
+    let line: SharedString = selected.unwrap_or_default().into();
+    w.set_line_editor_seed(line.clone());
+    w.set_line_editor_line(line);
 }
 
 /// The Highlights panel's rows (spec H3), in stored order.
@@ -3539,9 +3568,11 @@ fn on_event(w: &AppWindow, event: Event) {
                 w.set_export_finish(SharedString::new());
             }
             // Unconditional, and for its own reason rather than the run's:
-            // another project's block of match events has video numbers that
-            // mean other videos (spec F2).
-            w.set_match_editor_paste(SharedString::new());
+            // another project's block of match events or slates has video
+            // numbers that mean other videos (spec F2) — so every box goes.
+            w.set_line_editor_paste(SharedString::new());
+            w.set_events_paste(SharedString::new());
+            w.set_slates_paste(SharedString::new());
             w.set_volume(snapshot.project.preferences.scan_volume as f32);
             w.set_project_name(snapshot.project.name.as_str().into());
             // The one event that says the project exists is the one that
@@ -3745,19 +3776,29 @@ fn on_event(w: &AppWindow, event: Event) {
         Event::Basket(view) => show_basket(w, &view),
         // What the bus's own parse left in the paste box (spec B5): the
         // refused lines, for the coach to fix in place and add again.
-        Event::MatchPasteLeftover(text) => w.set_match_editor_paste(text.into()),
+        Event::MatchPasteLeftover(text) => {
+            w.invoke_paste_leftover(LineEditorKind::Events, text.into())
+        }
+        Event::SlatePasteLeftover(text) => {
+            w.invoke_paste_leftover(LineEditorKind::Slates, text.into())
+        }
         // Never the modal dialog: it would swallow a recording's transport
         // keys.
         Event::Error(e) if e.is_notice() => {
             eprintln!("ui: notice: {e}");
             new_match_error(w);
             let text = sentence(&e.to_string());
-            // A match refusal while the editor is up goes to its own line as
-            // well (spec C5): the status bar renders behind the sheet's
-            // scrim, so its copy is only readable once Done is pressed —
-            // which is also why it keeps one.
-            if w.get_match_editor_open() && matches!(e, bus::UserError::Scoreboard(_)) {
-                w.set_match_editor_message(text.clone().into());
+            // A refusal of the open kind's while the editor is up goes to its
+            // own line as well (spec C5): the status bar renders behind the
+            // sheet's scrim, so its copy is only readable once Done is pressed
+            // — which is also why it keeps one.
+            let kind = match e {
+                bus::UserError::Scoreboard(_) => Some(LineEditorKind::Events),
+                bus::UserError::Slate(_) => Some(LineEditorKind::Slates),
+                _ => None,
+            };
+            if kind.is_some_and(|kind| line_editor_shows(w, kind)) {
+                w.set_line_editor_message(text.clone().into());
             }
             show_notice(w, text);
         }
@@ -3976,8 +4017,14 @@ fn show_project(w: &AppWindow, snapshot: Snapshot) {
     show_match(w, project);
     // The editor's rows follow the project like every other list, and are
     // left alone only while the row's field has focus (spec T3).
-    if w.get_match_editor_open() && !w.get_match_editor_line_focused() {
-        show_match_editor(w, project);
+    if w.get_line_editor_open() && !w.get_line_editor_line_focused() {
+        show_line_editor(
+            w,
+            match w.get_line_editor_kind() {
+                LineEditorKind::Events => line_editor::event_rows(project),
+                LineEditorKind::Slates => line_editor::slate_rows(project),
+            },
+        );
     }
     show_highlights(w, project);
     show_avatar(w, &snapshot);
@@ -4204,7 +4251,7 @@ fn advance_pass(w: &AppWindow) {
     let pass = pass_rows(&rows);
     let current = w.get_selected_slate();
     match slate_pass::next_slate(&pass, current.as_str()) {
-        Some(next) => park_on_slate(w, next),
+        Some(next) => w.invoke_park_on_slate(next.into()),
         None => {
             if let Some(ranges) = slate_pass::ran_out(&pass, current.as_str()) {
                 show_pass_finished(w, ranges);
@@ -4222,7 +4269,7 @@ fn start_pass(w: &AppWindow) {
     let rows: Vec<SlateRow> = w.get_slates().iter().collect();
     let pass = pass_rows(&rows);
     match slate_pass::first_slate(&pass) {
-        Some(first) => park_on_slate(w, first),
+        Some(first) => w.invoke_park_on_slate(first.into()),
         None => {
             if let Some(ranges) = slate_pass::all_shot(&pass) {
                 show_pass_finished(w, ranges);
@@ -4242,13 +4289,9 @@ fn pass_rows(rows: &[SlateRow]) -> Vec<PassRow<'_>> {
         .collect()
 }
 
-/// Selects `id` and parks the footage on it. The selection is set **before**
-/// the jump, so the scrubber's span (spec S6) names the range the footage is
-/// heading for rather than the one just recorded.
-fn park_on_slate(w: &AppWindow, id: &str) {
-    let id = SharedString::from(id);
-    w.set_selected_slate(id.clone());
-    w.invoke_jump_to_slate(id);
+/// Whether the line editor is open on `kind`.
+fn line_editor_shows(w: &AppWindow, kind: LineEditorKind) -> bool {
+    w.get_line_editor_open() && w.get_line_editor_kind() == kind
 }
 
 /// "All 8 'corner' ranges shot" on the status bar, naming the Slates panel's

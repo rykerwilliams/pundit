@@ -220,6 +220,17 @@ Needs the internet. Use a project with goals tagged, tick a goals reel in **Expo
 - [ ] **A renamed song.** Rename the song you added and export the reel again. **Right:** no `.credits.txt` beside it, and the terminal shows a line asking "a renamed track?".
 - [ ] **Your call:** whether a genre search finds music you'd use — Openverse matches titles, not genres, so about a third of a page is the genre asked for.
 
+## 16. Typing slates in
+
+Use a tagged project with two videos. Edits apply as you make them; Ctrl+Z undoes them.
+
+- [ ] **[must work] Paste a list.** Press **Type…** in the Slates header and paste a real list of a match's ranges, with tags — `2 14:05-14:40 corner routine [corners]`, one per line. **Right:** each line is echoed back (✓, • already there, ✗ with the reason), and **Add** adds them all as **one** Ctrl+Z. Then filter the Slates list by one of the tags, press **G**, then **R**, talk, and stop. **Right:** the pass walks the typed slates.
+- [ ] **[must work] Go, then record.** Press **→** on a row, then **R**. **Right:** the take is that row's range, and the scrubber's band is on it.
+- [ ] **The column.** At the smallest window, in a project with no slates, count the clip rows you can see before and after this version — the Slates header with its **Type…** button now shows whenever the project has a video. **Note** how many fewer, and say if that costs too much.
+- [ ] **Esc and the two boxes.** Click a slate row, type in its line, press **Esc**. **Right:** the line goes back to what it was. **Esc** in the paste box leaves the box, and the next **Esc** closes the sheet. Reopen it: the box still holds what you'd pasted, and **Edit events…** still holds its own.
+- [ ] **A word processor's dashes.** Paste ranges typed in a word processor, where `14:05 - 14:40` has become `14:05 – 14:40`. **Right:** they read as ranges.
+- [ ] **A refusal on the sheet.** Press **Add** with a line that can't be added, in each sheet (events and slates). **Right:** the sentence saying why shows on the sheet itself, not only on the status bar behind it.
+
 ---
 
 **Reporting back:** for anything that fails or feels wrong, note the item's heading, what you did, what you expected, and what happened. Include the last few lines of `~/.xsession-errors` if the app misbehaved.

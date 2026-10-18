@@ -25,13 +25,70 @@ and nothing else.**
 
 ## Where this stands (update it as tasks land)
 
-- **1 — `core::line_batch`, and match events onto it.** Not started.
-- **2 — `core::slate_entry`, `add_slate` and `retype_slate`.** Not started.
-- **3 — the bus: `EditSlateLine`, `AddSlates`, `SlatePasteLeftover`.** Not
-  started.
-- **4 — `MatchEditorSheet` → `LineEditorSheet`, a rename.** Not started.
-- **5 — the slates kind: the words, the dispatch, the door, Go.** Not started.
-- **6 — prose and the backlog.** Not started.
+- **1 — `core::line_batch`, and match events onto it.** Done. §A re-derived
+  at `484f70f` (`main` after #93, #115 and this plan): every core and app
+  citation in task 1's rows held except `main.rs`, four lines up after #93
+  (`on_check_paste` `:2040`–`:2062`). `paste_echo` takes its `reads_as` as
+  `impl Fn(&T) -> String`, so `match_panel::reads_as` is passed by name;
+  `main.rs` imports `pundit_app::line_editor`. Sabotage 1–4 as listed (1 also
+  fails `a_pasted_block_echoes_every_line_in_input_order`, as predicted).
+- **2 — `core::slate_entry`, `add_slate` and `retype_slate`.** Done. Task
+  2's citations held at `c93a9d0` (`project.rs` `:866`/`:868`/`:916`/`:943`;
+  `match_entry.rs`' two helpers one line down, after task 1's import).
+  **2.10 types its out as `14:05.05`, not `14:05.0`**: with the in re-rounded
+  to 845.0, an out of 845.0 is refused by `<=` either way, so the plan's line
+  could not fail under sabotage 4. **Sabotage 2 also fails 2.10** — that test
+  needs the in kept too, so it rightly fails with the identity broken. The
+  other eight sabotages failed exactly the test listed.
+- **3 — the bus: `EditSlateLine`, `AddSlates`, `SlatePasteLeftover`.** Done.
+  §A's bus row held at `e5b4bbe` to the line; `main.rs`'s leftover arm is
+  `:3750` (four up, #93). `Event::SlatePasteLeftover(_) => {}` is the arm task
+  5 fills. The five sabotages failed exactly the test listed; 3's
+  (`SlateEdit`s and an empty `Title`) trips 3.3 at its video assertion first,
+  so a second mutant — `retype_slate`, then `Title(String::new())` — was run
+  and fails 3.3 alone, on the title.
+- **4 — `MatchEditorSheet` → `LineEditorSheet`, a rename.** Done. §A's
+  task-4 rows held at `de7cad0` except the sheet itself, which starts at
+  `app.slint:3367` (ten lines below the census) and `main.rs`, four up
+  (`wire_match_editor` `:1974`, `open_match_editor` `:2264`,
+  `show_match_editor` `:2305`, the rebuild gate `:3984`). The grep for
+  `match-editor-`, `match_editor_` and `MatchEditor` is empty at this head.
+  Sabotage 1 fails 4.3 alone.
+- **5 — the slates kind: the words, the dispatch, the door, Go.** Done. §A's
+  task-5 rows held at `1a71d0d` (`Sheet`'s `title` `:1992`, the Slates
+  section `:5964`, `edit-events` `:7122`) except `park_on_slate`, at `:4253`
+  after tasks 3–4. Five things the plan did not say: **`open_match_editor`
+  became `seed_line_editor(w, show_rows)`**, shared by both kinds, with the
+  open moved to `open-line-editor` — so its old "no source, stay shut" early
+  return now only skips the seeding, which costs nothing because both doors
+  are greyed on `can-play`; **the echo's Slint conversion is one
+  `show_paste_echo`** for both kinds; the instance's `Scrim` carries one
+  `property <bool> events` that every binding reads; **the §0.1 fixtures share
+  a `one_source(w)` in `tests/ui/main.rs`** rather than three inline rows; and
+  the "Type…" tooltip is new words of its own. All seven sabotages failed
+  exactly the test listed (6 in `--lib`, the rest in `ui`).
+- **6 — prose and the backlog.** Done, on `main` as it stood (PR #100 still
+  open, so no rebase). `CLAUDE.md`'s match-events paragraph names
+  `LineEditorSheet`, its two kinds, `core::line_batch` and, in one sentence,
+  `core::slate_entry`; its rebuild bullet covers both kinds. The guide gains
+  *Typing ranges in*, the checklist §16 (the six manual checks), and BACKLOG
+  #97 reads SHIPPED (#TODO) and is off "Next, in order" — at the
+  coordinator's word, ahead of the merge. **Manual check 3 (the column cost)
+  is not measured yet**: it needs a display, and is §16's third item.
+- **Review fixes (PR #101's code reviews, 2026-10-18).** Neither review found
+  a correctness bug; one commit applies the simplifications. A row carries its
+  `line`, so selecting a row and Esc's reseed are Slint's alone (a
+  `line-editor-seed` holds the selected row's line; four Rust callbacks and the
+  second event-line formatter are gone). `paste-leftover(kind, text)` is a
+  Slint function, `show_line_editor` one function over `EditorRow`s from
+  `line_editor::event_rows` / `slate_rows`, `PasteEcho` carries `adding`, and
+  the per-kind words are `line_editor::{EVENT,SLATE}_WORDS`, shared with the
+  bus's notices. **`edit_from_line` now keeps an end that *displays* as the
+  stored one** (`format_time` of each), which retired the token scan and the
+  `keep` tuple and also keeps `845.06` under a typed `14:05` (spec S9 amended).
+  `PendingSlate: From<&Slate>`; `key(&PendingSlate)`. The two harness retype
+  tests keep only what the bus adds (the clip untouched; the in point's trip to
+  the file).
 
 **Shipping: one PR, a commit per task, in order.** Tasks 1 and 4 are refactors
 that change no behaviour — the match editor before and after each reads and
@@ -190,20 +247,20 @@ the spec does not say.
    Option<Result<PendingSlate, String>>`**, in S2's order: comment and blank →
    `None`; the video number; the range, by a small scanner over `char`s (the in
    time is the run of digits, `:` and `.`; then the dash and its spacing decide
-   closed, open or lopsided), which **returns the two time tokens as it found
-   them**; the tags as the last `[` to the end; the name as the trimmed text
+   closed, open or lopsided); the tags as the last `[` to the end; the name as the trimmed text
    between. The refusal sentences are written inline, as `match_entry`'s are;
    only the video refusal is shared (§0.3).
-2. **One body, `parse_line_with(…, keep: (Option<f64>, Option<f64>))`**: an
-   end is overridden only when the parse produced a time for it, and the
-   override is applied **before** the order and the bound (spec S3, S9), as
-   `match_entry::parse_line_with` does (`:333`–`:353`).
+2. **One body, `parse_line_with(…, stored: Option<&Slate>)`**: an end that
+   displays as the stored one keeps the stored seconds, applied **before** the
+   order and the bound (spec S3, S9), as `match_entry::parse_line_with` does
+   (`:333`–`:353`). *Amended 2026-10-18 after code review* (this and step 4):
+   it was a `keep` tuple built from the scanner's time tokens.
 3. **`format_line(&Slate)`**: S9's shapes, `[]` when there are no tags and the
    name contains `[`.
 4. **`edit_from_line(project, &Slate, typed) -> Result<PendingSlate, String>`**:
    byte-identical to `format_line(slate)` → the slate's own fields; else the
-   scanner's in and out tokens of the seed and the typed line compared, each
-   equal one kept as stored; `None` → the emptied-row sentence.
+   body parse with the slate, each end whose `format_time` matches the
+   stored one's kept as stored; `None` → the emptied-row sentence.
 5. **`parse_batch(project, default_source, text) -> Batch<PendingSlate>`** over
    `read_batch`, the judge keying on canonical text (spec S12) against the
    stored slates and `accepted`.
@@ -248,6 +305,8 @@ the spec does not say.
    `a [b] c`) only.
 2. The identity compares whitespace tokens → 2.9 (the spaced case) only.
 3. The identity splits the line on its first dash → 2.9 (`corner-kick`) only.
+   (Both were the token comparison's; after code review the identity is
+   displayed times, and its sabotage is in "Where this stands".)
 4. The order check reads the parsed in, not the effective one → 2.10 only.
 5. The byte-identical early return removed → 2.8 only.
 6. A lone time read as an open range → 2.2 (`2 14:05 corner`) and 2.3.

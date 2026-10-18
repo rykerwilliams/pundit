@@ -30,11 +30,13 @@
 use std::time::{Duration, Instant};
 
 use pundit_core::project::{Project, SlateEdit, SlateError};
+use pundit_core::slate_entry;
 use pundit_core::undo::UndoAction;
 use pundit_media::LEVEL_INTERVAL_NS;
 use uuid::Uuid;
 
 use super::{Bus, Event, UserError};
+use crate::line_editor::SLATE_WORDS;
 
 /// How often the bus wakes to see whether the armed slate's out point has
 /// passed, when nothing else would wake it.
@@ -297,6 +299,56 @@ impl Bus {
             }
         }
         self.edit_slates(|project| project.edit_slate(id, edit));
+    }
+
+    /// Retypes slate `id` from one line (BACKLOG #97), in place: its id, its
+    /// title and its place in the stored order are kept, and so is the clip
+    /// shot from it — the link runs from the clip, set once at the take.
+    ///
+    /// The field commits on Enter *and* on the focus that commit drops, so
+    /// the same line arrives twice. The second reads back to the slate as the
+    /// first left it, and `edit_slates` drops it: no save, no undo step, no
+    /// publish.
+    pub(super) fn edit_slate_line(&mut self, id: Uuid, line: &str) {
+        let Some(open) = &self.open else {
+            return;
+        };
+        let Some(slate) = open.project.slates.iter().find(|s| s.id == id) else {
+            return eprintln!("bus: EditSlateLine on a slate that isn't there: {id}");
+        };
+        let typed = match slate_entry::edit_from_line(&open.project, slate, line) {
+            Ok(typed) => typed,
+            Err(reason) => return self.emit(Event::Error(UserError::Slate(reason))),
+        };
+        // Found just above, on the same thread: it is still there.
+        self.edit_slates(|project| {
+            let _ = project.retype_slate(id, typed);
+        });
+    }
+
+    /// Adds a pasted block as one undo step: `edit_slates` snapshots the
+    /// whole list around the closure, so twenty pushes inside one are one
+    /// save, one step and one `ProjectChanged`.
+    ///
+    /// Best-effort, not all-or-nothing — the lines that can't land are named
+    /// in one notice and the rest are added. **This parse is the one that
+    /// decides what the box keeps**, which is why the leftover travels back
+    /// as an event (`Bus::add_match_events` says why at length).
+    pub(super) fn add_slates(&mut self, text: &str, default_source: usize) {
+        let Some(open) = &self.open else {
+            return;
+        };
+        let batch = slate_entry::parse_batch(&open.project, default_source, text);
+        let slates = batch.items;
+        self.edit_slates(|project| {
+            for slate in slates {
+                project.add_slate(slate);
+            }
+        });
+        self.emit(Event::SlatePasteLeftover(batch.leftover));
+        if let Some(notice) = super::scoreboard::batch_notice(&batch.lines, SLATE_WORDS.duplicate) {
+            self.emit(Event::Error(UserError::Slate(notice)));
+        }
     }
 
     pub(super) fn delete_slate(&mut self, id: Uuid) {

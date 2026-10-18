@@ -1,8 +1,8 @@
 //! Bus end to end: slates — marking a range while watching, the refusal that
 //! is a notice, the one command pair that is live during a take, the undo
 //! step each edit is, the out-point stop (BACKLOG #114), the preview that
-//! shares it (BACKLOG #104, spec P), and `R` carrying the selected range
-//! (BACKLOG #120). What a slate *is* and what the mutators refuse are core's
+//! shares it (BACKLOG #104, spec P), `R` carrying the selected range
+//! (BACKLOG #120), and slates typed in as lines (BACKLOG #97). What a slate *is* and what the mutators refuse are core's
 //! tests; where the themed pass goes *next* is a unit test, because the queue
 //! is the window's own row model and the harness has no window.
 //!
@@ -1022,4 +1022,189 @@ fn the_scan_keys_are_refused_while_a_range_is_armed() {
         h.log()
     );
     h.shutdown();
+}
+
+// ------------------------------------------------- typed in as lines (#97)
+
+/// How many `ProjectChanged` the bus has published so far.
+fn changes(h: &Harness) -> usize {
+    h.log()
+        .iter()
+        .filter(|e| matches!(e, Event::ProjectChanged(_)))
+        .count()
+}
+
+/// A pasted block is **one** save, one `ProjectChanged` and one undo step,
+/// however many slates it holds: `edit_slates` snapshots the whole list around
+/// the closure (spec S14).
+#[test]
+fn a_pasted_block_of_slates_is_one_undo_step() {
+    let (mut h, p) = Proj::open(&["a.webm", "b.webm"]);
+    h.wait_settled();
+
+    h.send(Command::AddSlates {
+        text: "# the first half\n\
+               1 0:00.2-0:00.8 press [pressing]\n\
+               2 0:01- free kick\n\
+               0:01.0-0:01.5 corner\n"
+            .into(),
+        default_source: 0,
+    });
+    let added = h.wait_changed().project.slates.clone();
+    let fields = |i: usize| {
+        let s = &added[i];
+        (s.source_index, s.in_seconds, s.out_seconds, s.name.as_str())
+    };
+    assert_eq!(added.len(), 3, "the block's three lines: {added:#?}");
+    assert_eq!(fields(0), (0, 0.2, Some(0.8), "press"));
+    assert_eq!(added[0].tags, ["pressing"]);
+    assert_eq!(fields(1), (1, 1.0, None, "free kick"));
+    assert_eq!(fields(2), (0, 1.0, Some(1.5), "corner"), "in input order");
+    assert_eq!(p.saved().slates.len(), 3);
+
+    // One step back takes the whole block with it.
+    h.send(Command::Undo);
+    assert!(h.wait_changed().project.slates.is_empty());
+    assert_eq!(changes(&h), 2, "the block and the undo: one publish each");
+
+    h.shutdown();
+    assert!(p.saved().slates.is_empty());
+}
+
+/// Best-effort, not all-or-nothing: the lines that can't land are named in one
+/// notice and the rest are added; the box keeps the refused lines alone.
+#[test]
+fn a_partly_refused_block_of_slates_adds_the_rest() {
+    let (mut h, p) = Proj::open(&["a.webm", "b.webm"]);
+    h.wait_settled();
+    h.send(Command::AddSlates {
+        text: "1 0:00.2-0:00.8 press".into(),
+        default_source: 0,
+    });
+    h.wait_changed();
+    h.wait_map("the first block's leftover", |e| match e {
+        Event::SlatePasteLeftover(text) => Some(text.clone()),
+        _ => None,
+    });
+
+    h.send(Command::AddSlates {
+        text: "1 0:00.2-0:00.8 press\n\
+               1 0:05-0:06 too late\n\
+               2 0:01- free kick\n\
+               1 0:01 a lone time\n"
+            .into(),
+        default_source: 0,
+    });
+    let after = h.wait_changed().project;
+    assert_eq!(after.slates.len(), 2, "{:#?}", after.slates);
+    assert_eq!(after.slates[1].name, "free kick");
+
+    // The bus's own parse: the two refusals, and not the duplicate.
+    let leftover = h.wait_map("the slates box's leftover", |e| match e {
+        Event::SlatePasteLeftover(text) => Some(text.clone()),
+        _ => None,
+    });
+    assert_eq!(leftover, "1 0:05-0:06 too late\n1 0:01 a lone time");
+
+    let err = h.wait_for_error();
+    let UserError::Slate(msg) = &err else {
+        panic!("{err:?}");
+    };
+    assert!(err.is_notice(), "a notice, as every slate refusal is");
+    assert!(msg.starts_with("1 of 4 added"), "{msg}");
+    assert!(msg.contains("1 already marked"), "{msg}");
+    assert!(msg.contains("a.webm is "), "{msg}");
+    assert!(msg.contains("a slate is a range"), "{msg}");
+
+    h.shutdown();
+    assert_eq!(p.saved().slates, after.slates);
+}
+
+/// A shot slate edits like any other (spec S11), and the clip shot from it is
+/// untouched: the link runs from the clip, and the inheritance was at the take
+/// only. What a retype keeps of the slate itself — id, title, place — is
+/// core's `a_retype_keeps_the_id_the_title_and_the_place`.
+#[test]
+fn retyping_a_shot_slate_leaves_its_clip_alone() {
+    let (mut h, p) = Proj::open(&["a.webm", "b.webm"]);
+    h.wait_settled();
+    h.send(mark_in(1, 1.2));
+    let id = h.wait_changed().project.slates[0].id;
+    h.send(mark_out(1, 1.8));
+    h.wait_changed();
+    h.send(Command::EditSlate {
+        id,
+        edit: SlateEdit::Name("corner".into()),
+    });
+    h.wait_changed();
+    shoot(&mut h, id);
+    let clip = stop(&mut h);
+
+    h.send(Command::EditSlateLine {
+        id,
+        line: "1 0:00.5-0:01.5 corner routine".into(),
+    });
+    let slate = h.wait_changed().project.slates[0].clone();
+    h.shutdown();
+    assert_eq!(
+        (slate.source_index, slate.in_seconds, slate.out_seconds),
+        (0, 0.5, Some(1.5)),
+        "the retype landed"
+    );
+
+    let shot = &p.saved().clips[0];
+    assert_eq!(shot.slate_id, Some(id));
+    assert_eq!(shot.source_index, clip.source_index);
+    assert_eq!(shot.start_source_seconds, clip.start_source_seconds);
+    assert_eq!(shot.name, "corner");
+}
+
+/// The bus reads a retype with `edit_from_line`, so a captured in point
+/// survives the trip to the file when only the name is retyped (spec S9).
+#[test]
+fn a_name_only_retype_keeps_a_captured_in_point() {
+    let (mut h, p) = Proj::open(&["a.webm"]);
+    h.wait_settled();
+    h.send(mark_in(0, 0.53));
+    let id = h.wait_changed().project.slates[0].id;
+
+    h.send(Command::EditSlateLine {
+        id,
+        line: "1 0:00.5- renamed".into(),
+    });
+    h.wait_changed();
+    h.shutdown();
+    assert_eq!(p.saved().slates[0].in_seconds, 0.53);
+}
+
+/// The field commits on Enter *and* on the focus that commit drops, so the
+/// same line arrives twice. The second reads back to the slate as it now is,
+/// and `edit_slates` drops it: no save, no undo step, no publish.
+#[test]
+fn the_same_line_twice_is_one_undo_step() {
+    let (mut h, p) = Proj::open(&["a.webm"]);
+    h.wait_settled();
+    h.send(mark_in(0, 0.3));
+    let id = h.wait_changed().project.slates[0].id;
+    h.send(mark_out(0, 1.3));
+    h.wait_changed();
+    let before = changes(&h);
+
+    for _ in 0..2 {
+        h.send(Command::EditSlateLine {
+            id,
+            line: "1 0:00.3-0:01.3 press".into(),
+        });
+    }
+    assert_eq!(h.wait_changed().project.slates[0].name, "press");
+
+    // One step back is the name, not the second copy of the line.
+    h.send(Command::Undo);
+    let undone = h.wait_changed().project;
+    assert_eq!(undone.slates[0].name, "");
+    assert_eq!(undone.slates[0].out_seconds, Some(1.3));
+    assert_eq!(changes(&h), before + 2, "the line once and the undo once");
+
+    h.shutdown();
+    assert_eq!(p.saved().slates[0].name, "");
 }

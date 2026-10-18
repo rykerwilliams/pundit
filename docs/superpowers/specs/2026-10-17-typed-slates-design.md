@@ -283,12 +283,16 @@ was not asked to change.**
   line. One `if`, pinned by round-trip tests on `a [b`, `a [b] c` and `[x]`.
 - **`edit_from_line(project, &Slate, typed)` keeps the stored seconds per
   end** — `match_entry::edit_from_line`'s discipline (`match_entry.rs:268`–`:278`).
-  **The identity test compares the in and out time tokens that S2's range
-  scanner extracts** — not whitespace tokens, because `14:05.0 - 14:40.0` and
-  `14:05.0-14:40.0` hold the same two times, and not a split on the dash,
-  because a name may contain one (`corner-kick`). *Amended 2026-10-17 after the plan's review.* An unchanged in keeps a
-  captured `845.06` rather than re-rounding it to `845.0`; an unchanged out
-  likewise; a changed one takes what was typed. S3's order and bound are then
+  **An end is unchanged when what was typed displays as what is stored** —
+  `format_time` of the parsed time against `format_time` of the stored one.
+  *Amended 2026-10-18 after code review*: the identity first compared the
+  seed's and the typed line's time tokens as the range scanner found them;
+  comparing displayed times is simpler and wider, since it needs no second
+  scan, is blind to dash spacing and to a dash in a name (`corner-kick`) by
+  construction, and also keeps `845.06` when the coach types `14:05` without
+  the tenths. An unchanged in keeps a captured `845.06` rather than
+  re-rounding it to `845.0`; an unchanged out likewise; a changed one takes
+  what was typed. S3's order and bound are then
   checked on those effective seconds.
 - **A line byte-identical to the seed changes nothing at all.** Enter's double
   commit (editor spec T4) and a focus loss over an untouched row are already

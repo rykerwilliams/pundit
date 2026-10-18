@@ -1034,7 +1034,15 @@ whatever project is open, and resolved at Start.
 three tag keys (`z` / `x` / `v` by default) tag where the game video is; the editor sheet ("Edit events…" in the
 Match panel) takes the same events as lines — `2 14:05 home goal` — in a row's
 field and in its paste box alike, both read by `core::match_entry`
-(`parse_line`, `parse_batch`, `format_line`, `edit_from_line`).
+(`parse_line`, `parse_batch`, `format_line`, `edit_from_line`). **The sheet is
+`LineEditorSheet`, and it has two kinds** (#97): the events, and the slates,
+opened by **Type…** in the Slates header. Every callback dispatches on
+`line-editor-kind` in the instance, so no Rust callback asks which kind is
+open, and each kind keeps its own paste block for the session. The paste loop
+both grammars share is `core::line_batch`. **Slates are typed through
+`core::slate_entry`** — `2 14:05-14:40 corner routine [corners]` — whose `#` is
+a comment only at a line's start, so a name and the bracketed tags survive it;
+its module doc holds the rest.
 - **A time has a colon, and a leading bare integer is a video number** — never
   a time. `900 home goal` is refused as *"there is no video 900"*, because a
   bare number read as seconds puts an event minutes out in silence.
@@ -1045,7 +1053,8 @@ field and in its paste box alike, both read by `core::match_entry`
   definition a list of *restarts*, and pasting it must add nothing.
 - **The sheet's rows are rebuilt by `show_project` on every project change,
   except while the row's field has focus** (`main.rs`, the
-  `match_editor_line_focused` test before `show_match_editor`). A `LineEdit`
+  `line_editor_line_focused` test before `show_line_editor`, with the open
+  kind's rows). A `LineEdit`
   inside a `for` can only be bound one way, so a rebuild under it would
   overwrite what is being typed — and a transcript landing
   (`bus/transcribe.rs`) or a source found missing (`bus/transport.rs`)

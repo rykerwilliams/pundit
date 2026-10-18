@@ -28,7 +28,8 @@
 //! dialog. macOS's mutator silently did nothing instead, which is worse than a
 //! refusal.
 
-use pundit_core::match_entry::{self, BatchLine, BatchVerdict, LineVerdict, PendingMatchEvent};
+use pundit_core::line_batch::{BatchLine, BatchVerdict};
+use pundit_core::match_entry::{self, LineVerdict, PendingMatchEvent};
 use pundit_core::metadata;
 use pundit_core::project::Project;
 use pundit_core::scoreboard::{
@@ -38,6 +39,7 @@ use pundit_core::undo::UndoAction;
 use uuid::Uuid;
 
 use super::{Bus, Event, UserError};
+use crate::line_editor::EVENT_WORDS;
 
 /// One line of the editor's row field, read against the record it names:
 /// the whole verdict, **the cap included**.
@@ -149,14 +151,14 @@ impl Bus {
             return;
         };
         let batch = match_entry::parse_batch(&open.project, default_source, text);
-        let events = batch.events;
+        let events = batch.items;
         self.edit_match_events(|project| {
             for event in &events {
                 project.append_match_event(event.kind, event.source_index, event.source_seconds);
             }
         });
         self.emit(Event::MatchPasteLeftover(batch.leftover));
-        if let Some(notice) = batch_notice(&batch.lines) {
+        if let Some(notice) = batch_notice(&batch.lines, EVENT_WORDS.duplicate) {
             self.refuse(notice);
         }
     }
@@ -229,7 +231,8 @@ impl Bus {
 
 /// One sentence for a paste that didn't land whole: how many of the block's
 /// lines were added, then each reason with the number of lines that gave it,
-/// in the order they appear. `None` when every line landed.
+/// in the order they appear. `None` when every line landed. `duplicate` is
+/// what the grammar calls a skipped line (`"already tagged"`).
 ///
 /// The count is of lines that said something — blanks and comments are not in
 /// `lines` at all — and the per-line detail is the echo's job, before Add is
@@ -242,7 +245,7 @@ impl Bus {
 /// duplicate of something added since. And the duplicates it counts are gone
 /// from the box by the time it is read (spec B5), so nothing else says they
 /// were skipped.
-fn batch_notice(lines: &[BatchLine]) -> Option<String> {
+pub(super) fn batch_notice<T>(lines: &[BatchLine<T>], duplicate: &str) -> Option<String> {
     let mut reasons: Vec<(String, usize)> = Vec::new();
     let mut added = 0;
     for line in lines {
@@ -251,7 +254,7 @@ fn batch_notice(lines: &[BatchLine]) -> Option<String> {
                 added += 1;
                 continue;
             }
-            BatchVerdict::AlreadyTagged(_) => "already tagged".to_string(),
+            BatchVerdict::Duplicate(_) => duplicate.to_string(),
             BatchVerdict::Refused(reason) => format!("refused: {reason}"),
         };
         match reasons.iter_mut().find(|(seen, _)| *seen == reason) {

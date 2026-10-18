@@ -73,6 +73,19 @@ pub fn scratch_state() -> pundit_app::bus::AppFiles {
     )
 }
 
+/// One game video in the window's `sources`, which is what the Slates section
+/// needs to show at all (BACKLOG #97: its header carries **Type…**, the door
+/// to typing slates in, so it shows once the project has a video).
+pub fn one_source(w: &AppWindow) {
+    use slint::{ModelRc, VecModel};
+    w.set_sources(ModelRc::new(VecModel::from(vec![SourceRow {
+        name: "Half 1".into(),
+        duration: "45:00".into(),
+        missing: false,
+        referenced: true,
+    }])));
+}
+
 mod export_sheet;
 mod find_music;
 mod fit_window;
@@ -83,6 +96,7 @@ mod scrubber;
 mod self_view_placement;
 mod settings_sheet;
 mod sheet_scroll;
+mod slate_editor;
 mod slate_fields;
 mod slate_menu;
 mod snap_menu;
