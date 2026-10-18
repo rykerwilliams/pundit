@@ -67,7 +67,14 @@ and nothing else.**
   a `one_source(w)` in `tests/ui/main.rs`** rather than three inline rows; and
   the "Type…" tooltip is new words of its own. All seven sabotages failed
   exactly the test listed (6 in `--lib`, the rest in `ui`).
-- **6 — prose and the backlog.** Not started.
+- **6 — prose and the backlog.** Done, on `main` as it stood (PR #100 still
+  open, so no rebase). `CLAUDE.md`'s match-events paragraph names
+  `LineEditorSheet`, its two kinds, `core::line_batch` and, in one sentence,
+  `core::slate_entry`; its rebuild bullet covers both kinds. The guide gains
+  *Typing ranges in*, the checklist §16 (the six manual checks), and BACKLOG
+  #97 reads SHIPPED (#TODO) and is off "Next, in order" — at the
+  coordinator's word, ahead of the merge. **Manual check 3 (the column cost)
+  is not measured yet**: it needs a display, and is §16's third item.
 
 **Shipping: one PR, a commit per task, in order.** Tasks 1 and 4 are refactors
 that change no behaviour — the match editor before and after each reads and

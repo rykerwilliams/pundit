@@ -21,6 +21,28 @@ for the band and the row alike, open **Settings…** (or right-click the
 scrubber and choose **Band colour…**). To watch it, double-click the row or choose **Preview slate** from its
 menu: the game plays from the start of the range and stops at its end.
 
+## Typing ranges in
+
+If you already have the moments written down, press **Type…** in the Slates
+header (it is there as soon as the project has a video) and paste them into the
+box, one per line:
+
+```text
+2 14:05-14:40 corner routine [corners, set piece]
+```
+
+That is video 2, from 14:05 to 14:40, named *corner routine*, tagged `corners`
+and `set piece`. The video number is optional — the box's picker says which
+video a line without one is on — and so are the name and the tags. End a range
+with a dash and nothing after it, `14:05-`, to leave it open. A time on its own
+is refused, so a list of match events pasted into the wrong box adds nothing.
+Each line is echoed back before you press **Add**, and the lines that can't be
+added stay in the box for you to fix.
+
+Click a row to retype it as a line. A slate you retype keeps its title, and the
+clip you recorded from it is left as it was. The row's **→** selects the slate
+and shows its first frame, ready for <kbd>R</kbd>.
+
 ## Recording over one
 
 Select a slate and press <kbd>R</kbd> — the transport button reads **Record
