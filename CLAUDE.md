@@ -1043,13 +1043,18 @@ field and in its paste box alike, both read by `core::match_entry`
   `interpret` is positional, so one spurious start/stop moves every later
   period and the clock burned into every export. `kickoffs.txt` is by
   definition a list of *restarts*, and pasting it must add nothing.
-- **The sheet's rows are rebuilt by its own committed edit and never from
-  `show_project`** (`main.rs`'s `editor_rebuild` flag): a transcript landing
-  (`bus/transcribe.rs`) and a source found missing (`bus/transport.rs`) both
-  publish `ProjectChanged` with no command behind them, and a `LineEdit` inside
-  a `for` can only be bound one way — a rebuild would overwrite what is being
-  typed. Every commit drops focus, because `for` reuses its items by index and
-  a re-timed event moves.
+- **The sheet's rows are rebuilt by `show_project` on every project change,
+  except while the row's field has focus** (`main.rs`, the
+  `match_editor_line_focused` test before `show_match_editor`). A `LineEdit`
+  inside a `for` can only be bound one way, so a rebuild under it would
+  overwrite what is being typed — and a transcript landing
+  (`bus/transcribe.rs`) or a source found missing (`bus/transport.rs`)
+  publishes `ProjectChanged` with no command behind it. **The test is the
+  focus, not a flag set by the sheet's own command**: the sheet can have two
+  commands in flight, and a command the bus refuses publishes nothing, so a
+  one-shot flag would either drop the second's rows or survive into an
+  unrelated publish (editor spec T3). Every commit drops focus, because `for`
+  reuses its items by index and a re-timed event moves.
 - **A new text field joins nothing, and that is load-bearing** (#96 task 1).
   The window's `text-editing` **is** Slint's own
   `TextInputInterface.text-input-focused` (`app.slint`), which `TextInput` sets
