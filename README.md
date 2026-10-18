@@ -71,10 +71,6 @@ in the folder you downloaded it to:
 sudo apt install ./pundit_*_amd64.deb
 ```
 
-If you have **Coach Cuts** installed — the name this app went by until 0.8.0 —
-that one command replaces it, and your settings, your basket and the speech
-model you already downloaded are carried over on the first run.
-
 Or [build the package yourself](#build-from-source), which is also how you get
 a build newer than the last release.
 

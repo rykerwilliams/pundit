@@ -231,14 +231,13 @@ belongs in the README and the package description, not in the UI.
 
 **It was `coach-cuts` until 0.8.0**, a name inherited from the macOS app, and
 0.8.0 also left the fork: the repository is `rykerwilliams/pundit`, with
-`rykerwilliams/coach-cutups` deliberately left in place. Two shims carry an
-existing installation across, each explained where it lives —
-`state::adopt_old_name` (it renames the config and cache directories at
-startup) and the `.deb`'s `conflicts = "coach-cuts"` (it is what makes one
-`apt install` swap the packages; the other two fields of the conventional three
-are measurably inert here, and the manifest says why). **Both are dated:**
-`BACKLOG.md` #93 deletes them once no 0.7.x installation is left to upgrade.
-They are transitional, not conventions.
+`rykerwilliams/coach-cutups` deliberately left in place. Two shims, shipped in
+0.8.0 through 0.11.0, carried an existing installation across —
+`state::adopt_old_name` (it renamed the config and cache directories at startup)
+and the `.deb`'s `conflicts = "coach-cuts"` (it made one `apt install` swap the
+packages) — and both were deleted by BACKLOG #93 once every machine had run
+0.8.0. Nothing in `crates/` carries the old name now; a 0.7.x installation
+upgrading today would keep both packages and start with empty settings.
 
 The app must run on Slint's **Skia OpenGL** renderer (it selects it and fails
 loudly otherwise): that renderer is EGL on X11 and Wayland, and EGL is what
