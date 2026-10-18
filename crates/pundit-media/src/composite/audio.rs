@@ -47,10 +47,10 @@ use crate::player::seconds_to_clock;
 pub(super) const CHANNELS: usize = 2;
 
 /// How long [`Reader::start`] will wait to have a playing pipeline — the
-/// stream collection and then the preroll that follows the stream selection,
-/// on one budget. A file that posts neither a collection nor an `ERROR` — a
-/// directory, a named pipe with nothing behind it — would otherwise wait
-/// forever, and so would one that posts a collection and then never prerolls.
+/// stream collection and then the preroll that follows it, on one budget. A
+/// file that posts neither a collection nor an `ERROR` — a directory, a named
+/// pipe with nothing behind it — would otherwise wait forever, and so would
+/// one that posts a collection and then never prerolls.
 /// A hang here is worse than a failure: it strands the transcription queue for
 /// the session (spec S5).
 const START_TIMEOUT: Duration = Duration::from_secs(10);
@@ -305,7 +305,19 @@ impl Reader {
         channels: usize,
         cancel: &AtomicBool,
     ) -> Result<Option<Reader>, CompositeError> {
-        let pipeline = gst::Pipeline::new();
+        Reader::start_in(gst::Pipeline::new(), path, rate, channels, cancel)
+    }
+
+    /// [`Reader::start`] into a pipeline the caller made — the seam a test
+    /// watches `deep-element-added` through, which has to be connected before
+    /// anything is built.
+    fn start_in(
+        pipeline: gst::Pipeline,
+        path: &Path,
+        rate: u32,
+        channels: usize,
+        cancel: &AtomicBool,
+    ) -> Result<Option<Reader>, CompositeError> {
         let make = |factory: &str| {
             gst::ElementFactory::make(factory)
                 .build()
@@ -344,6 +356,24 @@ impl Reader {
                 let _ = pad.link(&sink_pad);
             }
         });
+        // The audio stream and nothing else, answered per stream **before
+        // `decodebin3` builds anything**, so no video output, decoder or
+        // keyframe probe is ever made — an unselected stream would otherwise be
+        // decoded in full, which the export already does once.
+        //
+        // **Never a `SelectStreams` event**: it can land after the video output
+        // is built, and on GStreamer 1.24.2 the late deselect frees that output
+        // under its keyframe probe, which then writes into it (BACKLOG #101;
+        // fixed in 1.24.3, 6615af3f5fa1).
+        decodebin.connect("select-stream", false, |args| {
+            let collection = args[1]
+                .get::<gst::StreamCollection>()
+                .expect("select-stream carries a collection");
+            let stream = args[2]
+                .get::<gst::Stream>()
+                .expect("select-stream carries a stream");
+            Some(i32::from(first_audio(&collection).as_ref() == Some(&stream)).to_value())
+        });
 
         let errors: Arc<Mutex<Option<String>>> = Arc::default();
         let streams: Arc<Mutex<Option<gst::StreamCollection>>> = Arc::default();
@@ -370,12 +400,9 @@ impl Reader {
         // "Internal data stream error": rarely on the reference laptop, every
         // time on a GitHub runner (BACKLOG #66).
         let deadline = Instant::now() + START_TIMEOUT;
-        let audio = loop {
+        let has_audio = loop {
             if let Some(collection) = &*streams.lock().expect("the stream slot isn't poisoned") {
-                break collection
-                    .iter()
-                    .find(|s| s.stream_type().contains(gst::StreamType::AUDIO))
-                    .and_then(|s| s.stream_id());
+                break first_audio(collection).is_some();
             }
             // Still every turn: a cancel, or a file that fails before it has a
             // collection at all, must not sit out the whole deadline.
@@ -385,13 +412,9 @@ impl Reader {
             }
             std::thread::sleep(Duration::from(POLL));
         };
-        let Some(audio) = audio else {
+        if !has_audio {
             return Ok(None);
-        };
-        // Only the audio stream: an unselected video stream still gets a
-        // decoder and still decodes every frame (measured: 2.2 s against
-        // 46 ms for 10 s of 1080p, and the export decodes that video already).
-        decodebin.send_event(gst::event::SelectStreams::new([audio.as_str()]));
+        }
         // On the same deadline: a file that prerolls neither way — no
         // `ASYNC_DONE`, no `ERROR` — hangs here otherwise, and a hang is what
         // strands the queue.
@@ -650,6 +673,13 @@ pub fn inspect_audio(path: &Path, cancel: &AtomicBool) -> Result<AudioFile, Comp
     })
 }
 
+/// The stream a [`Reader`] decodes: the collection's first audio stream.
+fn first_audio(collection: &gst::StreamCollection) -> Option<gst::Stream> {
+    collection
+        .iter()
+        .find(|s| s.stream_type().contains(gst::StreamType::AUDIO))
+}
+
 /// Records `pipeline`'s first `ERROR` and its stream collection, and drops
 /// every message: nothing here needs a GL context, and nothing polls the bus.
 fn install(
@@ -708,6 +738,41 @@ mod tests {
                 "{encoder:?} decoded to {} s",
                 file.seconds
             );
+        }
+    }
+
+    /// The reader never builds a video decoder for a file that has video —
+    /// not one it later deselects either, since deselecting one is what
+    /// GStreamer 1.24.2 frees under a live probe (BACKLOG #101). Every element
+    /// `decodebin3` makes is seen as it is added, so one that came and went
+    /// before the reader prerolled is counted too; twenty opens, because the
+    /// old late selection lost that race only some of the time.
+    #[test]
+    fn the_reader_never_builds_a_video_decoder() {
+        gst::init().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = crate::fixtures::webm(dir.path(), "av.webm", 1, 320, 240, 30, 30);
+        let cancel = AtomicBool::new(false);
+        for open in 0..20 {
+            let pipeline = gst::Pipeline::new();
+            let built: Arc<Mutex<Vec<String>>> = Arc::default();
+            let seen = built.clone();
+            pipeline.connect_deep_element_added(move |_, _, element| {
+                let video_decoder =
+                    gst::ElementFactoryType::DECODER | gst::ElementFactoryType::MEDIA_VIDEO;
+                if let Some(factory) = element.factory().filter(|f| f.has_type(video_decoder)) {
+                    seen.lock().unwrap().push(factory.name().to_string());
+                }
+            });
+            let mut reader =
+                Reader::start_in(pipeline, &path, AUDIO_SAMPLE_RATE, CHANNELS, &cancel)
+                    .unwrap()
+                    .expect("the file has sound");
+            let sound = reader.read(4_800, &cancel);
+            assert!(sound.iter().any(|&s| s != 0.0), "open {open} read silence");
+            drop(reader);
+            let video = built.lock().unwrap();
+            assert!(video.is_empty(), "open {open} built {video:?}");
         }
     }
 

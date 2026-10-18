@@ -137,6 +137,11 @@ separate and are justified by something else entirely.
 
 ## U4a. A shipped bug this found on the way: `audio.rs` selects too late
 
+**2026-10-17: superseded by BACKLOG #101.** The reader now selects by the
+`select-stream` signal rather than moving the `send_event` into the sync
+handler, because the late event was also what let GStreamer 1.24.2 free a video
+output under its keyframe probe.
+
 `composite/audio.rs` goes to PAUSED, polls a `Mutex` slot every 10 ms for the
 `StreamCollection`, then sends `SelectStreams`. By then `decodebin3` has built
 the video decoder it did not want. **Measured in the real export binary:
