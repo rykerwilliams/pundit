@@ -32,7 +32,14 @@ and nothing else.**
   `impl Fn(&T) -> String`, so `match_panel::reads_as` is passed by name;
   `main.rs` imports `pundit_app::line_editor`. Sabotage 1–4 as listed (1 also
   fails `a_pasted_block_echoes_every_line_in_input_order`, as predicted).
-- **2 — `core::slate_entry`, `add_slate` and `retype_slate`.** Not started.
+- **2 — `core::slate_entry`, `add_slate` and `retype_slate`.** Done. Task
+  2's citations held at `c93a9d0` (`project.rs` `:866`/`:868`/`:916`/`:943`;
+  `match_entry.rs`' two helpers one line down, after task 1's import).
+  **2.10 types its out as `14:05.05`, not `14:05.0`**: with the in re-rounded
+  to 845.0, an out of 845.0 is refused by `<=` either way, so the plan's line
+  could not fail under sabotage 4. **Sabotage 2 also fails 2.10** — that test
+  needs the in kept too, so it rightly fails with the identity broken. The
+  other eight sabotages failed exactly the test listed.
 - **3 — the bus: `EditSlateLine`, `AddSlates`, `SlatePasteLeftover`.** Not
   started.
 - **4 — `MatchEditorSheet` → `LineEditorSheet`, a rename.** Not started.

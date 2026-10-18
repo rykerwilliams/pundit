@@ -30,6 +30,7 @@ pub mod reel;
 pub mod scoreboard;
 pub mod signals;
 pub mod skip;
+pub mod slate_entry;
 pub mod store;
 pub mod stroke;
 pub mod stroke_replay;

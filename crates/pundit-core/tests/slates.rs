@@ -4,6 +4,7 @@
 
 use pundit_core::project::{Project, SlateEdit, SlateError, SourceRef};
 use pundit_core::recording::PendingClip;
+use pundit_core::slate_entry::PendingSlate;
 use uuid::Uuid;
 
 fn project(sources: usize) -> Project {
@@ -206,4 +207,72 @@ fn deleting_a_slate_leaves_the_clip_it_was_shot_into() {
     assert!(p.slates.is_empty());
     assert_eq!(p.clips.len(), 1, "the take is not deleted with its slate");
     assert_eq!(p.clips[0].slate_id, Some(id), "and keeps its dangling link");
+}
+
+// ------------------------------------------------- typed in as lines (#97)
+
+fn typed(
+    source_index: usize,
+    in_seconds: f64,
+    out_seconds: Option<f64>,
+    name: &str,
+) -> PendingSlate {
+    PendingSlate {
+        source_index,
+        in_seconds,
+        out_seconds,
+        name: name.into(),
+        tags: vec!["typed".into()],
+    }
+}
+
+/// A retyped line rewrites the slate's five typed fields **in place**: its id,
+/// its title and its place in the stored order — what `o` reads — are kept.
+/// It can reopen a range and move the slate to another video, which no
+/// `SlateEdit` can.
+#[test]
+fn a_retype_keeps_the_id_the_title_and_the_place() {
+    let mut p = project(2);
+    let first = p.mark_slate_in(0, 10.0);
+    p.mark_slate_out(0, 20.0).unwrap();
+    p.edit_slate(first, SlateEdit::Title("The press".into()));
+    let second = p.mark_slate_in(0, 30.0);
+
+    assert!(p.retype_slate(first, typed(1, 40.0, None, "moved")));
+    assert_eq!(p.slates[0].id, first, "the same slate, in the same place");
+    assert_eq!(p.slates[1].id, second);
+    let s = &p.slates[0];
+    assert_eq!(
+        (s.source_index, s.in_seconds, s.out_seconds),
+        (1, 40.0, None),
+        "on the other video, and open again"
+    );
+    assert_eq!(
+        (s.name.as_str(), s.tags.as_slice()),
+        ("moved", &["typed".to_string()][..])
+    );
+    assert_eq!(
+        s.title.as_deref(),
+        Some("The press"),
+        "a line never carries the title"
+    );
+
+    let before = p.slates.clone();
+    assert!(!p.retype_slate(Uuid::new_v4(), typed(0, 1.0, None, "ghost")));
+    assert_eq!(p.slates, before);
+}
+
+/// A typed open range joins the stored order at the end, so the next `o` on
+/// its video closes **it**. That is `o`'s rule doing what it says — pinned so
+/// a later change to it is deliberate.
+#[test]
+fn o_closes_a_typed_open_range() {
+    let mut p = project(1);
+    let marked = p.mark_slate_in(0, 10.0);
+    let pasted = p.add_slate(typed(0, 100.0, None, "pasted"));
+    assert_eq!(p.slates[1].title, None);
+
+    assert_eq!(p.mark_slate_out(0, 120.0), Ok(pasted));
+    assert_eq!(p.slates[0].id, marked);
+    assert_eq!(p.slates[0].out_seconds, None);
 }

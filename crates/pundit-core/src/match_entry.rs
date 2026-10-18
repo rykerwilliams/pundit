@@ -296,8 +296,9 @@ fn body(line: &str) -> &str {
     line.split('#').next().unwrap_or("").trim()
 }
 
-/// A leading bare integer is **always** a video number (the module doc).
-fn is_video_number(field: &str) -> bool {
+/// A leading bare integer is **always** a video number (the module doc) —
+/// in `slate_entry`'s grammar too.
+pub(crate) fn is_video_number(field: &str) -> bool {
     !field.is_empty() && field.bytes().all(|b| b.is_ascii_digit())
 }
 
@@ -323,12 +324,12 @@ fn parse_line_with(
         // reinterpreted as anything else.
         match first.parse::<usize>() {
             Ok(n) if (1..=project.source_videos.len()).contains(&n) => source_index = n - 1,
-            _ => return refuse_video(first),
+            _ => return LineVerdict::Refused(refuse_video(first)),
         }
         next = fields.next();
     }
     let Some(source) = project.source_videos.get(source_index) else {
-        return refuse_video(&(source_index + 1).to_string());
+        return LineVerdict::Refused(refuse_video(&(source_index + 1).to_string()));
     };
 
     let Some(source_seconds) = next.and_then(parse_time) else {
@@ -365,11 +366,10 @@ fn parse_line_with(
 ///
 /// **The hint is always there**, not only on a number big enough to look like
 /// seconds: a coach who types `14` meaning fourteen minutes into a two-video
-/// project is the very reader it is for.
-fn refuse_video(number: &str) -> LineVerdict {
-    LineVerdict::Refused(format!(
-        "there is no video {number} — a time needs a colon (15:00)"
-    ))
+/// project is the very reader it is for. `slate_entry` refuses with the same
+/// sentence, so the two boxes say one thing about one mistake.
+pub(crate) fn refuse_video(number: &str) -> String {
+    format!("there is no video {number} — a time needs a colon (15:00)")
 }
 
 // ----------------------------------------------------------------- batches

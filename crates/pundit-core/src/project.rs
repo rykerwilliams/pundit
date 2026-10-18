@@ -34,6 +34,7 @@ use crate::naming;
 use crate::plan::ScoreboardMode;
 use crate::recording::PendingClip;
 use crate::scoreboard::{MatchEventRecord, ScoreboardConfig};
+use crate::slate_entry::PendingSlate;
 use crate::undo::ClipEdit;
 
 /// Export frame size. `source` is deliberately absent — it was ill-defined
@@ -864,17 +865,54 @@ impl Project {
     /// the app closes — and what saves marking from needing an in-progress
     /// source index to invalidate when the source list changes underneath it.
     pub fn mark_slate_in(&mut self, source_index: usize, in_seconds: f64) -> Uuid {
-        let id = Uuid::new_v4();
-        self.slates.push(Slate {
-            id,
+        self.add_slate(PendingSlate {
             source_index,
             in_seconds,
             out_seconds: None,
             name: String::new(),
             tags: Vec::new(),
+        })
+    }
+
+    /// Appends `slate` with a fresh id and no title, returning the id — the one
+    /// place a [`Slate`] is built outside tests. It joins the **end** of the
+    /// stored order, so a typed open range is the one the next `o` on its video
+    /// closes ([`mark_slate_out`](Self::mark_slate_out)'s rule, working as it
+    /// says).
+    pub fn add_slate(&mut self, slate: PendingSlate) -> Uuid {
+        let id = Uuid::new_v4();
+        self.slates.push(Slate {
+            id,
+            source_index: slate.source_index,
+            in_seconds: slate.in_seconds,
+            out_seconds: slate.out_seconds,
+            name: slate.name,
+            tags: slate.tags,
             title: None,
         });
         id
+    }
+
+    /// Rewrites slate `id`'s five typed fields from a retyped line, keeping its
+    /// id, its [`title`](Slate::title) and its **place in the stored order** —
+    /// which is what `o`'s "the range most recently opened" reads. `false` when
+    /// it is gone.
+    ///
+    /// Not five [`SlateEdit`]s: a retype can move a slate to another video,
+    /// which no edit does, and can reopen a range (`14:05-`), which
+    /// [`SlateEdit::Out`] cannot say. The order and the bound were checked by
+    /// the parse that built `slate` (`slate_entry::edit_from_line`).
+    #[must_use]
+    pub fn retype_slate(&mut self, id: Uuid, slate: PendingSlate) -> bool {
+        let Some(stored) = self.slates.iter_mut().find(|s| s.id == id) else {
+            return false;
+        };
+        stored.source_index = slate.source_index;
+        stored.in_seconds = slate.in_seconds;
+        stored.out_seconds = slate.out_seconds;
+        stored.name = slate.name;
+        stored.tags = slate.tags;
+        true
     }
 
     /// Close the range most recently opened on `source_index`.
