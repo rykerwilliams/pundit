@@ -166,6 +166,8 @@ problem — which is the entry, not an excuse for it.
 - **78.** App settings for the things an export writes — closed 2026-10-13: the
   two export-sheet switches shipped 2026-10-07 (#57), and the Settings sheet it
   designed was built by #131
+- **101.** The `decodebin3` 1.24.2 heap corruption — worked around 2026-10-17:
+  the audio reader selects by `select-stream` and never builds a video output
 
 - 21, 22, 23, 24, 26, 43, 47, 66, 67, 86, 89, 90, 91, 92, 94
 
@@ -2482,43 +2484,23 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   file-of-its-own argument stands on the **element** case above, which is exactly
   what a basket's `pieces` is.
 
-101. **The export test binaries abort with `corrupted size vs. prev_size` under
+101. **The export test binaries abort with `corrupted size vs. prev_size` under heavy concurrent load — WORKED AROUND 2026-10-17**
 
 - **WORKED AROUND 2026-10-17: the audio reader never builds a video output.**
-  `composite::audio::Reader::start` now answers `decodebin3`'s
-  **`select-stream` signal** — 1 for the collection's first audio stream, 0 for
-  everything else — and sends no `SelectStreams` event at all. The signal is
-  asked once per stream, synchronously, before `decodebin3` builds an output,
-  so no video output, decoder or keyframe probe ever exists to be freed. The
-  no-audio detection off the posted collection, the deadline and the cancel
-  are unchanged. **It can go once the GStreamer floor passes 1.24.3** (it is
-  harmless after that, so going is optional). Measured on this machine's
-  1.24.2 before choosing:
-  - **the signal**: 0 video decoders and no `video_` pad (`deep-element-added`),
-    and still present and undeprecated on upstream `main`;
-  - **`caps=audio/x-raw(ANY)`**: still builds the video output and decodes it
-    (1.48 s against 0.19 s for 10 s of 720p) — no use;
-  - **the old event**: built the video output in **20 of 100** opens of a
-    Python replica, and in the export suite under
-    `GST_DEBUG=GST_ELEMENT_FACTORY:4` **53 `vavp8dec` before, 36 after** — the 17
-    the readers made and threw away are gone.
-  - **The reproduction has an amplifier now**:
-    `GLIBC_TUNABLES=glibc.malloc.tcache_count=0:glibc.malloc.mxfast=0` turns off
-    the tcache and the fastbins, so the freed 96-byte chunk goes straight to the
-    unsorted bin with its footer at exactly offset 80 of the 88-byte payload —
-    the stray zero then hits the footer every time instead of rarely. Under it,
-    the recipe below (3 × `--test-threads=4`, `taskset -c 0-3`, two busy loops)
-    aborted **6 of 6** runs before (`malloc(): mismatching next->prev_size
-    (unsorted)`) and **0 of 18** after, every one passing 37/37; a Python
-    replica of the reader, 4 threads × 25 opens a process, aborted **10 of 10**
-    processes with the event and **0 of 10** with the signal.
-  - **Without the amplifier, the recipe as written**: **1 abort in 48** runs
-    before (`corrupted size vs. prev_size`), **0 in 48** after — the entry's
-    "a few percent", and too rare on its own to tell the two apart.
-  - Pinned by `composite::audio::tests::the_reader_never_builds_a_video_decoder`
-    (twenty opens of a file with video, every element counted as it is added),
-    which fails on its first open with the old event put back, and with no
-    selection at all.
+  `composite::audio::Reader::start` answers `decodebin3`'s `select-stream`
+  signal — 1 for the collection's first audio stream, 0 otherwise — and sends
+  no `SelectStreams` event. The signal is asked per stream before anything is
+  built, so no video output, decoder or keyframe probe exists to be freed; it
+  also stops the reader building and decoding a video stream at all (2.2 s
+  against 46 ms per 10 s of 1080p, measured earlier), which is why it stays
+  after the floor passes 1.24.3. The old event built the video output in 20 of
+  100 opens of a replica; one media export suite run made 53 `vavp8dec`
+  before and 36 after.
+  `caps=audio/x-raw(ANY)` was rejected: it still builds and decodes the video.
+  **Amplifier:** `GLIBC_TUNABLES=glibc.malloc.tcache_count=0:glibc.malloc.mxfast=0`
+  puts the freed chunk's footer under the stray write every time. The recipe
+  below aborted 6 of 6 before and 0 of 18 after with it, 1 in 48 and 0 in 48
+  without. Pinned by `composite::audio::tests::the_reader_never_builds_a_video_decoder`.
 - **RE-DECIDED 2026-10-17, by the coach: work around it in our code.** Asked
   after further sightings during #84's and #131's gates (2026-10-13 and -14:
   `corrupted size vs. prev_size`, `malloc(): mismatching next->prev_size
@@ -2556,9 +2538,9 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   the sense of rarely *executed*; it is rare in the sense that the stray write
   usually lands somewhere harmless. The decision is to accept a low-probability
   bad outcome per run, not to accept a rarely-taken code path.
-  heavy concurrent load — REPRODUCED ON DEMAND 2026-10-07, and it is a stray
-  write into memory that has already been freed.** The recipe, the mechanism and
-  what is still unknown are at the **end** of this entry; the sighting log is
+- **REPRODUCED ON DEMAND 2026-10-07, and it is a stray write into memory that
+  has already been freed.** The recipe, the mechanism and what is still unknown
+  are at the **end** of this entry; the sighting log is
   kept whole above them, because the count is what scheduled the work.
   glibc heap corruption, `SIGABRT`, always mid-suite and
   always at a different test, seen three times in `pundit-media --test export`
@@ -2830,20 +2812,21 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
     `gst_pad_add_probe (slot->src_pad, …, keyframe_waiter_probe, output, NULL)`
     — **no destroy notify** — so nothing ever invalidates the user data. The
     probe is added only for a **video** output stream;
-  - **the free** is decodebin3's, inside `gst_pad_add_probe`, reached from
-    `gst_element_send_event` ← `composite::audio::Reader::start`
-    (`audio.rs:384`). The **write** is on the `multiqueue19:src` streaming
-    thread, through `g_hook_list_marshal` from `gst_pad_push`. Two threads, no
-    lock between them: `probe_hook_marshal` drops the pad's object lock around
+  - **the free** was decodebin3's, inside `gst_pad_add_probe`, reached from
+    `gst_element_send_event` ← `composite::audio::Reader::start`. The
+    **write** is on the `multiqueue19:src` streaming thread, through
+    `g_hook_list_marshal` from `gst_pad_push`. Two threads, no lock between
+    them: `probe_hook_marshal` drops the pad's object lock around
     the callback, so the other thread can remove the probe and free `output`
     while the callback is mid-flight.
-- **The trigger is ours, and there is exactly one of it.**
-  `audio.rs:384`'s `decodebin.send_event(SelectStreams::new([audio]))` is the
-  only `SELECT_STREAMS` in the tree. It arrives *after* the stream collection,
-  which is after decodebin3 has already built a video output and hung a
-  keyframe-waiter probe off it; deselecting the video stream makes decodebin3
-  re-target its outputs and free that struct while the multiqueue is still
-  pushing the video buffers the probe is there to drop. Upstream's commit
+- **Before the 2026-10-17 workaround: the trigger was ours, and there was
+  exactly one of it.** `Reader::start`'s
+  `decodebin.send_event(SelectStreams::new([audio]))` was the only
+  `SELECT_STREAMS` in the tree. It arrived *after* the stream collection, which
+  was after decodebin3 had already built a video output and hung a
+  keyframe-waiter probe off it; deselecting the video stream made decodebin3
+  re-target its outputs and free that struct while the multiqueue was still
+  pushing the video buffers the probe was there to drop. Upstream's commit
   message describes exactly this: *"when re-targetting outputs (to a different
   slot)… we would end up having an invalid probe id, or not have a reference to
   an existing one."*
@@ -2855,15 +2838,16 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   changelog through `1.24.2-1ubuntu0.5` (2026-09-16) is CVE patches and nothing
   else. So the bug is live on the target platform, on the reference laptop, and
   on CI's `ubuntu-latest` — which is why the sixth sighting was a GitHub runner.
-- **What that rules in, and it is the thing that matters: the app runs this
-  write.** `Reader::start` is the one audio reader behind **three** callers —
-  the export and preview audio mixer (`composite::audio::Mixer`), transcription
-  (`transcribe::read_all`) and match analysis (`analyze::audio::samples`) — so
-  every export, every transcript and every analysis pass sends that event, once
-  per distinct file. It needs the file to **have a video stream**, because the
-  probe is video-only: a game source always does, a camera take does, an avatar
-  take's audio-only recording does not. The abort is still the lucky case and
-  the quiet case is still eight wrong bytes in whatever reused the block.
+- **Before the 2026-10-17 workaround: what that ruled in, and it was the thing
+  that mattered — the app ran this write.** `Reader::start` is the one audio
+  reader behind **three** callers — the export and preview audio mixer
+  (`composite::audio::Mixer`), transcription (`transcribe::read_all`) and match
+  analysis (`analyze::audio::samples`) — so every export, every transcript and
+  every analysis pass sent that event, once per distinct file. It needed the
+  file to **have a video stream**, because the probe is video-only: a game
+  source always does, a camera take does, an avatar take's audio-only recording
+  does not. The abort was the lucky case and the quiet case eight wrong bytes in
+  whatever reused the block.
 - **What it rules out.** Not the export's GL graph, not llvmpipe, not the
   surfaceless display, not a buffer pool freed under a probe, not `mp4mux`, not
   the `.part` handling, not the chapter splice, and nothing in
@@ -2925,26 +2909,8 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   is `tests/export.rs`'s `Discoverer::new(ClockTime::from_seconds(10))`, which is
   a `ClockTime` and not a `Duration` and so does not turn up in a grep for the
   others — raise it too next time.
-- **When to revisit: this is now a fix to design, not a bug to find.** The write
-  is in GStreamer and cannot be patched from here, so the fix has to stop
-  `decodebin3` from re-targeting a video output stream under a live multiqueue.
-  Two shapes, and **neither is written, because choosing between them needs a
-  measurement this pass does not have**:
-  - **send the event earlier** — from the synchronous `STREAM_COLLECTION`
-    handler rather than from `start`'s own thread after the slot is filled, so it
-    lands before `db_output_stream_setup_decoder` ever hangs the probe. Cheap,
-    keeps the decode saving, and is the pattern upstream documents — but it
-    narrows the window rather than closing it, and a window this entry has
-    watched for ten days is not something to re-open on a race;
-  - **never build a video output** — drop the `SELECT_STREAMS` and let the audio
-    reader decode the video it does not want, which closes the race outright
-    because nothing is freed under the probe. The cost is the one `audio.rs`
-    already measured, 2.2 s against 46 ms per 10 s of 1080p, and the reader opens
-    whole halves: that is minutes per export, which is not payable as written.
-    Something in between — a pipeline for the audio reader that has no video
-    output to free — is what would actually earn its place.
-  Until one lands, **record further sightings against this entry as before**;
-  they are now confirmations of a known write, not new evidence.
+- **When to revisit:** it was worked around on 2026-10-17 — see the WORKED
+  AROUND bullet at the top of this entry.
 - **No sighting of #72** in any of it: not in the memcheck run, not in the four
   shards' output, not in the three cores read.
 - **Sightings, 2026-10-12, during #138 task 5's gates — three, and one of them

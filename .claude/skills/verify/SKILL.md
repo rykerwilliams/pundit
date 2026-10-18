@@ -48,10 +48,12 @@ compiles.
 **Classify by signature first.**
 
 - **`SIGABRT` with `corrupted size vs. prev_size` or `malloc(): mismatching …`,
-  no failing test named, in an export or whole-match binary** — BACKLOG #101, a
-  known write fixed upstream after GStreamer 1.24.2; the coach chose "document
-  and watch". It **can** fire with its suite run alone, so passing alone proves
-  little. **Append a dated sighting to #101**; don't investigate.
+  no failing test named, in a media or harness binary** — this was BACKLOG
+  #101, GStreamer 1.24.2's `decodebin3` keyframe-probe write, **worked around
+  2026-10-17**. An allocator abort is now a **regression of the workaround or a
+  new bug**, not a flake: reopen #101 with the run — the stderr, the binary,
+  and whether it reproduces under the entry's `GLIBC_TUNABLES` amplifier.
+  Passing alone proves little either way.
 - **Harness: `timed out waiting for a settled position`** — BACKLOG #72, which is
   **fixed**. A sighting is a regression: reopen #72 with the run.
 - **Anything else**:
@@ -59,14 +61,15 @@ compiles.
      media abort.
   2. Re-run that binary alone at the same commit.
   3. Grep `BACKLOG.md` for the failure's message text. A match gets a dated
-     sighting on **that** entry — never a new entry (2026-10-12 filed #101 again
-     as #139 and withdrew it).
+     sighting on **that** entry — never a new entry (2026-10-12 filed a #101
+     sighting as #139 and withdrew it).
   4. An allocator abort's backtrace names whichever `malloc` tripped over the
      damage, **not** the writer.
   5. Log it and move on (memory `no-detours`) unless the user asks for a hunt.
 
-Report a known flake as one — "N passed; one SIGABRT in `pundit-media --test
-export`, #101's signature" — never folded into "green".
+Report a known flake as one — "N passed; one `timed out waiting for the run's
+outcome` under load in `pundit-harness --test export`" — never folded into
+"green".
 
 ## Reporting
 

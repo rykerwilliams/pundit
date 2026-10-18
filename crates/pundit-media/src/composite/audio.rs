@@ -356,23 +356,15 @@ impl Reader {
                 let _ = pad.link(&sink_pad);
             }
         });
-        // The audio stream and nothing else, answered **before `decodebin3`
-        // builds anything**: it asks once per stream, on the thread that has
-        // the collection, so no video output, decoder or keyframe probe is
-        // ever made. An unselected stream would otherwise be decoded in full
-        // (measured: 2.2 s against 46 ms for 10 s of 1080p, and the export
-        // decodes that video already).
+        // The audio stream and nothing else, answered per stream **before
+        // `decodebin3` builds anything**, so no video output, decoder or
+        // keyframe probe is ever made — an unselected stream would otherwise be
+        // decoded in full, which the export already does once.
         //
-        // **Never a `SelectStreams` event**, which is what this used to send
-        // once the collection had been polled for. By then `decodebin3` had
-        // often built the video output already (measured: 20 opens in 100 in a
-        // replica, and the first open of this module's test),
-        // and deselecting it frees the output while the multiqueue is still
-        // pushing through the keyframe probe that output hangs off.
-        // GStreamer 1.24.2's probe writes into the freed struct — the heap
-        // corruption of BACKLOG #101, fixed upstream in 1.24.3 (6615af3f5fa1)
-        // and never in Ubuntu 24.04. Upstream documents the event as the
-        // preferred route; on 1.24.2 it is the one that corrupts memory.
+        // **Never a `SelectStreams` event**: it can land after the video output
+        // is built, and on GStreamer 1.24.2 the late deselect frees that output
+        // under its keyframe probe, which then writes into it (BACKLOG #101;
+        // fixed in 1.24.3, 6615af3f5fa1).
         decodebin.connect("select-stream", false, |args| {
             let collection = args[1]
                 .get::<gst::StreamCollection>()
@@ -766,24 +758,21 @@ mod tests {
             let built: Arc<Mutex<Vec<String>>> = Arc::default();
             let seen = built.clone();
             pipeline.connect_deep_element_added(move |_, _, element| {
-                if let Some(factory) = element.factory() {
-                    seen.lock().unwrap().push(factory.klass().to_string());
+                let video_decoder =
+                    gst::ElementFactoryType::DECODER | gst::ElementFactoryType::MEDIA_VIDEO;
+                if let Some(factory) = element.factory().filter(|f| f.has_type(video_decoder)) {
+                    seen.lock().unwrap().push(factory.name().to_string());
                 }
             });
             let mut reader =
                 Reader::start_in(pipeline, &path, AUDIO_SAMPLE_RATE, CHANNELS, &cancel)
                     .unwrap()
                     .expect("the file has sound");
-            let video: Vec<_> = built
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|klass| klass.contains("Decoder") && klass.contains("Video"))
-                .cloned()
-                .collect();
-            assert!(video.is_empty(), "open {open} built {video:?}");
             let sound = reader.read(4_800, &cancel);
             assert!(sound.iter().any(|&s| s != 0.0), "open {open} read silence");
+            drop(reader);
+            let video = built.lock().unwrap();
+            assert!(video.is_empty(), "open {open} built {video:?}");
         }
     }
 
