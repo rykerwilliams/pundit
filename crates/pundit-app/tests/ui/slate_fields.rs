@@ -294,6 +294,7 @@ fn tabbing_between_slate_fields_keeps_the_slate() {
 fn a_titled_slate_shows_its_marker_and_an_untitled_one_none() {
     i_slint_backend_testing::init_no_event_loop();
     let w = AppWindow::new().unwrap();
+    crate::one_source(&w);
     w.set_slates(ModelRc::new(VecModel::from(vec![
         SlateRow {
             title: "Corner routine".into(),

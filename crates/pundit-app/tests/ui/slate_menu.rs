@@ -53,6 +53,7 @@ fn window() -> (AppWindow, Rc<RefCell<Vec<String>>>) {
     w.on_jump_to_slate(record(&sent, "jump"));
     w.on_delete_slate(record(&sent, "delete"));
     w.set_can_play(true);
+    crate::one_source(&w);
     w.set_slates(ModelRc::new(VecModel::from(vec![slate("s1"), slate("s2")])));
     w.set_selected_slate("s1".into());
     w.show().unwrap();

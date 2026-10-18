@@ -164,6 +164,8 @@ fn window() -> (AppWindow, Rc<RefCell<Vec<&'static str>>>) {
         label: SharedString::new(),
     }])));
     w.set_selected_highlight("h1".into());
+    // The Slates section shows once the project has a video (#97).
+    crate::one_source(&w);
     w.set_slates(ModelRc::new(VecModel::from(vec![slate("s1")])));
     w.set_selected_slate("s1".into());
     w.show().unwrap();

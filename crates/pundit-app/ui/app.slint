@@ -154,20 +154,29 @@ export struct MatchRow {
     reel-span: string,
 }
 
-/// One row of the match event editor's list (spec T2). The same events in the
-/// same order as `MatchRow`, from the same builder, said the editor's way: the
-/// time into a video, which is what its grammar names.
+/// Which list the line editor sheet is editing (BACKLOG #97): the match
+/// events, or the slates. One sheet, because everything but the words and the
+/// callbacks is the same; only one can be open at a time.
+export enum LineEditorKind { events, slates }
+
+/// One row of the line editor's list (match event editor spec T2). For an
+/// event: the same events in the same order as `MatchRow`, from the same
+/// builder, said the editor's way — the time into a video, which is what its
+/// grammar names. For a slate: `slates_sorted`'s order
+/// (`src/line_editor.rs`).
 export struct LineEditorRow {
-    /// The event's UUID.
+    /// The event's or the slate's UUID.
     id: string,
-    /// "2 · 14:05.0": the 1-based video number and the time into that video,
-    /// the paste grammar's own numbering (spec B1).
+    /// "2 · 14:05.0", or "2 · 14:05.0–14:40.0" for a slate: the 1-based video
+    /// number and the time into that video, the paste grammar's own numbering
+    /// (spec B1).
     where-text: string,
     /// "1H start", "Home goal", … — what `interpret` makes of the list as it
     /// stands. The editor refuses nothing on match logic, so this row is the
-    /// whole feedback channel (spec V2).
+    /// whole feedback channel (spec V2). A slate's name, or "Untitled".
     label: string,
-    /// A start/stop the format has no period for, greyed as the panel's is.
+    /// A start/stop the format has no period for, greyed as the panel's is;
+    /// for a slate, an open range — stored, and not yet doing anything.
     role-less: bool,
 }
 
@@ -3395,9 +3404,18 @@ component LineEditorSheet inherits Sheet {
     /// has destroyed.
     in-out property <bool> line-focused;
 
-    /// A row's line, as the bus will read it -- `bus::editor_line`, the very
-    /// call the command makes, cap and all, so a line marked good is never
-    /// refused.
+    /// The words that differ by list (BACKLOG #97), all set by the window from
+    /// its `line-editor-kind`, so Rust sets no UI text. `noun` is "event" or
+    /// "slate", for the strings that differ by that word alone; the rest are
+    /// whole sentences. The title is `Sheet`'s own.
+    in property <string> noun;
+    in property <string> empty-text;
+    in property <string> go-tooltip;
+    in property <string> placeholder;
+    in property <string> hint;
+
+    /// A row's line, as the bus will read it -- the very call the command
+    /// makes, for either kind, so a line marked good is never refused.
     pure callback valid-line(string, string) -> bool;
     /// The paste box's verdicts. It takes the text, the picker and the
     /// project's revision so the binding re-evaluates as any of them change:
@@ -3438,10 +3456,9 @@ component LineEditorSheet inherits Sheet {
     }
 
     card-width: 640px;
-    title: "Match events";
 
     if root.rows.length == 0: Text {
-        text: "Nothing tagged yet. Paste a block below, or tag with Z, X and V while the game video plays.";
+        text: root.empty-text;
         color: Palette.alternate-foreground;
         font-size: 11px;
         wrap: word-wrap;
@@ -3495,7 +3512,7 @@ component LineEditorSheet inherits Sheet {
                             clicked => { root.seek(row.id); }
 
                             Tooltip {
-                                text: @markdown("Play the game video from here. The picture is behind this sheet, so it closes.");
+                                text: @markdown("\{root.go-tooltip}");
                             }
                         }
                     }
@@ -3507,7 +3524,7 @@ component LineEditorSheet inherits Sheet {
                             clicked => { root.remove(row.id); }
 
                             Tooltip {
-                                text: @markdown("Delete this event (undoable)");
+                                text: @markdown("Delete this \{root.noun} (undoable)");
                             }
                         }
                     }
@@ -3549,7 +3566,7 @@ component LineEditorSheet inherits Sheet {
     HorizontalLayout {
         spacing: 8px;
         FieldLabel {
-            text: "Paste events";
+            text: "Paste \{root.noun}s";
             vertical-alignment: center;
             horizontal-stretch: 1;
         }
@@ -3571,11 +3588,11 @@ component LineEditorSheet inherits Sheet {
         // Six lines of a block that may well be twenty: it scrolls, as
         // the lists either side of it do.
         height: 120px;
-        placeholder-text: "2 14:05 away goal";
+        placeholder-text: root.placeholder;
         text <=> root.paste;
     }
     Text {
-        text: "One event per line: an optional video number, a time with a colon, then what happened — \"home\", \"away\", \"period\". # starts a comment.";
+        text: root.hint;
         color: Palette.alternate-foreground;
         font-size: 11px;
         wrap: word-wrap;
@@ -4809,11 +4826,14 @@ export component AppWindow inherits Window {
     in-out property <string> match-overtime-minutes;
     in-out property <bool> match-back-anchor;
 
-    // --- The match event editor (spec P1) ---
+    // --- The line editor: match events or slates (spec P1, BACKLOG #97) ---
 
-    /// The editor sheet is up. UI state: the panel's button opens it, Done
-    /// and Esc close it.
+    /// The editor sheet is up. UI state: the Match panel's and the Slates
+    /// header's buttons open it (`open-line-editor`), Done and Esc close it.
     in-out property <bool> line-editor-open;
+    /// Which list it is editing. Every callback of the sheet dispatches on
+    /// this in the instance below, so no Rust callback matches on a kind.
+    in-out property <LineEditorKind> line-editor-kind;
     /// Its rows, seeded when it opens and rebuilt on every project change
     /// except while the row's field has focus (spec T3) -- `src/main.rs`
     /// owns that rule.
@@ -4826,6 +4846,12 @@ export component AppWindow inherits Window {
     /// here rather than in the sheet so it survives Go and closing (spec F2);
     /// the picker resets to the first video on every open.
     in-out property <string> line-editor-paste;
+    /// Each kind's own block while the other kind, or neither, is open:
+    /// `open-line-editor` copies the kind's in and `close-line-editor` copies
+    /// it back, so each box keeps its block for the session. Cleared with the
+    /// box when a project opens (`src/main.rs`).
+    in-out property <string> events-paste;
+    in-out property <string> slates-paste;
     in-out property <int> line-editor-source;
     in property <[string]> line-editor-sources;
     /// The sheet's own notice line (spec C5), which the status bar's can't
@@ -5057,7 +5083,8 @@ export component AppWindow inherits Window {
     callback reel-trim(string, ReelTrim);
     /// `]` (true) or `[`: the next or previous chapter (spec C1).
     callback jump-chapter(bool);
-    /// Seed the editor's rows from the project and open it.
+    /// Seed the editor's rows, picker and selection from the project for the
+    /// match events. `open-line-editor` opens the sheet after it.
     callback open-match-editor();
     /// A row was clicked: seed its field with that event as a line.
     callback select-match-event(string);
@@ -5077,6 +5104,16 @@ export component AppWindow inherits Window {
     /// what makes a `pure` callback that reads the project re-run when it
     /// changes.
     pure callback check-paste(string, int, int) -> PasteEcho;
+    /// The slates' own, the match events' above for a line of
+    /// `core::slate_entry` (BACKLOG #97). A row's Go is `park-on-slate` and its
+    /// × is `delete-slate`, which the Slates list has already.
+    callback open-slate-editor();
+    callback select-slate-line(string);
+    callback reseed-slate-line();
+    callback edit-slate-line(string, string);
+    callback add-slates();
+    pure callback valid-slate-line(string, string) -> bool;
+    pure callback check-slate-paste(string, int, int) -> PasteEcho;
     /// Seed the setup sheet's fields from the project and open it; the sheet
     /// is opened nowhere else, so the fields are never stale.
     callback open-match-setup();
@@ -5189,12 +5226,44 @@ export component AppWindow inherits Window {
     /// field that had focus would otherwise leave `src/main.rs` believing the
     /// rows must not be rebuilt. (Nothing clears `text-editing` here: it is
     /// Slint's own, and `keys.focus()` below takes the focus off the field.)
-    /// The message goes with it (spec C5); the paste box's text stays.
+    /// The message goes with it (spec C5); the paste box's text stays, copied
+    /// back to its kind's own string.
     function close-line-editor() {
+        if (root.line-editor-kind == LineEditorKind.events) {
+            root.events-paste = root.line-editor-paste;
+        } else {
+            root.slates-paste = root.line-editor-paste;
+        }
         root.line-editor-line-focused = false;
         root.line-editor-message = "";
         root.line-editor-open = false;
         keys.focus();
+    }
+
+    /// Opens the line editor on `kind`: the kind's own paste block into the
+    /// box, its rows, picker and selection seeded by Rust, and only then the
+    /// sheet. Public, so a test opens either kind as the buttons do.
+    public function open-line-editor(kind: LineEditorKind) {
+        root.line-editor-kind = kind;
+        if (kind == LineEditorKind.events) {
+            root.line-editor-paste = root.events-paste;
+            root.open-match-editor();
+        } else {
+            root.line-editor-paste = root.slates-paste;
+            root.open-slate-editor();
+        }
+        root.line-editor-open = true;
+    }
+
+    /// Selects slate `id` and parks the footage on it — **select, then
+    /// jump**, so the scrubber's span (slates spec S6) names the range the
+    /// footage is heading for and `R` shoots it (`ToggleRecording { slate }`
+    /// carries the selection), which a bare `jump-to-slate` would not. The
+    /// themed pass's advance and start call it from Rust, and the line
+    /// editor's Go calls it here.
+    public function park-on-slate(id: string) {
+        root.selected-slate = id;
+        root.jump-to-slate(id);
     }
 
     /// Closes the basket sheet, however it was closed. The message goes with
@@ -5435,7 +5504,11 @@ export component AppWindow inherits Window {
                 // the row was seeded with *first*; the commit that follows
                 // then edits nothing.
                 if (root.line-editor-line-focused) {
-                    root.reseed-match-line();
+                    if (root.line-editor-kind == LineEditorKind.events) {
+                        root.reseed-match-line();
+                    } else {
+                        root.reseed-slate-line();
+                    }
                     keys.focus();
                     return accept;
                 }
@@ -5962,25 +6035,23 @@ export component AppWindow inherits Window {
                         }
 
                         // Slates: ranges marked while watching, waiting for
-                        // their commentary. **Hidden entirely when there are
-                        // none**, which is every project that has never marked
-                        // one -- a third list in a 240 px column would
-                        // otherwise shrink the clip list on every project for
-                        // a feature not in use. Capped in height for the same
-                        // reason.
+                        // their commentary. **The header shows once the
+                        // project has a video** (BACKLOG #97), because its
+                        // **Type…** is the door to typing slates in, and the
+                        // first paste comes *before* any slate exists. That
+                        // costs one row in a project that never uses slates;
+                        // the list, which is what a third list in a 240 px
+                        // column would cost, stays hidden until there is one
+                        // to show, and is capped in height.
                         //
-                        // **Or whenever a tag filter is set** (BACKLOG #123),
-                        // including when it matches nothing. `slates` is the
-                        // *filtered* list -- #120's filter changed what this
-                        // gate reads without changing the gate -- so the count
-                        // alone took the filter field away along with the rows
-                        // and stranded the filter with no way to clear it. And
-                        // typing a tag passes through "matches nothing" on the
-                        // first letter, so that was every use of it, not an
-                        // edge case. The original reason survives untouched:
-                        // a project that has never marked a slate has no
-                        // filter either, so it still shows nothing.
-                        if root.slates.length > 0 || root.slate-tag-filter != "": VerticalLayout {
+                        // **The filter shows with a list or a filter set**
+                        // (BACKLOG #123), including when it matches nothing:
+                        // `slates` is the *filtered* list, so the count alone
+                        // took the filter field away along with the rows and
+                        // stranded the filter with no way to clear it — and
+                        // typing a tag passes through "matches nothing" on
+                        // the first letter.
+                        if root.sources.length > 0: VerticalLayout {
                             spacing: 6px;
 
                             HorizontalLayout {
@@ -5991,51 +6062,73 @@ export component AppWindow inherits Window {
                                     color: Palette.alternate-foreground;
                                     font-size: 11px;
                                     vertical-alignment: center;
+                                    // With no filter beside it, the label
+                                    // takes the row and Type… sits at its end.
+                                    horizontal-stretch: root.slates.length > 0 || root.slate-tag-filter != "" ? 0 : 1;
                                 }
-                                // The themed pass's filter (BACKLOG #120): "all
-                                // these clips are corner kicks". **Its own
-                                // property, not the window's `tag-filter`** —
-                                // that one is *written by the bus* on
-                                // `Event::Select` to un-hide a newly selected
-                                // clip, which would clear this one mid-pass.
-                                // **It joins nothing** (#130). This field
-                                // shipped as a bare `LineEdit` that was never
-                                // added to the window's list of focused
-                                // fields, so every letter typed into it fired
-                                // its shortcut instead -- `i` and `o` marking
-                                // a slate in and out, and `corner` untypeable.
-                                // `text-editing` is Slint's own
-                                // `TextInputInterface.text-input-focused`
-                                // now, so there is no list to be left out of.
-                                // Named for `tests/ui/text_editing.rs`.
-                                slate-filter-edit := LineEdit {
-                                    placeholder-text: "Filter by tag";
-                                    text <=> root.slate-tag-filter;
+                                if root.slates.length > 0 || root.slate-tag-filter != "": HorizontalLayout {
+                                    spacing: 6px;
                                     horizontal-stretch: 1;
+                                    // The themed pass's filter (BACKLOG #120): "all
+                                    // these clips are corner kicks". **Its own
+                                    // property, not the window's `tag-filter`** —
+                                    // that one is *written by the bus* on
+                                    // `Event::Select` to un-hide a newly selected
+                                    // clip, which would clear this one mid-pass.
+                                    // **It joins nothing** (#130). This field
+                                    // shipped as a bare `LineEdit` that was never
+                                    // added to the window's list of focused
+                                    // fields, so every letter typed into it fired
+                                    // its shortcut instead -- `i` and `o` marking
+                                    // a slate in and out, and `corner` untypeable.
+                                    // `text-editing` is Slint's own
+                                    // `TextInputInterface.text-input-focused`
+                                    // now, so there is no list to be left out of.
+                                    // Named for `tests/ui/text_editing.rs`.
+                                    slate-filter-edit := LineEdit {
+                                        placeholder-text: "Filter by tag";
+                                        text <=> root.slate-tag-filter;
+                                        horizontal-stretch: 1;
+                                    }
+                                    // Clearing is one press, not a select-all: the
+                                    // field is narrow in a 240 px column and the
+                                    // filter is a thing the coach turns *off* as
+                                    // often as on, between one theme and the next.
+                                    Button {
+                                        text: "✕";
+                                        enabled: root.slate-tag-filter != "";
+                                        clicked => {
+                                            root.slate-tag-filter = "";
+                                            keys.focus();
+                                        }
+
+                                        Tooltip {
+                                            text: @markdown("Clear the tag filter");
+                                        }
+                                    }
                                 }
-                                // Clearing is one press, not a select-all: the
-                                // field is narrow in a 240 px column and the
-                                // filter is a thing the coach turns *off* as
-                                // often as on, between one theme and the next.
+                                // The door to typing slates in as lines
+                                // (BACKLOG #97), enabled as the Match panel's
+                                // "Edit events…" is.
                                 Button {
-                                    text: "✕";
-                                    enabled: root.slate-tag-filter != "";
+                                    text: "Type…";
+                                    enabled: root.can-play && !root.recording && !root.previewing;
                                     clicked => {
-                                        root.slate-tag-filter = "";
                                         keys.focus();
+                                        root.open-line-editor(LineEditorKind.slates);
                                     }
 
                                     Tooltip {
-                                        text: @markdown("Clear the tag filter");
+                                        text: @markdown("Type or paste slates as lines: a video, a range, a name and [tags]");
                                     }
                                 }
                             }
 
                             // Why the list is empty, rather than a blank panel
-                            // that reads as "your slates are gone" (#123). Only
-                            // reachable with a filter set: with none, the
-                            // section above is hidden entirely.
-                            if root.slates.length == 0: Text {
+                            // that reads as "your slates are gone" (#123). With
+                            // no filter and no slate there is nothing to
+                            // explain.
+                            if root.slates.length == 0 && root.slate-tag-filter != "": Text {
                                 text: "No slates tagged " + root.slate-tag-filter;
                                 color: Palette.alternate-foreground;
                                 font-size: 11px;
@@ -7121,7 +7214,7 @@ export component AppWindow inherits Window {
                                 }
                                 edit-events => {
                                     keys.focus();
-                                    root.open-match-editor();
+                                    root.open-line-editor(LineEditorKind.events);
                                 }
                             }
 
@@ -7870,9 +7963,27 @@ export component AppWindow inherits Window {
             }
         }
 
-        // --- Match event editor: modal over the whole window (spec P1) ---
+        // --- Line editor: modal over the whole window (spec P1, #97) ---
+        //
+        // **One dispatch rule: every callback branches on the kind here**, so
+        // the Rust callbacks behind each kind never ask which kind is open,
+        // and a UI test reaches the dispatch.
         if root.line-editor-open: Scrim {
+            property <bool> events: root.line-editor-kind == LineEditorKind.events;
+
             LineEditorSheet {
+                title: events ? "Match events" : "Slates";
+                noun: events ? "event" : "slate";
+                empty-text: events
+                    ? "Nothing tagged yet. Paste a block below, or tag with Z, X and V while the game video plays."
+                    : "No slates yet. Paste a block below, or mark one with I and O while the game video plays.";
+                go-tooltip: events
+                    ? "Play the game video from here. The picture is behind this sheet, so it closes."
+                    : "Show this slate's first frame. The picture is behind this sheet, so it closes.";
+                placeholder: events ? "2 14:05 away goal" : "2 14:05-14:40 corner routine [corners]";
+                hint: events
+                    ? "One event per line: an optional video number, a time with a colon, then what happened — \"home\", \"away\", \"period\". # starts a comment."
+                    : "One slate per line: an optional video number, a range — 14:05-14:40, or 14:05- to leave it open — a name, then tags in [brackets]. # at the start of a line is a comment.";
                 rows: root.line-editor-rows;
                 selected: root.line-editor-selected;
                 line <=> root.line-editor-line;
@@ -7882,40 +7993,67 @@ export component AppWindow inherits Window {
                 message: root.line-editor-message;
                 revision: root.project-revision;
                 line-focused <=> root.line-editor-line-focused;
-                valid-line(id, text) => { return root.valid-match-line(id, text); }
-                check-paste(text, source, revision) => {
-                    return root.check-paste(text, source, revision);
+                valid-line(id, text) => {
+                    return events ? root.valid-match-line(id, text) : root.valid-slate-line(id, text);
                 }
-                select(id) => { root.select-match-event(id); }
+                check-paste(text, source, revision) => {
+                    return events
+                        ? root.check-paste(text, source, revision)
+                        : root.check-slate-paste(text, source, revision);
+                }
+                select(id) => {
+                    if (events) {
+                        root.select-match-event(id);
+                    } else {
+                        root.select-slate-line(id);
+                    }
+                }
                 // **Every commit drops focus** (spec T4), unconditionally
                 // rather than only when the order changed: Slint's `for`
-                // reuses its items by index, so an event that moves to
-                // another place in match order would leave the focused field
+                // reuses its items by index, so a record that moves to
+                // another place in the order would leave the focused field
                 // sitting over whatever is at the old index now. The row
                 // stays selected -- selection is not focus.
                 commit(id, text) => {
-                    root.edit-match-event(id, text);
+                    if (events) {
+                        root.edit-match-event(id, text);
+                    } else {
+                        root.edit-slate-line(id, text);
+                    }
                     keys.focus();
                 }
-                // Go closes: the picture it seeks to is behind this sheet
-                // (spec T10). It leaves the paste box's text alone.
+                // Go closes: the picture it moves is behind this sheet (spec
+                // T10). It leaves the paste box's text alone. A slate's Go
+                // parks rather than plays (spec S17).
                 seek(id) => {
-                    root.seek-match-event(id);
+                    if (events) {
+                        root.seek-match-event(id);
+                    } else {
+                        root.park-on-slate(id);
+                    }
                     root.close-line-editor();
                 }
                 // Off the row's field first, as every other button in this
                 // app does -- a click doesn't take focus from a field by
-                // itself. Both of these change the event list, and the rows
-                // are only rebuilt once that field is out of the way (spec
-                // T3); the focus loss commits whatever is in it, which is
-                // the rule everywhere else too (T4).
+                // itself. Both of these change the list, and the rows are
+                // only rebuilt once that field is out of the way (spec T3);
+                // the focus loss commits whatever is in it, which is the rule
+                // everywhere else too (T4).
                 remove(id) => {
                     keys.focus();
-                    root.delete-match-event(id);
+                    if (events) {
+                        root.delete-match-event(id);
+                    } else {
+                        root.delete-slate(id);
+                    }
                 }
                 add => {
                     keys.focus();
-                    root.add-match-events();
+                    if (events) {
+                        root.add-match-events();
+                    } else {
+                        root.add-slates();
+                    }
                 }
                 close => { root.close-line-editor(); }
             }

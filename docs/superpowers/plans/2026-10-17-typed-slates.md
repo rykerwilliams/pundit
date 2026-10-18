@@ -54,7 +54,19 @@ and nothing else.**
   `show_match_editor` `:2305`, the rebuild gate `:3984`). The grep for
   `match-editor-`, `match_editor_` and `MatchEditor` is empty at this head.
   Sabotage 1 fails 4.3 alone.
-- **5 — the slates kind: the words, the dispatch, the door, Go.** Not started.
+- **5 — the slates kind: the words, the dispatch, the door, Go.** Done. §A's
+  task-5 rows held at `1a71d0d` (`Sheet`'s `title` `:1992`, the Slates
+  section `:5964`, `edit-events` `:7122`) except `park_on_slate`, at `:4253`
+  after tasks 3–4. Five things the plan did not say: **`open_match_editor`
+  became `seed_line_editor(w, show_rows)`**, shared by both kinds, with the
+  open moved to `open-line-editor` — so its old "no source, stay shut" early
+  return now only skips the seeding, which costs nothing because both doors
+  are greyed on `can-play`; **the echo's Slint conversion is one
+  `show_paste_echo`** for both kinds; the instance's `Scrim` carries one
+  `property <bool> events` that every binding reads; **the §0.1 fixtures share
+  a `one_source(w)` in `tests/ui/main.rs`** rather than three inline rows; and
+  the "Type…" tooltip is new words of its own. All seven sabotages failed
+  exactly the test listed (6 in `--lib`, the rest in `ui`).
 - **6 — prose and the backlog.** Not started.
 
 **Shipping: one PR, a commit per task, in order.** Tasks 1 and 4 are refactors
