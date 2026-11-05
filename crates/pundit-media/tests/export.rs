@@ -404,6 +404,97 @@ fn an_h264_export_shows_the_scheduled_frame_every_frame() {
     fiducial(CounterKind::H264Mp4BFrames);
 }
 
+/// **A recorded half-speed playback rate survives the whole export graph**
+/// (#140 task 3, spec §R2). The arithmetic — `source_start + elapsed * rate` —
+/// is core's and is pinned in `core::export`; this pins the end-to-end path,
+/// that a `Rate(0.5)` logged on a `Play` event walks into `PlaybackSegment.rate`
+/// and out through `decodebin3 → gl_bin → mixer → encode` onto real pixels.
+///
+/// The clip plays its source from 0 at rate 0.5, so the source advances half as
+/// fast as the output: output frame `n` shows source time `n/30 · 0.5 = n/60`,
+/// i.e. source frame `n/2` from the 30 fps counter. Output frame 60 shows source
+/// frame 30, frame 30 shows frame 15, and so on — half what a unit-rate edit
+/// would show. The commentary is a silent recording left to pad, so this stays a
+/// check on the picture; `out_duration` (record time) is unscaled, which is what
+/// keeps the sound real-time.
+#[test]
+fn a_half_speed_export_plays_the_source_at_half_speed() {
+    gst::init().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    // 30 fps so output frame n maps to a whole source frame n/2, and 5 s of it
+    // so the half-rate walk (reaching 1.5 s of source over 3 s of output) never
+    // runs off the end.
+    let fps = 30;
+    let frames = 5 * fps;
+    let src = counter_video(
+        &dir.path().join("src.webm"),
+        640,
+        360,
+        fps,
+        frames,
+        CounterKind::Vp8WebmWithAudio,
+    );
+    // The rate rides on the Play event's `Rate(0.5)`, logged at record time 0 as
+    // the recorder would; the core timeline walks it into the segment's rate.
+    let recording_duration = 3.0;
+    let clip = clip(
+        0.0,
+        recording_duration,
+        vec![CommentaryEvent::new(
+            0.0,
+            EventKind::Play {
+                source_time: 0.0,
+                rate: Rate(0.5),
+            },
+        )],
+    );
+    let compilation = fixtures::one_clip(&clip, recording_duration);
+    let out_frames = compilation.frames.len();
+    assert_eq!(
+        out_frames,
+        (recording_duration * f64::from(OUTPUT_FPS)) as usize
+    );
+    // A silent, shorter commentary recording: the track runs out and pads, so
+    // the picture is the whole of this test.
+    let recording =
+        fixtures::solid_video(&dir.path().join("rec.webm"), 320, 180, 30, 30, GREEN, true);
+    let path = dir.path().join("out.mp4");
+    export(ExportJob {
+        tags: FileTags::default(),
+        compilation,
+        path: path.clone(),
+        cues: None,
+        render: Render::Encode(Encode {
+            audio: Vec::new(),
+            entries: vec![media(src, recording, clip)],
+            resolution: Resolution::R720,
+            quality: Quality::Medium,
+        }),
+    })
+    .unwrap();
+
+    // The source fills the 16:9 output frame, so each output frame reads as a
+    // counter with no crop.
+    let got = decode_counters(&path);
+    assert_eq!(got.len(), out_frames, "one output frame per schedule frame");
+    // Output frame n shows source time n/60; the oracle turns that into the
+    // frame actually on screen. Half-speed: frame 60 ≈ 30, frame 30 ≈ 15. A
+    // source time that lands on a frame boundary can snap either side of it, so
+    // this allows ±1 frame — the rate is a factor of two, far outside that.
+    for (n, &shown) in got.iter().enumerate() {
+        let want = oracle(n as f64 / 60.0, fps, frames);
+        assert!(
+            shown.abs_diff(want) <= 1,
+            "output frame {n} shows source frame {shown}, expected ~{want}"
+        );
+    }
+    // The load-bearing fiducials, called out exactly: at a unit rate these would
+    // read 60 and 30 instead, which is what the sabotaged core walk produces —
+    // twice as far through the source and well beyond the ±1 slack above.
+    assert_eq!(got[60], 30, "output frame 60 should show source frame 30");
+    assert_eq!(got[30], 15, "output frame 30 should show source frame 15");
+}
+
 /// Three clips, one after the other in one file, with a different source
 /// size and frame rate at each join: every output frame shows the source frame
 /// its entry's schedule asked for, read out of that entry's own rect.
