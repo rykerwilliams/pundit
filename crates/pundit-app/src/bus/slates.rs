@@ -178,8 +178,12 @@ impl Bus {
         // and nowhere else, and "when the picture stopped" is now.
         let host_ns = pundit_media::now_ns();
         self.set_playing(false);
-        if let Some(active) = &mut self.recording {
-            active.log.pause(host_ns, out);
+        if let Some(log) = self
+            .recording
+            .as_mut()
+            .and_then(super::recording::Active::log_mut)
+        {
+            log.pause(host_ns, out);
         }
     }
 

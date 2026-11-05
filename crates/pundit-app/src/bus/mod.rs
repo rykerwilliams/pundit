@@ -386,6 +386,20 @@ pub enum Command {
     },
     /// Stops the recording, or aborts it if no video has arrived yet.
     StopRecording,
+    /// The Record button in a capture session: record the camera as a new
+    /// source (in-gym capture spec §C). While idle it starts a capture; while a
+    /// capture is running it stops it, exactly as [`Command::ToggleRecording`]
+    /// toggles a take — "one Record button, the bus decides" (§C4). The UI's
+    /// status lags the bus's, so a second press must reach here to stop the
+    /// capture in flight, which is why it is **on the recording allow-list**.
+    ///
+    /// **It is a different operation from [`Command::ToggleRecording`]**: that
+    /// records commentary *over* the game video, logs events against it and
+    /// makes a `Clip`; this plays over nothing — it **is** the footage, so it
+    /// has no event log, writes a `SourceRef` rather than a clip, and runs no
+    /// aspect gate (§V1). It therefore carries no `zoom`: `start_recording`
+    /// wants one only to open the recording log, and a capture has none.
+    CaptureSource,
     /// The UI's zoom changed. Logged while recording, ignored otherwise.
     Zoom {
         host_ns: u64,
@@ -1147,6 +1161,10 @@ impl Bus {
                     | Command::SetPen(_)
                     | Command::ToggleRecording { .. }
                     | Command::StopRecording
+                    // A second press stops the capture running, as a second
+                    // `ToggleRecording` stops a take (in-gym capture §C4): the
+                    // UI's phase lags the bus's, so this has to reach here.
+                    | Command::CaptureSource
                     | Command::GlReady { .. }
                     // A metadata edit can't disturb a recording, and a
                     // field's focus-loss commit arrives after the
@@ -1179,7 +1197,7 @@ impl Bus {
         if self
             .recording
             .as_ref()
-            .is_some_and(|a| a.backdrop.is_some())
+            .is_some_and(|a| a.backdrop().is_some())
             && matches!(
                 cmd,
                 Command::TogglePlay { .. }
@@ -1274,6 +1292,7 @@ impl Bus {
             Command::SetVolume { value, commit } => self.set_volume(value, commit),
             Command::ToggleRecording { zoom, take } => self.toggle_recording(zoom, take),
             Command::StopRecording => self.stop_recording(),
+            Command::CaptureSource => self.capture_source(),
             Command::Zoom { host_ns, zoom } => self.log_zoom(host_ns, zoom),
             Command::Stroke { host_ns, stroke } => self.log_stroke(host_ns, stroke),
             Command::ClearAll { host_ns } => self.log_clear_all(host_ns),

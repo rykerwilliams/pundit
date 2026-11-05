@@ -27,6 +27,11 @@ pub const MIN_READABLE_FORMAT_VERSION: u32 = 7;
 
 pub const PROJECT_FILENAME: &str = "project.json";
 pub const RECORDINGS_DIRNAME: &str = "recordings";
+/// Where the camera is captured as a source (in-gym capture, #140), as
+/// `<uuid>.mkv`. Like `exports/` and `backdrops/` it is **not** created by
+/// [`write`]: the first capture makes it. A relative path under it is how
+/// `remove_source` tells a source the project owns from one the coach imported.
+pub const SOURCES_DIRNAME: &str = "sources";
 /// Where exports land (spec E6). Unlike `recordings/` it is **not** created by
 /// [`write`]: a project that has never been exported has no use for an empty
 /// folder, so the export run creates it on demand.

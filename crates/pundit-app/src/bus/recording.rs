@@ -17,15 +17,16 @@ use std::time::{Duration, Instant};
 use gstreamer::glib;
 use pundit_core::project::Preferences;
 use pundit_core::recording::{PendingClip, RecordingLog};
-use pundit_core::store::{BACKDROPS_DIRNAME, RECORDINGS_DIRNAME};
+use pundit_core::store::{BACKDROPS_DIRNAME, RECORDINGS_DIRNAME, SOURCES_DIRNAME};
 use pundit_core::stroke::Stroke;
 use pundit_core::zoom::Zoom;
 use pundit_media::{
-    decode_still, list_devices, resolve_camera, resolve_mic, CaptureSources, Origin, Recorder,
-    RecorderMessage,
+    decode_still, list_devices, probe, resolve_camera, resolve_mic, CaptureSources, Origin,
+    Recorder, RecorderMessage,
 };
 use uuid::Uuid;
 
+use super::sources::source_ref;
 use super::{Armed, Bus, Event, Input, Take, UserError};
 
 /// How long a recording may wait for its first buffer.
@@ -64,24 +65,69 @@ pub enum RecordingStatus {
     },
 }
 
-/// The recording in progress.
+/// The recording in progress. **Two kinds share one lifecycle** (in-gym
+/// capture spec §C): a [`ActiveKind::Clip`] take records commentary over the
+/// game video and makes a clip; a [`ActiveKind::Capture`] records the camera as
+/// a raw source and makes a `SourceRef`. The start-up gate (`media_seen` and
+/// [`START_TIMEOUT`]), the stop and the abort are the same for both — only the
+/// clip-specific bits (the event log, the pending clip, the slate and the
+/// diagram) belong to a take, so they live under the kind.
 pub(super) struct Active {
-    pub(super) pending: PendingClip,
-    /// The slate this take was shot from, if it was shot from one. The clip
-    /// it produces inherits that slate's name and tags, and carries its id.
-    pub(super) slate: Option<Uuid>,
-    /// The diagram this take is recorded over (BACKLOG #138), as the clip will
-    /// name it — copied in already, under `backdrops/`. **`Some` is a
-    /// whiteboard take**, which is what narrows the recording allow-list.
-    pub(super) backdrop: Option<String>,
     recorder: Recorder,
-    pub(super) log: RecordingLog,
     /// The file, deleted on an abort.
     path: PathBuf,
     /// When it started, for [`START_TIMEOUT`].
     started: Instant,
-    /// The first buffer reached the muxer: stopping keeps the clip.
+    /// The first buffer reached the muxer: stopping keeps the file.
     media_seen: bool,
+    kind: ActiveKind,
+}
+
+/// What a recording in progress will become.
+pub(super) enum ActiveKind {
+    /// A commentary take over the game video: it finishes into a `Clip`.
+    Clip {
+        pending: PendingClip,
+        /// The slate this take was shot from, if any. The clip it produces
+        /// inherits that slate's name and tags, and carries its id.
+        slate: Option<Uuid>,
+        /// The diagram this take is recorded over (BACKLOG #138), as the clip
+        /// will name it — copied in already, under `backdrops/`. **`Some` is a
+        /// whiteboard take**, which is what narrows the recording allow-list.
+        backdrop: Option<String>,
+        log: RecordingLog,
+    },
+    /// The camera recorded as a raw source (in-gym capture §C): it finishes
+    /// into a `SourceRef`, over no footage and with no event log.
+    Capture,
+}
+
+impl Active {
+    /// This take's recording log, if it is a clip take — the capture has none.
+    pub(super) fn log_mut(&mut self) -> Option<&mut RecordingLog> {
+        match &mut self.kind {
+            ActiveKind::Clip { log, .. } => Some(log),
+            ActiveKind::Capture => None,
+        }
+    }
+
+    /// The diagram a whiteboard take records over (BACKLOG #138). `None` for a
+    /// footage take and for a capture.
+    pub(super) fn backdrop(&self) -> Option<&String> {
+        match &self.kind {
+            ActiveKind::Clip { backdrop, .. } => backdrop.as_ref(),
+            ActiveKind::Capture => None,
+        }
+    }
+
+    /// The clip's source index while a clip take records, for the skip range.
+    /// `None` during a capture, which plays over no footage.
+    pub(super) fn clip_source_index(&self) -> Option<usize> {
+        match &self.kind {
+            ActiveKind::Clip { pending, .. } => Some(pending.source_index),
+            ActiveKind::Capture => None,
+        }
+    }
 }
 
 impl Bus {
@@ -100,6 +146,96 @@ impl Bus {
         match self.recording.is_some() {
             true => self.stop_recording(),
             false => self.start_recording(zoom, take),
+        }
+    }
+
+    /// The Record button in a capture session (in-gym capture §C): toggle the
+    /// camera capture, as `toggle_recording` toggles a take — while idle it
+    /// starts one, while recording it stops (or aborts) it. The bus decides, so
+    /// a second press over a start-up cancels as the coach means.
+    pub(super) fn capture_source(&mut self) {
+        match self.recording.is_some() {
+            true => self.stop_recording(),
+            false => self.start_capture(),
+        }
+    }
+
+    /// Records the camera as a raw source (§C1). **Its own guards, not
+    /// `can_record`**: a capture's whole point is the empty session's first
+    /// move, which `can_record` refuses (it wants a loaded game video to record
+    /// over). It needs only a project open, no export or preview running, and a
+    /// resolvable camera — and it **touches the player not at all**: there is
+    /// no footage to seek, no `heading` anchor to take, so the position is left
+    /// exactly where it was.
+    fn start_capture(&mut self) {
+        if let Err(e) = self.can_capture() {
+            return self.emit(Event::Error(e));
+        }
+        let Some(open) = &self.open else {
+            return;
+        };
+        let dir = open.folder.join(SOURCES_DIRNAME);
+        // Before anything changes: a refusal (no camera) leaves the session as
+        // it was. A session is never avatar mode, so this is camera + mic.
+        let sources = match self.capture_sources(&open.project.preferences) {
+            Ok(sources) => sources,
+            Err(e) => return self.emit(Event::Error(e)),
+        };
+        // `create_dir`, not `_all`, as `copy_into` makes `backdrops/`: one leaf
+        // under a project folder that exists.
+        match std::fs::create_dir(&dir) {
+            Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => {
+                return self.emit(Event::Error(UserError::Io(format!(
+                    "{}: {e}",
+                    dir.display()
+                ))));
+            }
+            _ => {}
+        }
+        let path = dir.join(format!("{}.mkv", Uuid::new_v4()));
+
+        self.generation += 1;
+        let (tx, generation) = (self.tx.clone(), self.generation);
+        // The last take's final frame must not open this one.
+        let _ = self.self_view.take();
+        let started = Recorder::start(sources, &path, self.self_view.clone(), move |msg| {
+            let _ = tx.send(Input::Recorder(generation, msg));
+        });
+        let recorder = match started {
+            Ok(recorder) => recorder,
+            Err(e) => {
+                // filesink has already created it.
+                remove_file(&path);
+                return self.emit(Event::Error(UserError::RecordingFailed(e)));
+            }
+        };
+        self.recording = Some(Active {
+            kind: ActiveKind::Capture,
+            recorder,
+            path,
+            started: Instant::now(),
+            media_seen: false,
+        });
+        // A capture is never over a diagram, so `whiteboard` is false.
+        self.emit(Event::Recording(RecordingStatus::Starting {
+            whiteboard: false,
+        }));
+        // Recording always wins (Phase 10 spec S5): a transcript gives way, as
+        // in `start_recording`, and only once the recording exists.
+        self.preempt_transcription();
+    }
+
+    /// A capture's preconditions (§C1): a project open, no export or preview
+    /// running, and — raised inside `capture_sources` — a resolvable camera.
+    /// **Deliberately not `can_record`'s**: it does *not* refuse an empty or
+    /// unloaded project, because that is exactly a session's first capture.
+    fn can_capture(&self) -> Result<(), UserError> {
+        let refused = |why| Err(UserError::CantRecord(why));
+        match &self.open {
+            None => refused("no project is open"),
+            Some(_) if self.export.is_some() => refused("an export is running"),
+            Some(_) if self.preview.is_some() => refused("a preview is open; close it first"),
+            Some(_) => Ok(()),
         }
     }
 
@@ -222,10 +358,12 @@ impl Bus {
         let slate = shot.map(|(id, ..)| id);
         let whiteboard = backdrop.is_some();
         self.recording = Some(Active {
-            pending,
-            slate,
-            backdrop,
-            log: RecordingLog::new(recorder.t0_ns(), zoom, start_source_seconds),
+            kind: ActiveKind::Clip {
+                log: RecordingLog::new(recorder.t0_ns(), zoom, start_source_seconds),
+                pending,
+                slate,
+                backdrop,
+            },
             recorder,
             path,
             started: Instant::now(),
@@ -309,11 +447,11 @@ impl Bus {
     pub(super) fn log_playing(&mut self, host_ns: u64, ui_secs: Option<f64>) {
         let (_, anchor) = self.heading(ui_secs);
         let playing = self.playing;
-        if let Some(active) = &mut self.recording {
+        if let Some(log) = self.recording.as_mut().and_then(Active::log_mut) {
             if playing {
-                active.log.play(host_ns, anchor);
+                log.play(host_ns, anchor);
             } else {
-                active.log.pause(host_ns, anchor);
+                log.pause(host_ns, anchor);
             }
         }
     }
@@ -321,8 +459,8 @@ impl Bus {
     /// Logs a zoom change while recording. The UI sends every change, so one
     /// made before its status caught up isn't lost; while idle it's ignored.
     pub(super) fn log_zoom(&mut self, host_ns: u64, zoom: Zoom) {
-        if let Some(active) = &mut self.recording {
-            active.log.zoom(host_ns, zoom);
+        if let Some(log) = self.recording.as_mut().and_then(Active::log_mut) {
+            log.zoom(host_ns, zoom);
         }
     }
 
@@ -330,15 +468,15 @@ impl Bus {
     /// spec D4). `host_ns` is its pen-up, the moment of its last point. The UI
     /// is what confines drawing to the Recording phase.
     pub(super) fn log_stroke(&mut self, host_ns: u64, stroke: Stroke) {
-        if let Some(active) = &mut self.recording {
-            active.log.stroke(host_ns, stroke);
+        if let Some(log) = self.recording.as_mut().and_then(Active::log_mut) {
+            log.stroke(host_ns, stroke);
         }
     }
 
     /// Logs a Clear while recording, ignored while idle.
     pub(super) fn log_clear_all(&mut self, host_ns: u64) {
-        if let Some(active) = &mut self.recording {
-            active.log.clear_all(host_ns);
+        if let Some(log) = self.recording.as_mut().and_then(Active::log_mut) {
+            log.clear_all(host_ns);
         }
     }
 
@@ -484,40 +622,65 @@ impl Bus {
         })
     }
 
-    /// Stops the recorder and adds the clip (R6's stop): the log is closed
-    /// first, so no event outlasts the file.
+    /// Stops the recorder and keeps what it made (R6's / §C's stop): a clip
+    /// take adds the clip, a capture adds the source. Branches on the kind
+    /// rather than on a flag, so neither path can read the other's bits.
     fn finish_recording(&mut self) {
         let Some(active) = self.recording.take() else {
             return;
         };
         // The arm goes with the take (BACKLOG #114): the range has had its
         // commentary, and the log below is closed, so nothing is left to write
-        // a pause into. Cleared here and in `abort_recording` rather than in
+        // a pause into. A capture never armed a slate, so this is harmless
+        // there. Cleared here and in `abort_recording` rather than in
         // `stop_recording`, which is not the only way to either — the start
         // timeout aborts directly.
         self.armed_slate = None;
-        let events = active.log.finish();
-        let clip_id = active.pending.id;
-        let outcome = active.recorder.stop(STOP_TIMEOUT);
+        let Active {
+            recorder,
+            path,
+            kind,
+            ..
+        } = active;
+        match kind {
+            ActiveKind::Clip {
+                pending,
+                slate,
+                backdrop,
+                log,
+            } => self.finish_clip(recorder, pending, slate, backdrop, log),
+            ActiveKind::Capture => self.finish_capture(recorder, path),
+        }
+    }
+
+    /// A clip take's stop: close the log, add the clip, transcribe it.
+    fn finish_clip(
+        &mut self,
+        recorder: Recorder,
+        pending: PendingClip,
+        slate: Option<Uuid>,
+        backdrop: Option<String>,
+        log: RecordingLog,
+    ) {
+        let events = log.finish();
+        let clip_id = pending.id;
+        let outcome = recorder.stop(STOP_TIMEOUT);
         if let Some(open) = &mut self.open {
             // Read out before the mutable borrow: what a slate-shot take
             // inherits. A slate deleted while the take ran inherits nothing,
             // which is the right answer and needs no special case.
-            let inherited = active.slate.and_then(|id| {
+            let inherited = slate.and_then(|id| {
                 open.project
                     .slates
                     .iter()
                     .find(|s| s.id == id)
                     .map(|s| (s.name.clone(), s.tags.clone()))
             });
-            let clip = open.project.add_recorded_clip(
-                active.pending,
-                outcome.duration,
-                events,
-                created_at(),
-            );
-            clip.slate_id = active.slate;
-            clip.backdrop = active.backdrop;
+            let clip =
+                open.project
+                    .add_recorded_clip(pending, outcome.duration, events, created_at());
+            clip.slate_id = slate;
+            clip.backdrop = backdrop;
             if let Some((name, tags)) = inherited {
                 // An unnamed slate leaves the generated "2-01:02:05" alone: it
                 // says more than an empty name would.
@@ -538,18 +701,64 @@ impl Bus {
         self.transcribe_after_recording(clip_id);
     }
 
-    /// Drops a recording that never got a buffer: no clip, no file.
+    /// A capture's stop (in-gym capture §C, §V1): finalize the MKV, probe it,
+    /// and add it as a `SourceRef` — no clip, no aspect gate, no transcription.
+    /// A container that will not probe (a finalize gone wrong) adds nothing and
+    /// its file is removed: a bad source is worse than none.
+    fn finish_capture(&mut self, recorder: Recorder, path: PathBuf) {
+        let outcome = recorder.stop(STOP_TIMEOUT);
+        let probe = match probe(&path) {
+            Ok(probe) => probe,
+            Err(e) => {
+                remove_file(&path);
+                self.emit(Event::Recording(RecordingStatus::Idle));
+                return self.emit(Event::Error(UserError::RecordingFailed(format!(
+                    "the capture couldn't be read back as video: {e}"
+                ))));
+            }
+        };
+        if let Some(open) = &mut self.open {
+            // `open.folder` is canonical (`commit`), and `source_ref`
+            // canonicalizes the file, so the stored path resolves `..` the way
+            // the kernel does. **`source_ref`, not `probed_source`**: a session
+            // runs no aspect gate (§V1) — there is nothing to gate against.
+            match source_ref(&open.folder, &path, probe) {
+                Ok(source) => open.project.source_videos.push(source),
+                Err(e) => {
+                    remove_file(&path);
+                    self.emit(Event::Recording(RecordingStatus::Idle));
+                    return self.emit(Event::Error(e));
+                }
+            }
+        }
+        self.refresh_missing();
+        self.project_changed();
+        // Load it if nothing is loaded — the first capture of an empty session,
+        // so the coach can review and record over what they just shot — exactly
+        // as `add_source` does for an imported one. A later capture leaves the
+        // player where it is.
+        self.ensure_loaded(0.0);
+        self.emit(Event::Recording(RecordingStatus::Idle));
+        if !outcome.clean {
+            self.emit(Event::Error(UserError::StopNotClean));
+        }
+    }
+
+    /// Drops a recording that never got a buffer: no clip, no source, no file.
     fn abort_recording(&mut self) {
         let Some(active) = self.recording.take() else {
             return;
         };
-        // As in `finish_recording`: the arm goes with the take.
+        // As in `finish_recording`: the arm goes with the take. (A capture
+        // armed none.)
         self.armed_slate = None;
+        let backdrop = active.backdrop().cloned();
         // NULL first, so nothing still writes the file.
         drop(active.recorder);
         remove_file(&active.path);
-        // The diagram goes with the recording: nothing will ever name it.
-        if let (Some(name), Some(open)) = (&active.backdrop, &self.open) {
+        // The diagram goes with the recording: nothing will ever name it. A
+        // capture has none, so this is skipped there.
+        if let (Some(name), Some(open)) = (&backdrop, &self.open) {
             remove_file(&open.folder.join(BACKDROPS_DIRNAME).join(name));
         }
         self.emit(Event::Recording(RecordingStatus::Idle));

@@ -39,6 +39,18 @@ observation that should promote it, and none is worth doing before that.
   Pre-existing; #77's queue widens the window from seconds to minutes.
   *Trigger:* a film comes back with a missing face, or the asymmetry with the
   clip-delete rule is being argued anyway
+- **141.** `tests/capture.rs` has three `#[ignore]`d tests — the empty-session
+  first capture and the review take over a capture (#140 task 5). They load the
+  just-finalised capture into `playbin3`, which crashes `uridecodebin3` in
+  `gst_object_replace` ~40% of the time on GStreamer 1.24.2 (coredump:
+  `gst_object_replace` ← `libgstplayback` ← `gst_element_change_state`, signals
+  11 and 6, software path too), the same instability as #72. The capture *logic*
+  is covered by the stable tier, which captures into a session with a source
+  already loaded so `ensure_loaded` opens nothing. The ignored tests specify the
+  behaviour and pass whenever the race does not fire. *Trigger:* #72's `playbin3`
+  load is made robust (then un-`#[ignore]` them), or the empty-session capture is
+  seen to crash the **app**, not just the test — the app paces its loads, so it
+  may not.
 
 ### Waiting on the coach
 

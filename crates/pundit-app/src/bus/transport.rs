@@ -195,8 +195,12 @@ impl Bus {
         let now = open.project.abs_seconds(self.current, self.current_secs());
         let decision = self.skip.request_skip(delta, now, self.skip_range());
         self.apply_skip(decision);
-        if let Some(active) = &mut self.recording {
-            active.log.skip(host_ns, delta);
+        if let Some(log) = self
+            .recording
+            .as_mut()
+            .and_then(super::recording::Active::log_mut)
+        {
+            log.skip(host_ns, delta);
         }
     }
 
@@ -206,9 +210,10 @@ impl Bus {
         let Some(open) = &self.open else {
             return 0.0..=0.0;
         };
-        match &self.recording {
-            Some(active) => {
-                let src = active.pending.source_index;
+        // A capture records over no footage, so it has no clip source to pin
+        // the range to: it skips over the whole timeline like the idle case.
+        match self.recording.as_ref().and_then(|a| a.clip_source_index()) {
+            Some(src) => {
                 let start = open.project.cumulative_offset(src);
                 let duration = open
                     .project

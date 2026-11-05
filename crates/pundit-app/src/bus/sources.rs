@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use gstreamer as gst;
 use pundit_core::project::{Project, SourceRef};
+use pundit_core::store::SOURCES_DIRNAME;
 use pundit_media::{probe, Origin, Probe};
 
 use super::{Bus, Event, UserError};
@@ -63,16 +64,34 @@ impl Bus {
         if index >= open.project.source_videos.len() {
             return eprintln!("bus: RemoveSource({index}) out of range");
         }
+        // Read before the removal, deleted only on the `Ok` below: core returns
+        // `Err(SourceReferenced)` when a clip, slate or highlight still names
+        // the index, and a referenced source keeps its file (the removal is a
+        // no-op). The file is deleted only when the project owns it — a path
+        // under `sources/`, where a capture put it (#140). An **imported**
+        // source is the coach's own file and is never deleted; source deletion
+        // is irreversible by design, with no `.trash`.
+        let relative_path = open.project.source_videos[index].relative_path.clone();
         let removed = open.project.remove_source(index, self.current);
         let remaining = open.project.source_videos.len();
         match removed {
             Err(e) => return self.emit(Event::Error(e.into())),
-            Ok(Some(current)) => self.current = current,
-            Ok(None) => {
-                // The current source is gone: `ensure_loaded` loads the one
-                // that took its place (or the new last one) from its start,
-                // or unloads with none left.
-                self.current = index.min(remaining.saturating_sub(1));
+            Ok(current) => {
+                if relative_path.starts_with(&format!("{SOURCES_DIRNAME}/")) {
+                    let file = open.folder.join(&relative_path);
+                    if let Err(e) = std::fs::remove_file(&file) {
+                        eprintln!("bus: could not delete {}: {e}", file.display());
+                    }
+                }
+                match current {
+                    Some(current) => self.current = current,
+                    None => {
+                        // The current source is gone: `ensure_loaded` loads the
+                        // one that took its place (or the new last one) from its
+                        // start, or unloads with none left.
+                        self.current = index.min(remaining.saturating_sub(1));
+                    }
+                }
             }
         }
         self.reset_skip();
