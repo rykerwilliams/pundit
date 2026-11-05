@@ -11,8 +11,8 @@ use pundit_core::event::{CommentaryEvent, EventKind};
 use pundit_core::highlight::{HighlightKey, NormRect, PlayerHighlight};
 use pundit_core::plan::ScoreboardMode;
 use pundit_core::project::{
-    Clip, Inset, InsetCorner, InsetPlacement, InsetSize, Preferences, Project, Quality, Resolution,
-    Slate, SourceRef,
+    Clip, Inset, InsetCorner, InsetPlacement, InsetSize, Preferences, Project, ProjectKind,
+    Quality, Resolution, Slate, SourceRef,
 };
 use pundit_core::recording::PendingClip;
 use pundit_core::scoreboard::{
@@ -762,6 +762,87 @@ fn a_v17_file_loads_under_the_current_version() {
     assert_eq!(p.format_version, CURRENT_FORMAT_VERSION);
     assert_eq!(store::read(dir.path()).unwrap(), p);
     assert!(dir.path().join("project.json.v17").exists());
+}
+
+/// **The literal `v18` is what pins the bump**, for `a_v16_…`'s reason above.
+///
+/// Two halves in one test, as the bump is two fields. A **v19** file carrying a
+/// session kind and a created date round-trips, so a rename of either wire key
+/// is caught; and a **v18** file, which has neither, loads with
+/// [`ProjectKind::Match`] (the default, which *is* what every older file was)
+/// and [`None`] created — the forward direction (#140): serde ignores unknown
+/// keys, so a v18 build would read a v19 session, drop its kind and its date
+/// and save it back as a match, silently. The bump makes it refuse the file
+/// instead, and `project.json.v18` is what it can still be gone back to.
+#[test]
+fn a_v19_file_loads_under_the_current_version() {
+    // A v19 file carrying a session kind and a created date, at the wire
+    // spellings v19 holds — stamped `19` on disk so this half also pins the
+    // version is readable at all (lower `CURRENT_FORMAT_VERSION` and `read`
+    // refuses it as `TooNew`). A rename of either key would make this fail to
+    // read them back.
+    let session_dir = TempDir::new().unwrap();
+    let mut session = sample_project();
+    session.kind = ProjectKind::Session;
+    session.created = Some("2026-11-04".into());
+    let mut raw = serde_json::to_value(&session).unwrap();
+    raw["formatVersion"] = json!(19);
+    assert_eq!(raw["kind"], json!("session"));
+    assert_eq!(raw["created"], json!("2026-11-04"));
+    write_raw(session_dir.path(), raw);
+
+    let read = store::read(session_dir.path()).expect("a v19 file loads");
+    assert_eq!(read.kind, ProjectKind::Session);
+    assert_eq!(read.created.as_deref(), Some("2026-11-04"));
+
+    // A v18 file has neither key: both fall back to what an older file means —
+    // a match with no created date.
+    let v18_dir = TempDir::new().unwrap();
+    let mut p = sample_project();
+    // Written away from the default, then removed: a key that *was* read could
+    // not be mistaken for the default filling it in.
+    p.kind = ProjectKind::Session;
+    p.created = Some("2026-11-04".into());
+    let mut raw = serde_json::to_value(&p).unwrap();
+    raw["formatVersion"] = json!(18);
+    let object = raw.as_object_mut().unwrap();
+    for key in ["kind", "created"] {
+        object
+            .remove(key)
+            .unwrap_or_else(|| panic!("v19 writes the key {key} this test removes"));
+    }
+    write_raw(v18_dir.path(), raw);
+
+    let mut p = store::read(v18_dir.path()).expect("a v18 file loads");
+    assert_eq!(p.kind, ProjectKind::Match, "an absent kind is a match");
+    assert_eq!(p.created, None, "an absent created is None");
+
+    store::write(v18_dir.path(), &mut p).unwrap();
+    assert_eq!(p.format_version, CURRENT_FORMAT_VERSION);
+    assert_eq!(store::read(v18_dir.path()).unwrap(), p);
+    assert!(v18_dir.path().join("project.json.v18").exists());
+}
+
+/// v19. [`ProjectKind`]'s default is [`ProjectKind::Match`], and a loaded older
+/// file reads as one — the two faces of "a match is what every pre-v19 project
+/// was". `a_v19_…` above leans on both; this pins them on their own, where a
+/// `#[default]` moved to `Session` has nowhere to hide. [`Project::is_match`]
+/// answers the same question and must agree.
+#[test]
+fn a_project_defaults_to_a_match() {
+    assert_eq!(ProjectKind::default(), ProjectKind::Match);
+    assert!(Project::new("x").is_match());
+
+    let dir = TempDir::new().unwrap();
+    // A v7 file, the readable floor, carries no kind at all.
+    let mut raw = serde_json::to_value(sample_project()).unwrap();
+    raw["formatVersion"] = json!(7);
+    raw.as_object_mut().unwrap().remove("kind");
+    write_raw(dir.path(), raw);
+
+    let p = store::read(dir.path()).expect("a v7 file loads");
+    assert_eq!(p.kind, ProjectKind::Match);
+    assert!(p.is_match());
 }
 
 /// v18. A title and both caption fields survive a write and a read at the

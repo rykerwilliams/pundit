@@ -103,6 +103,24 @@ pub enum InsetCorner {
     TopRight,
 }
 
+/// What a project is: a tagged football match, or an in-gym capture session.
+/// v19.
+///
+/// A field added to an existing struct takes a field-level `#[serde(default)]`
+/// only when its `Default` is what an older file *means* — and [`Match`] is
+/// exactly what every v7–v18 file was, there being no other kind until now. It
+/// qualifies on the same grounds [`Inset`] defaults to `Camera` and
+/// [`crate::stroke::StrokeEnd`] to `Plain`, and an enum says that in the type.
+///
+/// [`Match`]: ProjectKind::Match
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProjectKind {
+    #[default]
+    Match,
+    Session,
+}
+
 /// Where a clip's inset goes and how big: [`Clip::inset_size`] and
 /// [`Clip::inset_corner`] as one value.
 ///
@@ -487,6 +505,16 @@ pub struct Project {
     /// order is only the order they were marked in.
     #[serde(default)]
     pub slates: Vec<Slate>,
+    /// v19. What kind of project this is — a tagged match or an in-gym capture
+    /// session. Field-level default because [`ProjectKind::Match`] is exactly
+    /// what every v7–v18 file was.
+    #[serde(default)]
+    pub kind: ProjectKind,
+    /// v19. The day this project was created, as an ISO date string. Set by the
+    /// bus (core has no clock); `None` is every v7–v18 file, which carried no
+    /// such field.
+    #[serde(default)]
+    pub created: Option<String>,
 }
 
 /// A range on the footage, named and tagged, whose commentary has not been
@@ -597,7 +625,14 @@ impl Project {
             match_events: Vec::new(),
             player_highlights: Vec::new(),
             avatar: None,
+            kind: ProjectKind::default(),
+            created: None,
         }
+    }
+
+    /// Whether this is a tagged match rather than an in-gym capture session.
+    pub fn is_match(&self) -> bool {
+        matches!(self.kind, ProjectKind::Match)
     }
 
     /// Sum of every source's duration.
