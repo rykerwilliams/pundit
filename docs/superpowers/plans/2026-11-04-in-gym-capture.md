@@ -15,14 +15,32 @@ newtype).
 
 ## Where this stands (update it as tasks land)
 
-- **1 — core: session format (kind, created, v19 bump).** Not started.
-- **2 — core: recorded rate (field + behaviour, one PR).** Not started.
+- **1 — core: session format (kind, created, v19 bump).** **DONE** — branch
+  `claude/140-task-1`, commit `e56f0cb`. Gate green (core tests, fmt, pinned-1.92
+  clippy, both sabotage proofs run). `a_v19_file_loads_under_the_current_version`
+  follows the real sibling convention (there is no combined `v7_to_v19` test).
+- **2 — core: recorded rate (field + behaviour, one PR).** **DONE** — branch
+  `claude/140-task-2` (stacked on task 1), commit `1bde43f`. Gate green (35 core
+  test binaries, fmt, pinned-1.92 clippy, 4 sabotage proofs). `Rate(f64)` newtype,
+  `Default = Rate(1.0)`; the real-rate line is `export.rs:217`
+  (`+ (t - out_start).max(0.0) * seg.rate`). **Caveat:** the 3 `EventKind::Play`
+  sites outside `pundit-core` (`pundit-harness/tests/recording.rs`,
+  `pundit-media/tests/export.rs` ×2) were edited and read-checked but **not
+  compiled here** — fmt-checked only. Confirm them under the full workspace build.
 - **3 — media: prove the rate survives the GL graph (test only).** Not started.
 - **4 — bus: create an empty session.** Not started.
 - **5 — bus + media: capture the camera as a source.** Not started.
 - **6 — UI: the session shell.** Not started.
 - **7 — UI + bus: the playback-speed control.** Not started.
 - **8 — UI: the touch affordance.** Not started.
+
+> **Environment note (2026-11-05):** tasks 1–2 were built and verified on a box
+> with only a userspace Rust toolchain (no GStreamer, no sudo), so only the
+> pure-`pundit-core` subset of `verify` ran. Tasks 3–8 touch
+> `pundit-media`/`pundit-app`/`tests/ui` and need GStreamer dev libs — run them on
+> a machine with the full toolchain and the whole `verify` gate. Task 2 stacks on
+> task 1; rebase `--onto origin/main` once task 1 squash-merges (and retarget
+> task 2's PR to `main` before merging task 1, per `start-task`).
 
 ## Dependency order
 
