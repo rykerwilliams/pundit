@@ -17,7 +17,7 @@
 
 use uuid::Uuid;
 
-use crate::event::{debug_assert_sorted, CommentaryEvent, EventKind};
+use crate::event::{debug_assert_sorted, CommentaryEvent, EventKind, Rate};
 use crate::stroke::Stroke;
 use crate::zoom::Zoom;
 
@@ -81,6 +81,9 @@ impl RecordingLog {
             t,
             EventKind::Play {
                 source_time: source_seconds,
+                // Live playback is always real time; a slow-motion rate is a
+                // later edit (#140 task 7), not something the recorder logs.
+                rate: Rate::default(),
             },
         );
     }

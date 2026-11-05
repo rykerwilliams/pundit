@@ -7,7 +7,7 @@ mod common;
 
 use uuid::Uuid;
 
-use pundit_core::event::{CommentaryEvent, EventKind};
+use pundit_core::event::{CommentaryEvent, EventKind, Rate};
 use pundit_core::export::compilation_schedule;
 use pundit_core::highlight::{
     highlight_shapes, highlights_at, HighlightEdit, HighlightError, HighlightKey, NormRect,
@@ -284,7 +284,13 @@ fn a_ring_holds_through_a_commentary_pause() {
     p.clips.push(clip_with_events(
         vec![
             CommentaryEvent::new(2.0, EventKind::Pause { source_time: 102.0 }),
-            CommentaryEvent::new(22.0, EventKind::Play { source_time: 102.0 }),
+            CommentaryEvent::new(
+                22.0,
+                EventKind::Play {
+                    source_time: 102.0,
+                    rate: Rate(1.0),
+                },
+            ),
         ],
         30.0,
     ));

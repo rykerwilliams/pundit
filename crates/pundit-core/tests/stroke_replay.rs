@@ -4,7 +4,7 @@ mod common;
 
 use uuid::Uuid;
 
-use pundit_core::event::{CommentaryEvent, EventKind};
+use pundit_core::event::{CommentaryEvent, EventKind, Rate};
 use pundit_core::project::Clip;
 use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_core::stroke_replay::visible_strokes;
@@ -222,7 +222,13 @@ fn a_single_point_stroke_is_visible_with_one_point() {
 #[test]
 fn non_stroke_events_are_ignored() {
     let c = clip(vec![
-        CommentaryEvent::new(1.0, EventKind::Play { source_time: 0.0 }),
+        CommentaryEvent::new(
+            1.0,
+            EventKind::Play {
+                source_time: 0.0,
+                rate: Rate(1.0),
+            },
+        ),
         CommentaryEvent::new(2.0, EventKind::Skip { delta: 5.0 }),
         stroke_ev(4.0, 1.0, 3, None),
     ]);

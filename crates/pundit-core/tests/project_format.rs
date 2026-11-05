@@ -7,7 +7,7 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use pundit_core::caption::CaptionBar;
-use pundit_core::event::{CommentaryEvent, EventKind};
+use pundit_core::event::{CommentaryEvent, EventKind, Rate};
 use pundit_core::highlight::{HighlightKey, NormRect, PlayerHighlight};
 use pundit_core::plan::ScoreboardMode;
 use pundit_core::project::{
@@ -785,15 +785,37 @@ fn a_v19_file_loads_under_the_current_version() {
     let mut session = sample_project();
     session.kind = ProjectKind::Session;
     session.created = Some("2026-11-04".into());
+    // A recorded playback rate on a Play event (#140 task 2) rides the session's
+    // clip: a slow-motion clip round-trips, so the `rate` wire key is pinned
+    // here too. It is additive, not a bump — v19 is task 1's.
+    session.clips[0].events.push(CommentaryEvent::new(
+        1.0,
+        EventKind::Play {
+            source_time: 12.5,
+            rate: Rate(0.5),
+        },
+    ));
     let mut raw = serde_json::to_value(&session).unwrap();
     raw["formatVersion"] = json!(19);
     assert_eq!(raw["kind"], json!("session"));
     assert_eq!(raw["created"], json!("2026-11-04"));
+    assert_eq!(
+        raw["clips"][0]["events"][0]["kind"]["play"]["rate"],
+        json!(0.5)
+    );
     write_raw(session_dir.path(), raw);
 
     let read = store::read(session_dir.path()).expect("a v19 file loads");
     assert_eq!(read.kind, ProjectKind::Session);
     assert_eq!(read.created.as_deref(), Some("2026-11-04"));
+    assert_eq!(
+        read.clips[0].events[0].kind,
+        EventKind::Play {
+            source_time: 12.5,
+            rate: Rate(0.5),
+        },
+        "a v19 file's recorded playback rate loads"
+    );
 
     // A v18 file has neither key: both fall back to what an older file means —
     // a match with no created date.

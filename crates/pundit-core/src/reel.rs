@@ -206,6 +206,7 @@ pub(crate) fn reel_plan(project: &Project, side: ReelSide) -> CompilationPlan {
                 kind: SegmentKind::Play,
                 source_start: span.start,
                 out_duration: span.end - span.start,
+                rate: 1.0,
             }],
             start_frame,
             frames,

@@ -4,7 +4,7 @@ mod common;
 
 use uuid::Uuid;
 
-use pundit_core::event::{CommentaryEvent, EventKind};
+use pundit_core::event::{CommentaryEvent, EventKind, Rate};
 use pundit_core::export::compilation_schedule;
 use pundit_core::plan::ExportTarget;
 use pundit_core::project::{Clip, Project, SourceRef};
@@ -749,7 +749,13 @@ fn a_pause_inside_a_clip_holds_the_match_clock() {
     p.clips.push(clip_with_events(
         vec![
             CommentaryEvent::new(2.0, EventKind::Pause { source_time: 102.0 }),
-            CommentaryEvent::new(22.0, EventKind::Play { source_time: 102.0 }),
+            CommentaryEvent::new(
+                22.0,
+                EventKind::Play {
+                    source_time: 102.0,
+                    rate: Rate(1.0),
+                },
+            ),
         ],
         30.0,
     ));

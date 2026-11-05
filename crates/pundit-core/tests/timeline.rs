@@ -4,7 +4,7 @@ mod common;
 
 use uuid::Uuid;
 
-use pundit_core::event::{CommentaryEvent, EventKind};
+use pundit_core::event::{CommentaryEvent, EventKind, Rate};
 use pundit_core::project::Clip;
 use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_core::timeline::{playback_segments, source_time, PlaybackSegment, SegmentKind};
@@ -28,6 +28,7 @@ fn play(t: f64, anchor: f64) -> CommentaryEvent {
         t,
         EventKind::Play {
             source_time: anchor,
+            rate: Rate(1.0),
         },
     )
 }
@@ -41,6 +42,15 @@ fn pause(t: f64, anchor: f64) -> CommentaryEvent {
 }
 fn skip(t: f64, delta: f64) -> CommentaryEvent {
     CommentaryEvent::new(t, EventKind::Skip { delta })
+}
+fn slow_play(t: f64, anchor: f64, rate: f64) -> CommentaryEvent {
+    CommentaryEvent::new(
+        t,
+        EventKind::Play {
+            source_time: anchor,
+            rate: Rate(rate),
+        },
+    )
 }
 
 const DUR: f64 = 1000.0;
@@ -132,7 +142,8 @@ fn a_clip_with_no_events_is_one_play_segment() {
         [PlaybackSegment {
             kind: SegmentKind::Play,
             source_start: 10.0,
-            out_duration: 30.0
+            out_duration: 30.0,
+            rate: 1.0
         }]
     );
 }
@@ -191,7 +202,8 @@ fn playing_past_eof_splits_into_play_tail_and_freeze() {
         PlaybackSegment {
             kind: SegmentKind::Play,
             source_start: 95.0,
-            out_duration: 5.0
+            out_duration: 5.0,
+            rate: 1.0
         }
     );
     assert_eq!(segs[1].kind, SegmentKind::Freeze);
@@ -374,6 +386,7 @@ fn a_whiteboard_clip_is_one_freeze_whatever_its_events_say() {
             kind: SegmentKind::Freeze,
             source_start: 12.0,
             out_duration: 8.0,
+            rate: 0.0,
         }],
         "a whiteboard take is one freeze of its recording's length"
     );
@@ -392,4 +405,75 @@ fn a_whiteboard_clip_is_one_freeze_whatever_its_events_say() {
     let mut noisy = board.clone();
     noisy.events = vec![skip(1.0, 100.0)];
     assert_eq!(playback_segments(&noisy, 1000.0), segs);
+}
+
+// ------------------------------------------------- recorded playback rate
+
+/// A slow-motion Play advances the source at its rate, and when it crosses the
+/// end of the source it splits into a Play tail over the available footage plus
+/// a Freeze — at the **record** time the source runs out, which is
+/// `available / rate`, not `available`.
+///
+/// 5 s of source at 0.5×: the source is exhausted after 10 record-seconds, so
+/// the Play tail is 10 s long (not 5) and the Freeze fills the remaining 10 of
+/// the 20 s recording. The split record-time is what the 1× arithmetic would
+/// get wrong if it were not scaled.
+#[test]
+fn a_half_speed_play_segment_advances_the_source_at_half_rate() {
+    let c = clip(0.0, 20.0, vec![slow_play(0.0, 0.0, 0.5)]);
+    let segs = playback_segments(&c, 5.0);
+    assert_eq!(segs.len(), 2, "{segs:?}");
+
+    assert_eq!(segs[0].kind, SegmentKind::Play);
+    assert_eq!(segs[0].source_start, 0.0);
+    assert_eq!(segs[0].rate, 0.5);
+    // The source runs out after available / rate = 5.0 / 0.5 = 10 record-seconds.
+    assert!((segs[0].out_duration - 10.0).abs() < 1e-9, "{segs:?}");
+
+    assert_eq!(segs[1].kind, SegmentKind::Freeze);
+    assert!((segs[1].out_duration - 10.0).abs() < 1e-9, "{segs:?}");
+
+    // source_time reads the same half-rate advance: start + 0.5 * record.
+    assert!((source_time(&c, 4.0, 5.0) - 2.0).abs() < 1e-9);
+    assert!((source_time(&c, 8.0, 5.0) - 4.0).abs() < 1e-9);
+    // Past the split the source is held at the end (capped by the clamp).
+    assert!((source_time(&c, 16.0, 5.0) - 5.0).abs() < 1e-9);
+}
+
+/// A non-unit rate is still a `Play`, not a `Freeze`: only `rate == 0.0` freezes.
+#[test]
+fn a_slow_play_segment_is_a_play_not_a_freeze() {
+    let c = clip(0.0, 4.0, vec![slow_play(0.0, 0.0, 0.5)]);
+    let segs = playback_segments(&c, 1000.0);
+    assert_eq!(segs.len(), 1, "{segs:?}");
+    assert_eq!(segs[0].kind, SegmentKind::Play);
+    assert_eq!(segs[0].rate, 0.5);
+}
+
+/// A `play` whose rate is `0.0` behaves as a `Freeze` — the discriminant is
+/// `rate != 0.0`, so a zero-rate Play takes the freeze path rather than a Play
+/// that never advances. Pinned so a future refactor to `== 1.0` can't regress
+/// it into a frozen Play.
+#[test]
+fn a_zero_rate_play_is_a_freeze() {
+    let c = clip(0.0, 4.0, vec![slow_play(0.0, 7.0, 0.0)]);
+    let segs = playback_segments(&c, 1000.0);
+    assert_eq!(segs.len(), 1, "{segs:?}");
+    assert_eq!(segs[0].kind, SegmentKind::Freeze);
+    assert_eq!(segs[0].source_start, 7.0);
+}
+
+/// A pre-existing 1× edit is unchanged to the integer: `Rate` defaulting and
+/// the `* rate` scaling collapse to the old arithmetic exactly.
+#[test]
+fn a_unit_rate_edit_is_unchanged() {
+    let slow = clip(10.0, 30.0, vec![slow_play(0.0, 10.0, 1.0)]);
+    let plain = clip(10.0, 30.0, vec![]);
+    assert_eq!(
+        playback_segments(&slow, DUR),
+        playback_segments(&plain, DUR)
+    );
+    for t in [0.0, 5.0, 29.9] {
+        assert_eq!(source_time(&slow, t, DUR), source_time(&plain, t, DUR));
+    }
 }

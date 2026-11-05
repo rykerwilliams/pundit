@@ -3,7 +3,7 @@
 //! Phase 4 spec (R8) makes: caller-supplied times, events written by
 //! construction, and record times that never go backwards.
 
-use pundit_core::event::{CommentaryEvent, EventKind};
+use pundit_core::event::{CommentaryEvent, EventKind, Rate};
 use pundit_core::recording::RecordingLog;
 use pundit_core::zoom::Zoom;
 
@@ -56,7 +56,13 @@ fn play_and_pause_log_caller_times_and_anchors() {
     assert_eq!(
         events[2..],
         [
-            CommentaryEvent::new(0.5, EventKind::Play { source_time: 10.0 }),
+            CommentaryEvent::new(
+                0.5,
+                EventKind::Play {
+                    source_time: 10.0,
+                    rate: Rate(1.0)
+                }
+            ),
             CommentaryEvent::new(2.25, EventKind::Pause { source_time: 11.7 }),
         ]
     );

@@ -56,6 +56,26 @@ pub(crate) fn debug_assert_sorted(events: &[CommentaryEvent]) {
     );
 }
 
+/// How fast the source advances across a `Play` segment, as a fraction of
+/// record time — `1.0` is real time, below it is slow motion baked into the
+/// edit (a recorded playback rate, #140 task 2), `0.0` is a freeze.
+///
+/// A **newtype, not a bare `f64` field**, for exactly one reason: the format
+/// rules forbid a field-level `#[serde(default)]` on an `f64`, because a
+/// defaulted `f64` resolves to `0.0` — which here is the freeze sentinel, the
+/// one value a missing rate must *not* mean. The newtype carries its own
+/// `Default` of `Rate(1.0)`, so a v7–v18-era `play` with no `rate` key reads
+/// as real-time playback, which is what every such clip was. This is the v14
+/// `StrokeEnd` precedent: a type whose `Default` is what an older file means.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Rate(pub f64);
+
+impl Default for Rate {
+    fn default() -> Self {
+        Rate(1.0)
+    }
+}
+
 /// What happened at a given record time.
 ///
 /// `Play` and `Pause` carry the source playhead captured at the keystroke
@@ -63,10 +83,15 @@ pub(crate) fn debug_assert_sorted(events: &[CommentaryEvent]) {
 /// `timeline`: player latency and frame-boundary rounding make a computed
 /// cursor drift by tens of milliseconds, and the captured value pins the
 /// freeze frame to what was actually on screen.
+///
+/// `Play` also carries a `rate`: `Rate(1.0)` for real-time playback, below it
+/// for slow motion baked into the edit. The commentary stays real-time; only
+/// the source advance scales (see `timeline` and `export::walk`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum EventKind {
     Play {
         source_time: f64,
+        rate: Rate,
     },
     Pause {
         source_time: f64,
@@ -98,9 +123,17 @@ pub enum EventKind {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 enum KnownKind {
-    Play { source_time: f64 },
-    Pause { source_time: f64 },
-    Skip { delta: f64 },
+    Play {
+        source_time: f64,
+        #[serde(default)]
+        rate: Rate,
+    },
+    Pause {
+        source_time: f64,
+    },
+    Skip {
+        delta: f64,
+    },
     Stroke(Stroke),
     ClearAll {},
     Zoom(Zoom),
@@ -109,7 +142,7 @@ enum KnownKind {
 impl From<KnownKind> for EventKind {
     fn from(k: KnownKind) -> Self {
         match k {
-            KnownKind::Play { source_time } => EventKind::Play { source_time },
+            KnownKind::Play { source_time, rate } => EventKind::Play { source_time, rate },
             KnownKind::Pause { source_time } => EventKind::Pause { source_time },
             KnownKind::Skip { delta } => EventKind::Skip { delta },
             KnownKind::Stroke(s) => EventKind::Stroke(s),
@@ -125,8 +158,9 @@ impl Serialize for EventKind {
         // `Option<KnownKind>` would throw away the information the second match
         // needs and force an `unreachable!()` to put it back.
         match self {
-            EventKind::Play { source_time } => KnownKind::Play {
+            EventKind::Play { source_time, rate } => KnownKind::Play {
                 source_time: *source_time,
+                rate: *rate,
             }
             .serialize(ser),
             EventKind::Pause { source_time } => KnownKind::Pause {
@@ -180,8 +214,42 @@ mod tests {
     /// wrong silently emits snake_case.
     #[test]
     fn play_has_the_expected_wire_shape() {
-        let s = serde_json::to_string(&EventKind::Play { source_time: 1.5 }).unwrap();
-        assert_eq!(s, r#"{"play":{"sourceTime":1.5}}"#);
+        // A default `Rate(1.0)` still emits the `rate` key: `KnownKind::Play.rate`
+        // has a field-level `#[serde(default)]` but no `skip_serializing_if`, so
+        // the key is always written. That is deliberate and explicit — no sibling
+        // field hides at its default either.
+        let s = serde_json::to_string(&EventKind::Play {
+            source_time: 1.5,
+            rate: Rate(1.0),
+        })
+        .unwrap();
+        assert_eq!(s, r#"{"play":{"sourceTime":1.5,"rate":1.0}}"#);
+    }
+
+    /// A non-unit rate round-trips through the hand-written codec.
+    #[test]
+    fn a_non_unit_play_rate_round_trips() {
+        let e = EventKind::Play {
+            source_time: 1.5,
+            rate: Rate(0.5),
+        };
+        assert_eq!(rt(e.clone()), e);
+    }
+
+    /// A `play` with no `rate` key — every v7–v18-era edit — reads as real-time
+    /// playback. This is the whole reason `Rate` is a newtype with a `Rate(1.0)`
+    /// `Default` rather than a bare `f64` (which would read `0.0`, a freeze).
+    #[test]
+    fn a_play_with_no_rate_key_decodes_to_rate_one() {
+        let v = json!({"play": {"sourceTime": 1.5}});
+        let decoded: EventKind = serde_json::from_value(v).unwrap();
+        assert_eq!(
+            decoded,
+            EventKind::Play {
+                source_time: 1.5,
+                rate: Rate(1.0),
+            }
+        );
     }
 
     /// `ClearAll` must emit an empty object, not the bare string a unit

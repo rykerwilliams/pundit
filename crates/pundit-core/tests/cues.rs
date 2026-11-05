@@ -4,7 +4,7 @@
 mod common;
 
 use pundit_core::cues::{cues_to_srt, scoreboard_cues, Cue};
-use pundit_core::event::{CommentaryEvent, EventKind};
+use pundit_core::event::{CommentaryEvent, EventKind, Rate};
 use pundit_core::export::compilation_schedule;
 use pundit_core::plan::ExportTarget;
 use pundit_core::project::{Clip, Project, SourceRef};
@@ -104,7 +104,13 @@ fn a_frozen_entry_holds_the_clock_in_one_cue() {
         recording_filename: "c.mkv".into(),
         events: vec![
             CommentaryEvent::new(2.0, EventKind::Pause { source_time: 102.0 }),
-            CommentaryEvent::new(22.0, EventKind::Play { source_time: 102.0 }),
+            CommentaryEvent::new(
+                22.0,
+                EventKind::Play {
+                    source_time: 102.0,
+                    rate: Rate(1.0),
+                },
+            ),
         ],
         created_at: "2026-09-20T00:00:00Z".into(),
         ..common::clip_stub()

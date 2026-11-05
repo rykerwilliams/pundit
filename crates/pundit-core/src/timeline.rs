@@ -46,6 +46,12 @@ pub struct PlaybackSegment {
     pub source_start: f64,
     /// Duration in the **recording** timeline.
     pub out_duration: f64,
+    /// How fast the source advances across this segment, as a fraction of
+    /// record time. A computed value with no format bearing: `1.0` for an
+    /// ordinary `Play`, below it for slow motion, `0.0` on a `Freeze`. The
+    /// export/preview walk scales the source advance by it; a non-unit-rate
+    /// `Play` carries no source audio (it is voice-over — see `audio`).
+    pub rate: f64,
 }
 
 /// Freeze anchors are pulled this far back from the end of the source.
@@ -94,8 +100,11 @@ pub fn source_time(clip: &Clip, at_record_time: f64, source_duration: f64) -> f6
         );
         record_cursor = ev.record_time;
         match ev.kind {
-            EventKind::Play { source_time } => {
-                rate = 1.0;
+            EventKind::Play {
+                source_time,
+                rate: r,
+            } => {
+                rate = r.0;
                 source = clamp_source(source_time, source_duration);
             }
             EventKind::Pause { source_time } => {
@@ -151,20 +160,28 @@ impl Walk {
             return;
         }
 
-        if self.rate == 1.0 {
-            // Source advances here. If it would read past the end, split into a
-            // `Play` tail covering the available source plus a `Freeze` on the
-            // last frame for whatever record time remains — mirroring a player,
-            // which holds the last decoded frame rather than showing nothing.
+        if self.rate != 0.0 {
+            // Source advances here, at `rate` seconds of source per record
+            // second — `1.0` real time, below it slow motion. If it would read
+            // past the end, split into a `Play` tail covering the available
+            // source plus a `Freeze` on the last frame for whatever record time
+            // remains — mirroring a player, which holds the last decoded frame
+            // rather than showing nothing.
+            //
+            // A `dur`-second play consumes `dur * rate` of source, so the record
+            // time at which the source runs out is `available / rate`, and that
+            // is the `Play` tail's length. Everything scaled by `rate`; at
+            // `rate == 1.0` this is the original arithmetic exactly.
             let available = (self.source_duration - self.source_cursor).max(0.0);
-            let play_dur = dur.min(available);
+            let play_dur = dur.min(available / self.rate);
             if play_dur > 0.0 {
                 self.segments.push(PlaybackSegment {
                     kind: SegmentKind::Play,
                     source_start: self.source_cursor,
                     out_duration: play_dur,
+                    rate: self.rate,
                 });
-                self.source_cursor += play_dur;
+                self.source_cursor += play_dur * self.rate;
             }
             let freeze_dur = dur - play_dur;
             if freeze_dur > 0.0 {
@@ -172,6 +189,7 @@ impl Walk {
                     kind: SegmentKind::Freeze,
                     source_start: self.source_cursor.min(self.freeze_max_source),
                     out_duration: freeze_dur,
+                    rate: 0.0,
                 });
             }
         } else {
@@ -179,6 +197,7 @@ impl Walk {
                 kind: SegmentKind::Freeze,
                 source_start: self.source_cursor.min(self.freeze_max_source),
                 out_duration: dur,
+                rate: 0.0,
             });
         }
         self.record_cursor = record_end;
@@ -216,6 +235,7 @@ pub fn playback_segments(clip: &Clip, source_duration: f64) -> Vec<PlaybackSegme
             kind: SegmentKind::Freeze,
             source_start: clamp_source(clip.start_source_seconds, source_duration),
             out_duration: clip.recording_duration,
+            rate: 0.0,
         }];
     }
 
@@ -230,9 +250,9 @@ pub fn playback_segments(clip: &Clip, source_duration: f64) -> Vec<PlaybackSegme
 
     for ev in &clip.events {
         match ev.kind {
-            EventKind::Play { source_time } => {
+            EventKind::Play { source_time, rate } => {
                 w.emit(ev.record_time);
-                w.rate = 1.0;
+                w.rate = rate.0;
                 w.source_cursor = clamp_source(source_time, source_duration);
             }
             EventKind::Pause { source_time } => {

@@ -173,9 +173,10 @@ pub fn basket_schedule(pieces: &[BasketPiece]) -> Compilation {
 
 /// Append `count` frames covering `segments`, tagged with `entry`.
 ///
-/// Play maps `t` 1:1 onto the source from the segment's start; a freeze holds
-/// its anchor, which [`playback_segments`] already caps short of the source
-/// end. Zoom comes from [`zoom_at`], independent of segment boundaries.
+/// Play maps `t` onto the source from the segment's start, scaled by the
+/// segment's `rate` (`1.0` real time, below it slow motion); a freeze holds its
+/// anchor, which [`playback_segments`] already caps short of the source end.
+/// Zoom comes from [`zoom_at`], independent of segment boundaries.
 fn walk(
     segments: &[PlaybackSegment],
     events: &[CommentaryEvent],
@@ -206,7 +207,14 @@ fn walk(
             // `max(0.0)`: the boundary slack can put `t` a few ns before
             // `out_start`, and the pump rounds to ns, so an unclamped offset
             // would pull the frame before `source_start`.
-            SegmentKind::Play => seg.source_start + (t - out_start).max(0.0),
+            //
+            // `* seg.rate` is the one line that makes a recorded playback rate
+            // real: the elapsed **output** time scales by the segment's rate
+            // into elapsed **source** time. `out_duration` is record time and
+            // is unchanged, so the commentary stays real-time; only the source
+            // advance slows. At `rate == 1.0` this is `+ (t - out_start)`
+            // exactly, so a unit-rate edit is unchanged to the integer.
+            SegmentKind::Play => seg.source_start + (t - out_start).max(0.0) * seg.rate,
             SegmentKind::Freeze => seg.source_start,
         };
         out.push(FrameSpec {

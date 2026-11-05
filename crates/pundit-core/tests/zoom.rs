@@ -2,7 +2,7 @@
 
 use uuid::Uuid;
 
-use pundit_core::event::{CommentaryEvent, EventKind};
+use pundit_core::event::{CommentaryEvent, EventKind, Rate};
 use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
 use pundit_core::zoom::{zoom_at, Zoom, SNAP_NOTCHES};
 
@@ -300,7 +300,13 @@ fn non_zoom_events_are_ignored() {
     let evs = [
         CommentaryEvent::new(0.5, EventKind::Stroke(stroke)),
         CommentaryEvent::new(0.7, EventKind::ClearAll),
-        CommentaryEvent::new(0.9, EventKind::Play { source_time: 3.0 }),
+        CommentaryEvent::new(
+            0.9,
+            EventKind::Play {
+                source_time: 3.0,
+                rate: Rate(1.0),
+            },
+        ),
         zoom_ev(1.0, 2.0, 0.0),
     ];
     assert_eq!(zoom_at(&evs, 2.0), Zoom::new(2.0, 0.0, 0.0));

@@ -19,7 +19,7 @@ use gstreamer_app as gst_app;
 use gstreamer_pbutils as pbutils;
 use pundit_core::audio::audio_regions;
 use pundit_core::caption::CaptionBar;
-use pundit_core::event::{CommentaryEvent, EventKind};
+use pundit_core::event::{CommentaryEvent, EventKind, Rate};
 use pundit_core::export::{compilation_schedule, Compilation, FrameSpec, OUTPUT_FPS};
 use pundit_core::layout::{avatar_box, bar_rect, pip_rect, scoreboard_rects, Rect as LayoutRect};
 use pundit_core::metadata::FileTags;
@@ -192,6 +192,7 @@ fn steered_clip() -> Clip {
                 1.3,
                 EventKind::Play {
                     source_time: 1.8137,
+                    rate: Rate(1.0),
                 },
             ),
             // Within the 0.5 s pull-ahead: pulled forward.
@@ -2117,7 +2118,13 @@ fn the_game_track_is_gated_to_play_and_the_mix_fades_in() {
         1.5,
         vec![
             CommentaryEvent::new(0.5, EventKind::Pause { source_time: 0.5 }),
-            CommentaryEvent::new(1.0, EventKind::Play { source_time: 0.5 }),
+            CommentaryEvent::new(
+                1.0,
+                EventKind::Play {
+                    source_time: 0.5,
+                    rate: Rate(1.0),
+                },
+            ),
         ],
     );
     let path = dir.path().join("out.mp4");

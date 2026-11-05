@@ -24,6 +24,7 @@ fn entry(mode: CaptionBar) -> PlanEntry {
             kind: SegmentKind::Play,
             source_start: 0.0,
             out_duration: 600.0,
+            rate: 1.0,
         }],
         start_frame: 0,
         frames: 18_000,

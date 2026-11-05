@@ -343,7 +343,7 @@ fn play_during_the_camera_warm_up_is_logged() {
 
     let play = &clip.events[2];
     assert!(
-        matches!(play.kind, EventKind::Play { source_time } if source_time.abs() < FRAME),
+        matches!(play.kind, EventKind::Play { source_time, .. } if source_time.abs() < FRAME),
         "{:?}",
         clip.events
     );

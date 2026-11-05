@@ -218,7 +218,12 @@ fn game_regions(entry: &PlanEntry, index: usize, gain: f64, out: &mut Vec<Region
         } else {
             frame_count(seconds).min(entry.frames)
         };
-        if seg.kind == SegmentKind::Play {
+        // A non-unit-rate Play is voice-over: the source plays in slow motion
+        // under real-time commentary, so pitched-down game audio would be wrong
+        // with nothing to time it against. It emits no source region — the same
+        // "no region" shape as a source volume of 0.0 — leaving only the
+        // commentary over it. A unit-rate Play is unchanged.
+        if seg.kind == SegmentKind::Play && seg.rate == 1.0 {
             out.extend(region(
                 Track::Game { entry: index },
                 entry.start_frame + first..entry.start_frame + last,

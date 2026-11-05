@@ -37,6 +37,7 @@ pub(crate) fn whole_match_entries(project: &Project) -> Vec<PlanEntry> {
                     kind: SegmentKind::Play,
                     source_start: 0.0,
                     out_duration: duration,
+                    rate: 1.0,
                 }],
                 start_frame,
                 frames,

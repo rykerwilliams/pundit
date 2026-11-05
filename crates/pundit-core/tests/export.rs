@@ -10,7 +10,7 @@ mod common;
 
 use uuid::Uuid;
 
-use pundit_core::event::{CommentaryEvent, EventKind};
+use pundit_core::event::{CommentaryEvent, EventKind, Rate};
 use pundit_core::export::{
     basket_schedule, compilation_schedule, Compilation, FrameSpec, RateWindow, OUTPUT_FPS,
 };
@@ -65,6 +65,7 @@ fn play(t: f64, anchor: f64) -> CommentaryEvent {
         t,
         EventKind::Play {
             source_time: anchor,
+            rate: Rate(1.0),
         },
     )
 }
@@ -78,6 +79,15 @@ fn pause(t: f64, anchor: f64) -> CommentaryEvent {
 }
 fn skip(t: f64, delta: f64) -> CommentaryEvent {
     CommentaryEvent::new(t, EventKind::Skip { delta })
+}
+fn slow_play(t: f64, anchor: f64, rate: f64) -> CommentaryEvent {
+    CommentaryEvent::new(
+        t,
+        EventKind::Play {
+            source_time: anchor,
+            rate: Rate(rate),
+        },
+    )
 }
 fn zoom(t: f64, scale: f64) -> CommentaryEvent {
     CommentaryEvent::new(t, EventKind::Zoom(Zoom::new(scale, 0.0, 0.0)))
@@ -124,6 +134,20 @@ fn play_maps_output_time_onto_the_source() {
     for (n, f) in s.iter().enumerate() {
         assert!(approx(f.source_time, 10.0 + n as f64 / FPS), "frame {n}");
     }
+}
+
+/// A slow-motion Play scales the source advance by the segment rate: output
+/// time is unchanged (the commentary stays real-time) but the source creeps at
+/// half speed. This is the single `* seg.rate` in `export::walk` made real.
+#[test]
+fn a_slow_play_advances_the_source_at_its_rate() {
+    let s = schedule(clip(10.0, 1.0, vec![slow_play(0.0, 10.0, 0.5)]), DUR);
+    for (n, f) in s.iter().enumerate() {
+        let out = n as f64 / FPS;
+        assert!(approx(f.source_time, 10.0 + out * 0.5), "frame {n}");
+    }
+    // Concretely: at output frame 15 (0.5 s in) the source has moved 0.25 s.
+    assert!(approx(s[15].source_time, 10.25));
 }
 
 #[test]

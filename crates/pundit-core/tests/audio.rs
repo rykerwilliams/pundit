@@ -14,7 +14,7 @@ use pundit_core::audio::{
     audio_regions, envelope, Region, Track, AUDIO_SAMPLE_RATE, MUSIC_DUCK, MUSIC_FADE_IN,
     MUSIC_FADE_OUT, MUSIC_GAIN, PRIMING_SAMPLES, RAMP_SAMPLES,
 };
-use pundit_core::event::{CommentaryEvent, EventKind};
+use pundit_core::event::{CommentaryEvent, EventKind, Rate};
 use pundit_core::export::{compilation_schedule, Compilation, FrameSpec};
 use pundit_core::plan::{CompilationPlan, ExportTarget, PlanEntry};
 use pundit_core::project::{Clip, Project, SourceRef};
@@ -52,6 +52,16 @@ fn play(t: f64, anchor: f64) -> CommentaryEvent {
         t,
         EventKind::Play {
             source_time: anchor,
+            rate: Rate(1.0),
+        },
+    )
+}
+fn slow_play(t: f64, anchor: f64, rate: f64) -> CommentaryEvent {
+    CommentaryEvent::new(
+        t,
+        EventKind::Play {
+            source_time: anchor,
+            rate: Rate(rate),
         },
     )
 }
@@ -143,6 +153,7 @@ fn reel_of(frames: usize) -> Compilation {
             kind: SegmentKind::Play,
             source_start: 10.0,
             out_duration: frames as f64 / 30.0,
+            rate: 1.0,
         }],
         start_frame: 0,
         frames,
@@ -250,6 +261,22 @@ fn a_clip_that_never_plays_has_no_game_region() {
     let c = clip(10.0, 2.0, vec![pause(0.0, 10.0)]);
     let rs = regions(vec![c]);
     assert!(game(&rs).is_empty());
+    assert_eq!(commentary(&rs).len(), 1);
+}
+
+/// A non-unit-rate Play is voice-over: the slowed footage carries no source
+/// audio, only the real-time commentary over it. Same "no game region" shape
+/// as a source volume of 0.0.
+#[test]
+fn a_slow_play_segment_contributes_no_source_audio() {
+    // A whole clip played at half speed: one Play segment, rate 0.5.
+    let c = clip(10.0, 2.0, vec![slow_play(0.0, 10.0, 0.5)]);
+    let rs = regions(vec![c]);
+    assert!(
+        game(&rs).is_empty(),
+        "a slow-motion Play carried a source-audio region: {rs:#?}"
+    );
+    // The commentary over it is untouched.
     assert_eq!(commentary(&rs).len(), 1);
 }
 
