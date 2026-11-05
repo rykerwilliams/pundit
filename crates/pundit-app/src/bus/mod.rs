@@ -133,6 +133,16 @@ pub enum Command {
         scoreboard: ScoreboardConfig,
         videos: Vec<PathBuf>,
     },
+    /// Creates an empty capture session and opens it (in-gym capture spec
+    /// §N1–N4). Smaller than [`Command::NewMatch`]: a session carries no videos
+    /// and no scoreboard — it is captured *into* — so there is nothing to probe
+    /// and no `project_dir` to send. The bus resolves its own folder from the
+    /// New match flow's projects-folder tiers and names it from `name`
+    /// (defaulting a blank one to today's date), so the caller sends only the
+    /// coach's typed name.
+    NewSession {
+        name: String,
+    },
     /// Reopen the last successfully opened project, if it still exists. Never
     /// creates one.
     RestoreLastProject,
@@ -1193,6 +1203,7 @@ impl Bus {
                 scoreboard,
                 videos,
             } => self.new_match(project_dir, scoreboard, videos),
+            Command::NewSession { name } => self.new_session(name),
             Command::RestoreLastProject => self.restore_last_project(),
             Command::RenameProject(name) => self.rename_project(name),
             Command::AddSource(path) => self.add_source(path),

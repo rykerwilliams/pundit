@@ -9,12 +9,40 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use pundit_core::project::{aspects_match, Project};
+use gstreamer::glib;
+use pundit_core::naming;
+use pundit_core::project::{aspects_match, Project, ProjectKind};
 use pundit_core::scoreboard::ScoreboardConfig;
 use pundit_core::store::{self, StoreError};
 use pundit_media::{decode_still, probe, Probe};
 
+use crate::new_match::{projects_dir_for, ProjectsDir};
+use pundit_core::metadata::APP_NAME;
+
 use super::{Bus, Event, Open, Snapshot, UserError};
+
+/// Today, local, as `YYYY-MM-DD`. Core has no clock, so the bus mints the date
+/// a new session is stamped and named with, the way `source_date` reads a
+/// footage date off glib.
+fn today_iso() -> String {
+    let now = glib::DateTime::now_local().expect("the local time");
+    format!(
+        "{:04}-{:02}-{:02}",
+        now.year(),
+        now.month(),
+        now.day_of_month()
+    )
+}
+
+/// `leaf` for the first attempt; `leaf (2)`, `leaf (3)`, … after a collision —
+/// the same ` (n)` de-duplication an export uses, so two same-day blank
+/// sessions land in distinct folders.
+fn suffixed(leaf: &str, attempt: u32) -> String {
+    match attempt {
+        1 => leaf.to_owned(),
+        n => format!("{leaf} ({n})"),
+    }
+}
 
 /// Deletes the project's copy of an avatar image. A copy that has already
 /// gone is not news: the field is what says there is one, and it is on its
@@ -340,6 +368,95 @@ impl Bus {
         // rename. Named, like every other refusal here: `StoreError` carries the
         // file name it could not write but not the folder, so a read-only match
         // folder reached the coach as a bare "Permission denied".
+        store::write(&folder, &mut project)
+            .map_err(|e| UserError::Io(format!("{}: {e}", folder.display())))?;
+        Ok((folder, project))
+    }
+
+    /// Creates an empty capture session and opens it (in-gym capture spec
+    /// §N1–N4). The inverse of [`Bus::new_match`]: a session starts with no
+    /// videos and no scoreboard and is captured *into*, so there is nothing to
+    /// probe and no aspect gate — which is why the two share no body (spec §N4).
+    ///
+    /// On success `commit` pushes the recents, opens the project and publishes
+    /// `ProjectOpened`; on failure the error is emitted and nothing is created,
+    /// exactly as [`Bus::new_match`] does.
+    pub(super) fn new_session(&mut self, name: String) {
+        match self.built_new_session(&name) {
+            Ok((folder, project)) => self.commit(folder, project),
+            Err(e) => self.emit(Event::Error(e)),
+        }
+    }
+
+    /// [`Bus::new_session`]'s disk work, so that every refusal is one `?` and
+    /// the commit is all that is left on success. Takes `&self`: it writes to
+    /// the disk and nothing to the bus.
+    fn built_new_session(&self, name: &str) -> Result<(PathBuf, Project), UserError> {
+        let io = |e: std::io::Error, path: &Path| UserError::Io(format!("{}: {e}", path.display()));
+
+        // A **preview** must not have the project swapped underneath it, the
+        // same gate — and the same reason — `built_new_match` opens with. A run
+        // is not a reason (#77 spec §Q7): a job reads its own files off the disk
+        // and consults no bus state.
+        self.refuse_if_previewing()?;
+
+        // §N2: trim, and default a blank name to today's date. Core has no
+        // clock, so the bus supplies the date the way `source_date` does.
+        let iso = today_iso();
+        let cleaned = match name.trim() {
+            "" => format!("Session {iso}"),
+            trimmed => trimmed.to_owned(),
+        };
+        // The **stored** name is only character-cleaned; the **folder leaf** is
+        // the full slug. Two spellings of one name, as `new_match` keeps the
+        // scoreboard's `<Home> v <Away>` apart from its folder (spec §N2).
+        let stored_name = naming::safe_chars(&cleaned);
+        let leaf = naming::folder_slug(&cleaned);
+
+        // §N3: the projects folder, resolved by the New match flow's first two
+        // tiers. A session has no footage, so the "beside the footage" Proposed
+        // tier does not apply; a genuinely first-run session defaults to
+        // `~/pundit`.
+        let home = glib::home_dir();
+        let last = self.files.last_project();
+        let start = last.as_deref().unwrap_or(&home);
+        let projects_dir = match projects_dir_for(start, Some(&home), last.as_deref()) {
+            ProjectsDir::Found(p) | ProjectsDir::BesideLastProject(p) => p,
+            ProjectsDir::Proposed(_) => home.join(APP_NAME),
+        };
+        // The projects folder's leaf, and only if it is missing — `create_dir`,
+        // never `create_dir_all`: at most two directories are ever made, this
+        // leaf and the session folder under it (CLAUDE.md).
+        if !projects_dir.is_dir() {
+            std::fs::create_dir(&projects_dir).map_err(|e| io(e, &projects_dir))?;
+        }
+
+        // The session folder. Two same-day blank sessions share the name
+        // `Session <date>`, so a bare `create_dir` would fail the second: suffix
+        // the **folder leaf** — never the stored name, which the `created` date
+        // disambiguates in recents (spec §S3) — until one is made. Unlike
+        // `new_match` an existing `project.json` is never adopted: a session is
+        // created empty.
+        let folder = {
+            let mut attempt = 1;
+            loop {
+                let candidate = projects_dir.join(suffixed(&leaf, attempt));
+                match std::fs::create_dir(&candidate) {
+                    Ok(()) => break candidate,
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => attempt += 1,
+                    Err(e) => return Err(io(e, &candidate)),
+                }
+            }
+        };
+        // Canonical, as `built_new_match` is, so relative source paths resolve
+        // the way the kernel resolves `..`.
+        let folder = folder.canonicalize().map_err(|e| io(e, &folder))?;
+
+        let mut project = Project::new(stored_name);
+        project.kind = ProjectKind::Session;
+        project.created = Some(iso);
+        // `recordings/`, then `project.json`. `sources/` is created on demand at
+        // the first capture (task 5), not here.
         store::write(&folder, &mut project)
             .map_err(|e| UserError::Io(format!("{}: {e}", folder.display())))?;
         Ok((folder, project))
