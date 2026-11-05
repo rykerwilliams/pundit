@@ -285,9 +285,17 @@ source cursor as `source + (ev.record_time − record_cursor) * rate`
 (`timeline.rs:92`). Slow motion generalises that constant below 1.0. **The
 first draft called this "one line"; it is not.** The honest edit list:
 
-- **Event:** `EventKind::Play` gains `rate: f64`, with a field-level serde
-  default of `1.0` (what every v7–v18 Play meant). *(Rate-on-`Play`, not a
-  `SetRate` event — see R5.)*
+- **Event:** `EventKind::Play` gains a `rate`, as a **`Rate(f64)` newtype with
+  `Default = Rate(1.0)`** — not a bare `f64` field default, which the format
+  rules forbid (it would resolve to `0.0`) and which `EventKind`'s **hand-written
+  codec** would ignore anyway (`EventKind` does not derive serde; it routes
+  through the `KnownKind` proxy and a hand-written `impl Serialize`/`deserialize`,
+  `event.rs:98-164`). The newtype's `Default` is the sanctioned "a type whose
+  `Default` is what an older file means" pattern (the v14 `StrokeEnd` precedent,
+  which is an enum with a `Default` for exactly this reason). The codec edit —
+  `KnownKind::Play`, the `From`, the `Serialize` arm, and the
+  `play_has_the_expected_wire_shape` test — is part of the work, not free.
+  *(Rate-on-`Play`, not a `SetRate` event — see R5.)*
 - **Timeline `emit`:** today `emit` branches `if self.rate == 1.0 { Play } else
   { Freeze }` (`timeline.rs:154-182`), so a 0.5 segment would wrongly become a
   **Freeze**. The branch becomes `rate != 0.0 { Play(rate) } else { Freeze }`,
@@ -298,9 +306,11 @@ first draft called this "one line"; it is not.** The honest edit list:
 - **Both walks:** the segment walk (`playback_segments`) and the non-segment
   `source_time` walk (`timeline.rs:79-117`, which also hard-codes `rate = 1.0` on
   Play at `:98`) need the same generalisation.
-- **Export/preview:** `export.rs:209` becomes
-  `seg.source_start + (t − out_start) * seg.rate`; preview reads the same
-  `source_time` (`composite/mod.rs`), so it follows.
+- **Export/preview:** the walk is in **core** — `pundit-core/src/export.rs:209`
+  (`schedule → walk`, the one scheduler both export and preview use) — not in
+  `pundit-media`, which only consumes `FrameSpec.source_time`. It becomes
+  `seg.source_start + (t − out_start) * seg.rate`; preview, being the same core
+  walk with a different events closure, follows with no media change.
 - **Audio:** see R3 — `core::audio::game_regions` must read `seg.rate`. The rate
   threads into `core::audio`, not only the export walk.
 
