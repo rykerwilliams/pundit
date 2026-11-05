@@ -16,8 +16,13 @@ made things worse.
 
 ### Next, in order
 
-Nothing queued: the four entries the coach set on 2026-10-17 — entries 101,
-115, 93 and 97 — have all shipped.
+- **140.** In-gym live capture → review → share to Google Drive. **Spec written
+  and adversarially reviewed 2026-11-04**
+  (`docs/superpowers/specs/2026-11-04-in-gym-capture-design.md`): a new "session"
+  project kind (v19), capture-as-source (`Command::CaptureSource`), a recorded
+  playback `rate` on the `Play` event, a bounded touch pass, and a phase-2 Drive
+  queue. **Next step: the plan.** The coach's chosen short-term bet over #139
+  (Android), because it ships on the existing Linux app.
 
 ### Watch, rather than pick up
 
@@ -53,6 +58,9 @@ product call, or their own data.
 - **103.** A possession tracker, as an analysis pass — which output (a share, a
   timeline, or the change moments) is the coach's call; built on P5/P6's
   detector and kit clustering (#81)
+- **139.** A full touch-first Android tablet editor — brainstormed 2026-11-04,
+  decision taken (separate repo sharing `pundit-core`); paused for #140, no spec
+  yet. *Trigger:* the coach commits to the tablet as a product
 
 ### Considered and not doing
 
@@ -4895,3 +4903,171 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   draws on; the refusal wording the first time a coach is blocked by it.
   Related: #133 (the title maker, its other half), #116 (the pen), #117
   (arrowheads).
+
+## Android tablet editor (brainstorm 2026-11-04; no spec, no plan)
+
+139. **A full touch-first editor on an Android tablet.** The coach wants the
+  whole app — record commentary, tag, draw, slate, export — on a tablet: the
+  touchscreen suits the vibe and it is how the app reaches a mainstream, cart-
+  and-tablet audience rather than a laptop one. This entry records the
+  brainstorm and the one architectural decision taken, so the ground is not
+  dug twice. **It is not specced and not queued**, paused the day it was raised
+  in favour of #140 (the in-gym live-capture feature), which the coach judged
+  the better short-term bet.
+- **The stack does not foreclose it** (design spec
+  `2026-09-19-linux-port-design.md`'s own words): Slint and GStreamer both run
+  on Android. What that spec calls the real obstacle is **product shape** — the
+  app is a scrub-and-tag-**with-keyboard** tool, and a touch tablet with no
+  physical keyboard is "a different product," not a re-skin. The rebindable-key
+  grammar (`z`/`x`/`v` tags, `i`/`o` slate marks, F1 sheets), hover and right-
+  click menus (the scrubber's snap toggle, the slate row menus) have **no touch
+  affordance today**. A lot *is* already pointer-friendly — the scrubber drag,
+  the pen overlay, the splitters, every sheet's buttons — but the interaction
+  model is the hard part, not the renderer.
+- **The platform shell diverges completely, confirmed against the tree 2026-11-04:**
+  capture is `v4l2src` + `pipewiresrc` (Android: Camera2/`ahcsrc`, Oboe/
+  `openslessrc`); encode/decode is VA-API `vah264lpenc`/`vah265dec` with
+  `x264enc` fallback (Android: MediaCodec `amcvidenc`/`amcviddec`); whisper is
+  pinned to **x86-64-v3** in `.cargo/config.toml` (Android: aarch64/NEON, a
+  separate build config). There are **zero** Android/NDK traces in `crates/`
+  today.
+- **The decision: a separate repo that shares `pundit-core` as a versioned git
+  dependency** (the coach, 2026-11-04 — *"separate repo seems the best idea"*).
+  `pundit-core` is pure, media-free, CI-enforced logic — the format, timeline,
+  zoom, stroke replay, scoreboard clock, caption/slate/reel logic — and is the
+  one asset expensive and dangerous to re-derive. Sharing it keeps a tablet-
+  recorded match **bit-compatible** with the laptop, which is the whole reason
+  to share. The platform shell (`pundit-media`, `pundit-app`) is rewritten.
+  Isolation also protects the shipping laptop app from an experimental port's
+  churn (its own CI, its own `.cargo/config.toml`, its own release cadence),
+  and the aarch64 build config *wants* to be separate anyway.
+- **The one real cost is format lockstep across a repo boundary.** `pundit-core`
+  *is* the format, and the format bumps on nearly every feature (v10→v18 in two
+  months, each "bump the version once, with a test that every readable version
+  loads"). In **one** workspace the compiler enforces that both shells track a
+  core change atomically, in one CI run; across **two** repos it is a manual
+  pin-bump-and-re-test discipline, and the Android repo learns of a break
+  *later*. Smaller than it sounds because the format was designed to tolerate
+  exactly this skew — `store::read` accepts `MIN_READABLE..=CURRENT`, so a
+  behind Android reads newer files until a field matters and refuses rather than
+  corrupts (keeping `project.json.v<old>`). The downsides that are **not** real:
+  core's purity travels with it wherever consumed, and the build config is
+  better off separate.
+- **One sub-decision left open, not needed yet:** a separate repo depending on
+  core implies core has an *upstream* — either the laptop repo is upstream-of-
+  Android, or `pundit-core` is extracted into a third repo both depend on (a
+  refactor of the working app). A git dependency on the laptop repo's core is a
+  fine start; extract only if a third consumer appears.
+- **Prior history, so it is not misremembered as a plan:** a
+  `claude/android-tablet-port` branch once existed and is **gone from the
+  remote**. It was an *investigation* session, not a feature port — its only
+  surviving output is two bugs folded into #70 (a whisper teardown heap-
+  corruption crash it also saw) and #71 (a full-scale DC step at the start of
+  every recording, found by its audio analyzer). No UI, no spec, no plan ever
+  came of it.
+- **Why deferred:** it is a second port the size of the original — a new capture
+  stack, a MediaCodec encode/decode path (with zero-copy to re-prove), whisper
+  on aarch64, Android scoped storage against the "a project is a folder" model,
+  and a touch-first redesign of a keyboard-grammar app — and the coach chose the
+  in-gym feature first.
+- **When to revisit:** when the coach commits to the tablet as a product. The
+  next step is then a **brainstorm → spec** under the CLAUDE.md workflow, whose
+  real substance is the five unknowns just listed. Related: #140 (in-gym live
+  capture, taken first), and the design spec's Android non-goal.
+
+## In-gym live capture (brainstorm 2026-11-04; no spec yet)
+
+140. **Capture live from a USB camera, review and draw over it, and share to
+  Google Drive.** The use case is in-gym instruction — tumbling, a cart-mounted
+  machine with a USB camera: the coach records a kid live, reviews and annotates
+  the clip, and queues it to share. The coach took this as the short-term bet
+  over #139 (the Android editor), because it ships on the **existing Linux app**
+  rather than being a second port. Brainstormed with the coach 2026-11-04; the
+  next step is a **brainstorm → spec** under the CLAUDE.md workflow. This entry
+  records the shape and the three decisions so the spec starts from them.
+- **The one new primitive is capture-as-source, and it inverts the app's
+  deepest assumption.** Today footage is **always imported** (`AddSource` takes
+  a path), and the live camera is **only ever commentary** — the PiP self-view
+  or the avatar — never a scrubable primary source. Recordings in `recordings/`
+  are takes that play back *over* a source; nothing captures a *source*. The
+  gym flow wants the opposite: record the camera **into the session as the
+  primary clip**, then work on it. Confirmed against the tree 2026-11-04. The
+  capture pipeline itself is reused (`v4l2src`, the recorder, device
+  selection); what is new is wiring a capture that finalises a file and **probes
+  it in as a source** rather than appending a commentary take.
+- **Decision 1 — a new "session" project kind** (coach, 2026-11-04). A tumbling
+  session is **not a match**: no scoreboard, no `<Home> v <Away>`, no two-half
+  aspect gate, no periods. It is a bag of **N short captured sources** (one per
+  kid per skill), where the match model has exactly two halves gated on a shared
+  aspect. A session carries arbitrary N sources with **no aspect constraint**.
+  It is a format change (a project kind + a version bump); the open design
+  question the spec must answer is whether that is a `kind` field on `Project`
+  or a separate type, and how much match furniture (`scoreboard`, periods, the
+  aspect gate) becomes optional versus absent.
+- **Decision 2 — annotation is the existing review-and-draw flow, unchanged**
+  (coach, 2026-11-04: *"it is just like our review and drawing on screen … the
+  coach records a clip right after"*). Once a captured clip is a **source**, the
+  coach records a commentary take over it — voice plus pen — exactly as over
+  match footage, and everything downstream (draw, slates, highlights, export,
+  the export queue #77) already works. **No new annotation mechanism**, and the
+  "with the kid right there" immediacy is not a requirement.
+- **Decision 2b — playback speed is in scope, a natural extension of the edit**
+  (coach, 2026-11-04: *"playback speed could be added to the current clip
+  settings … we can already pause and scrub during clip recording … playback
+  speed is a natural extension of that"*). It is cheap because the timeline
+  already carries a per-segment **`rate`** — today only ever `1.0` on a `Play`
+  event or `0.0` on a `Pause` (`timeline.rs`'s walk, source cursor advancing as
+  `source + (record_time − record_cursor) * rate`). Slow motion is that constant
+  generalised: a recorded rate below 1.0, captured through the commentary event
+  log like every other transport action, so preview and export replay it with
+  **no new compositing**. The spec must settle three things: **where the rate
+  lives** (a field on the `Play` event, or a `SetRate` event, vs one clip-wide
+  setting — the coach's "clip settings" phrasing leans the latter, but the
+  timeline is per-segment); **how it reconciles with the existing scan speed**
+  (`J`/`L`, 1×–32×, which is *viewing-only* and returns to 1× on a recording —
+  two rate concepts is a smell to resolve, not duplicate); and **what the source
+  audio does under slow motion** (slow, mute, or pitch-correct — muted is the
+  usual answer for analysis).
+- **Decision 3 — sharing is a real Google Drive upload with a pending-share
+  queue** (coach, 2026-11-04), not an export into a Drive-synced folder. This is
+  the most external, most separable chunk: OAuth, token storage and refresh,
+  an upload queue in the shape of #77's export queue but with Drive as the sink,
+  and the questions a cart machine raises — auth on a shared/headless box, which
+  Drive folder, and whether the parent gets a shareable link.
+- **The natural phase split, for the spec to confirm:** (1) the **session kind +
+  capture-as-source + review/export** core, which reuses the whole annotate and
+  export stack and is shippable on its own; (2) the **Drive upload queue**, the
+  external integration, deferrable behind phase 1. A burned MP4 on disk is a
+  complete deliverable before Drive exists.
+- **Decision 4 — the UI gets a touchscreen pass, in scope** (coach,
+  2026-11-04: *"we will need to redesign the ui a bit around touchscreen
+  compatibility here"*). The cart machine is driven by touch, so the gestures
+  the app hides behind a mouse need a touch affordance: **hover and right-click
+  menus** have none today (the scrubber's snap toggle is a right-click, the
+  slate-row menus are right-click, and several controls rely on hover). The
+  scope is *"a bit"* — make the gym flow (capture → review-and-draw → share)
+  fully operable by touch, **not** a full tablet UI rewrite (that is #139, and
+  this needs no Android). The spec must list which controls the gym flow
+  actually touches and give each a tap-reachable path; the drawing overlay, the
+  scrubber drag, the splitters and the sheet buttons are already pointer-driven
+  and largely fine. Resolve this against #139 so the two do not design the same
+  touch surface twice.
+- **Spec written and reviewed 2026-11-04**
+  (`docs/superpowers/specs/2026-11-04-in-gym-capture-design.md`). The two
+  adversarial passes caught the first draft's two load-bearing errors, both
+  verified against the code: capture-as-source was mis-modelled as a `Take`
+  variant (`Take` is `Footage | Slate | Whiteboard`, and it discriminates what a
+  take plays *over*, which a capture has none of) — it is now its own
+  `Command::CaptureSource` with a start path that bypasses `can_record`'s
+  "add a game video first" guard and `heading`'s anchor; and the playback-rate
+  change is not "one line" — `timeline::emit` turns any non-unit rate into a
+  `Freeze`, so it needs the branch change, the EOF-split math, both walks and a
+  `core::audio` edit. Rate lives on the `Play` event (the v19 bump removes the
+  forward-compat objection a new field would otherwise have). Two coach
+  decisions settled in review: one Record button (the bus decides capture vs
+  review from selection), and a stored `Project.created` date for recents.
+- **Why deferred (from built):** the spec is done; the plan is next, then
+  execution under the subagent-driven workflow.
+- **When to revisit:** now — it is the queued work. Related: #139 (the Android
+  editor it was chosen over), #77 (the export queue the Drive queue mirrors),
+  #138 (the whiteboard take, precedent for a new capture mode).
