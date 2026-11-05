@@ -2040,6 +2040,10 @@ component Sheet inherits Rectangle {
 /// has got to: the rows come from the bus's events, not from the sheet.
 component ExportSheet inherits Sheet {
     in property <[TargetRow]> targets;
+    /// Whether the open project is a match (v19). A session carries no
+    /// scoreboard, so neither the Scoreboard picker nor its subtitles switch
+    /// shows (spec V2). Default `true` so every existing match is unchanged.
+    in property <bool> is-match: true;
     /// Something is ticked, so there is something to export.
     in property <bool> any-ticked;
     /// The run in progress, one row per target; empty before the first.
@@ -2148,8 +2152,9 @@ component ExportSheet inherits Sheet {
     }
 
     // Its own row rather than a third column: "Burned into the picture"
-    // doesn't fit a third of this sheet.
-    VerticalLayout {
+    // doesn't fit a third of this sheet. **Match chrome**: a session carries
+    // no scoreboard, so the whole picker is hidden (spec V2).
+    if root.is-match: VerticalLayout {
         spacing: 4px;
         FieldLabel { text: "Scoreboard"; }
         ComboBox {
@@ -2194,7 +2199,10 @@ component ExportSheet inherits Sheet {
         }
     }
 
-    CheckBox {
+    // **Match chrome**: scoreboard subtitles need a scoreboard, so a session
+    // doesn't show the switch (spec V2). `cues` stays at its default, which a
+    // session's clip export carries as "no scoreboard" anyway.
+    if root.is-match: CheckBox {
         text: "Scoreboard subtitles — an .srt beside the file, and a track inside a copy";
         checked <=> root.cues;
 
@@ -3863,6 +3871,54 @@ component NewMatchSheet inherits Sheet {
     }
 }
 
+/// The New session sheet (in-gym capture spec §N1, §C4): one name field and
+/// Create/Cancel.
+///
+/// **Far simpler than `NewMatchSheet`**, and deliberately not a variant of it:
+/// a session carries no videos, no teams, no scoreboard and no folder to pick,
+/// so there is no shared column to lift out. The bus resolves its own folder
+/// and defaults a blank name to today's date (spec §N4), so Create needs no
+/// validator and no refusal of its own — a blank name is a valid session — and
+/// so the button cannot be left dead, which is `NewMatchSheet`'s own rule for
+/// its reason.
+component NewSessionSheet inherits Sheet {
+    in-out property <string> name;
+    /// Create was pressed and the sheet is waiting for `ProjectOpened`, the one
+    /// thing that closes it — `NewMatchSheet::creating`'s rule, for its reason.
+    in property <bool> creating;
+    callback create();
+    callback cancel();
+
+    card-width: 440px;
+    title: "New session";
+
+    FieldLabel { text: "Name (optional — today's date if left blank)"; }
+    name-field := LineEdit {
+        placeholder-text: "Session name";
+        text <=> root.name;
+    }
+
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: end;
+
+        Button {
+            text: "Cancel";
+            clicked => { root.cancel(); }
+        }
+        Button {
+            text: "Create";
+            primary: true;
+            enabled: !root.creating;
+            clicked => { root.create(); }
+
+            Tooltip {
+                text: @markdown("Make an empty capture session and open it. Record clips straight in; name it later.");
+            }
+        }
+    }
+}
+
 /// One row of the Keys sheet (#96, spec D2), built by `keymap::Keymap::listing`
 /// from the same table the matcher reads -- so a listed row is a row the
 /// matcher holds and the list cannot go stale.
@@ -4343,6 +4399,12 @@ export component AppWindow inherits Window {
     // --- Project state (from bus events) ---
 
     in property <bool> has-project;
+    /// Whether the open project is a tagged match (v19). A session
+    /// (`!is-match`) shows none of the match chrome — the scoreboard setup,
+    /// the match-event editor, the reel, the clock, the slate band colour and
+    /// the Slates list — and its export sheet offers Clip and basket only.
+    /// Default `true` so every existing match behaves unchanged.
+    in property <bool> is-match: true;
     /// The project-name field's text.
     in-out property <string> project-name;
     /// The name the field returns to when it loses focus: the project's, or
@@ -4716,6 +4778,22 @@ export component AppWindow inherits Window {
     callback new-match();
     callback create-match();
     callback choose-projects-dir();
+
+    // --- New session (in-gym capture spec §N1, §C4) ---
+    //
+    // One name, two-way; `creating` is the sheet's own state, cleared by
+    // `close-new-session`. The button opens the sheet directly — there is no
+    // picker in front of it, a session carrying no videos.
+    in-out property <bool> new-session-sheet-open;
+    in-out property <string> new-session-name;
+    /// In-out because the `Event::Error` arms clear it, as the New match
+    /// sheet's `creating` is: Create disables on the click and only an error
+    /// or a close re-enables it.
+    in-out property <bool> new-session-creating;
+    /// Open the one-field sheet.
+    callback new-session();
+    /// Send `Command::NewSession` with the typed name.
+    callback create-session();
     pure callback team-named(string) -> bool;
     pure callback valid-folder-name(string) -> bool;
     pure callback valid-projects-dir(string) -> bool;
@@ -5330,6 +5408,19 @@ export component AppWindow inherits Window {
         keys.focus();
     }
 
+    /// Closes the New session sheet, however it was closed — Cancel, Esc or the
+    /// `ProjectOpened` that says the session exists. `close-new-match`'s rule:
+    /// guarded so an unrelated open doesn't steal focus, and `creating` goes
+    /// with it so the next open has a live Create button.
+    public function close-new-session() {
+        if (!root.new-session-sheet-open) {
+            return;
+        }
+        root.new-session-creating = false;
+        root.new-session-sheet-open = false;
+        keys.focus();
+    }
+
     /// Re-derives the folder name from the date and the two team names, unless
     /// the coach has taken the field over (spec N1). Imperative, on
     /// `saved-project-name`'s pattern above, because `SetupField`'s text is
@@ -5479,6 +5570,15 @@ export component AppWindow inherits Window {
         if (root.new-match-sheet-open) {
             if (pressed && event.text == Key.Escape && !root.text-editing) {
                 root.close-new-match();
+                return accept;
+            }
+            return reject;
+        }
+        // The New session sheet is modal too and has one field: Esc leaves the
+        // field first, and the next Esc closes — the New match sheet's rule.
+        if (root.new-session-sheet-open) {
+            if (pressed && event.text == Key.Escape && !root.text-editing) {
+                root.close-new-session();
                 return accept;
             }
             return reject;
@@ -6061,7 +6161,9 @@ export component AppWindow inherits Window {
                         // stranded the filter with no way to clear it — and
                         // typing a tag passes through "matches nothing" on
                         // the first letter.
-                        if root.sources.length > 0: VerticalLayout {
+                        // Match chrome: the Slates list and its Type… door are
+                        // hidden in a session (spec S4).
+                        if root.sources.length > 0 && root.is-match: VerticalLayout {
                             spacing: 6px;
 
                             HorizontalLayout {
@@ -7179,7 +7281,8 @@ export component AppWindow inherits Window {
                                 }
                             }
 
-                            MatchPanel {
+                            // Match chrome: hidden in a session (spec S4).
+                            if root.is-match: MatchPanel {
                                 expanded: root.match-expanded;
                                 toggle-fold => {
                                     keys.focus();
@@ -7300,6 +7403,7 @@ export component AppWindow inherits Window {
                         toggle-snap => { root.toggle-snap(); }
                         can-open-settings: root.can-open-settings;
                         open-settings => { root.open-settings(); }
+                        is-match: root.is-match;
                     }
 
                     HorizontalLayout {
@@ -7312,6 +7416,15 @@ export component AppWindow inherits Window {
 
                             Tooltip {
                                 text: @markdown("Pick a game's video files. pundit makes the folder and names the project.");
+                            }
+                        }
+                        Button {
+                            text: "New session…";
+                            enabled: !root.recording;
+                            clicked => { root.new-session(); }
+
+                            Tooltip {
+                                text: @markdown("Make an empty capture session and record clips straight into it. No video, no scoreboard.");
                             }
                         }
                         Button {
@@ -7418,9 +7531,18 @@ export component AppWindow inherits Window {
                             // rather than starting a take where the playhead
                             // is. The word is what keeps that off the list of
                             // things a coach discovers by surprise.
+                            //
+                            // **A session has no slates and one Record button**
+                            // (spec C4): with nothing selected it reads "Record
+                            // clip" — the free take — and "Record" over a
+                            // clip, the review of that clip. The label follows
+                            // the selection; whether the take captures or
+                            // reviews is the bus's job (task 5), not the word's.
                             text: root.recording
                                 ? "Stop"
-                                : root.selected-slate != "" ? "Record range" : "Record";
+                                : !root.is-match
+                                    ? (root.selected-clip != "" ? "Record" : "Record clip")
+                                    : root.selected-slate != "" ? "Record range" : "Record";
                             enabled: (root.can-play && !root.exporting && !root.previewing) || root.recording;
                             min-width: 72px;
                             // Off any field first: a click doesn't take focus
@@ -7833,7 +7955,10 @@ export component AppWindow inherits Window {
                                 rows: root.mics;
                                 chosen(node-name) => { root.choose-mic(node-name); }
                             }
-                            StillSection {
+                            // Match chrome: the avatar inset and the tactics
+                            // whiteboard are a match's, so a session shows
+                            // neither (spec S4, V3).
+                            if root.is-match: StillSection {
                                 title: "Inset";
                                 empty-text: "Camera — no avatar picked";
                                 thumb: root.avatar-thumb;
@@ -7842,7 +7967,7 @@ export component AppWindow inherits Window {
                                 choose() => { root.choose-avatar(); }
                                 remove() => { root.remove-avatar(); }
                             }
-                            StillSection {
+                            if root.is-match: StillSection {
                                 title: "Whiteboard";
                                 empty-text: "No diagram armed";
                                 thumb: root.backdrop;
@@ -7860,6 +7985,7 @@ export component AppWindow inherits Window {
         if root.export-sheet-open: Scrim {
             ExportSheet {
                 targets: root.export-targets;
+                is-match: root.is-match;
                 any-ticked: root.export-any-ticked;
                 run: root.export-run;
                 finish: root.export-finish;
@@ -8100,6 +8226,21 @@ export component AppWindow inherits Window {
                     root.create-match();
                 }
                 cancel => { root.close-new-match(); }
+            }
+        }
+
+        // The New session sheet, the same modal shape as New match: it closes
+        // on `ProjectOpened` and on nothing else, so a failure leaves the
+        // coach's typing in it.
+        if root.new-session-sheet-open: Scrim {
+            NewSessionSheet {
+                name <=> root.new-session-name;
+                creating: root.new-session-creating;
+                create => {
+                    root.new-session-creating = true;
+                    root.create-session();
+                }
+                cancel => { root.close-new-session(); }
             }
         }
 

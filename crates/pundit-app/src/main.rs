@@ -598,6 +598,33 @@ fn wire_new_match(
             });
         }
     });
+
+    // New session (in-gym capture spec §N1, §C4): no picker in front of it — a
+    // session carries no videos — so the button opens the sheet directly, with
+    // a blank name. The field is cleared on open so a second session doesn't
+    // inherit the first's typing.
+    window.on_new_session({
+        let weak = window.as_weak();
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            w.set_new_session_name(SharedString::new());
+            w.set_new_session_creating(false);
+            w.set_new_session_sheet_open(true);
+        }
+    });
+
+    // **No refusal of its own**, as `on_create_match`: the bus builds the
+    // folder and defaults a blank name to today's date (spec §N4), so the only
+    // thing this sends is the coach's typed name, untrimmed — the bus trims.
+    window.on_create_session({
+        let (weak, bus) = (window.as_weak(), bus.clone());
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            bus.borrow().send(Command::NewSession {
+                name: w.get_new_session_name().to_string(),
+            });
+        }
+    });
 }
 
 /// Seeds the New match sheet from `videos` and opens it (spec I0: every
@@ -3578,7 +3605,9 @@ fn on_event(w: &AppWindow, event: Event) {
             // The one event that says the project exists is the one that
             // dismisses the New match sheet (spec C5) — not the click, so a
             // failed Create leaves the sheet up with the coach's typing in it.
+            // The New session sheet closes the same way, for the same reason.
             w.invoke_close_new_match();
+            w.invoke_close_new_session();
             show_project(w, snapshot);
         }
         // The name field follows `saved-project-name`, set here, unless
@@ -3817,7 +3846,7 @@ fn on_event(w: &AppWindow, event: Event) {
     }
 }
 
-/// Re-enables the New match sheet's Create (spec S5).
+/// Re-enables the New match and New session sheets' Create (spec S5, §N1).
 ///
 /// **Wired into *both* `Event::Error` arms**, because the guarded one takes
 /// every notice before the other sees it — so wiring one would leave Create
@@ -3828,6 +3857,9 @@ fn on_event(w: &AppWindow, event: Event) {
 fn new_match_error(w: &AppWindow) {
     if w.get_new_match_sheet_open() {
         w.set_new_match_creating(false);
+    }
+    if w.get_new_session_sheet_open() {
+        w.set_new_session_creating(false);
     }
 }
 
@@ -3958,6 +3990,8 @@ fn show_project(w: &AppWindow, snapshot: Snapshot) {
         .collect();
     let first_missing = (0..rows.len()).find(|&i| missing(i));
     w.set_has_project(true);
+    // Match / session (v19): a session hides every match control (spec S4).
+    w.set_is_match(project.is_match());
     w.set_saved_project_name(project.name.as_str().into());
     w.set_missing_index(first_missing.map_or(-1, |i| i as i32));
     w.set_missing_name(

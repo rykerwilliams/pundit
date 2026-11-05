@@ -101,6 +101,10 @@ export component Scrubber {
     /// window's one gate for it.
     in property <bool> can-open-settings;
     callback open-settings();
+    /// Whether the open project is a match (v19). The slate band is match
+    /// chrome, so *Band colour…* is hidden in a session (spec S4). Default
+    /// `true` so every existing match keeps the item.
+    in property <bool> is-match: true;
 
     /// Where the value `at` is drawn: `value-at` turned round, so a mark sits
     /// exactly where a click scrubs to its value.
@@ -206,7 +210,7 @@ export component Scrubber {
                     root.toggle-snap();
                 }
             }
-            MenuItem {
+            if root.is-match: MenuItem {
                 title: "Band colour…";
                 enabled: root.can-open-settings;
                 activated => { root.open-settings(); }

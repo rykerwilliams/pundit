@@ -113,23 +113,40 @@ pub fn rows(paths: &[PathBuf], open: Option<(&Path, &str)>) -> Vec<Row> {
             let is_open = open.is_some_and(|(folder, _)| same_project(folder, path));
             // The open project's label comes from the caller; every other
             // row's from its own `project.json`.
-            let (label, resolved) = match open {
-                Some((_, label)) if is_open => (label.to_owned(), true),
+            //
+            // **A session's second line is its created date** (in-gym capture
+            // spec §S3): a session has no opponent and so no `<Home> v <Away>`
+            // to tell two of them apart, and its name is the coach's own — so
+            // the day it was made is what distinguishes a run of sessions. The
+            // date is read off the `project.json` the row already reads (no
+            // `state.json` cache, which would copy project data into machine
+            // state), so it is the open row's `None` and a match's folder name
+            // on every other row, unchanged.
+            let (label, resolved, session_date) = match open {
+                Some((_, label)) if is_open => (label.to_owned(), true, None),
                 _ => match store::read(path) {
-                    Ok(project) => (metadata::match_label(&project), true),
+                    Ok(project) => (
+                        metadata::match_label(&project),
+                        true,
+                        (!project.is_match())
+                            .then(|| project.created.clone())
+                            .flatten(),
+                    ),
                     // Gone, unreadable, legacy or too new: the folder name
                     // alone, dimmed. Not an error — the popover is a list, not
                     // an operation, so the refusal's kind does not matter here.
-                    Err(_) => (folder_name.clone(), false),
+                    Err(_) => (folder_name.clone(), false, None),
                 },
             };
 
             Row {
                 open: is_open,
-                second_line: if folder_name == label {
-                    String::new()
-                } else {
-                    folder_name
+                // A session shows its created date; a match shows its folder
+                // name, except where that only repeats the label (spec D1).
+                second_line: match session_date {
+                    Some(date) => date,
+                    None if folder_name == label => String::new(),
+                    None => folder_name,
                 },
                 path: path.clone(),
                 label,
@@ -223,6 +240,54 @@ mod tests {
             "the same label on both rows is exactly why the folder is shown"
         );
         assert!(rows.iter().all(|r| r.resolved && !r.open));
+    }
+
+    /// **A session shows its created date, not its folder name** (in-gym
+    /// capture spec §S3): a session has no opponent, so the day it was made is
+    /// what tells a run of them apart. The date is read off the same
+    /// `project.json` the row already reads — no `state.json` cache.
+    #[test]
+    fn a_session_shows_its_created_date_on_the_second_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("friday-shooting");
+        std::fs::create_dir(&path).unwrap();
+        let mut project = Project::new("Friday shooting".to_owned());
+        project.kind = pundit_core::project::ProjectKind::Session;
+        project.created = Some("2026-11-05".to_owned());
+        store::write(&path, &mut project).unwrap();
+
+        let rows = rows(&[path], None);
+
+        assert_eq!(rows[0].label, "Friday shooting");
+        assert_eq!(
+            rows[0].second_line, "2026-11-05",
+            "a session's second line is its created date, not its folder name"
+        );
+        assert!(rows[0].resolved);
+    }
+
+    /// A session with no stored date falls back to a match's rule: the folder
+    /// name where it differs from the label, empty where it repeats it. A
+    /// session always has a `created` (it is v19, as the kind is), so this is
+    /// defensive — but the fallback is the same one a match uses, not a special
+    /// blank, so a nameless day still tells two sessions apart by folder.
+    #[test]
+    fn a_session_with_no_date_falls_back_to_the_folder_rule() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("untitled-session");
+        std::fs::create_dir(&path).unwrap();
+        let mut project = Project::new("Session".to_owned());
+        project.kind = pundit_core::project::ProjectKind::Session;
+        project.created = None;
+        store::write(&path, &mut project).unwrap();
+
+        let rows = rows(&[path], None);
+
+        assert_eq!(
+            rows[0].second_line, "untitled-session",
+            "no date: the folder name tells them apart, as a match's does"
+        );
+        assert!(rows[0].resolved);
     }
 
     /// A project whose name **is** its folder name — which is what

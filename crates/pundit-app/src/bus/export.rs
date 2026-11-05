@@ -164,24 +164,34 @@ pub fn export_targets(project: &Project, selected: Option<Uuid>) -> Vec<ExportTa
             seconds: plan.total_frames() as f64 / f64::from(OUTPUT_FPS),
         })
     };
-    let mut rows: Vec<ExportTargetRow> = row(ExportTarget::WholeMatch, WHOLE_MATCH_LABEL.into())
+    // A session has no whole match and no reel — those are a tagged match's
+    // own targets (spec V2). It offers its clips (and their tags) only, and so
+    // its export sheet needs no scoreboard picker (gated on `is-match` in
+    // `app.slint`). A match keeps both targets; the data would already hide
+    // them for a project with no footage or no goals, but the kind is the rule.
+    let mut rows: Vec<ExportTargetRow> = project
+        .is_match()
+        .then(|| row(ExportTarget::WholeMatch, WHOLE_MATCH_LABEL.into()))
+        .flatten()
         .into_iter()
         .chain(row(ExportTarget::AllClips, ALL_CLIPS_LABEL.into()))
         .collect();
     for tag in tag_summaries(&project.clips) {
         rows.extend(row(ExportTarget::Tag(tag.tag.clone()), tag.tag));
     }
-    // A reel per side that scored, and the whole reel only when both have:
-    // with one side scoring it would be the same film twice (spec R1b).
-    let scored = |side| !reel_goals(project, side).is_empty();
-    if scored(ReelSide::Home) && scored(ReelSide::Away) {
-        rows.extend(row(
-            ExportTarget::Reel(ReelSide::All),
-            reel_label(project, ReelSide::All),
-        ));
-    }
-    for side in [ReelSide::Home, ReelSide::Away] {
-        rows.extend(row(ExportTarget::Reel(side), reel_label(project, side)));
+    if project.is_match() {
+        // A reel per side that scored, and the whole reel only when both have:
+        // with one side scoring it would be the same film twice (spec R1b).
+        let scored = |side| !reel_goals(project, side).is_empty();
+        if scored(ReelSide::Home) && scored(ReelSide::Away) {
+            rows.extend(row(
+                ExportTarget::Reel(ReelSide::All),
+                reel_label(project, ReelSide::All),
+            ));
+        }
+        for side in [ReelSide::Home, ReelSide::Away] {
+            rows.extend(row(ExportTarget::Reel(side), reel_label(project, side)));
+        }
     }
     if let Some(clip) = selected.and_then(|id| project.clips.iter().find(|c| c.id == id)) {
         rows.extend(row(
