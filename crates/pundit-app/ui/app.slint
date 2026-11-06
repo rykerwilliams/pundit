@@ -983,6 +983,14 @@ component Inspector inherits Rectangle {
     /// (avatar G3). One word of the checkbox above follows it; the property,
     /// the command and the undo are the one `show-pip` either way.
     in property <bool> avatar;
+    /// The recorded playback speed of this clip (#140 task 7, spec §R), for
+    /// review -- the slowest rate any of its `Play` events carries, already
+    /// worded by `main.rs` ("Half speed", "Quarter speed", a range). **Empty
+    /// when the whole clip is real time**, which is every clip before this
+    /// feature, so an ordinary clip's settings read exactly as they did.
+    /// Display only: editing a committed clip's rate is out of scope
+    /// (BACKLOG #140).
+    in property <string> clip-rate-text;
     /// The project's avatar image has gone (A4), which costs an avatar clip
     /// its inset. Said here so the coach is told before they export.
     in property <bool> avatar-missing;
@@ -1161,6 +1169,18 @@ component Inspector inherits Rectangle {
             selected => { root.caption-chosen(self.current-index); }
 
             Tooltip { text: @markdown("How long this clip's caption shows along the bottom of the export"); }
+        }
+
+        // The recorded playback speed, for review (#140 task 7, spec §R).
+        // Absent entirely on an ordinary real-time clip, so its settings are
+        // unchanged; present as a read-only line when the footage was slowed.
+        if root.clip-rate-text != "": FieldLabel { text: "Playback speed"; }
+        if root.clip-rate-text != "": Text {
+            text: root.clip-rate-text;
+            accessible-label: root.clip-rate-text;
+            color: Palette.foreground;
+            font-size: 12px;
+            wrap: word-wrap;
         }
 
         if root.avatar && root.avatar-missing: Text {
@@ -4451,6 +4471,21 @@ export component AppWindow inherits Window {
     /// guard): the source and clip lists, Open Project, rename, the scrubber
     /// and the Devices button.
     out property <bool> recording: root.recording-phase != RecordingPhase.idle;
+    /// The recorded playback rate (#140 task 7, spec §R): 1.0 is real time,
+    /// below it is slow motion the coach talks over, baked into the clip's
+    /// edit. The window holds it and sends it on every `toggle-play` (caller-
+    /// captured per the bus contract); the speed control in the recording
+    /// transport cycles it. Reset to 1x whenever a take ends, so a new take
+    /// starts at real time. **`in-out`**: Slint cycles it from the speed
+    /// control, and `main.rs` resets it to 1x when a take ends.
+    in-out property <float> record-rate: 1.0;
+    /// The next rate the recording speed control cycles to (slow motion only,
+    /// §R4: the recorded rate is sub-1.0, never faster), wrapping from the
+    /// slowest back to 1x. The ladder is 1 → 0.75 → 0.5 → 0.25 → 1; it is
+    /// tabulated here and nowhere else in the UI.
+    pure function next-record-rate(rate: float) -> float {
+        rate == 1.0 ? 0.75 : rate == 0.75 ? 0.5 : rate == 0.5 ? 0.25 : 1.0
+    }
     /// Time since the recording's t0, already formatted.
     in property <string> recording-elapsed: "0:00";
     /// The microphone's peak as a fraction of the level bar, 0..1.
@@ -4565,6 +4600,10 @@ export component AppWindow inherits Window {
     in property <bool> clip-avatar;
     /// The selected clip was recorded over a diagram (#138).
     in property <bool> clip-whiteboard;
+    /// The selected clip's recorded playback speed, worded for review (#140
+    /// task 7, spec §R). Empty when the clip is real time, which hides the
+    /// inspector's line entirely.
+    in property <string> clip-rate-text;
     /// The selected clip's transcription and the line that describes it
     /// (Phase 10 S5). Both are written by `src/main.rs` from
     /// `Event::Transcription` -- and, unlike the fields above, they keep
@@ -7211,6 +7250,7 @@ export component AppWindow inherits Window {
                                     caption-index <=> root.clip-caption-index;
                                     avatar: root.clip-avatar;
                                     avatar-missing: root.avatar-missing;
+                                    clip-rate-text: root.clip-rate-text;
                                     begin-edit => { root.editing-clip-id = root.selected-clip; }
                                     commit(field, text) => { root.edit-clip(root.editing-clip-id, field, text); }
                                     end-edit(field, text) => {
@@ -7563,6 +7603,32 @@ export component AppWindow inherits Window {
                                             : root.selected-slate != ""
                                                 ? @markdown("Record the selected range (R), then **Space** to play it. Esc clears the selection to record freely")
                                                 : @markdown("Record (R)");
+                            }
+                        }
+                        // The recorded playback-speed control (#140 task 7,
+                        // spec §R), modelled on the scan-speed button beside
+                        // Play: it cycles the recorded rate through the slow-
+                        // motion ladder and back to 1x, so the coach talks over
+                        // slow footage. Shown only while recording — scan speed
+                        // (J/L) owns the viewing rate the rest of the time, and
+                        // the two never overlap (§R4). Each change re-sends
+                        // `toggle-play`, which the bus takes as a live speed
+                        // change (not a toggle) while the take plays (§R5).
+                        Button {
+                            visible: root.recording;
+                            text: root.record-rate + "×";
+                            // Distinct from the scan-speed button beside Play,
+                            // which can read the same "1×": a test (and a screen
+                            // reader) needs to tell the two apart.
+                            accessible-label: "Recording speed " + root.record-rate + "×";
+                            min-width: 56px;
+                            clicked => {
+                                root.record-rate = root.next-record-rate(root.record-rate);
+                                root.toggle-play();
+                            }
+
+                            Tooltip {
+                                text: @markdown("Slow the footage down to talk over it. The commentary stays real time");
                             }
                         }
                         // The stretch item, right-aligned: it holds the

@@ -128,11 +128,20 @@ impl Harness {
         self.bus.send(cmd);
     }
 
-    /// Play/pause as the UI sends it: the moment and position read now.
+    /// Play/pause as the UI sends it: the moment and position read now, at
+    /// real time (the recorded-rate control at 1x).
     pub fn toggle_play(&self) {
+        self.toggle_play_at(1.0);
+    }
+
+    /// Play/pause as the UI sends it, with the recorded playback rate the
+    /// window's speed control holds (#140 task 7): 1.0 is real time, below it
+    /// is slow motion baked into a take's edit.
+    pub fn toggle_play_at(&self, rate: f64) {
         self.send(Command::TogglePlay {
             host_ns: now_ns(),
             source_secs: self.position_secs(),
+            rate,
         });
     }
 

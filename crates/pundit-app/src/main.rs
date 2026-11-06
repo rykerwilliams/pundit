@@ -806,10 +806,18 @@ fn wire_callbacks(window: &AppWindow, bus: &Rc<RefCell<BusHandle>>, pickers: &Pi
     // bus contract): queue delay would put a recording's log behind.
     window.on_toggle_play({
         let (send, position) = (send(bus), bus.borrow().position_handle().clone());
+        // The recorded playback rate (#140 task 7) rides every `TogglePlay`,
+        // captured here at the input event with the moment and position (the
+        // bus contract). The window holds it on `record-rate`; the bus honours
+        // it only while recording, and a change of it while a take plays is a
+        // live speed change rather than a toggle (spec §R5).
+        let weak = window.as_weak();
         move || {
+            let rate = weak.upgrade().map_or(1.0, |w| w.get_record_rate() as f64);
             send(Command::TogglePlay {
                 host_ns: now_ns(),
                 source_secs: position.query_position(),
+                rate,
             })
         }
     });
@@ -3675,6 +3683,10 @@ fn on_event(w: &AppWindow, event: Event) {
                     ui.avatar_take = false;
                     w.set_self_view_avatar(false);
                     w.set_self_view(slint::Image::default());
+                    // The take is over: the footage is back at real time
+                    // (the bus's `end_recorded_rate` does the same), so the
+                    // next take starts at 1x (#140 task 7).
+                    w.set_record_rate(1.0);
                 }
             });
             w.set_recording_phase(match status {
@@ -4382,7 +4394,27 @@ fn show_clip(w: &AppWindow) {
         ));
         w.set_clip_avatar(clip.is_some_and(|c| c.inset == Inset::Avatar));
         w.set_clip_whiteboard(clip.is_some_and(|c| c.backdrop.is_some()));
+        // The recorded playback speed, for review (#140 task 7). Empty on a
+        // real-time clip, which is every clip before this feature.
+        w.set_clip_rate_text(
+            clip.and_then(Clip::slowest_recorded_rate)
+                .map(playback_speed_label)
+                .unwrap_or_default()
+                .into(),
+        );
     });
+}
+
+/// Words a recorded playback rate for the inspector's review line (#140 task
+/// 7). The named fractions match the speed control's ladder; anything off it —
+/// only reachable from a hand-edited project — is shown as a percentage.
+fn playback_speed_label(rate: f64) -> String {
+    match rate {
+        r if (r - 0.75).abs() < 1e-6 => "Three-quarter speed (0.75×)".to_owned(),
+        r if (r - 0.5).abs() < 1e-6 => "Half speed (0.5×)".to_owned(),
+        r if (r - 0.25).abs() < 1e-6 => "Quarter speed (0.25×)".to_owned(),
+        r => format!("{:.0}% speed", r * 100.0),
+    }
 }
 
 /// Fills the transcript row's model picker (Phase 10 S3).

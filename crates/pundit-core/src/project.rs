@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::caption::CaptionBar;
-use crate::event::CommentaryEvent;
+use crate::event::{CommentaryEvent, EventKind};
 use crate::highlight::PlayerHighlight;
 use crate::naming;
 use crate::plan::ScoreboardMode;
@@ -423,6 +423,22 @@ impl Clip {
                 ClipEdit::Transcript(std::mem::replace(&mut self.transcript, v))
             }
         }
+    }
+
+    /// The slowest recorded playback rate any of this clip's segments was
+    /// recorded at (#140 task 7, spec §R), or `None` when the whole clip is
+    /// real time — which is every clip before this feature. A freeze
+    /// (`Rate(0.0)` on a paused frame) is not a slow playback rate and is
+    /// skipped: the question is how slow the *moving* footage was, and a pause
+    /// moves no footage. The UI words the answer for review.
+    pub fn slowest_recorded_rate(&self) -> Option<f64> {
+        self.events
+            .iter()
+            .filter_map(|e| match e.kind {
+                EventKind::Play { rate, .. } if rate.0 > 0.0 && rate.0 < 1.0 => Some(rate.0),
+                _ => None,
+            })
+            .min_by(|a, b| a.total_cmp(b))
     }
 
     /// Where this clip's inset goes and how big — or `None` when none is drawn.

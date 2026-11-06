@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gstreamer::glib;
+use pundit_core::event::Rate;
 use pundit_core::project::Preferences;
 use pundit_core::recording::{PendingClip, RecordingLog};
 use pundit_core::store::{BACKDROPS_DIRNAME, RECORDINGS_DIRNAME, SOURCES_DIRNAME};
@@ -377,6 +378,11 @@ impl Bus {
         // refuse any more — every refusal above must leave the arm it found
         // alone, exactly as it leaves the player.
         self.armed_slate = slate;
+        // Each take begins at real time (#140 task 7): the window re-sends the
+        // speed control's value with the first play, but a take that never
+        // plays, or whose window leaves the control at 1x, must not inherit the
+        // last take's slow motion.
+        self.recorded_rate = 1.0;
         self.emit(Event::Recording(RecordingStatus::Starting { whiteboard }));
         // Recording always wins (Phase 10 spec S5): the transcript running
         // gives way and goes back to the front of the queue. **Here**, once
@@ -443,13 +449,29 @@ impl Bus {
         self.abort_recording();
     }
 
-    /// Logs the play state just entered at `host_ns`, while recording.
+    /// A take has ended (#140 task 7): the footage returns to real time. The
+    /// scan reset in `set_playing` was suppressed while recording so a sub-1.0
+    /// rate could survive a pause within the take, so it is undone here — once,
+    /// as the recording ends. **Called with `self.recording` already taken**, so
+    /// `change_rate` runs the ordinary path and nothing re-reads the rate as a
+    /// recording concept.
+    fn end_recorded_rate(&mut self) {
+        self.recorded_rate = 1.0;
+        if self.player.rate() != 1.0 {
+            self.change_rate(1.0);
+        }
+    }
+
+    /// Logs the play state just entered at `host_ns`, while recording. A `Play`
+    /// carries the take's recorded rate (#140 task 7, spec §R), so a segment
+    /// recorded slow replays slow; a `Pause` carries none.
     pub(super) fn log_playing(&mut self, host_ns: u64, ui_secs: Option<f64>) {
         let (_, anchor) = self.heading(ui_secs);
         let playing = self.playing;
+        let rate = Rate(self.recorded_rate);
         if let Some(log) = self.recording.as_mut().and_then(Active::log_mut) {
             if playing {
-                log.play(host_ns, anchor);
+                log.play(host_ns, anchor, rate);
             } else {
                 log.pause(host_ns, anchor);
             }
@@ -629,6 +651,7 @@ impl Bus {
         let Some(active) = self.recording.take() else {
             return;
         };
+        self.end_recorded_rate();
         // The arm goes with the take (BACKLOG #114): the range has had its
         // commentary, and the log below is closed, so nothing is left to write
         // a pause into. A capture never armed a slate, so this is harmless
@@ -749,6 +772,7 @@ impl Bus {
         let Some(active) = self.recording.take() else {
             return;
         };
+        self.end_recorded_rate();
         // As in `finish_recording`: the arm goes with the take. (A capture
         // armed none.)
         self.armed_slate = None;

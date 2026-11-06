@@ -74,16 +74,18 @@ impl RecordingLog {
         }
     }
 
-    /// Playback started at `host_ns`, from `source_seconds` in the source.
-    pub fn play(&mut self, host_ns: u64, source_seconds: f64) {
+    /// Playback started at `host_ns`, from `source_seconds` in the source, at
+    /// `rate`. The commentary stays real time; a `rate` below 1.0 is slow
+    /// motion baked into the edit (#140 task 7, spec §R). A live mid-take
+    /// speed change is a new `Play` at the current position carrying the new
+    /// rate — the same append, with a rate that differs from the last.
+    pub fn play(&mut self, host_ns: u64, source_seconds: f64, rate: Rate) {
         let t = self.record_time(host_ns);
         self.push(
             t,
             EventKind::Play {
                 source_time: source_seconds,
-                // Live playback is always real time; a slow-motion rate is a
-                // later edit (#140 task 7), not something the recorder logs.
-                rate: Rate::default(),
+                rate,
             },
         );
     }

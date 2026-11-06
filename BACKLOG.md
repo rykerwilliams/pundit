@@ -28,6 +28,13 @@ observation that should promote it, and none is worth doing before that.
   sighting was #72's load stall in the test's opening load, now recovered by
   the test rig as the bus does (2026-10-12). *Trigger:* a failure **after**
   that load, which would be the race the test is about
+- **142.** Editing a committed clip's recorded playback speed post-hoc (#140
+  task 7). The speed is set live while recording — the control cycles it, the
+  bus bakes it into the `Play` events — and the inspector *displays* it for
+  review ("Half speed (0.5×)") but offers no control to change it afterwards.
+  Re-timing it would mean rewriting the clip's `Play` rates, a different edit
+  from the live capture. *Trigger:* a coach wants to slow (or un-slow) a take
+  they already recorded without re-recording it.
 - **135.** A second key per action, from the Keys sheet — #96 ships *Set…* as a
   **replace**. *Trigger:* a coach rebinds one of the four paired rows and asks
   where the other key went

@@ -328,9 +328,18 @@ pub enum Command {
     // (never by the bus: queue delay would drift the recording's log).
     /// `source_secs` is the player's position the UI read at the keypress,
     /// the pause or play anchor when no seek is outstanding (R10).
+    ///
+    /// `rate` is the recorded playback rate the window has chosen (#140 task
+    /// 7, spec §R): 1.0 at normal speed or outside recording, below it for
+    /// slow motion baked into the edit. While recording and already playing,
+    /// a changed `rate` is a live speed change — it re-seeks at the new rate
+    /// and appends a `Play` at the current position without pausing, rather
+    /// than toggling (§R5). Outside recording the field is 1.0 and nothing
+    /// changes; scan speed (`J`/`L`) is a separate, viewing-only concept (§R4).
     TogglePlay {
         host_ns: u64,
         source_secs: Option<f64>,
+        rate: f64,
     },
     /// Skip by `delta` seconds; presses in quick succession accumulate.
     Skip {
@@ -874,6 +883,14 @@ pub struct Bus {
     /// The last `Position` published: source index and target.
     last_position: (usize, Option<f64>),
     playing: bool,
+    /// The recorded playback rate the current take plays the footage at (#140
+    /// task 7, spec §R): 1.0 normally, below it for slow motion baked into the
+    /// edit. The window supplies it on every [`Command::TogglePlay`]; the bus
+    /// holds it so it **persists across pauses within a take** and is re-applied
+    /// on resume. Outside recording it is 1.0, which is why
+    /// [`Bus::set_playing`]'s scan-reset-to-1x only fires while not recording —
+    /// a recorded rate must survive the pause that scan speed must not.
+    recorded_rate: f64,
     /// One entry per source, from the last existence check.
     missing: Arc<[bool]>,
     /// Coalesces skip presses over concat time (spec D8).
@@ -1003,6 +1020,7 @@ impl Bus {
             current: 0,
             last_position: (0, None),
             playing: false,
+            recorded_rate: 1.0,
             missing: Arc::new([]),
             skip: SkipCoordinator::default(),
             skip_deadline: None,
@@ -1283,7 +1301,8 @@ impl Bus {
             Command::TogglePlay {
                 host_ns,
                 source_secs,
-            } => self.toggle_play(host_ns, source_secs),
+                rate,
+            } => self.toggle_play(host_ns, source_secs, rate),
             Command::Skip { delta, host_ns } => self.skip(delta, host_ns),
             Command::ScrubMove { abs } => self.scrub(abs, false),
             Command::ScrubRelease { abs } => self.scrub(abs, true),

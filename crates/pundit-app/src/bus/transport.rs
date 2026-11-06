@@ -42,19 +42,60 @@ impl Bus {
     ///
     /// While recording, a change is logged at `host_ns`, anchored where the
     /// player is heading, with `ui_secs` as the position the UI saw.
-    pub(super) fn toggle_play(&mut self, host_ns: u64, ui_secs: Option<f64>) {
+    ///
+    /// `rate` is the recorded playback rate the window has chosen (#140 task
+    /// 7, spec §R): 1.0 at normal speed or outside recording, below it for
+    /// slow motion. While recording, the bus holds it ([`Bus::recorded_rate`])
+    /// so it persists across pauses within the take, and applies it to the
+    /// player whenever the footage plays — so the coach talks over slow motion
+    /// while the commentary stays real time.
+    ///
+    /// **A live mid-take speed change does not toggle** (spec §R5): while
+    /// recording and already playing, a changed `rate` re-seeks the footage at
+    /// the new rate and appends a `Play` at the current position, keeping it
+    /// playing rather than pausing.
+    pub(super) fn toggle_play(&mut self, host_ns: u64, ui_secs: Option<f64>, rate: f64) {
         // While a preview is open the transport drives it, and nothing here
         // applies: there is no source to load, and a preview can't be
-        // recorded over (spec P5).
+        // recorded over (spec P5). The recorded rate is a recording concept,
+        // so a preview ignores it.
         if self.preview.is_some() {
             return self.set_playing(!self.playing);
         }
+        // The recorded rate is only honoured while recording; outside a take
+        // the footage always plays at 1x (the field stays at its default, and
+        // scan speed — a separate, viewing-only concept, §R4 — owns the rate).
+        let recording = self.recording.is_some();
+        let rate = if recording && rate.is_finite() && rate > 0.0 {
+            rate
+        } else {
+            1.0
+        };
+        // A live mid-take speed change does not toggle (spec §R5): while
+        // recording and already playing, a changed rate re-seeks the footage at
+        // the new rate and appends a `Play` at the current position, keeping it
+        // playing. A changed rate while *paused* falls through to the toggle
+        // below, which starts the footage at the new rate — the coach setting a
+        // slow speed and pressing play, or the speed control doubling as "play
+        // this slowly." Either way the new `Play` the toggle logs carries it.
+        if recording && self.playing && rate != self.recorded_rate {
+            self.recorded_rate = rate;
+            self.change_rate(rate);
+            return self.log_playing(host_ns, ui_secs);
+        }
+        self.recorded_rate = rate;
         let was_playing = self.playing;
         let play = !self.playing
             && self.seekable()
             && (self.loaded()
                 || self.load(self.current, self.current_secs(), true, Origin::System));
         self.set_playing(play);
+        // Starting the footage during a take plays it at the recorded rate: the
+        // seek `change_rate` issues carries it. `set_playing`'s scan-reset is
+        // suppressed while recording, so a pause within the take leaves it set.
+        if play && recording && self.player.rate() != rate {
+            self.change_rate(rate);
+        }
         if play && !was_playing {
             // A burst's target stood still while paused.
             self.skip_since = Instant::now();
@@ -78,7 +119,16 @@ impl Bus {
             None => self.player.set_playing(playing),
         }
         self.emit(Event::Playing(playing));
-        if !playing && self.preview.is_none() && self.player.rate() != 1.0 {
+        // A pause returns the footage to 1x (spec S3) — the scan rule — but
+        // **not during a take**: a recorded rate is sub-1.0 slow motion that
+        // persists across pauses within the take (#140 task 7, spec §R), and
+        // this reset would clobber it. While recording the rate is left as it
+        // is and re-applied on resume by `toggle_play`.
+        if !playing
+            && self.preview.is_none()
+            && self.recording.is_none()
+            && self.player.rate() != 1.0
+        {
             self.change_rate(1.0);
         }
     }
@@ -129,7 +179,7 @@ impl Bus {
     /// (spec S5), so the coach stays on the frame they paused on. A seek
     /// still to be issued carries the rate, so none is added then: a pending
     /// scrub or skip is never displaced.
-    fn change_rate(&mut self, rate: f64) {
+    pub(super) fn change_rate(&mut self, rate: f64) {
         self.store_rate(rate);
         if self.player.seek_waiting() || !self.seekable() || !self.loaded() {
             return;

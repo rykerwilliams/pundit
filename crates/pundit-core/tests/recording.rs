@@ -50,7 +50,7 @@ fn construction_writes_zoom_then_pause_at_zero() {
 #[test]
 fn play_and_pause_log_caller_times_and_anchors() {
     let mut log = RecordingLog::new(T0, Zoom::IDENTITY, 10.0);
-    log.play(at(0.5), 10.0);
+    log.play(at(0.5), 10.0, Rate(1.0));
     log.pause(at(2.25), 11.7);
     let events = log.finish();
     assert_eq!(
@@ -65,6 +65,24 @@ fn play_and_pause_log_caller_times_and_anchors() {
             ),
             CommentaryEvent::new(2.25, EventKind::Pause { source_time: 11.7 }),
         ]
+    );
+}
+
+/// #140 task 7. A recorded playback rate below 1.0 rides the `Play` event: the
+/// commentary stays real time, the footage is slow motion baked into the edit.
+#[test]
+fn play_logs_the_recorded_rate() {
+    let mut log = RecordingLog::new(T0, Zoom::IDENTITY, 10.0);
+    log.play(at(0.5), 10.0, Rate(0.5));
+    assert_eq!(
+        log.finish()[2],
+        CommentaryEvent::new(
+            0.5,
+            EventKind::Play {
+                source_time: 10.0,
+                rate: Rate(0.5)
+            }
+        )
     );
 }
 
@@ -84,7 +102,7 @@ fn skip_logs_the_requested_delta() {
 #[test]
 fn a_host_time_before_t0_lands_at_zero() {
     let mut log = RecordingLog::new(T0, Zoom::IDENTITY, 1.0);
-    log.play(T0 - 30_000_000, 1.0);
+    log.play(T0 - 30_000_000, 1.0, Rate(1.0));
     assert_eq!(log.finish()[2].record_time, 0.0);
 }
 
@@ -93,7 +111,7 @@ fn a_host_time_before_t0_lands_at_zero() {
 #[test]
 fn record_times_never_go_backwards() {
     let mut log = RecordingLog::new(T0, Zoom::IDENTITY, 1.0);
-    log.play(at(2.0), 1.0);
+    log.play(at(2.0), 1.0, Rate(1.0));
     log.pause(at(1.5), 1.2);
     let events = log.finish();
     assert_eq!(events[3].record_time, 2.0);

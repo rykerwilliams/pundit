@@ -7,8 +7,8 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use pundit_app::bus::{CaptureKind, Command, Event, RecordingStatus, Take, UserError};
-use pundit_core::event::{CommentaryEvent, EventKind};
+use pundit_app::bus::{CaptureKind, Command, Event, RecordingStatus, ScanStep, Take, UserError};
+use pundit_core::event::{CommentaryEvent, EventKind, Rate};
 use pundit_core::project::{Clip, Project};
 use pundit_core::store;
 use pundit_core::stroke::{Rgba, Stroke, StrokeEnd, StrokePoint};
@@ -354,6 +354,134 @@ fn play_during_the_camera_warm_up_is_logged() {
         play.record_time
     );
     rig.h.shutdown();
+}
+
+/// #140 task 7, spec §R. A take recorded with the speed control at 0.5× logs a
+/// `Play` carrying `Rate(0.5)`: the footage is baked slow into the clip's edit,
+/// the commentary stays real time.
+#[test]
+fn a_slow_take_logs_the_recorded_rate() {
+    let mut rig = Rig::open(&[("a.webm", 6)]);
+    let _t0 = rig.record();
+    rig.h.wait_map("a mic level", |e| match e {
+        Event::Level { peak_db, .. } => Some(*peak_db),
+        _ => None,
+    });
+    // Start the footage at half speed, the way the UI's speed control sends it.
+    rig.h.toggle_play_at(0.5);
+    assert!(rig.h.wait_playing());
+    std::thread::sleep(Duration::from_millis(300));
+    let clip = rig.stop();
+
+    let play = clip
+        .events
+        .iter()
+        .find_map(|e| match e.kind {
+            EventKind::Play { rate, .. } => Some(rate),
+            _ => None,
+        })
+        .expect("the take logged a play");
+    assert_eq!(play, Rate(0.5), "{:?}", clip.events);
+    rig.h.shutdown();
+}
+
+/// #140 task 7, spec §R5. Changing the speed while a take plays appends a new
+/// `Play` carrying the new rate and keeps playing — it does not toggle to
+/// pause. So the take ends up with two `Play`s (0.5, then 0.25) and no pause
+/// between them, and the footage is left playing.
+#[test]
+fn a_mid_take_speed_change_keeps_playing_and_logs_the_new_rate() {
+    let mut rig = Rig::open(&[("a.webm", 10)]);
+    rig.record();
+    rig.h.wait_map("a mic level", |e| match e {
+        Event::Level { peak_db, .. } => Some(*peak_db),
+        _ => None,
+    });
+    // Start at half speed, then — still playing — change to quarter speed.
+    rig.h.toggle_play_at(0.5);
+    assert!(rig.h.wait_playing());
+    std::thread::sleep(Duration::from_millis(200));
+    rig.h.toggle_play_at(0.25);
+    // Still playing: no pause event follows, and the bus did not emit
+    // Playing(false).
+    std::thread::sleep(Duration::from_millis(200));
+    let clip = rig.stop();
+
+    let play_rates: Vec<Rate> = clip
+        .events
+        .iter()
+        .filter_map(|e| match e.kind {
+            EventKind::Play { rate, .. } => Some(rate),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(play_rates, [Rate(0.5), Rate(0.25)], "{:?}", clip.events);
+    // No pause was logged between the two plays — the speed change did not
+    // toggle. (The initial construction pause at record-time 0 is not between
+    // them: both plays come after it.)
+    let pauses_after_first_play = clip
+        .events
+        .iter()
+        .skip_while(|e| !matches!(e.kind, EventKind::Play { .. }))
+        .filter(|e| matches!(e.kind, EventKind::Pause { .. }))
+        .count();
+    assert_eq!(pauses_after_first_play, 0, "{:?}", clip.events);
+    rig.h.shutdown();
+}
+
+/// #140 task 7, spec §R. The recorded rate is applied to the player, so the
+/// game footage actually crawls under the real-time commentary — measured as
+/// the source advancing at half wall-clock speed during the take.
+#[test]
+fn the_footage_plays_slow_during_a_slow_take() {
+    let mut rig = Rig::open(&[("a.webm", 10)]);
+    rig.record();
+    rig.h.wait_map("a mic level", |e| match e {
+        Event::Level { peak_db, .. } => Some(*peak_db),
+        _ => None,
+    });
+    rig.h.toggle_play_at(0.5);
+    assert!(rig.h.wait_playing());
+    // Let the half-speed seek settle before measuring.
+    std::thread::sleep(Duration::from_millis(400));
+    let seen = rig.h.watch_displayed(2.0);
+    eprintln!("half-speed take: {seen}");
+    assert!(
+        (seen.rate / 0.5 - 1.0).abs() <= 0.25,
+        "the footage ran at {:.2}x, not 0.5x",
+        seen.rate
+    );
+    rig.stop();
+    rig.h.shutdown();
+}
+
+/// #140 task 7, spec §R4. The recorded rate is not the scan rate: scan speed
+/// (`J`/`L`) stays viewing-only and is refused while recording, whatever the
+/// recorded rate is.
+#[test]
+fn scan_speed_is_refused_while_recording() {
+    let mut rig = Rig::open(&[("a.webm", 6)]);
+    rig.record();
+    rig.h.wait_map("a mic level", |e| match e {
+        Event::Level { peak_db, .. } => Some(*peak_db),
+        _ => None,
+    });
+    rig.h.toggle_play_at(0.5);
+    assert!(rig.h.wait_playing());
+    // The scan key is refused by the recording guard (`ScanSpeed` is off the
+    // allow-list): the footage keeps the recorded 0.5× it was given and never
+    // speeds *up*. (The recorded rate does ride a `ScanSpeed(0.5)` event, the
+    // one way the UI learns the player's rate, which is why the assertion is
+    // "no scan speed-up above 1x" rather than "no scan event at all".)
+    rig.h.send(Command::ScanSpeed(ScanStep::Faster));
+    std::thread::sleep(Duration::from_millis(300));
+    let rest = rig.h.shutdown();
+    assert!(
+        !rest
+            .iter()
+            .any(|e| matches!(e, Event::ScanSpeed(s) if *s > 1.0)),
+        "a scan speed-up was accepted while recording: {rest:?}"
+    );
 }
 
 #[test]
