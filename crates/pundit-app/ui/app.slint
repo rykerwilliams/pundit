@@ -6490,6 +6490,46 @@ export component AppWindow inherits Window {
                                                         text: @markdown("\{slate.title}");
                                                     }
                                                 }
+                                                // The tap path into the slate
+                                                // row's menu-only actions (#140
+                                                // task 8), in a match only (the
+                                                // whole list is `is-match`
+                                                // above). Opens the **same**
+                                                // `slate-menu` by its `show()`
+                                                // function — one definition, two
+                                                // openers, right-click the
+                                                // alias.
+                                                Rectangle {
+                                                    width: 20px;
+                                                    border-radius: 4px;
+                                                    background: slate-kebab.has-hover ? Palette.selection-background : transparent;
+
+                                                    slate-kebab := TouchArea {
+                                                        enabled: !root.recording;
+                                                        clicked => {
+                                                            root.selected-slate = slate.id;
+                                                            keys.focus();
+                                                            slate-menu.show({
+                                                                x: self.mouse-x,
+                                                                y: self.mouse-y,
+                                                            });
+                                                        }
+                                                    }
+                                                    Text {
+                                                        text: "⋯";
+                                                        color: slate-row.picked ? slate-row.ink : Palette.alternate-foreground;
+                                                        font-size: 14px;
+                                                        horizontal-alignment: center;
+                                                        vertical-alignment: center;
+
+                                                        accessible-role: button;
+                                                        accessible-label: "Slate actions";
+
+                                                        Tooltip {
+                                                            text: @markdown("Record, delete…");
+                                                        }
+                                                    }
+                                                }
                                             }
 
                                         }
@@ -6731,7 +6771,14 @@ export component AppWindow inherits Window {
                                             }
                                         }
 
-                                        ContextMenuArea {
+                                        // Named so a test can find the row's
+                                        // own menu, and so the kebab below can
+                                        // open the **same** menu rather than a
+                                        // divergent copy (#140 task 8): a
+                                        // `LineEdit` carries a `ContextMenuArea`
+                                        // of its own, so the type name alone
+                                        // finds several in this window.
+                                        clip-menu := ContextMenuArea {
                                             enabled: !root.recording;
                                             Menu {
                                                 MenuItem {
@@ -6782,6 +6829,46 @@ export component AppWindow inherits Window {
                                                 color: Palette.alternate-foreground;
                                                 font-size: 11px;
                                                 vertical-alignment: center;
+                                            }
+                                            // The tap path into the row's
+                                            // menu-only actions (#140 task 8):
+                                            // right-click stays a power-user
+                                            // alias, this kebab opens the
+                                            // **same** `clip-menu` by its
+                                            // `show()` function, so there is one
+                                            // menu definition and two openers.
+                                            // Off while recording, as the menu
+                                            // and the row are.
+                                            Rectangle {
+                                                width: 20px;
+                                                border-radius: 4px;
+                                                background: clip-kebab.has-hover ? Palette.selection-background : transparent;
+
+                                                clip-kebab := TouchArea {
+                                                    enabled: !root.recording;
+                                                    clicked => {
+                                                        root.selected-clip = clip.id;
+                                                        keys.focus();
+                                                        clip-menu.show({
+                                                            x: self.mouse-x,
+                                                            y: self.mouse-y,
+                                                        });
+                                                    }
+                                                }
+                                                Text {
+                                                    text: "⋯";
+                                                    color: Palette.alternate-foreground;
+                                                    font-size: 14px;
+                                                    horizontal-alignment: center;
+                                                    vertical-alignment: center;
+
+                                                    accessible-role: button;
+                                                    accessible-label: "Clip actions";
+
+                                                    Tooltip {
+                                                        text: @markdown("Export, add to basket, delete…");
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -7415,6 +7502,25 @@ export component AppWindow inherits Window {
                 VerticalLayout {
                     padding: 8px;
                     spacing: 4px;
+
+                    // The tap path to the snap (#140 task 8): a visible,
+                    // tap-reachable toggle for what used to live only in the
+                    // scrubber's right-click menu (which stays, as a
+                    // power-user alias). Bound to the same `snap-to-events` and
+                    // sending the same `toggle-snap`, so the checkbox, the
+                    // menu's ✓ and the stored bool are one truth. *Band
+                    // colour…* is untouched — it stays in the Settings sheet
+                    // (#131). Match chrome: the snap is over the match marks,
+                    // so the toggle is hidden in a session, as its menu item's
+                    // sibling *Band colour…* is.
+                    if root.is-match: HorizontalLayout {
+                        alignment: start;
+                        snap-toggle := CheckBox {
+                            text: "Snap to match events";
+                            checked: root.snap-to-events;
+                            toggled => { root.toggle-snap(); }
+                        }
+                    }
 
                     scrubber := Scrubber {
                         // Something to play, and not recording.

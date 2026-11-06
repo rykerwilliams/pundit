@@ -104,5 +104,6 @@ mod slate_menu;
 mod snap_menu;
 mod splitter;
 mod tag_field;
+mod tap_affordance;
 mod text_editing;
 mod whiteboard;
