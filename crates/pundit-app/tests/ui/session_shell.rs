@@ -35,6 +35,10 @@ const MATCH_CHROME: &[&str] = &[
     // popover shown; see the fixture).
     "Inset",
     "Whiteboard",
+    // The scrubber's right-click *Band colour…* (#131, scrubber.slint): a
+    // context-menu item, so like the popover controls it isn't in the headless
+    // tree — listed for the enumeration, its match half skipped below.
+    "Band colour…",
     // The export sheet's scoreboard picker and its subtitles switch (spec V2).
     "Scoreboard",
     "Scoreboard subtitles — an .srt beside the file, and a track inside a copy",
@@ -75,10 +79,12 @@ fn present(w: &AppWindow, words: &str) -> bool {
 /// test's concern, not this one's.
 #[test]
 fn a_session_hides_exactly_the_match_chrome() {
-    // In-popover controls: present only once the Devices popover is open, which
-    // this headless fixture does not do — so the "present in a match" half is
-    // not asserted for them. Their session half (absent) still is.
-    let in_popover = ["Inset", "Whiteboard"];
+    // In-popup controls: present only once a popover or context menu is open,
+    // which this headless fixture does not do — so the "present in a match" half
+    // is not asserted for them. Their session half (absent) still is. "Band
+    // colour…" is the scrubber's right-click item; the other two the Devices
+    // popover's.
+    let in_popover = ["Inset", "Whiteboard", "Band colour…"];
 
     i_slint_backend_testing::init_no_event_loop();
     let session = shell(false);

@@ -35,6 +35,40 @@ observation that should promote it, and none is worth doing before that.
   Re-timing it would mean rewriting the clip's `Play` rates, a different edit
   from the live capture. *Trigger:* a coach wants to slow (or un-slow) a take
   they already recorded without re-recording it.
+- **143.** `remove_source` infers "the app created this source" from the path
+  prefix `sources/` (`bus/sources.rs`, #140 task 5), so a coach who *imports*
+  footage physically located under `<project>/sources/` would have their own
+  file deleted on remove — contradicting the guarantee the code states ("an
+  imported source is the coach's own file and is never deleted"). Narrow
+  (imports normally come from a footage folder outside the project; a session's
+  own captured sources are all under `sources/` by construction) but silently
+  irreversible. The plan chose the path prefix deliberately, over an
+  owned/imported flag, for simplicity. *Fix if taken:* record provenance — an
+  `owned: bool` on `SourceRef` (field-level `#[serde(default)]`, default
+  `false` = imported, set `true` only in `finish_capture`), gating deletion on
+  it rather than the path. *Trigger:* a coach is seen importing into the
+  project's own `sources/`, or the guarantee needs to be structural rather than
+  by-convention. Surfaced by the #140 shipped-code review.
+- **144.** `Bus::recorded_rate` (#140 task 7) may duplicate state
+  `self.player.rate()` already holds during a take — the scan-reset-on-pause is
+  suppressed while recording (`set_playing`) precisely so the player keeps the
+  recorded rate across a within-take pause, so the two track for the whole take.
+  *Fix if taken:* delete the field and read `Rate(self.player.rate())` in
+  `log_playing`, **with** a focused test of the mid-take-change path — the one
+  place the incoming UI value and the applied player rate could momentarily
+  differ (a seek in flight). *Trigger:* the shadow state is seen to drift, or a
+  cleanup pass. Surfaced by the #140 shipped-code review; deferred because the
+  delete is not obviously strictly-better without that test.
+- **145.** The recording speed control is shown during a *capture*
+  (`visible: root.recording`, #140 tasks 5+7), where it is meaningless — a
+  capture records the camera, not footage playback. A coach could cycle it and
+  slow a loaded earlier capture's playback for no recorded effect (cosmetic;
+  nothing is logged, `end_recorded_rate` resets on stop, and the invariant that
+  `recorded_rate` is 1.0 entering a capture holds). *Fix if taken:* hide the
+  speed control during a capture, which needs the window to tell a capture from
+  a clip take (e.g. a flag on `RecordingStatus::Starting`, as `whiteboard` is).
+  *Trigger:* a coach is confused by the control during a capture. Surfaced by
+  the #140 shipped-code review.
 - **135.** A second key per action, from the Keys sheet — #96 ships *Set…* as a
   **replace**. *Trigger:* a coach rebinds one of the four paired rows and asks
   where the other key went

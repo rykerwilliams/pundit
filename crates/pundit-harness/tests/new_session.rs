@@ -12,7 +12,9 @@ use std::time::Duration;
 
 use pundit_app::bus::{CaptureKind, Command, Event, RecordingStatus, Take};
 use pundit_core::project::{Project, ProjectKind};
+use pundit_core::scoreboard::{MatchFormat, ScoreboardConfig, TeamConfig};
 use pundit_core::store::{self, PROJECT_FILENAME, RECORDINGS_DIRNAME};
+use pundit_core::stroke::Rgba;
 use pundit_core::zoom::Zoom;
 use pundit_harness::{write_project, Harness};
 use tempfile::TempDir;
@@ -201,4 +203,40 @@ fn new_session_defaults_the_name_when_blank() {
     assert!(sessions[0].join(PROJECT_FILENAME).is_file());
 
     rig.h.shutdown();
+}
+
+/// Spec §S3: `ProjectKind` exists to forbid a session ever acquiring a board.
+/// The setup sheet is hidden in a session (task 6), but the guarantee lives in
+/// the bus (`set_scoreboard`'s `is_match` guard), so it holds against a path the
+/// UI gate doesn't cover — a harness, or a later command. Without that guard
+/// this writes a board into the session's `project.json` (`project_changed`
+/// saves), which is what makes the proof non-vacuous.
+#[test]
+fn set_scoreboard_on_a_session_is_ignored() {
+    let mut rig = Rig::new();
+    rig.open_existing();
+    rig.h.send(Command::NewSession {
+        name: "Monday drills".into(),
+    });
+    rig.h.wait_opened();
+    let projects = rig.projects();
+
+    let red = Rgba::RED;
+    rig.h.send(Command::SetScoreboard(ScoreboardConfig {
+        home: TeamConfig::new("Rovers", red, red),
+        away: TeamConfig::new("United", red, red),
+        format: MatchFormat::default(),
+        auto_back_anchor_p1: false,
+    }));
+    // Drains the queue, so the command is processed and any save has landed.
+    rig.h.shutdown();
+
+    let sessions = session_folders(&projects);
+    assert_eq!(sessions.len(), 1, "{sessions:?}");
+    let p = store::read(&sessions[0]).unwrap();
+    assert!(
+        p.scoreboard.is_none(),
+        "a session must never acquire a board (spec S3)"
+    );
+    assert_eq!(p.kind, ProjectKind::Session);
 }

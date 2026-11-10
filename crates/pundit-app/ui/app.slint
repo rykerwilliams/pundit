@@ -4481,8 +4481,11 @@ export component AppWindow inherits Window {
     in-out property <float> record-rate: 1.0;
     /// The next rate the recording speed control cycles to (slow motion only,
     /// §R4: the recorded rate is sub-1.0, never faster), wrapping from the
-    /// slowest back to 1x. The ladder is 1 → 0.75 → 0.5 → 0.25 → 1; it is
-    /// tabulated here and nowhere else in the UI.
+    /// slowest back to 1x. The ladder is 1 → 0.75 → 0.5 → 0.25 → 1. The same
+    /// rungs are named for review by `playback_speed::label` in Rust; the two
+    /// must list the same set, so a rung added here needs one there. This cycle
+    /// is pinned by `record_rate::cycling_the_control_steps_the_recorded_rate`
+    /// and the labels by `playback_speed::the_labels_match_the_ladder`.
     pure function next-record-rate(rate: float) -> float {
         rate == 1.0 ? 0.75 : rate == 0.75 ? 0.5 : rate == 0.5 ? 0.25 : 1.0
     }

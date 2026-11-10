@@ -44,6 +44,7 @@ use pundit_app::match_panel::{
 use pundit_app::music;
 use pundit_app::music_search::{self, Genre};
 use pundit_app::new_match::{self, Draft};
+use pundit_app::playback_speed;
 use pundit_app::recents;
 use pundit_app::slate_pass::{self, PassRow};
 use pundit_app::slate_span::slate_span;
@@ -4398,23 +4399,11 @@ fn show_clip(w: &AppWindow) {
         // real-time clip, which is every clip before this feature.
         w.set_clip_rate_text(
             clip.and_then(Clip::slowest_recorded_rate)
-                .map(playback_speed_label)
+                .map(playback_speed::label)
                 .unwrap_or_default()
                 .into(),
         );
     });
-}
-
-/// Words a recorded playback rate for the inspector's review line (#140 task
-/// 7). The named fractions match the speed control's ladder; anything off it —
-/// only reachable from a hand-edited project — is shown as a percentage.
-fn playback_speed_label(rate: f64) -> String {
-    match rate {
-        r if (r - 0.75).abs() < 1e-6 => "Three-quarter speed (0.75×)".to_owned(),
-        r if (r - 0.5).abs() < 1e-6 => "Half speed (0.5×)".to_owned(),
-        r if (r - 0.25).abs() < 1e-6 => "Quarter speed (0.25×)".to_owned(),
-        r => format!("{:.0}% speed", r * 100.0),
-    }
 }
 
 /// Fills the transcript row's model picker (Phase 10 S3).

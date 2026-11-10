@@ -198,6 +198,14 @@ impl Bus {
         let Some(open) = &mut self.open else {
             return;
         };
+        // A session must never acquire a board (spec S3 — that is the one thing
+        // `ProjectKind` exists to forbid). The sheet is hidden in a session
+        // (`is-match`, task 6), so this guard is structural rather than
+        // user-reachable: it keeps the invariant true against a harness or a
+        // later command path the UI gate wouldn't cover.
+        if !open.project.is_match() {
+            return eprintln!("bus: SetScoreboard on a session, ignored (spec S3)");
+        }
         if open.project.scoreboard.as_ref() == Some(&config) {
             return;
         }

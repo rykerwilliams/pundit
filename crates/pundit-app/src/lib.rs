@@ -17,6 +17,7 @@ pub mod match_panel;
 pub mod music;
 pub mod music_search;
 pub mod new_match;
+pub mod playback_speed;
 pub mod recents;
 pub mod slate_pass;
 pub mod slate_span;
