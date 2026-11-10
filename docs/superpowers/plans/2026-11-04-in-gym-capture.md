@@ -27,20 +27,48 @@ newtype).
   sites outside `pundit-core` (`pundit-harness/tests/recording.rs`,
   `pundit-media/tests/export.rs` ×2) were edited and read-checked but **not
   compiled here** — fmt-checked only. Confirm them under the full workspace build.
-- **3 — media: prove the rate survives the GL graph (test only).** Not started.
-- **4 — bus: create an empty session.** Not started.
-- **5 — bus + media: capture the camera as a source.** Not started.
-- **6 — UI: the session shell.** Not started.
-- **7 — UI + bus: the playback-speed control.** Not started.
-- **8 — UI: the touch affordance.** Not started.
+- **3 — media: prove the rate survives the GL graph (test only).** **DONE** —
+  branch `claude/140-task-3`, commit `360cc72`. Verification-only (no production
+  change); `a_half_speed_export_plays_the_source_at_half_speed` on the GL graph.
+- **4 — bus: create an empty session.** **DONE** — branch `claude/140-task-4`,
+  commit `c7f4a2f`. `Command::NewSession`; projects-dir via `projects_dir_for`
+  with a `~/pundit` first-run fallback; folder de-dup; date via glib.
+- **5 — bus + media: capture the camera as a source.** **DONE** — branch
+  `claude/140-task-5`, commit `8dcfbf1`. `Command::CaptureSource`; `Active` split
+  into `ActiveKind::{Clip,Capture}`; `source_ref` under `sources/`;
+  `remove_source` deletes owned files. 3 load-dependent tests `#[ignore]`d as the
+  pre-existing `playbin3` crash (BACKLOG #141).
+- **6 — UI: the session shell.** **DONE** — branch `claude/140-task-6`, commit
+  `d926468`. `is-match` gates match chrome; New Session sheet; record label;
+  recents `created`.
+- **7 — UI + bus: the playback-speed control.** **DONE** — branch
+  `claude/140-task-7`, commit `f9c86ce`. **The full coherent version** (coach
+  decision): the footage plays slow during recording (`set_rate`, persists across
+  pauses), the rate logs on `Play`, replayed in export/preview. Post-hoc editing
+  deferred (BACKLOG #142).
+- **8 — UI: the touch affordance.** **DONE** — branch `claude/140-task-8`, commit
+  `d1e93de`. Named clip menu + kebab openers (one definition), snap toggle.
+- **Shipped-code adversarial review (CLAUDE.md step 7).** **DONE** — branch
+  `claude/140-review-fixes`, commit `8061b50`. Two-agent pass (simplify +
+  correctness): core mechanics verified correct; 3 fixes applied (a `set_scoreboard`
+  `is_match` guard making spec §S3 structural + a sabotage-proven test; the speed
+  ladder single-sourced into a testable `playback_speed` module; the §S4
+  enumeration test completed); 3 deferred (BACKLOG #143–145); the rest judged not
+  worth changing. Full-workspace gate green (71 binaries).
 
-> **Environment note (2026-11-05):** tasks 1–2 were built and verified on a box
-> with only a userspace Rust toolchain (no GStreamer, no sudo), so only the
-> pure-`pundit-core` subset of `verify` ran. Tasks 3–8 touch
-> `pundit-media`/`pundit-app`/`tests/ui` and need GStreamer dev libs — run them on
-> a machine with the full toolchain and the whole `verify` gate. Task 2 stacks on
-> task 1; rebase `--onto origin/main` once task 1 squash-merges (and retarget
-> task 2's PR to `main` before merging task 1, per `start-task`).
+**All eight tasks and the review are complete.** Every branch is on `origin`,
+stacked linearly (`task-1` → … → `task-8` → `review-fixes`), **none merged**, no
+PRs yet (the spec PR awaits the coach's `gh` auth). Merge in order, or rebase
+`--onto origin/main` down the chain.
+
+> **Environment note (2026-11-05/06):** the whole feature was built and verified
+> on a box with a **userspace** toolchain (rustup + GStreamer-dev via
+> `apt-get download`/`dpkg -x` + static ffmpeg, no sudo) behind
+> `source ~/.pundit-dev-env.sh` — the full `verify` gate runs there. One
+> environment caveat: a `vavp8dec` hardware-decoder flake under parallel test
+> load (passes in isolation; CI uses software decode and never sees it). Task 2
+> stacks on task 1; rebase `--onto origin/main` once task 1 squash-merges (and
+> retarget each dependent PR to `main` before merging its base, per `start-task`).
 
 ## Dependency order
 
