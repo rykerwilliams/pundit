@@ -29,6 +29,18 @@ re-derived from the tree at `d742430` on 2026-11-21.
 5. **The game's sound is slowed with its pitch kept** (GStreamer's
    `scaletempo` or equivalent), live and in the export.
 
+Answering the first draft's three questions, the same day:
+
+6. **Slow motion stays on through a pause**, until the coach turns it off; a
+   take started in slow motion starts slow. Fast scanning still drops back to
+   1× on a pause, as now (§S12). Offered instead: any pause returns to 1×,
+   slow included — one rule, but `S` again after every pause.
+7. **No slow-motion badge** in exports or previews: slowed footage reads as
+   slowed and the coach is talking over it. Offered instead: a "½×" / "¼×"
+   badge in encoded exports and previews (§S11).
+8. **`S` always slows to ½×**; `J` takes it on to ¼× (§S6). Offered instead:
+   whichever slow speed was used last.
+
 ---
 
 ## §O. What is true today, and what this changes
@@ -288,11 +300,10 @@ not 1× — ` · ½×`, ` · ¼×` — where today it shows only speeds above 1
 `root.scan-speed + "×"` (`app.slint:7402`), which would print `0.5×`. Both
 read one Rust formatter, `speed_label(f64)`, set on a `speed-label` property
 beside `scan-speed`. During a take the button is enabled and the readout is
-where the coach sees the mode; there is no badge on the picture (Q2).
+where the coach sees the mode; there is no badge on the picture (decision 7).
 
 **S12. Pause keeps slow motion; a take starts at the speed it was started at.**
-*(Recommended in Q1; written here as decided so the rest of the spec is one
-design. If the coach chooses otherwise, Q1 says what changes.)* `set_playing`'s
+Decision 6. `set_playing`'s
 reset becomes `rate > 1.0` (`transport.rs:81`), so a pause from fast still
 returns to 1× and a pause from slow does not. `start_recording` pauses first
 (`bus/recording.rs:181`–`:184`), so a take started from slow motion stays slow:
@@ -370,7 +381,7 @@ bullet in the v18 bullet's shape.
 - **Fast scanning during a take** (S10).
 - **Changing a clip's speed after recording.** The speed is part of the log,
   as a skip is; re-recording is the edit.
-- **A slow-motion badge** on the picture — Q2.
+- **A slow-motion badge** on the picture — decision 7.
 - **Game audio in the preview** (#54, #125), which slow motion would not fix.
 - **M4's instant rate change** (S5).
 
@@ -455,33 +466,3 @@ and nothing at 1×.
 
 **T5. Hands-on** (batched with the release's checks): Risks 1 and 2 on the
 reference laptop, on real footage, through the speakers.
-
----
-
-## Open questions for the coach
-
-**Q1. When you pause during slow motion and play again, should it carry on
-slow?**
-1. **Yes — slow motion stays on until you turn it off** (recommended). Slow,
-   stop on the frame, draw, carry on slow is the instant-replay rhythm, and it
-   costs nothing extra in the log. A take started in slow motion starts slow
-   for the same reason. Fast scanning still drops back to 1× on a pause, as now.
-2. **No — any pause returns to 1×**, slow included, as it does for fast speeds
-   today. One rule, but you press `S` again after every pause, and a take
-   always starts at 1×. (S12 becomes "every pause resets", `S` and `J` while
-   paused are refused, and `RecordingLog::new` is unchanged.)
-
-**Q2. Should an exported clip show that it is in slow motion?**
-1. **No badge** (recommended). Slowed footage reads as slowed, you are talking
-   over it, and a badge is a new overlay element with its own corner to find
-   room for beside the scoreboard and the inset.
-2. **A small "½×" / "¼×" badge** in encoded exports and previews while a slow
-   span is on screen (never in a stream copy, which has no clips).
-3. **Only on the scan view and during the take**, never in the file — the
-   readout already does this, so this is option 1.
-
-**Q3. What should `S` slow to?**
-1. **Always ½×** (recommended): one key, one result; `J` takes it on to ¼×.
-2. **Whichever slow speed you used last** — one press reaches ¼× if that is
-   what you usually want, at the cost of `S` doing different things on
-   different days.

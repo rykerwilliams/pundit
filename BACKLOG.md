@@ -18,8 +18,8 @@ made things worse.
 
 - **140.** Slow motion during a recording, ½× and ¼×, with the game's sound
   slowed at its pitch — specced 2026-11-21
-  (`docs/superpowers/specs/2026-11-21-slow-motion-design.md`), three questions
-  for the coach in its last section; plan next, once they are answered
+  (`docs/superpowers/specs/2026-11-21-slow-motion-design.md`), its three
+  questions answered by the coach the same day; adversarial review, then plan
 
 ### Watch, rather than pick up
 
@@ -4913,8 +4913,9 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   audio reader (measured on the reader: bit-exact at 1×, pitch kept at ½× and
   ¼×), a new
   `s` key, and **v19**.
-- **Why deferred:** not deferred — it is the next feature. It waits on the
-  spec's three open questions (whether a pause keeps slow motion, whether an
-  export shows a badge, what `S` slows to), then its adversarial review and a
-  plan.
-- **When to revisit:** when the coach answers the questions.
+- **The coach answered the spec's three questions the same day**, each the
+  recommended option: slow motion **stays on through a pause** (fast scanning
+  still drops to 1×), **no badge** in exports, and `S` **always slows to ½×**.
+- **Why deferred:** not deferred — it is the next feature, waiting on the
+  spec's adversarial review and a plan.
+- **When to revisit:** now; it heads "Next, in order".
