@@ -103,7 +103,8 @@ silently ignored; with it the sound is stretched to the rate and keeps its
 pitch. **At rate 1 `scaletempo` is passthrough: the samples are bit-identical**
 to today's chain (`max |diff| = 0.0` over 48,000 samples), so adding it changes
 no existing export, transcription or avatar level. Cost: 4.5 s of ½× sound
-decoded in 0.32 s wall against 0.12 s without it.
+decoded in 0.32 s wall against 0.12 s without it. These are all **fresh**
+readers, each seeked once; a reader seeked again after stretching is M5's.
 
 **M2. `scaletempo` leads by a fraction of a source frame.** The WAV onset
 (thresholds of 0.05 and 0.4 on a 0.5 sine agree to within 23 ms of output):
@@ -116,7 +117,8 @@ decoded in 0.32 s wall against 0.12 s without it.
 
 Its window is consumed ahead of its output. In **source** time — which is what
 the eye judges against slowed motion — the lead is under one 30 fps source frame
-at both rates. §S7 accepts it and pins the bound. Whether the live player shows
+at both rates, for a fresh reader (M5's re-seeked one is late instead). §S7
+accepts it and pins the bound. Whether the live player shows
 the same lead through the real speakers is **not** measured (Risk 2).
 
 **M3. The live player needs `scaletempo` named; `playsink` does not insert
@@ -144,6 +146,15 @@ samples and the **2 s after** an instant change to ½× only 48,128, where real
 time wants 96,000; the same change as a flushing seek delivers 97,920. So it is
 **not an option** for this feature, and not a fallback for anything (§S5).
 
+**M5. A seek does not clear `scaletempo` once it has stretched.** *Amended 2026-11-22 after the plan's review.* A
+reader that has read at ½× and is then seeked, `FLUSH | ACCURATE`, to another
+place at ½× hands back **50–60 ms of the old position's sound** first (five
+and six 10 ms windows of the old tone, with and without the `audioresample`
+after it; re-measured 2026-11-22), and the new position's sound lands about
+40 ms late at ½× and 150 ms at ¼× (2.08 s for 2.00, 4.15 s for 4.00). A fresh
+reader is clean, and so are a 1× → slow and a slow → 1× seek; cycling the
+pipeline through `READY` does not clear it. §S7's rule follows.
+
 ---
 
 ## §S. Decisions
@@ -154,9 +165,11 @@ time wants 96,000; the same change as a flushing seek delivers 97,920. So it is
 (§S6) is what limits a take to ½× and ¼×; the format does not, so a future
 speed is no format change. A `Speed` this build cannot decode (a malformed
 payload) falls to `EventKind::Unknown` and is **kept verbatim**; the version
-bump (§S13) is what stops a wrong replay, not the type. **One guard**, in the
-walk (§S4): a `Speed` whose rate is not finite and positive — only a
-hand-edited file can hold one — is ignored as `Unknown` is.
+bump (§S13) is what stops a wrong replay, not the type. **One guard, in the
+decoder:** a `Speed` whose rate is not `> 0` (zero, negative, or NaN — only a
+hand-edited file can hold one) decodes as `EventKind::Unknown(value)` in
+`EventKind::deserialize` (`event.rs:152`–`:164`), so it is kept verbatim and no
+walk ever sees it. *Amended 2026-11-22 after the plan's review.* It was a guard in the walk.
 
 **S2. The log records a speed change as its own event:
 `EventKind::Speed { rate: f64, source_time: f64 }`**, wire
@@ -187,20 +200,20 @@ compiling and made every slow span silent. `SegmentKind` loses its `Eq` derive
 `whole_match.rs` and `reel.rs` write `Play(1.0)`, which is true — their entries
 have no log.
 
-**S4. Replay steps one `Motion { rate, playing }`, shared by both walks.**
-`source_time` and `playback_segments`' `Walk` each hold one, starting at
-`{ rate: 1.0, playing: true }` (today's "an empty event list is all `Play`").
-`Motion` applies `Play`, `Pause` and `Speed` — `Play`/`Pause` set `playing`,
-`Speed` sets `rate` (subject to S1's guard), **neither touches the other** —
-and answers the anchor each carries and the source's speed, `rate` while
-playing and 0 otherwise. `Skip` stays in each walk, as today. `emit` at a speed
+**S4. Each walk holds `playing` beside `rate`.** *Amended 2026-11-22 after the plan's review.* (It was a shared
+`Motion` stepper; two plain arms are simpler.) `source_time` and
+`playback_segments`' `Walk` each start at `rate: 1.0, playing: true` (today's
+"an empty event list is all `Play`"). `Play`/`Pause` set `playing` and anchor;
+a `Speed { .. }` arm emits, sets `rate` and anchors the cursor
+(`clamp_source(source_time)`) — emit before mutate, as every arm does today —
+and **neither touches the other's field**. The source's speed is `rate` while
+playing and 0 otherwise. `Skip` is unchanged. `emit` at a speed
 advances the source by `dur × speed`, and the EOF split becomes the record time
 the remaining source lasts at that speed: `play_dur = dur.min(available /
 speed)`, the source advancing by `play_dur × speed`, then the `Freeze` tail as
 today. A log with no `Speed` event walks to exactly today's segments — pinned
 (§T1). The two functions keep their 50 ms disagreement past EOF and agree
-everywhere else (`timeline.rs:1`–`:14`). If `Motion` turns out not to be
-clean in the code, two copies of three lines is the fallback; the plan decides.
+everywhere else (`timeline.rs:1`–`:14`).
 
 **S5. A speed change is a flushing seek through `load`, as `J`/`L` are today.**
 `change_rate` (`transport.rs:132`–`:146`) already stores the rate and seeks at
@@ -272,6 +285,15 @@ are unchanged. M2's lead (≤ 24.4 ms of source time) is **accepted, not
 compensated**: a compensating seek would be a per-rate constant tuned to one
 element's defaults.
 
+**A reader that has stretched is replaced, not seeked** (M5). *Amended 2026-11-22 after the plan's review.*
+`Reader` remembers the rate of its last seek; when a region comes in on a
+reader whose last rate was not 1, the mixer drops it and opens a fresh one
+before seeking — which is the one case M5 found clean. A fresh `Reader` rather
+than a fresh `scaletempo` inside the old one: swapping an element in a playing
+pipeline is a second way to build the chain, and a fresh reader is what M5
+measured. It costs an open per slow region, which is a pause, a play or a
+skip during slow motion; a whole take at one slow speed is one region.
+
 **S8. The picture needs nothing in media.** `core::export::walk` maps a
 `Play(rate)` frame to `source_start + rate × (t − out_start)`
 (`core/src/export.rs:209`), so at ½× consecutive output frames step 1/60 s of
@@ -300,7 +322,10 @@ untouched.
 `TRICKMODE_NO_AUDIO` already applies (`player/mod.rs:624`–`:626`) — the method's
 doc already says "mutes the sound above 1" (`:337`–`:338`). `scaletempo` joins
 `packaging/smoke-test.sh`'s `elements=(…)` (`:64`–`:74`), since the code now
-names it. The recorder is its own pipeline on the system clock, so **the
+names it. Whether the live player's flushing seeks leak M5's pre-seek sound
+too — a skip during slow motion — is measured in the plan's task 3; if they
+do, it is ~35 ms per seek at slow speed, and the plan states the rule for
+accepting it. The recorder is its own pipeline on the system clock, so **the
 commentary is captured in real time whatever the footage's speed**: record time
 is wall time, which is what makes `out_duration` correct with no change.
 
@@ -325,8 +350,8 @@ is wall time, which is what makes `out_duration` correct with no change.
   makes. Its own reason — the out-point poll overshooting by `rate × OUT_POLL`
   and the pause's seek trailing at speed (`transport.rs:106`–`:115`) — is about
   fast speeds only, and at ¼× the overshoot is a quarter of 1×'s.
-- **The window's gate is `can-scan-fast`, redefined in place**
-  (`app.slint:4885`) as `can-play && !previewing` — dropping `playing` and
+- **The window's gate is `can-scan-fast`, renamed `can-scan` and redefined
+  in place** (`app.slint:4885`; *Amended 2026-11-22 after the plan's review.* — it no longer means fast) as `can-play && !previewing` — dropping `playing` and
   `!recording` — at its existing three users (`J` `:5764`, `L` `:5770`, the
   button `:7403`) and the new `S` branch. No whiteboard clause: the bus's
   notice is the refusal, as for `TogglePlay`. The bus makes every finer
@@ -398,10 +423,14 @@ bullet in the v18 bullet's shape.
 - `transport.rs:20`–`:21`, `:70`–`:73`, `:102`–`:115`.
 - `timeline.rs:35` (*"Source advances at 1x"*), `:67`–`:68` and `:121`–`:122`
   (the events that move source time and split the timeline, which gain
-  `Speed`); `core/src/audio.rs:23`–`:24` (the mapping).
+  `Speed`); `core/src/audio.rs:23`–`:24` (the mapping), `:156`–`:159` and
+  `:202`–`:203` (`audio_regions`' and `game_regions`' docs on play segments);
+  `core/src/export.rs:4`–`:7` and `:176`–`:178` (*"Play maps `t` 1:1 onto the
+  source"*).
 - `keymap.rs:260` (*"While the game video is playing"*); `app.slint:4884` and
   `:5761`–`:5762` (*"down to 1x. Not while recording or previewing, which are
-  1x"*); `app.slint:7410`'s tooltip.
+  1x"*); `app.slint:4362` (*"The game video's speed, 1 to 32"*) and `:7410`'s
+  tooltip.
 - `bus/slates.rs:116`–`:121` (S12).
 - `packaging/smoke-test.sh:64`–`:74` gains `scaletempo` (S9).
 
@@ -452,11 +481,12 @@ bullet in the v18 bullet's shape.
 
 **T1. Core** (`pundit-core/tests/`, `src/event.rs`'s own tests):
 - the wire shape `{"speed":{"rate":0.5,"sourceTime":…}}`, pinned literally
-  (a round trip cannot catch a wrong name — `event.rs:208`–`:210`);
+  (a round trip cannot catch a wrong name — `event.rs:208`–`:210`), and
+  `{"speed":{"rate":0,…}}` decodes as `Unknown`;
 - `timeline.rs`: a `Speed { 0.5 }` at 2 s anchored at 10 s gives `Play(0.5)`
   from 10 s whose source advances half as fast; a `Pause` then `Play` keeps
   0.5; a slow span reaching EOF plays the remaining source at its rate and
-  freezes the rest; a `Speed` with rate 0 or NaN changes nothing; **every
+  freezes the rest; **every
   existing timeline test passes with `Play` read as `Play(1.0)`**; and the
   segment walk agrees with `source_time` across a slow span, as the existing
   cross-check does for 1×;
@@ -470,19 +500,21 @@ bullet in the v18 bullet's shape.
   siblings.
 
 **T2. Media** (`pundit-media/tests/export.rs`):
-- **repeated frames**: a `counter_video` (`fixtures.rs:430`) of kind
-  `CounterKind::H264Mp4BFrames` (`fixtures.rs:372`) — **not** `Vp8WebmWithAudio`,
-  whose millisecond timecodes put 30 fps frames off the 1/60 s grid and make a
-  repeat count 1 or 3 — exported at ½× decodes back (`decode_counters`,
-  `fixtures.rs:630`) to each counter exactly twice in order, and at ¼× four
-  times; and its last counter is the anchor plus `rate ×` the span, in frames;
+- *(Amended 2026-11-22 after the plan's review: the repeated-frames test is
+  dropped. It repeated T1's `export.rs` assertion, and no media-side mutation
+  failed it alone — the picture has no media change to test.)*
 - **the sound is stretched, at its pitch**: one test at ½× and ¼× over a
   `tone_video` (`fixtures.rs:177`) whose 440 Hz tone is windowed to end at
   source 2 s. Its **real assertion is the duration**: the tone ends at output
   4 s (½×) and 8 s (¼×), within M2's bound (one 30 fps source frame of source
   time, early side only). `tone_level` (`export.rs:1958`) at 440 Hz across the
   slowed span is the pitch half. Sabotage: remove `scaletempo` from the chain,
-  or drop the rate from `Reader::seek` — either ends the tone at output 2 s;
+  or drop the rate from `Reader::seek` — either ends the tone at output 2 s.
+  It also pauses and plays (or skips) **inside** the slow span on the same
+  source, so the second slow region's reader is the M5 case;
+- an in-crate test in `composite/audio.rs`'s `mod tests`: a reader reads at
+  ½×, is seeked elsewhere at ½×, and hands back no sound of the old position,
+  with the new onset within M2's bound;
 - `Reader` at rate 1 with `scaletempo` in the chain is unchanged: every
   existing audio, transcription and avatar test is the proof, and none should
   need touching;
