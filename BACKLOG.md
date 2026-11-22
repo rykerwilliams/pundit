@@ -16,8 +16,11 @@ made things worse.
 
 ### Next, in order
 
-Nothing queued: the four entries the coach set on 2026-10-17 — entries 101,
-115, 93 and 97 — have all shipped.
+- **140.** Slow motion during a recording, ½× and ¼×, with the game's sound
+  slowed at its pitch — specced 2026-11-21
+  and planned (`docs/superpowers/specs/2026-11-21-slow-motion-design.md`,
+  `docs/superpowers/plans/2026-11-21-slow-motion.md`), the coach's three
+  answers in the spec; six tasks, one PR
 
 ### Watch, rather than pick up
 
@@ -4895,3 +4898,27 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
   draws on; the refusal wording the first time a coach is blocked by it.
   Related: #133 (the title maker, its other half), #116 (the pen), #117
   (arrowheads).
+
+140. **Slow motion during a recording, "instant replay style".** The coach
+  (2026-11-21) asked for slow motion that **works during a take**, so it is in
+  the exported clip and its preview and not only on the scan view, and settled
+  the shape in the same conversation: a key that toggles slow motion *at the
+  footage's current position*, and `J`/`L` stepping **below** 1× during a take
+  and while watching; the speeds are **½× and ¼×**; **nothing jumps back** —
+  slow motion starts where the footage is; and the game's sound is **slowed
+  with its pitch kept**. He believed it had been specced before; nothing in
+  `docs/` or this file mentioned it.
+- **Specced 2026-11-21**, `docs/superpowers/specs/2026-11-21-slow-motion-design.md`:
+  a new `EventKind::Speed` anchored like `Play`/`Pause`, `SegmentKind::Play`
+  carrying its speed, `scaletempo` in both the live player and the export's
+  audio reader (measured on the reader: bit-exact at 1×, pitch kept at ½× and
+  ¼×), a new
+  `s` key, and **v19**.
+- **The coach answered the spec's three questions the same day**, each the
+  recommended option: slow motion **stays on through a pause** (fast scanning
+  still drops to 1×), **no badge** in exports, and `S` **always slows to ½×**.
+- **Planned 2026-11-22**, after the spec's two reviews:
+  `docs/superpowers/plans/2026-11-21-slow-motion.md`.
+- **Why deferred:** not deferred — it is the next feature, waiting on the
+  plan's review and its execution.
+- **When to revisit:** now; it heads "Next, in order".
