@@ -18,8 +18,9 @@ made things worse.
 
 - **140.** Slow motion during a recording, ½× and ¼×, with the game's sound
   slowed at its pitch — specced 2026-11-21
-  (`docs/superpowers/specs/2026-11-21-slow-motion-design.md`), its three
-  questions answered by the coach the same day; adversarial review, then plan
+  and planned (`docs/superpowers/specs/2026-11-21-slow-motion-design.md`,
+  `docs/superpowers/plans/2026-11-21-slow-motion.md`), the coach's three
+  answers in the spec; six tasks, one PR
 
 ### Watch, rather than pick up
 
@@ -4916,6 +4917,8 @@ Numbers are never reused — CLAUDE.md and code comments cite entries by number.
 - **The coach answered the spec's three questions the same day**, each the
   recommended option: slow motion **stays on through a pause** (fast scanning
   still drops to 1×), **no badge** in exports, and `S` **always slows to ½×**.
+- **Planned 2026-11-22**, after the spec's two reviews:
+  `docs/superpowers/plans/2026-11-21-slow-motion.md`.
 - **Why deferred:** not deferred — it is the next feature, waiting on the
-  spec's adversarial review and a plan.
+  plan's review and its execution.
 - **When to revisit:** now; it heads "Next, in order".
